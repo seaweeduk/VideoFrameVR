@@ -104,6 +104,7 @@ std::string allLines(const Settings& s) {
   out << "thumbnails=" << (s.thumbnails ? 1 : 0) << "\n";
   out << "show_performance=" << (s.showPerformance ? 1 : 0) << "\n";
   out << "vibration=" << (s.vibration ? 1 : 0) << "\n";
+  out << "volume=" << s.volume << "\n";
   out << "downloads_to=" << s.downloadsTo << "\n";
   out << "screen_distance_cm=" << s.screen.distance * 100 << "\n";
   out << "screen_height_cm=" << s.screen.height * 100 << "\n";
@@ -270,6 +271,7 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "thumbnails") s.thumbnails = value != "0";
     else if (key == "show_performance") s.showPerformance = value == "1";
     else if (key == "vibration") s.vibration = value != "0";
+    else if (key == "volume") s.volume = std::clamp(std::atoi(value.c_str()), 0, 130);
     else if (key == "screen_distance_cm") s.screen.distance = std::atof(value.c_str()) / 100;
     else if (key == "screen_height_cm") s.screen.height = std::atof(value.c_str()) / 100;
     else if (key == "screen_curve") s.screen.curve = static_cast<float>(std::atof(value.c_str()));

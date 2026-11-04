@@ -124,7 +124,6 @@ struct App {
   bool recenter = false;
   bool togglePassthrough = false;  // T key; handled where the settings are
   double recenterAt = 0;  // glfwGetTime() of a recenter counting down; 0 = none
-  double volumeAtOpen = -1;  // the volume when the current video started
   // Settings (VideoSettings::Part) of the running video changed in a run of
   // small steps (a slider, a held stick, a drag), stored at glfwGetTime()
   // saveAt; 0 = none waiting.
@@ -640,6 +639,7 @@ int run(GLFWwindow* window, const Options& opts) {
   if (requirements.directVideo && direct.init(gpu)) renderer.setDirectVideo(&direct);
   VideoPlayer player;
   if (!player.init(opts.hwdec, interop, opts.timing, opts.decoderQueue)) return 1;
+  player.command(("set volume " + std::to_string(settings.volume)).c_str());
   if (direct.available()) player.setDirectVideo(&direct);
   DirectDepth directDepth;  // automatic focus on frames handed out, which stay out of GL
   if (direct.available() && !directDepth.init(gpu, direct))
@@ -930,13 +930,17 @@ int run(GLFWwindow* window, const Options& opts) {
   // settings: only what the user changed, so the rest of a record still
   // being found stays as it is.
   auto storeVideo = [&](unsigned parts) { library.setSettings(app.currentFile, app.video, parts); };
-  // Remembers the volume of the video being left, if it was changed while it played.
-  auto rememberVolume = [&] {
-    if (app.currentFile.empty() || isPhotoFile(app.currentFile) || app.volumeAtOpen < 0) return;
-    const double volume = player.playback().volume;
-    if (std::abs(volume - app.volumeAtOpen) < 0.5) return;
-    app.video.volume = static_cast<int>(std::lround(volume));
-    storeVideo(VideoSettings::kVolume);
+  // Keeps the volume for all videos, as mpv reports it: a second after it
+  // changes, so at most once a second while it keeps changing. Not before
+  // mpv has reported the one set at start, so its default can't overwrite it.
+  bool volumeApplied = false;
+  double volumeSaveAt = 0;
+  auto keepVolume = [&] {
+    volumeSaveAt = 0;
+    const int volume = static_cast<int>(std::lround(player.playback().volume));
+    if (!volumeApplied || volume == settings.volume) return;
+    settings.volume = volume;
+    saveSettings(settings);
   };
   // Stores these parts soon, with whatever else changes meanwhile: at most
   // twice a second while they keep changing.
@@ -984,9 +988,6 @@ int run(GLFWwindow* window, const Options& opts) {
     app.screen.size = settings.screen;
     player.setPicture(app.video.brightness, app.video.contrast, app.video.saturation);
     player.setTvGamma(settings.tvGamma);
-    if (app.video.volume >= 0)
-      player.command(("set volume " + std::to_string(app.video.volume)).c_str());
-    app.volumeAtOpen = app.video.volume >= 0 ? app.video.volume : player.playback().volume;
   };
   // Playback moves on (another video, or none): a delete dialog still
   // asking goes, with its lookup, so its confirm can't act on what came
@@ -1020,7 +1021,6 @@ int run(GLFWwindow* window, const Options& opts) {
     nextPhoto = {};
     neighborStep = 0;
     saveUnsaved();
-    rememberVolume();
     keepResume();
     dropDeleteDialog();
     app.currentFile = path;
@@ -1080,12 +1080,11 @@ int run(GLFWwindow* window, const Options& opts) {
     return app.video.hasFormat;
   };
   // Closes the running video or photo and leaves the scene empty, keeping
-  // where it was left and its volume as switching to another would.
+  // where it was left as switching to another would.
   auto closeVideo = [&] {
     if (app.currentFile.empty()) return;
     dropDeleteDialog();
     saveUnsaved();
-    rememberVolume();
     keepResume();
     player.stop();
     heldSeek.cancel();
@@ -1944,6 +1943,12 @@ int run(GLFWwindow* window, const Options& opts) {
     }
 
     if (app.saveAt > 0 && glfwGetTime() >= app.saveAt) saveUnsaved();
+    if (const int volume = static_cast<int>(std::lround(player.playback().volume));
+        !volumeApplied)
+      volumeApplied = volume == settings.volume;
+    else if (volume != settings.volume && volumeSaveAt == 0)
+      volumeSaveAt = glfwGetTime() + 1;
+    if (volumeSaveAt > 0 && glfwGetTime() >= volumeSaveAt) keepVolume();
     // The library's background results; the playing file's record may be
     // among them.
     if (library.poll() && awaitingRecord && library.known(app.currentFile)) {
@@ -3230,7 +3235,7 @@ int run(GLFWwindow* window, const Options& opts) {
   }
   if (quitSignal) std::printf("Quitting (signal %d)\n", static_cast<int>(quitSignal));
   saveUnsaved();
-  rememberVolume();
+  keepVolume();
   keepResume();
   gpu.savePipelineCache();
   return gpu.lost() || xr.failed() ? 1 : 0;

@@ -46,7 +46,9 @@ struct VideoSettings {
   // file name decides (packedMask(), see_through.h).
   std::optional<bool> packedMask;
   std::optional<bool> legacyTvGamma;  // kept in the library, no longer applied
-  int volume = -1;    // 0..100 if changed while it played, -1 = not remembered
+  // A volume stored by older versions for this video (-1 none): kept as it
+  // is, no longer applied (the volume is a setting for all videos).
+  int volume = -1;
   GreenScreen greenScreen;
   bool hasFocus = false;  // stereo focus set for this video, else the defaults apply
   FocusSettings focus;
