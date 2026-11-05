@@ -10,6 +10,7 @@
   "fonts": [
     {"name":"NotoSans-CondensedMedium.ttf", "published":"2023-01-25T13:40:16Z", "url":"https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-CondensedMedium.ttf", "sha256":"3e47ff38200ef203ccd19cf23a3b5dcc834bc170b123ab4440be72adee0e5444"},
     {"name":"NotoSans-CondensedSemiBold.ttf", "published":"2023-01-25T13:40:16Z", "url":"https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-CondensedSemiBold.ttf", "sha256":"09ce05e5a0cbfa85f88f62557df2bd7cef96c0e18c367f2aa063e75d3660961b"},
+    {"name":"NotoSansMono-Medium.ttf", "published":"2023-01-25T13:40:16Z", "url":"https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSansMono/NotoSansMono-Medium.ttf", "sha256":"b1e09ba9f3607d81aedc9e4e1cbe225a0df85c77bde267931a1ab28577840edd"},
     {"name":"OFL.txt", "published":"2023-01-25T13:40:16Z", "url":"https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/LICENSE", "sha256":"0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb"}
   ]
 }

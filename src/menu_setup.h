@@ -33,6 +33,11 @@ struct SetupFolders {
   std::string shown;          // the place shown (its root); empty: Add a computer
   std::vector<std::string> hosts;  // computers added by their name or address (remote::root())
   std::string computer;            // ... typed
+  // ... an SFTP one: its port and user name, and the field typed into (0
+  // the name, 1 the port, 2 the user name).
+  bool sftp = false;
+  std::string port = "22", user;
+  int field = 0;
   setup_places::Async<std::vector<RemovableDrives::Drive>> finding;
   std::vector<RemovableDrives::Drive> drives;
   // The folders read or being read, by path; those open.
@@ -184,6 +189,10 @@ struct SetupPages {
   static void setText(Menu& m, const std::string& text);
   static void signedIn(Menu& m);
   static void signInFailed(Menu& m);
+  // An SFTP computer's connect or sign-in ended (Menu::sftpDone()) with a
+  // form to show: in its pane, or Add a computer's (Menu::SmbForm::Kind::
+  // AddServer) with what was typed and why it failed.
+  static void showSftp(Menu& m);
   // Menu::browserChanged() while setup shows: only that part is drawn again.
   static void damaged(Menu& m, double y0, double y1, double x0, double x1);
   // A list on the page that scrolls (Add folders' tree, what was added): the
@@ -248,6 +257,19 @@ struct SetupPages {
   static void drawTree(Menu& m, cairo_t* cr);
   static void layoutSignIn(Menu& m);
   static void drawSignIn(Menu& m, cairo_t* cr);
+  // An SFTP computer's pane: its sign-in, key, changed key or refused key;
+  // where their parts go, from the pane's top.
+  struct SftpRows {
+    double line = 0, choice = -1, user = 0, password = 0, once = -1, key = 0, keyH = 0, hint = -1,
+           error = -1, errorHint = -1, go = 0;
+    double run = -1, command = 0, commandH = 0, status = 0;  // KeyOnly's while its key is served
+    int keySize = 23;
+  };
+  static SftpRows sftpRows(Menu& m);
+  static void layoutSftp(Menu& m);
+  static void drawSftp(Menu& m, cairo_t* cr);
+  // The place `root` needs a login: SMB's form, or SFTP's connect job.
+  static void askLogin(Menu& m, const std::string& root);
   static void layoutAddComputer(Menu& m);
   static void drawAddComputer(Menu& m, cairo_t* cr);
   static void layoutAdded(Menu& m);
@@ -257,6 +279,7 @@ struct SetupPages {
   static void toggleOpen(Menu& m, const std::string& path);
   static void toggleTick(Menu& m, const std::string& path);
   static void addComputer(Menu& m);
+  static void splitComputer(SetupFolders& f);  // "alex@nas:2222" into its fields
   static void ticksChanged(Menu& m);
   static void scrollTo(Menu& m, double to);
   static void treeChanged(Menu& m, double y0);

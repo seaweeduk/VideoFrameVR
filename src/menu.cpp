@@ -901,6 +901,8 @@ void Menu::layoutDialog() {
     layoutDeleteDialog(row);
   } else if (dialog_ == Dialog::Update) {
     layoutUpdateDialog(row);
+  } else if (dialog_ >= Dialog::KeyRefused) {
+    layoutNetworkDialog(row);
   } else if (dialog_ == Dialog::Error || dialog_ == Dialog::Deleted) {
     row.push_back(textButton(t.ok, Icon::None, close));
   } else if (dialog_ == Dialog::ConfirmQuit) {
@@ -949,6 +951,8 @@ void Menu::drawDialog(cairo_t* cr) {
     drawOfflineDialog(cr, boxX, boxY);
   } else if (dialog_ == Dialog::Update) {
     drawUpdateDialog(cr, textX, boxY);
+  } else if (dialog_ >= Dialog::KeyRefused) {
+    drawNetworkDialog(cr, textX, boxY);
   } else if (dialog_ == Dialog::ConfirmQuit) {
     drawText(cr, t.quitTitle, textX, boxY + 90, textW, 60, 38, true, true, 1, 1, 1);
   } else if (dialog_ == Dialog::Error || dialog_ == Dialog::Deleted) {

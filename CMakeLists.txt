@@ -53,6 +53,7 @@ add_executable(videoframevr
   src/gl_interop.cpp
   src/gpu_context.cpp
   src/hints.cpp
+  src/key_share.cpp
   src/focus_settings.cpp
   src/glass_backdrop.cpp
   src/green_screen_check.cpp

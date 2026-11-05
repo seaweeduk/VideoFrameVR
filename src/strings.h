@@ -409,6 +409,62 @@ struct NetworkStrings {
   const char* sharesRefused;
   const char* shareField;
   const char* open;
+  // SFTP servers (sftp.h): Add server's type and its fields' placeholders ...
+  const char* type;
+  const char* types[2];      // SMB, SFTP
+  const char* typeHint;
+  const char* port;
+  const char* sftpServerHint;
+  const char* sftpUserHint;
+  const char* connect;
+  const char* connecting;
+  const char* offlinePort;   // printf: the server's name, the port
+  // ... signing in: with this device's key (and the password once) or a
+  // password; what went wrong ...
+  const char* signInWith;
+  const char* methods[2];    // this device's key, a password
+  const char* keyHint;       // printf: the user name
+  const char* passwordHint;
+  const char* settingUpKey;
+  const char* oneTimeCode;   // under wrongLogin
+  const char* noSftp;        // printf: the user name, the server's name
+  const char* noSftpHint;
+  // ... a server taking keys only: add this device's key to the account ...
+  const char* keyOnly;       // printf: the server's name, the user name
+  const char* deviceKey;
+  const char* addKeyLine;    // printf: the server's name, the user name
+  const char* tryAgain;
+  const char* keyStillRefused;  // printf: the server's name, the user name
+  const char* keyStillRefusedHint;
+  // ... or, while this device serves it (key_share.h), fetch it with a
+  // command ...
+  const char* keysOnly;       // printf: the server's name
+  const char* runCommand;     // printf: the server's name, the user name
+  const char* waitingForKey;  // printf: the server's name
+  const char* keyFetched;
+  // ... its row in the list (printf: the user name), Forget's tooltip ...
+  const char* byline;
+  const char* forgetKeyTip;
+  // ... its key changed ...
+  const char* changedTitle;  // printf: the server's name
+  const char* changedText;
+  const char* trustedKey;
+  const char* nowKey;
+  const char* dontConnect;
+  const char* trustNewKey;
+  // ... signed in with the password, the key refused ...
+  const char* keyRefusedTitle;
+  const char* keyRefusedText;  // printf: the server's name
+  const char* keyRefusedHint;
+  const char* notNow;
+  // ... and Forget, its key taken off the account too.
+  const char* forgetTitle;     // printf: the server's name
+  const char* forgetKeyText;   // printf: the user name
+  const char* forgetOnly;
+  const char* removeKeyForget;
+  const char* removingKey;
+  const char* forgetOffline;   // printf: the server's name
+  const char* forgetAnyway;
 };
 
 // Where Stash's videos are here (menu_stash_folders.cpp): found, or chosen.
@@ -746,6 +802,21 @@ struct SetupStrings {
   const char* stoppedAnsweringShort;  // ... and the line's
   const char* tryAgain;
   const char* stashSettings;
+  // An SFTP computer (with NetworkStrings' SFTP lines): Add a computer's
+  // type line and user name placeholder; then [0] on the Steam Frame, [1]
+  // elsewhere: the sign-in's key choice, its line and the password's ...
+  const char* typeHint;
+  const char* userHint;
+  const char* methodKey[2];
+  const char* keyChoiceHint[2];
+  const char* passwordChoiceHint[2];
+  const char* keyOnce[2];          // printf: the user name
+  // ... a computer taking keys only (printf: its name, the user name) ...
+  const char* keyOnly[2];
+  const char* ownKey[2];
+  const char* keyStillRefused[2];  // printf: its name, the user name
+  // ... and signed in with the password, the key refused (printf: its name).
+  const char* keyRefusedText[2];
 };
 
 // What the controls do and their names (controller_guide.h): setup's Your

@@ -1,6 +1,7 @@
 #include "menu_setup.h"
 
 #include "file_util.h"
+#include "menu_stash.h"  // stashPrinted
 #include "menu_style.h"
 #include "platform.h"
 
@@ -33,7 +34,9 @@ constexpr double kPad = 12;
 // each level further in; the line under an opened folder.
 constexpr double kRowH = 62, kRowStep = 66, kIndent = 44, kTickW = 66, kLineH = 44, kLineStep = 46;
 // A form in the box.
-constexpr double kFormX = kPaneX + 48, kFieldW = 520;
+constexpr double kFormX = kPaneX + 48, kFieldW = 520, kTextW = kPaneR - kFormX - 48;
+// Beside a choice row: its line.
+constexpr double kAsideX = kFormX + kFieldW + 24, kAsideW = kPaneR - 48 - kAsideX;
 // After Add: the list of what was added.
 constexpr double kListW = 920, kItemH = 100;
 constexpr double kFolderInk[3] = {132 / 255.0, 176 / 255.0, 240 / 255.0};
@@ -70,6 +73,16 @@ bool under(const std::string& path, const std::string& folder) {
 }
 
 std::string lastPart(const std::string& path) { return path.substr(path.rfind('/') + 1); }
+
+// The place `root` shows, as it was left (no folder read).
+void showRoot(SetupFolders& f, const std::string& root) {
+  if (f.shown == root) return;
+  f.scrolled[f.shown] = f.scroll;
+  f.shown = root;
+  f.scroll = f.scrolled.count(root) ? f.scrolled[root] : 0;
+  f.drag = {};
+  f.reveal.clear();
+}
 
 // The tree's order: by name, hidden ones after the others (readFolder()).
 bool nameBefore(const std::string& a, const std::string& b) {
@@ -131,8 +144,12 @@ void SetupPages::update(Menu& m) {
     folder.read = true;
     if (s.step != SetupMenu::Step::Folders || f.page != Page::Pick || placeOf(m, path) != f.shown) continue;
     if (path == f.shown) {  // the place itself: its folders, or its sign-in
-      if (folder.listing.status == remote::Status::NeedsLogin && m.smbForm_.kind == Menu::SmbForm::Kind::None)
-        m.openSmbForm(Menu::SmbForm::Kind::SignIn, remote::root(path));
+      const remote::Status status = folder.listing.status;
+      if ((status == remote::Status::NeedsLogin ||
+           (path.rfind("sftp://", 0) == 0 &&
+            (status == remote::Status::HostKeyUnknown || status == remote::Status::HostKeyChanged))) &&
+          m.smbForm_.kind == Menu::SmbForm::Kind::None && !m.smbForm_.signing)
+        askLogin(m, remote::root(path));
       m.dirty_ = true;
       continue;
     }
@@ -283,12 +300,16 @@ void SetupPages::showPlace(Menu& m, const std::string& root) {
   m.editing_ = root.empty();  // Add a computer: the keyboard up at once
   if (root.empty()) {
     f.computer.clear();
+    f.user.clear();
+    f.port = "22";
+    f.sftp = false;
+    f.field = 0;
   } else if (!f.folders.count(root) || (!f.folders[root].read && !f.folders[root].reading.running()) ||
              (f.folders[root].read && f.folders[root].listing.status != remote::Status::Ok &&
               f.folders[root].listing.status != remote::Status::NeedsLogin)) {
     readFolder(m, root);
   } else if (f.folders[root].read && f.folders[root].listing.status == remote::Status::NeedsLogin) {
-    m.openSmbForm(Menu::SmbForm::Kind::SignIn, remote::root(root));
+    askLogin(m, remote::root(root));
   }
   m.dirty_ = true;
 }
@@ -361,9 +382,9 @@ void SetupPages::layoutPick(Menu& m, const Menu::Button& later) {
   f.top = kPaneY + kPad, f.bottom = kPaneB - kPad, f.left = kPaneX + kPad, f.right = kPaneR - 28;
   if (f.shown.empty())
     layoutAddComputer(m);
-  else if (m.smbForm_.kind == Menu::SmbForm::Kind::SignIn)
+  else if (m.smbForm_.kind != Menu::SmbForm::Kind::None)
     layoutSignIn(m);
-  else
+  else if (!m.smbForm_.signing || m.smbForm_.root != f.shown)  // else connecting: drawPick()'s line
     layoutTree(m);
 
   Menu::Button setUpLater = later;
@@ -413,8 +434,11 @@ void SetupPages::drawPick(Menu& m, cairo_t* cr) {
   cairo_fill(cr);
   if (f.shown.empty())
     drawAddComputer(m, cr);
-  else if (m.smbForm_.kind == Menu::SmbForm::Kind::SignIn)
+  else if (m.smbForm_.kind != Menu::SmbForm::Kind::None)
     drawSignIn(m, cr);
+  else if (m.smbForm_.signing && m.smbForm_.root == f.shown)
+    m.drawText(cr, t.connecting, kFormX, kPaneY + 36, kTextW, 50, 27, false, false, pal.textDim.r, pal.textDim.g,
+               pal.textDim.b);
   else
     drawTree(m, cr);
   drawKeyboardPanel(m, cr);
@@ -723,6 +747,10 @@ void SetupPages::toggleOpen(Menu& m, const std::string& path) {
 // keyboard up on the user name (Menu::openSmbForm()), Done moving to the
 // password, then signing in.
 void SetupPages::layoutSignIn(Menu& m) {
+  if (m.smbForm_.sftp) {
+    layoutSftp(m);
+    return;
+  }
   Menu::SmbForm& form = m.smbForm_;
   const NetworkStrings& n = m.text().network;
   for (const int i : {1, 2}) {
@@ -760,6 +788,10 @@ void SetupPages::layoutSignIn(Menu& m) {
 }
 
 void SetupPages::drawSignIn(Menu& m, cairo_t* cr) {
+  if (m.smbForm_.sftp) {
+    drawSftp(m, cr);
+    return;
+  }
   const Palette pal = m.palette();
   const NetworkStrings& n = m.text().network;
   const Menu::SmbForm& form = m.smbForm_;
@@ -773,41 +805,111 @@ void SetupPages::drawSignIn(Menu& m, cairo_t* cr) {
                kError[1], kError[2]);
 }
 
+// Add a computer: SMB or SFTP (what's typed may say which), its name or
+// address; an SFTP one's port and user name; why it couldn't connect; Connect.
 void SetupPages::layoutAddComputer(Menu& m) {
   SetupFolders& f = *m.setup_->folders;
-  Menu::Button b = m.textButton(f.computer, Menu::Icon::None, [&m] {
-    m.editing_ = true;
-    return MenuCommand{};
-  });
-  b.field = true;
-  b.on = m.editing_;
-  b.caret = m.editing_ ? m.caret() : -1;
-  b.radius = 12;
-  b.fontSize = 27;
-  add(m, b, kFormX, kPaneY + 148, kFieldW, 64);
   const SetupStrings& t = m.text().setup;
-  Menu::Button go = m.textButton(t.connect, Menu::Icon::None, [&m] {
+  const Menu::SmbForm& form = m.smbForm_;
+  for (int i = 0; i < 2; ++i) {
+    Menu::Button type = m.textButton(m.text().network.types[i], Menu::Icon::None, [&m, i] {
+      m.setup_->folders->sftp = i == 1;
+      m.setup_->folders->field = 0;
+      m.smbForm_.error.clear();
+      m.smbForm_.hint.clear();
+      m.editing_ = true;
+      return MenuCommand{};
+    }, f.sftp == (i == 1));
+    type.fontSize = 27;
+    add(m, type, kFormX + i * (kFieldW + 8) / 2, kPaneY + 104, (kFieldW - 8) / 2, 56);
+  }
+  auto field = [&](int i, const std::string& typed, const char* placeholder, double x, double w) {
+    const bool active = m.editing_ && (f.sftp ? f.field : 0) == i;
+    Menu::Button b = m.textButton(typed.empty() && !active ? std::string(placeholder) : typed, Menu::Icon::None, [&m, i] {
+      m.setup_->folders->field = i;
+      m.editing_ = true;
+      return MenuCommand{};
+    });
+    b.field = true;
+    b.on = active;
+    b.caret = active ? m.caret() : -1;
+    b.placeholder = typed.empty() && !active;
+    b.radius = 12;
+    b.fontSize = 27;
+    add(m, b, x, kPaneY + (i == 0 ? 210 : 324), w, 64);
+  };
+  field(0, f.computer, "", kFormX, kFieldW);
+  double y = kPaneY + 290;
+  if (f.sftp) {
+    field(1, f.port, "", kFormX, 160);
+    field(2, f.user, t.userHint, kFormX + 176, kFieldW - 176);
+    y = kPaneY + 404;
+  }
+  if (!form.error.empty()) y += m.wrappedLines(form.error, kTextW, 24, 2, true) * 33;
+  if (!form.hint.empty()) y += m.wrappedLines(form.hint, kTextW, 23, 2) * 31;
+  const bool connecting = form.signing != nullptr;
+  const std::string label = connecting ? t.connecting : t.connect;
+  Menu::Button go = m.textButton(label, Menu::Icon::None, [&m] {
     addComputer(m);
     return MenuCommand{};
   }, true);
   go.fontSize = 27;
-  go.disabled = f.computer.find_first_not_of(" ") == std::string::npos;
-  add(m, go, kFormX, kPaneY + 240, std::max(220.0, m.textWidth(t.connect, 27, false) + 80), 64);
+  auto blank = [](const std::string& s) { return s.find_first_not_of(' ') == std::string::npos; };
+  go.disabled = connecting || blank(f.computer) ||
+                (f.sftp && blank(f.user) && f.computer.find('@') == std::string::npos);
+  add(m, go, kFormX, y + 12, std::max(220.0, m.textWidth(label, 27, false) + 80), 64);
 }
 
 void SetupPages::drawAddComputer(Menu& m, cairo_t* cr) {
   const Palette pal = m.palette();
   const SetupStrings& t = m.text().setup;
-  m.drawText(cr, t.addComputerTitle, kFormX, kPaneY + 36, kPaneR - kFormX - 48, 50, 30, true, false, pal.text.r,
+  const NetworkStrings& n = m.text().network;
+  const SetupFolders& f = *m.setup_->folders;
+  const Menu::SmbForm& form = m.smbForm_;
+  const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, 1};
+  m.drawText(cr, t.addComputerTitle, kFormX, kPaneY + 36, kTextW, 50, 30, true, false, pal.text.r,
              pal.text.g, pal.text.b);
-  m.drawText(cr, t.computerField, kFormX + 4, kPaneY + 110, kFieldW, 34, 23, false, false, pal.textDim.r,
-             pal.textDim.g, pal.textDim.b);
+  m.drawTextLines(cr, t.typeHint, kAsideX, kPaneY + 106, kAsideW, 23, 3, dim, false);
+  m.drawText(cr, t.computerField, kFormX + 4, kPaneY + 176, kFieldW, 34, 23, false, false, dim[0], dim[1], dim[2]);
+  double y = kPaneY + 290;
+  if (f.sftp) {
+    m.drawText(cr, n.port, kFormX + 4, y, 160, 34, 23, false, false, dim[0], dim[1], dim[2]);
+    m.drawText(cr, n.fields[1], kFormX + 180, y, kFieldW - 180, 34, 23, false, false, dim[0], dim[1], dim[2]);
+    y = kPaneY + 404;
+  }
+  if (!form.error.empty()) {
+    const double red[4] = {kError[0], kError[1], kError[2], 1};
+    m.drawTextLines(cr, form.error, kFormX + 4, y, kTextW, 24, 2, red, false, 0, true);
+    y += m.wrappedLines(form.error, kTextW, 24, 2, true) * 33;
+  }
+  if (!form.hint.empty()) m.drawTextLines(cr, form.hint, kFormX + 4, y, kTextW, 23, 2, dim, false);
+}
+
+void SetupPages::splitComputer(SetupFolders& f) {
+  const Menu::TypedServer typed = Menu::splitServer(f.computer);
+  if (!typed.user.empty()) f.user = typed.user;
+  if (typed.port) f.port = std::to_string(std::max(typed.port, 0));
+  f.computer = typed.host + (typed.path.empty() ? "" : "/" + typed.path);
 }
 
 // "smb://nas/media", "\\nas\media" and "nas" all name nas (as the
-// browser's Add server does): it joins the places, shown.
+// browser's Add server does): it joins the places, shown. An SFTP one is
+// connected to first (Menu::connectSftp()), and joins them then.
 void SetupPages::addComputer(Menu& m) {
   SetupFolders& f = *m.setup_->folders;
+  if (f.sftp) {
+    splitComputer(f);
+    const Menu::TypedServer typed = Menu::splitServer(f.computer);
+    const int port = f.port.empty() ? 22 : std::atoi(f.port.c_str());
+    if (typed.host.empty() || f.user.empty() || port < 1 || port > 65535 || m.smbForm_.signing) return;
+    m.smbForm_ = {};
+    m.smbForm_.root = Menu::sftpRoot(typed.host, port);
+    m.smbForm_.then = typed.path;
+    m.smbForm_.text = {f.computer, f.user, "", f.port};
+    m.editing_ = false;
+    m.connectSftp();
+    return;
+  }
   std::string host = f.computer;
   std::replace(host.begin(), host.end(), '\\', '/');
   if (host.rfind("smb://", 0) == 0) host.erase(0, 6);
@@ -821,29 +923,333 @@ void SetupPages::addComputer(Menu& m) {
   showPlace(m, root);
 }
 
-// The field typed into: a computer's name, a sign-in's (Menu::smbForm_),
-// or Stash's.
+// The field typed into: a computer's name (an SFTP one's port or user
+// name), a sign-in's (Menu::smbForm_), or Stash's.
 std::string* SetupPages::typed(Menu& m) {
   SetupMenu& s = *m.setup_;
-  if (s.step == SetupMenu::Step::Folders && s.folders && s.folders->page == Page::Pick && s.folders->shown.empty())
-    return &s.folders->computer;
+  if (s.step == SetupMenu::Step::Folders && s.folders && s.folders->page == Page::Pick && s.folders->shown.empty()) {
+    SetupFolders& f = *s.folders;
+    return !f.sftp || f.field == 0 ? &f.computer : f.field == 1 ? &f.port : &f.user;
+  }
   if (s.step != SetupMenu::Step::Stash || s.stash.page == SetupStash::Page::Ask) return nullptr;
   return &s.stash.text[s.stash.field];
 }
 
-// Signed in (Menu::updateNetwork()): the computer's shares are read again.
-// Under --first-run a login to remember is saved only when setup ends
-// (Menu::endSetup()).
+// Signed in (Menu::updateNetwork()): the computer's shares are read again;
+// an SFTP one added joins the places, shown, opened down to a folder typed
+// after its name. Under --first-run a login to remember is saved only when
+// setup ends (Menu::endSetup()).
 void SetupPages::signedIn(Menu& m) {
   SetupMenu& s = *m.setup_;
-  const std::string root = m.smbForm_.root;
+  const std::string root = m.smbForm_.root, then = m.smbForm_.then;
   if (s.holdWrites && m.smbForm_.remember &&
       std::find(s.logins.begin(), s.logins.end(), root) == s.logins.end())
     s.logins.push_back(root);
   m.smbForm_ = {};
   m.editing_ = false;
   m.dirty_ = true;
-  if (s.folders) readFolder(m, root);
+  if (!s.folders) return;
+  SetupFolders& f = *s.folders;
+  if (std::find(f.hosts.begin(), f.hosts.end(), root) == f.hosts.end()) f.hosts.push_back(root);
+  showRoot(f, root);
+  readFolder(m, root);
+  std::string path = root;
+  for (size_t at = 0; at < then.size();) {
+    const size_t end = std::min(then.find('/', at), then.size());
+    if (end > at) {
+      path += "/" + then.substr(at, end - at);
+      f.open.insert(path);
+      readFolder(m, path);
+    }
+    at = end + 1;
+  }
+  if (path != root) f.reveal = path;
+}
+
+// See Menu::sftpDone().
+void SetupPages::showSftp(Menu& m) {
+  if (!m.setup_->folders) return;
+  SetupFolders& f = *m.setup_->folders;
+  const Menu::SmbForm form = m.smbForm_;
+  if (form.kind == Menu::SmbForm::Kind::AddServer) {
+    showPlace(m, "");
+    f.sftp = true;
+    f.computer = form.text[0];
+    f.port = form.text[3];
+    f.user = form.text[1];
+    f.field = f.user.empty() ? 2 : 0;
+    m.smbForm_.error = form.error;
+    m.smbForm_.hint = form.hint;
+    return;
+  }
+  if (std::find(f.hosts.begin(), f.hosts.end(), form.root) == f.hosts.end()) f.hosts.push_back(form.root);
+  showRoot(f, form.root);
+  m.smbForm_ = form;
+  m.editing_ = form.kind == Menu::SmbForm::Kind::SignIn;
+  if (form.kind == Menu::SmbForm::Kind::KeyRefused) readFolder(m, form.root);
+  m.dirty_ = true;
+}
+
+// An SMB computer's sign-in; an SFTP one is connected to (Menu::
+// connectSftp()) with the user name known, else from Add a computer.
+void SetupPages::askLogin(Menu& m, const std::string& root) {
+  if (root.rfind("sftp://", 0) != 0) {
+    m.openSmbForm(Menu::SmbForm::Kind::SignIn, root);
+    return;
+  }
+  remote::Login login;
+  bool remembered = false;
+  const auto tried = m.sftpUsers_.find(root);
+  m.smbForm_ = {};
+  m.smbForm_.sftp = true;
+  m.smbForm_.root = root;
+  m.smbForm_.text[1] = remote::knownLogin(root, login, remembered) ? login.user
+                       : tried != m.sftpUsers_.end()               ? tried->second
+                                                                   : "";
+  if (!m.smbForm_.text[1].empty()) {
+    m.connectSftp();
+    return;
+  }
+  m.smbForm_.kind = Menu::SmbForm::Kind::AddServer;
+  m.smbForm_.text[0] = remote::host(root);
+  m.smbForm_.text[3] = std::to_string(remote::port(root));
+  showSftp(m);
+}
+
+// --- An SFTP computer's pane ----------------------------------------------
+
+SetupPages::SftpRows SetupPages::sftpRows(Menu& m) {
+  using Kind = Menu::SmbForm::Kind;
+  const Menu::SmbForm& form = m.smbForm_;
+  const NetworkStrings& n = m.text().network;
+  const SetupStrings& t = m.text().setup;
+  const int device = kStandaloneHeadset ? 0 : 1;
+  const std::string name = m.serverName(form.root), user = form.text[1];
+  // The height of text wrapped across the pane, in lines of a size's height.
+  auto tall = [&](const std::string& text, int size, int lines, bool bold = false) {
+    return m.wrappedLines(text, kTextW, size, lines, bold) * (size * 1.36);
+  };
+  SftpRows r;
+  double y = kPaneY + 92;
+  r.line = y;
+  if (form.kind == Kind::SignIn) {
+    // Without the choice, where SMB's sign-in has its fields.
+    if (form.keyChoice) r.choice = kPaneY + 104;
+    r.user = kPaneY + (form.keyChoice ? 176 : 114);  // the labels; their fields 34 under them
+    r.password = r.user + (form.keyChoice ? 108 : 120);
+    y = r.password + 34 + 64 + 10;
+    // The key's line, unless an error says more (the pane's height).
+    if (form.byKey && form.error.empty()) {
+      r.once = y;
+      y += tall(stashPrinted(t.keyOnce[device], user), 23, 2) + 4;
+    }
+  } else if (form.kind == Kind::KeyOnly) {
+    const double rgba[4] = {};
+    // With the command, what it's for goes without saying (Menu::layoutSftpForm()).
+    const std::string keyOnly =
+        form.command.empty() ? stashPrinted(t.keyOnly[device], name, user) : stashPrinted(n.keysOnly, name);
+    y += tall(keyOnly, 27, 3) + 12;
+    if (form.command.empty()) {
+      r.key = y + 34;  // under the label
+    } else {
+      // The command first; then the key, smaller and without its label.
+      r.run = y;
+      r.command = y + tall(stashPrinted(n.runCommand, name, user), 27, 2) + 4;
+      r.commandH = m.drawMono(nullptr, form.command, 0, 0, kTextW - 32, 23, rgba) + 20;
+      r.status = r.command + r.commandH + 8;
+      r.key = r.status + tall(n.waitingForKey, 23, 1) + 12;
+      if (!form.error.empty()) {  // in the status's place, as on the Network page
+        r.error = r.status;
+        r.key = r.error + tall(form.error, 24, 2, true) + 12;
+      }
+      r.keySize = 20;
+    }
+    r.keyH = m.drawMono(nullptr, form.publicKey, 0, 0, kTextW - 32, r.keySize, rgba) + 20;
+    r.hint = r.key + r.keyH + 12;
+    y = r.hint + tall(stashPrinted(n.addKeyLine, name, user), 23, 2) + 8;
+  } else if (form.kind == Kind::Changed) {
+    r.key = y + tall(n.changedText, 27, 3, true) + 10;
+    y = r.key + 104;
+  } else {  // KeyRefused
+    r.hint = y + tall(stashPrinted(t.keyRefusedText[device], name), 27, 4) + 10;
+    y = r.hint + tall(n.keyRefusedHint, 23, 2) + 8;
+  }
+  if (!form.error.empty() && r.run < 0) {
+    r.error = y;
+    y += tall(form.error, 24, 2, true);
+  }
+  if (!form.hint.empty() && r.run < 0) {
+    r.errorHint = y;
+    y += tall(form.hint, 23, 2);
+  }
+  r.go = y + 10;
+  return r;
+}
+
+// As the prototype: an SFTP computer's sign-in, its key to add, its key
+// changed, or its key refused and the password to remember.
+void SetupPages::layoutSftp(Menu& m) {
+  using Kind = Menu::SmbForm::Kind;
+  const Menu::SmbForm& form = m.smbForm_;
+  const NetworkStrings& n = m.text().network;
+  const SetupStrings& t = m.text().setup;
+  const int device = kStandaloneHeadset ? 0 : 1;
+  const SftpRows r = sftpRows(m);
+  const bool signing = form.signing != nullptr;
+  auto button = [&](const std::string& label, std::function<MenuCommand()> action, bool selected, double x,
+                    double y, double w = 0) -> Menu::Button& {
+    Menu::Button b = m.textButton(label, Menu::Icon::None, std::move(action), selected);
+    b.fontSize = 27;
+    return add(m, b, x, y, w > 0 ? w : std::max(220.0, m.textWidth(label, 27, false) + 80), 64);
+  };
+  if (form.kind == Kind::SignIn) {
+    // Both choices in one size, small enough for the longer one.
+    const char* methods[2] = {t.methodKey[device], n.methods[1]};
+    const double choiceW = (kFieldW - 8) / 2;
+    int size = 27;
+    while (size > 20 && std::max(m.textWidth(methods[0], size, false), m.textWidth(methods[1], size, false)) >
+                            choiceW - 28)
+      --size;
+    for (int i = 0; i < 2 && r.choice >= 0; ++i) {
+      Menu::Button& choice = button(methods[i], [&m, i] {
+        m.smbForm_.byKey = i == 0;
+        return MenuCommand{};
+      }, form.byKey == (i == 0), kFormX + i * (kFieldW + 8) / 2, r.choice, choiceW);
+      choice.h = 56;
+      choice.fontSize = size;
+    }
+    for (const int i : {1, 2}) {
+      const bool active = form.field == i && m.editing_;
+      const std::string& typed = form.text[i];
+      Menu::Button b = m.textButton(i == 2 && !form.showPassword ? hidden(typed) : typed, Menu::Icon::None, [&m, i] {
+        m.smbForm_.field = i;
+        m.editing_ = true;
+        return MenuCommand{};
+      });
+      b.field = true;
+      b.on = active;
+      b.caret = active ? m.caret() : -1;
+      b.radius = 12;
+      b.fontSize = 27;
+      add(m, b, kFormX, (i == 1 ? r.user : r.password) + 34, kFieldW - (i == 2 ? 130 : 0), 64);
+    }
+    Menu::Button& eye = button(form.showPassword ? m.text().hide : n.show, [&m] {
+      m.smbForm_.showPassword = !m.smbForm_.showPassword;
+      return MenuCommand{};
+    }, false, kFormX + kFieldW - 120, r.password + 34, 120);
+    eye.fontSize = 27;
+    button(signing ? (form.byKey ? n.settingUpKey : n.signingIn) : n.signIn, [&m] {
+      m.smbForm_.field = 2;  // signs in from either field
+      return m.submitSmbForm();
+    }, true, kFormX, r.go).disabled = signing;
+  } else if (form.kind == Kind::KeyOnly) {
+    button(signing ? n.signingIn : n.tryAgain, [&m] { return m.submitSmbForm(); }, true, kFormX, r.go).disabled =
+        signing;
+  } else if (form.kind == Kind::Changed) {
+    // Don't connect: back to the address, to fix it.
+    const double w = button(n.dontConnect, [&m] {
+      Menu::SmbForm& f = m.smbForm_;
+      f.kind = Kind::AddServer;
+      f.text[0] = remote::host(f.root) + (f.then.empty() ? "" : "/" + f.then);
+      f.text[3] = std::to_string(remote::port(f.root));
+      showSftp(m);
+      return MenuCommand{};
+    }, true, kFormX, r.go).w;
+    Menu::Button& trust = button(n.trustNewKey, [&m] {
+      const std::string key = m.smbForm_.fingerprint;
+      m.smbForm_.kind = Kind::None;
+      m.connectSftp(key);
+      return MenuCommand{};
+    }, false, kFormX + w + 16, r.go);
+    trust.danger = true;
+    trust.disabled = signing;
+  } else {
+    // Remember password: saved now, or under --first-run when setup ends.
+    const double w = button(n.notNow, [&m] {
+      m.smbForm_ = {};
+      m.dirty_ = true;
+      return MenuCommand{};
+    }, false, kFormX, r.go).w;
+    button(n.remember, [&m] {
+      SetupMenu& s = *m.setup_;
+      const std::string root = m.smbForm_.root;
+      if (!s.holdWrites)
+        remote::remember(root);
+      else if (std::find(s.logins.begin(), s.logins.end(), root) == s.logins.end())
+        s.logins.push_back(root);
+      m.smbForm_ = {};
+      m.dirty_ = true;
+      return MenuCommand{};
+    }, true, kFormX + w + 16, r.go);
+  }
+}
+
+void SetupPages::drawSftp(Menu& m, cairo_t* cr) {
+  using Kind = Menu::SmbForm::Kind;
+  const Menu::SmbForm& form = m.smbForm_;
+  const NetworkStrings& n = m.text().network;
+  const SetupStrings& t = m.text().setup;
+  const int device = kStandaloneHeadset ? 0 : 1;
+  const Palette pal = m.palette();
+  const double ink[4] = {pal.text.r, pal.text.g, pal.text.b, 1}, dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, 1};
+  const double red[4] = {kError[0], kError[1], kError[2], 1};
+  const SftpRows r = sftpRows(m);
+  const std::string name = m.serverName(form.root), user = form.text[1];
+  double titleX = kFormX;
+  if (form.kind == Kind::Changed) {
+    Menu::drawIcon(cr, Menu::Icon::Warning, kFormX + 18, kPaneY + 61, 36, red[0], red[1], red[2]);
+    titleX += 50;
+  }
+  const std::string title = form.kind == Kind::Changed      ? stashPrinted(n.changedTitle, name)
+                            : form.kind == Kind::KeyRefused ? std::string(n.keyRefusedTitle)
+                                                            : stashPrinted(n.signInTitle, name);
+  m.drawText(cr, title, titleX, kPaneY + 36, kTextW, 50, 30, true, false, ink[0], ink[1], ink[2]);
+  if (form.kind == Kind::SignIn) {
+    if (r.choice >= 0)
+      m.drawTextLines(cr, form.byKey ? t.keyChoiceHint[device] : t.passwordChoiceHint[device], kAsideX,
+                      r.choice + 2, kAsideW, 23, 3, dim, false);
+    for (const auto& [label, y] : {std::pair{n.fields[1], r.user}, {n.fields[2], r.password}})
+      m.drawText(cr, label, kFormX + 4, y, kFieldW, 34, 23, false, false, dim[0], dim[1], dim[2]);
+    if (r.once >= 0)
+      m.drawTextLines(cr, stashPrinted(t.keyOnce[device], user), kFormX + 4, r.once, kTextW, 23, 2, dim, false);
+  } else if (form.kind == Kind::KeyOnly) {
+    m.drawTextLines(cr, r.run < 0 ? stashPrinted(t.keyOnly[device], name, user) : stashPrinted(n.keysOnly, name),
+                    kFormX, r.line, kTextW, 27, 3, ink, false);
+    if (r.run >= 0) {
+      m.drawTextLines(cr, stashPrinted(n.runCommand, name, user), kFormX, r.run, kTextW, 27, 2, ink, false);
+      roundedRect(cr, kFormX, r.command, kTextW, r.commandH, 12);
+      setColor(cr, pal.field);
+      cairo_fill(cr);
+      m.drawMono(cr, form.command, kFormX + 16, r.command + 10, kTextW - 32, 23, ink);
+      const bool fetched = m.keyFetched();
+      if (r.error < 0)
+        m.drawTextLines(cr, fetched ? std::string(n.keyFetched) : stashPrinted(n.waitingForKey, name), kFormX + 4,
+                        r.status, kTextW, 23, 1, fetched ? ink : dim, false);
+    } else {
+      m.drawText(cr, t.ownKey[device], kFormX + 4, r.key - 34, kTextW, 34, 23, false, false, dim[0], dim[1], dim[2]);
+    }
+    roundedRect(cr, kFormX, r.key, kTextW, r.keyH, 12);
+    setColor(cr, pal.field);
+    cairo_fill(cr);
+    m.drawMono(cr, form.publicKey, kFormX + 16, r.key + 10, kTextW - 32, r.keySize, ink);
+    m.drawTextLines(cr, stashPrinted(n.addKeyLine, name, user), kFormX + 4, r.hint, kTextW, 23, 2, dim, false);
+  } else if (form.kind == Kind::Changed) {
+    m.drawTextLines(cr, n.changedText, kFormX, r.line, kTextW, 27, 3, red, false, 0, true);
+    const double labelW = std::max(m.textWidth(n.trustedKey, 27, false), m.textWidth(n.nowKey, 27, false)) + 30;
+    double y = r.key;
+    for (const auto& [label, key] : {std::pair{n.trustedKey, form.trusted}, {n.nowKey, form.fingerprint}}) {
+      m.drawText(cr, label, kFormX + 4, y, labelW, 44, 27, false, false, dim[0], dim[1], dim[2]);
+      m.drawMono(cr, key, kFormX + 4 + labelW, y + 7, kTextW - labelW, 24, ink);
+      y += 48;
+    }
+  } else {
+    m.drawTextLines(cr, stashPrinted(t.keyRefusedText[device], name), kFormX, r.line, kTextW, 27, 4, ink, false);
+    m.drawTextLines(cr, n.keyRefusedHint, kFormX + 4, r.hint, kTextW, 23, 2, dim, false);
+  }
+  if (r.error >= 0)
+    m.drawTextLines(cr, form.error, kFormX + 4, r.error, kTextW, 24, 2, red, false, 0, true);
+  if (r.errorHint >= 0)
+    m.drawTextLines(cr, form.hint, kFormX + 4, r.errorHint, kTextW, 23, 2, dim, false);
 }
 
 // Refused: the password again, typed anew.
@@ -869,7 +1275,14 @@ MenuCommand SetupPages::submit(Menu& m) {
   }
   if (m.smbForm_.kind != Menu::SmbForm::Kind::None) return m.submitSmbForm();
   if (s.folders && s.folders->shown.empty()) {
-    addComputer(m);
+    SetupFolders& f = *s.folders;
+    if (f.sftp && f.field < 2) {  // on to the next field
+      if (f.field == 0) splitComputer(f);
+      ++f.field;
+      m.dirty_ = true;
+    } else {
+      addComputer(m);
+    }
     return {};
   }
   m.stopEditing();

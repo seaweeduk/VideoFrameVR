@@ -165,8 +165,7 @@ void Menu::setFilter(const std::string& text) {
     return;
   }
   if (smbForm_.kind != SmbForm::Kind::None) {
-    smbForm_.text[smbForm_.field] = text;
-    typedChanged();
+    typedIntoSmbForm(text);
     return;
   }
   if (page_ == Page::Places) {

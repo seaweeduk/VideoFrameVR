@@ -122,7 +122,8 @@ def assemble(bundle, app, work, sdk, cache, supplement, metadata, source_name):
         "Original import 4c14ef86e88ca7132998dd35d13aed8e29429204. Application and repository additions: GPL-3.0.",
         "This build includes fork modifications as of " + metadata["modification_date"] + ".",
         "Source and library-replacement directions: SOURCE.txt.",
-        "Noto Sans Condensed Medium/SemiBold: notofonts/noto-fonts ffebf8c1ee449e544955a7e813c54f9b73848eac; SIL OFL-1.1; unmodified.",
+        "Noto Sans Condensed Medium/SemiBold, Noto Sans Mono Medium: notofonts/noto-fonts "
+        "ffebf8c1ee449e544955a7e813c54f9b73848eac; SIL OFL-1.1; unmodified.",
     ]
     patterns = {
         "libsmb2": ["COPYING", "LICENCE-LGPL-2.1.txt"],

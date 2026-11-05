@@ -40,6 +40,9 @@ constexpr double kGap = 16;
 // emphasis in its semibold.
 constexpr const char* kFont = "Noto Sans Condensed Medium";
 constexpr const char* kFontBold = "Noto Sans Condensed SemiBold";
+// Keys and fingerprints, read character by character: l, I and 1 apart
+// (the release bundles Noto Sans Mono; elsewhere the system's monospace).
+constexpr const char* kFontMono = "Noto Sans Mono,Monospace Medium";
 
 // The playback strip, in its texture's pixels: its body starts below the
 // room for open lists and tooltips (Menu::kStripBodyY). Rows: the clock,

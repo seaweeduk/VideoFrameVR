@@ -764,18 +764,49 @@ MenuCommand Menu::clickField(const Button& b) {
 
 void Menu::drawTextLines(cairo_t* cr, const std::string& text, double x, double y, double w,
                          int size, int lines, const double rgba[4], bool center,
-                         double inkBottom) const {
+                         double inkBottom, bool bold) const {
   if (outsideClip(cr, x, y - size, w, (lines + 1) * size * 2.0)) return;
-  PangoLayout* layout = textLayout(cr, text, size, false, w, std::max(1, lines), center);
+  PangoLayout* layout = textLayout(cr, text, size, bold, w, std::max(1, lines), center);
   while (inkBottom > 0 && lines > 1) {
     PangoRectangle ink;
     pango_layout_get_pixel_extents(layout, &ink, nullptr);
     if (y + ink.y + ink.height <= inkBottom) break;
-    layout = textLayout(cr, text, size, false, w, --lines, center);
+    layout = textLayout(cr, text, size, bold, w, --lines, center);
   }
   cairo_set_source_rgba(cr, rgba[0], rgba[1], rgba[2], rgba[3]);
   cairo_move_to(cr, x, onPixel(y));
   pango_cairo_show_layout(cr, layout);
+}
+
+int Menu::wrappedLines(const std::string& text, double w, int size, int lines, bool bold) const {
+  PangoLayout* layout = textLayout(canvases_[kMain].cr(), text, size, bold, w, std::max(1, lines), false);
+  return std::max(1, pango_layout_get_line_count(layout));
+}
+
+double Menu::drawMono(cairo_t* cr, const std::string& text, double x, double y, double w, int size,
+                      const double rgba[4]) const {
+  PangoLayout* layout = pango_cairo_create_layout(cr ? cr : canvases_[kMain].cr());
+  PangoFontDescription* font = pango_font_description_from_string(kFontMono);
+  pango_font_description_set_absolute_size(font, size * PANGO_SCALE);
+  pango_layout_set_font_description(layout, font);
+  pango_font_description_free(font);
+  pango_layout_set_text(layout, text.c_str(), -1);
+  pango_layout_set_width(layout, static_cast<int>(w * PANGO_SCALE));
+  pango_layout_set_wrap(layout, PANGO_WRAP_CHAR);
+  // A key copied by hand mustn't gain a hyphen where its line breaks.
+  PangoAttrList* attrs = pango_attr_list_new();
+  pango_attr_list_insert(attrs, pango_attr_insert_hyphens_new(FALSE));
+  pango_layout_set_attributes(layout, attrs);
+  pango_attr_list_unref(attrs);
+  int textW = 0, textH = 0;
+  pango_layout_get_pixel_size(layout, &textW, &textH);
+  if (cr) {
+    cairo_set_source_rgba(cr, rgba[0], rgba[1], rgba[2], rgba[3]);
+    cairo_move_to(cr, x, onPixel(y));
+    pango_cairo_show_layout(cr, layout);
+  }
+  g_object_unref(layout);
+  return textH;
 }
 
 void Menu::addGroup(double x, double y, double w, double h, const std::string& title) {

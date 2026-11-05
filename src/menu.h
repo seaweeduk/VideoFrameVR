@@ -3,6 +3,7 @@
 #include "cairo_canvas.h"
 #include "controller_guide.h"
 #include "folder_listing.h"
+#include "key_share.h"
 #include "library.h"
 #include "library_index.h"
 #include "offline.h"
@@ -13,6 +14,7 @@
 #include "menu_geometry.h"
 #include "settings.h"
 #include "remote.h"
+#include "sftp.h"
 #include "smb_discovery.h"
 #include "stash_folders.h"
 #include "strings.h"
@@ -504,7 +506,11 @@ class Menu {
                     Headset, Computer };
   enum class Dialog { None, ConfirmDelete, Deleting, Error, Deleted, ConfirmQuit,
                       SaveTo, NoRoom, RemoveDownload,  // offline downloads' (menu_offline.cpp)
-                      Update };  // a newer release (menu_settings.cpp)
+                      Update,  // a newer release (menu_settings.cpp)
+                      // An SFTP server's (menu_network.cpp): signed in with the
+                      // password as its key was refused, its key changed, and
+                      // Forget for a key login (and with the server not answering).
+                      KeyRefused, HostKeyChanged, ForgetServer, ForgetOffline };
   // Small choice menus opened by their button.
   enum class Dropdown { None, Slideshow, Audio, Subtitles, Chapters, Sort, Language,
                         Presets };  // the user's own presets (menu_presets.cpp)
@@ -593,6 +599,8 @@ class Menu {
     int64_t ratingVideo = 0;  // ... by the library's id, if it is rated by that
     float rating = 0;
     std::string plays;       // ... and how often it was played, if at all
+    std::string byline;      // dim after the name (an SFTP server's account)
+    std::string trashTip;    // the delete button's tooltip, if not tipDelete
   };
   ListItem folderItem(const std::string& label, const std::string& path);
   ListItem fileItem(const std::string& label, const std::string& path);
@@ -844,7 +852,10 @@ class Menu {
   // Wrapped text of at most `lines` lines from y, ellipsized after the last;
   // with inkBottom, fewer lines if they would reach below it.
   void drawTextLines(cairo_t* cr, const std::string& text, double x, double y, double w, int size,
-                     int lines, const double rgba[4], bool center, double inkBottom = 0) const;
+                     int lines, const double rgba[4], bool center, double inkBottom = 0,
+                     bool bold = false) const;
+  // How many lines drawTextLines() wraps `text` to, at most `lines`.
+  int wrappedLines(const std::string& text, double w, int size, int lines, bool bold = false) const;
   void addList(const std::vector<ListItem>& items, double x0 = 40, double rowH = 58,
                int rows = 9);
   // The file browser as a grid of large thumbnails.
@@ -1283,19 +1294,46 @@ class Menu {
   double listRight_ = 1560;  // right edge of the list (left of the scroll bar)
   double listLeft_ = 0;      // ... and its left edge on the browser
 
-  // The Network page and the SMB form (menu_network.cpp).
+  // The Network page and the SMB and SFTP forms (menu_network.cpp).
+  // A sign-in on a thread of its own, or for SFTP the connect job (probe,
+  // trust a new key, try this device's key), or Forget's key removal.
+  struct RemoteJob {
+    enum class Task { SignIn, Connect, RemoveKey } task = Task::SignIn;
+    std::atomic<bool> done{false};
+    remote::Status status = remote::Status::Ok;
+    sftp::Probe probe;
+    std::string publicKey;  // Connect for a server taking keys only: this device's
+    std::string trusted;    // HostKeyChanged: the key trusted before
+  };
   struct SmbForm {
-    enum class Kind { None, AddServer, SignIn, Share } kind = Kind::None;
+    // KeyOnly, Changed (in setup; a dialog on the Network page) and
+    // KeyRefused (setup's) are an SFTP server's.
+    enum class Kind { None, AddServer, SignIn, Share, KeyOnly, Changed, KeyRefused } kind = Kind::None;
+    bool sftp = false;  // an SFTP server (sftp://), else SMB
     std::string root;  // the server's (the one signing in to, once Sign in is chosen): remote::root()
     std::string then;  // Add server: the share (and folders) typed after the server
-    int field = 0;     // typed into: 0 server (or share), 1 user name, 2 password
-    std::array<std::string, 3> text;
+    int field = 0;     // typed into: 0 server (or share), 1 user name, 2 password, 3 port
+    std::array<std::string, 4> text{{"", "", "", "22"}};
     bool remember = true, showPassword = false;
-    std::string error;
-    std::shared_ptr<std::atomic<int>> signing;  // a sign-in under way: its remote::Status, -1 until done
+    bool password = false;  // SFTP's sign-in: password offered (the probe's) ...
+    bool keyChoice = false;  // ... and the key too: the choice row shows
+    bool byKey = false;      // ... the method chosen
+    std::string publicKey, trusted, fingerprint;  // KeyOnly's; Changed's two keys
+    double keyBox[4] = {0, 0, 0, 0};  // where the key is shown, as laid out
+    double commandBox[4] = {0, 0, 0, 0};  // ... and the command, if it is
+    // KeyOnly: the key served for the server to fetch (key_share.h), the
+    // command fetching it while it is, the fetches seen; after one, signing
+    // in by itself at retryAt until retryUntil.
+    std::shared_ptr<KeyShare> share;
+    std::string command;
+    int fetches = 0;
+    std::chrono::steady_clock::time_point retryAt, retryUntil;
+    std::string error, hint;  // hint: dim, under the error
+    std::shared_ptr<RemoteJob> signing;  // under way
   };
   SmbForm smbForm_;
   SmbDiscovery discovery_;
+  std::map<std::string, std::string> sftpUsers_;  // the user name last tried on each SFTP server
   void showNetwork();
   std::vector<remote::Server> networkServers() const;
   void openServer(const remote::Server& server);
@@ -1303,10 +1341,38 @@ class Menu {
   const char* networkState() const;
   void openSmbForm(SmbForm::Kind kind, const std::string& root);
   void layoutSmbForm(double top);
+  void layoutSftpForm(double x, double& y, double inner);
+  void drawSmbForm(cairo_t* cr);
   std::vector<int> smbFields() const;
   MenuCommand submitSmbForm();
+  void typedIntoSmbForm(const std::string& text);
+  // smbForm_'s SFTP server, its user (text[1]): the connect job; after a
+  // key changed, trusting `trust` first. A sign-in with its fields.
+  void connectSftp(const std::string& trust = "");
+  void signInSftp(const remote::Login& login, bool remember);
   void updateNetwork();
+  void updateKeyShare();
+  bool keyFetched() const;
+  void sftpDone(const RemoteJob& job);
+  void openSignedIn();
   void smbFolderRead();
+  void layoutNetworkDialog(std::vector<Button>& row);
+  void drawNetworkDialog(cairo_t* cr, double textX, double boxY);
+  // What's typed as a server: "alex@nas:2222/media"'s parts (port 0:
+  // none, -1: ":0"), and whether it names an SFTP server (1), an SMB one (0) or
+  // neither (-1).
+  struct TypedServer {
+    std::string host, user, path;
+    int port = 0;
+  };
+  static TypedServer splitServer(std::string text);
+  // The SFTP root of a host typed (an IPv6 address bracketed) and a port.
+  static std::string sftpRoot(const std::string& host, int port);
+  static int serverType(const std::string& text);
+  // A key or a fingerprint in the monospace font, wrapped anywhere, drawn
+  // from x, y (or with cr null only measured): its height.
+  double drawMono(cairo_t* cr, const std::string& text, double x, double y, double w, int size,
+                  const double rgba[4]) const;
   std::string serverName(const std::string& root) const;
   std::string shownLocation(const std::string& dir) const;
 

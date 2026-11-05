@@ -902,6 +902,10 @@ double Menu::dialogHeight() const {
   switch (dialog_) {
     case Dialog::SaveTo: return 540;
     case Dialog::NoRoom: return 460;
+    case Dialog::KeyRefused: return 440;
+    case Dialog::HostKeyChanged: return 500;
+    case Dialog::ForgetServer: return 410;
+    case Dialog::ForgetOffline: return 470;
     case Dialog::ConfirmDelete:
     case Dialog::Deleting:
       return deleteInfo_.stash != DeleteInfo::Stash::None || deleteInfo_.sourceChanged ? 460 : kDialogH;

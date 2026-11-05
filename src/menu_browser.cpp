@@ -389,6 +389,7 @@ void Menu::addList(const std::vector<ListItem>& items, double x0, double rowH, i
     b.size = items[i].size;
     b.date = items[i].date;
     b.plays = items[i].plays;
+    b.byline = items[i].byline;
     b.fontSize = kTextSize;
     double right = b.x + b.w;
     if (items[i].trash) {
@@ -400,7 +401,7 @@ void Menu::addList(const std::vector<ListItem>& items, double x0, double rowH, i
       trash.h = b.h;
       trash.icon = Icon::Trash;
       trash.action = items[i].trash;
-      trash.tooltip = text().tipDelete;
+      trash.tooltip = items[i].trashTip.empty() ? text().tipDelete : items[i].trashTip;
       trash.scrolls = true;
       right -= trashW + 10;
       b.w = right - b.x;
@@ -979,9 +980,10 @@ void Menu::drawListStates(cairo_t* cr) {
   const Strings& t = text();
   const Palette& pal = palette();
   const char* empty = networkState();
-  if (smbForm_.kind != SmbForm::Kind::None)
+  if (smbForm_.kind != SmbForm::Kind::None) {
+    drawSmbForm(cr);
     return;
-  else if (page_ == Page::Files && listing_.reading() && listing_.entries().empty())
+  } else if (page_ == Page::Files && listing_.reading() && listing_.entries().empty())
     empty = t.readingFolder;
   else if (page_ == Page::Files && listing_.status() == remote::Status::Offline)
     empty = t.network.offline;

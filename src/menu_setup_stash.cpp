@@ -52,10 +52,28 @@ std::string* Menu::setupText() const {
 // A computer's name: Connect waits for one.
 void SetupPages::setText(Menu& m, const std::string& text) {
   if (m.setup_->step == Step::Folders) {
-    std::string& typed = m.setup_->folders->computer;
+    // A computer's name (it may say SMB or SFTP), or an SFTP one's port
+    // (digits) or user name: Connect, or the form, may change with it.
+    SetupFolders& f = *m.setup_->folders;
+    std::string& field = *typed(m);
+    std::string value = text;
+    if (&field == &f.port) {
+      value.erase(std::remove_if(value.begin(), value.end(), [](char c) { return !std::isdigit(static_cast<unsigned char>(c)); }),
+                  value.end());
+      value.resize(std::min<size_t>(value.size(), 5));
+    }
     const auto blank = [](const std::string& t) { return t.find_first_not_of(' ') == std::string::npos; };
-    if (blank(text) != blank(typed)) m.dirty_ = true;
-    typed = text;
+    bool relayout = blank(value) != blank(field);
+    if (&field == &f.computer) {
+      const int type = Menu::serverType(value);
+      if (type >= 0 && (type == 1) != f.sftp) {
+        f.sftp = type == 1;
+        relayout = true;
+      }
+      relayout = relayout || (value.find('@') == std::string::npos) != (field.find('@') == std::string::npos);
+    }
+    field = value;
+    if (relayout) m.dirty_ = true;
     m.typedChanged();
     return;
   }
