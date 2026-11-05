@@ -3,6 +3,7 @@
 #include "platform.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <csignal>
@@ -236,7 +237,10 @@ class RunLog {
     if (!open()) std::fprintf(stderr, "Could not start run log\n");
   }
 
-  ~RunLog() {
+  ~RunLog() { end(); }
+
+  void end() {
+    if (ended_.exchange(true)) return;
     std::fflush(stdout);
     std::fflush(stderr);
     for (int i = 0; i < 2; ++i) {
@@ -373,12 +377,20 @@ class RunLog {
   int saved_[2] = {-1, -1};
   int pipes_[2][2] = {{-1, -1}, {-1, -1}};
   std::thread thread_;
+  std::atomic<bool> ended_{false};
 };
+
+RunLog* runLog = nullptr;
 
 }  // namespace
 
 void startRunLog() {
   static RunLog log;
+  runLog = &log;
+}
+
+void endRunLog() {
+  if (runLog) runLog->end();
 }
 
 bool previousRunCrashed() { return crashedBefore; }

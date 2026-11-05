@@ -35,3 +35,5 @@ std::future<std::string> mediaNeighbor(const std::string& current, int step, boo
 // Config reads and writes, in order. Disk work runs outside the queue lock;
 // shutdown waits for the last write, the frame loop never does.
 void queueConfigWork(std::function<void()> work);
+// Waits up to `seconds` for the config writes queued so far; whether they finished.
+bool drainConfigWork(double seconds);

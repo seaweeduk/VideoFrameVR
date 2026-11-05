@@ -176,8 +176,8 @@ class VideoPlayer {
   void showDirect(DirectFrame* frame);
   void dropDirect();
   void returnFrames();
-  // Runs a loadfile command; mpv's playlist entry id for it, 0 if not known.
-  int64_t loadFile(const char** cmd);
+  // Sends a loadfile command; its reply names mpv's playlist entry for it.
+  void loadFile(const char** cmd);
   struct SeekRequest {
     bool absolute = false;
     double amount = 0;  // seconds: the time, or the distance from the position
@@ -226,11 +226,17 @@ class VideoPlayer {
   bool newVideoSized_ = false;  // ...and its video has been configured
   bool loadRestarted_ = false;  // its first decoded frame has reached the render API
   double loadedAt_ = 0;         // seconds, steady clock
-  // mpv's playlist entry of the last load() until it opens (0 = whichever
-  // opens next, if mpv did not say; -1 = none), and of the file started last:
-  // a file replaced before it started is not a new play.
+  double loadSentAt_ = 0;       // when the last load() sent its loadfile, 0 after stop()
+  bool loadStarted_ = false;    // mpv started a file since
+  bool closeTimedOut_ = false;  // failed for the last file not closing in time
+  // mpv's playlist entry of the last load() until it opens (-1 = none), and
+  // of the file started last: a file replaced before it started is not a new
+  // play. Only events of that entry count for the load. mpv replies to
+  // loadfile before it starts the new file, but the last file's end can come
+  // before the reply: until then no file event counts.
   int64_t countedEntry_ = -1;
   int64_t startedEntry_ = -1;
+  bool loadReplyPending_ = false;
   bool opened_ = false;
   bool current_ = false;  // the file of the last load() has opened ...
   bool positionKnown_ = false;  // ... and its position came since

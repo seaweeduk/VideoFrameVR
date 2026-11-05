@@ -7,6 +7,9 @@
 // The copy leaves out the home folder (as ~) and the user's name.
 void startRunLog();
 
+// Drains the copy now, for an exit that skips the normal one (_exit).
+void endRunLog();
+
 // The version, build and system at the top of the log: what a report needs
 // first. No host or user names.
 void printRunHeader();

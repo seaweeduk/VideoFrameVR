@@ -1144,16 +1144,27 @@
          return VO_TRUE;
 --- a/player/video.c
 +++ b/player/video.c
-@@ -159,6 +159,9 @@
+@@ -158,6 +158,20 @@
+ void uninit_video_chain(struct MPContext *mpctx)
  {
      if (mpctx->vo_chain) {
-         reset_video_state(mpctx);
-+        // Before the decoder closes, so its session can end with it.
++        // A V4L2 decoder decodes into a small pool of buffers, and its thread
++        // waits in libavcodec until one comes back. reset_video_state() and
++        // vo_chain_uninit() wait for that thread, so first let go of every
++        // frame the core, the VO and the decoder's queue hold. The VO's frame
++        // also keeps the decoder's session alive.
++        for (int n = 0; n < mpctx->num_next_frames; n++)
++            mp_image_unrefp(&mpctx->next_frames[n]);
++        mpctx->num_next_frames = 0;
++        mp_image_unrefp(&mpctx->saved_frame);
 +        if (mpctx->video_out)
 +            vo_forget_frame(mpctx->video_out);
++        struct track *track = mpctx->vo_chain->track;
++        if (track && track->dec)
++            mp_decoder_wrapper_drop_queue(track->dec);
+         reset_video_state(mpctx);
          vo_chain_uninit(mpctx->vo_chain);
          mpctx->vo_chain = NULL;
- 
 --- a/video/out/gpu/video.h
 +++ b/video/out/gpu/video.h
 @@ -217,6 +217,7 @@
@@ -1164,3 +1175,31 @@
  bool gl_video_showing_interpolated_frame(struct gl_video *p);
  
  struct mp_hwdec_devices;
+--- a/filters/f_decoder_wrapper.c
++++ b/filters/f_decoder_wrapper.c
+@@ -543,6 +543,15 @@
+     return res;
+ }
+ 
++// Drops the decoded frames waiting for the player, without waiting for the
++// decoder thread (which may need their buffers back to get anywhere).
++void mp_decoder_wrapper_drop_queue(struct mp_decoder_wrapper *d)
++{
++    struct priv *p = d->f->priv;
++    if (p->queue)
++        mp_async_queue_reset(p->queue);
++}
++
+ void mp_decoder_wrapper_set_play_dir(struct mp_decoder_wrapper *d, int dir)
+ {
+     struct priv *p = d->f->priv;
+--- a/filters/f_decoder_wrapper.h
++++ b/filters/f_decoder_wrapper.h
+@@ -59,6 +59,7 @@
+ bool mp_decoder_wrapper_get_pts_reset(struct mp_decoder_wrapper *d);
+ 
+ void mp_decoder_wrapper_set_play_dir(struct mp_decoder_wrapper *d, int dir);
++void mp_decoder_wrapper_drop_queue(struct mp_decoder_wrapper *d);
+ 
+ struct mp_decoder_list *video_decoder_list(void);
+ struct mp_decoder_list *audio_decoder_list(void);

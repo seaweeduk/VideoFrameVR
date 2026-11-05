@@ -21,7 +21,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <sstream>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -31,7 +33,11 @@ constexpr uint64_t kSizeReply = uint64_t(1) << 33;
 constexpr uint64_t kTracksReply = uint64_t(1) << 34;
 constexpr uint64_t kSleepVideoReply = uint64_t(1) << 35;
 constexpr uint64_t kWakeVideoReply = uint64_t(1) << 36;
+constexpr uint64_t kLoadReply = uint64_t(1) << 37;
 constexpr uint64_t kPixelPathReply = 2;
+constexpr uint64_t kCommandReply = 3;
+// How long the last file may take to close before a switch counts as failed.
+constexpr double kCloseTimeout = 10.0;
 
 void setProperty(mpv_handle* mpv, const char* name, const std::string& value) {
   const char* text = value.c_str();
@@ -374,28 +380,21 @@ void VideoPlayer::load(const std::string& path, double start) {
       (wasAsleep && sleepPaused_ ? "yes" : "no");
   const std::string url = remote::mpvUrl(path);
   const char* resumed[] = {"loadfile", url.c_str(), "replace", "-1", startOption.c_str(), nullptr};
-  countedEntry_ = loadFile(resumed);
-  if (countedEntry_ < 0) {
+  loadFile(resumed);
+}
+
+void VideoPlayer::loadFile(const char** cmd) {
+  countedEntry_ = -1;
+  loadReplyPending_ = true;
+  loadStarted_ = closeTimedOut_ = false;
+  loadSentAt_ = nowSeconds();
+  const int error = mpv_command_async(mpv_, kLoadReply + loadRequest_, cmd);
+  if (error < 0) {
+    std::fprintf(stderr, "Playback failed: %s\n", mpv_error_string(error));
+    loadReplyPending_ = false;
     failed_ = true;
     loading_ = false;
   }
-}
-
-int64_t VideoPlayer::loadFile(const char** cmd) {
-  mpv_node result;
-  int64_t id = 0;
-  const int error = mpv_command_ret(mpv_, cmd, &result);
-  if (error < 0) {
-    std::fprintf(stderr, "Playback failed: %s\n", mpv_error_string(error));
-    return -1;
-  }
-  if (result.format == MPV_FORMAT_NODE_MAP)
-    for (int i = 0; i < result.u.list->num; ++i)
-      if (std::strcmp(result.u.list->keys[i], "playlist_entry_id") == 0 &&
-          result.u.list->values[i].format == MPV_FORMAT_INT64)
-        id = result.u.list->values[i].u.int64;
-  mpv_free_node_contents(&result);
-  return id;
 }
 
 bool VideoPlayer::takeOpened() {
@@ -423,11 +422,14 @@ void VideoPlayer::stop() {
   ++sizeRequest_;
   ++loadRequest_;
   const char* cmd[] = {"stop", nullptr};
-  mpv_command(mpv_, cmd);
+  mpv_command_async(mpv_, 0, cmd);
   path_.clear();
   loading_ = false;
   failed_ = false;
   countedEntry_ = -1;
+  loadReplyPending_ = false;
+  loadSentAt_ = 0;
+  closeTimedOut_ = false;
   opened_ = false;
   current_ = positionKnown_ = false;
   resetSeeks();
@@ -447,7 +449,15 @@ void VideoPlayer::command(const char* cmd) {
       return;
     }
   }
-  const int err = mpv_command_string(mpv_, cmd);
+  // Words separated by spaces, as all callers write them: mpv_command_string()
+  // has no asynchronous form.
+  std::vector<std::string> words;
+  std::istringstream in(cmd);
+  for (std::string word; in >> word;) words.push_back(word);
+  std::vector<const char*> args;
+  for (const std::string& word : words) args.push_back(word.c_str());
+  args.push_back(nullptr);
+  const int err = mpv_command_async(mpv_, kCommandReply, args.data());
   if (err < 0) std::fprintf(stderr, "mpv command '%s' failed: %s\n", cmd, mpv_error_string(err));
 }
 
@@ -697,13 +707,13 @@ void VideoPlayer::addSubtitle(const std::string& path) {
 void VideoPlayer::setSubtitlesInFrame(bool visible) {
   if (visible == subtitlesInFrame_) return;
   subtitlesInFrame_ = visible;
-  mpv_set_property_string(mpv_, "sub-visibility", visible ? "yes" : "no");
+  setProperty(mpv_, "sub-visibility", visible ? "yes" : "no");
 }
 
 void VideoPlayer::setSubtitleStyle(double scale, int raise) {
-  mpv_set_property_string(mpv_, "sub-scale", std::to_string(scale).c_str());
+  setProperty(mpv_, "sub-scale", std::to_string(scale));
   // sub-pos: 100 = the bottom edge, smaller = higher up.
-  mpv_set_property_string(mpv_, "sub-pos", std::to_string(std::clamp(100 - raise, 0, 150)).c_str());
+  setProperty(mpv_, "sub-pos", std::to_string(std::clamp(100 - raise, 0, 150)));
 }
 
 void VideoPlayer::setPicture(int brightness, int contrast, int saturation) {
@@ -768,6 +778,17 @@ void VideoPlayer::pollEvents() {
   }
   // Files without video never deliver a first frame; stop waiting for one.
   if (loading_ && fileLoaded_ && nowSeconds() - loadedAt_ > 10.0) loading_ = false;
+  // Closing the last file can wait for its decoder, which on the Frame may
+  // need the frames this app was showing back first: they go back as soon as
+  // the GPU is done with them, not only with the next file's first frame.
+  if (loading_ && !loadStarted_ && loadSentAt_ > 0) returnFrames();
+  // The new file starts once the last one has closed: not at all if closing
+  // it got stuck, which would otherwise load forever.
+  if (loading_ && !loadStarted_ && loadSentAt_ > 0 && nowSeconds() - loadSentAt_ > kCloseTimeout) {
+    std::fprintf(stderr, "Playback failed: the last video did not close\n");
+    closeTimedOut_ = failed_ = true;
+    loading_ = false;
+  }
   while (true) {
     mpv_event* ev = mpv_wait_event(mpv_, 0);
     if (ev->event_id == MPV_EVENT_NONE) break;
@@ -779,6 +800,13 @@ void VideoPlayer::pollEvents() {
       }
       case MPV_EVENT_START_FILE:
         startedEntry_ = static_cast<mpv_event_start_file*>(ev->data)->playlist_entry_id;
+        if (countedEntry_ > 0 && startedEntry_ == countedEntry_) {
+          loadStarted_ = true;
+          if (closeTimedOut_) {  // late, but it closed after all
+            closeTimedOut_ = failed_ = false;
+            loading_ = true;
+          }
+        }
         ++counts_.restarts;
         counts_.seek = false;
         if (timing_) {
@@ -790,9 +818,10 @@ void VideoPlayer::pollEvents() {
         }
         break;
       case MPV_EVENT_FILE_LOADED:
+        if (loadReplyPending_ || (countedEntry_ > 0 && countedEntry_ != startedEntry_)) break;
         fileLoaded_ = true;
         loadedAt_ = nowSeconds();
-        if (countedEntry_ == 0 || (countedEntry_ > 0 && countedEntry_ == startedEntry_)) {
+        if (countedEntry_ > 0) {
           countedEntry_ = -1;
           opened_ = current_ = true;
           mpv_get_property_async(mpv_, kTracksReply + loadRequest_, "track-list", MPV_FORMAT_NODE);
@@ -930,8 +959,8 @@ void VideoPlayer::pollEvents() {
       }
       case MPV_EVENT_END_FILE: {
         auto* end = static_cast<mpv_event_end_file*>(ev->data);
-        if (end->reason == MPV_END_FILE_REASON_ERROR &&
-            (countedEntry_ == 0 || end->playlist_entry_id == countedEntry_ ||
+        if (end->reason == MPV_END_FILE_REASON_ERROR && !loadReplyPending_ &&
+            ((countedEntry_ > 0 && end->playlist_entry_id == countedEntry_) ||
              (current_ && end->playlist_entry_id == startedEntry_))) {
           std::fprintf(stderr, "Playback failed: %s\n", mpv_error_string(end->error));
           loading_ = false;
@@ -966,6 +995,23 @@ void VideoPlayer::pollEvents() {
         if (ev->reply_userdata == kPixelPathReply && ev->error >= 0) {
           const auto& result = static_cast<mpv_event_command*>(ev->data)->result;
           if (result.format == MPV_FORMAT_STRING) std::printf("%s\n", result.u.string);
+        }
+        if (ev->reply_userdata == kCommandReply && ev->error < 0)
+          std::fprintf(stderr, "mpv command failed: %s\n", mpv_error_string(ev->error));
+        if (ev->reply_userdata == kLoadReply + loadRequest_ && loadReplyPending_) {
+          loadReplyPending_ = false;
+          if (ev->error < 0) {
+            std::fprintf(stderr, "Playback failed: %s\n", mpv_error_string(ev->error));
+            failed_ = true;
+            loading_ = false;
+          } else {
+            const auto& result = static_cast<mpv_event_command*>(ev->data)->result;
+            if (result.format == MPV_FORMAT_NODE_MAP)
+              for (int i = 0; i < result.u.list->num; ++i)
+                if (std::strcmp(result.u.list->keys[i], "playlist_entry_id") == 0 &&
+                    result.u.list->values[i].format == MPV_FORMAT_INT64)
+                  countedEntry_ = result.u.list->values[i].u.int64;
+          }
         }
         if (ev->reply_userdata == kSeekReply + seekCount_ && seekStage_ == SeekStage::Sent) {
           seekStage_ = ev->error < 0 ? SeekStage::None : SeekStage::Accepted;
@@ -1103,8 +1149,7 @@ void VideoPlayer::setMipmaps(bool enabled) {
 void VideoPlayer::setPipelined(bool enabled, double frameSeconds) {
   pipelined_ = enabled;
   // Each frame is seen one headset frame later; the sound waits as long.
-  const std::string delay = std::to_string(enabled ? frameSeconds : 0.0);
-  mpv_set_property_string(mpv_, "audio-delay", delay.c_str());
+  setProperty(mpv_, "audio-delay", std::to_string(enabled ? frameSeconds : 0.0));
 }
 
 // Where the frame's pixels come from and how they are stored, once per new size.

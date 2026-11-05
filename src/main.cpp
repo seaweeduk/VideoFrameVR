@@ -60,10 +60,12 @@
 #include <GLFW/glfw3.h>
 #include <malloc.h>
 #include <signal.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -71,7 +73,9 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <thread>
 #include <vector>
@@ -495,6 +499,54 @@ WindowPtr createMirrorWindow() {
   return WindowPtr(glfwCreateWindow(1280, 720, kAppTitle, nullptr, nullptr), glfwDestroyWindow);
 }
 
+// Quitting waits for mpv to close its file, which a hardware decoder stuck
+// in the kernel can keep from ever finishing. Armed as the player's teardown
+// starts, once the library has written what it holds; if the teardown hasn't
+// finished in kQuitLimit, the app exits without it, keeping what the Stash
+// outbox and the config queue still had to write.
+constexpr double kQuitLimit = 5.0;
+
+struct QuitWatch {
+  std::mutex mutex;
+  std::condition_variable wake;
+  bool done = false;
+};
+std::shared_ptr<QuitWatch> quitWatch;
+
+void armQuitWatchdog() {
+  quitWatch = std::make_shared<QuitWatch>();
+  try {
+    std::thread([watch = quitWatch] {
+      {
+        std::unique_lock<std::mutex> lock(watch->mutex);
+        if (watch->wake.wait_for(lock, std::chrono::duration<double>(kQuitLimit),
+                                 [&] { return watch->done; }))
+          return;
+      }
+      Stash::finishStopping();  // a sync under way gives up within about a second
+      drainConfigWork(kQuitLimit);
+      std::fprintf(stderr, "mpv did not shut down in %.0f s: exiting without it\n", kQuitLimit);
+      endRunLog();
+      _exit(1);
+    }).detach();
+  } catch (const std::system_error&) {
+  }
+}
+
+void disarmQuitWatchdog() {
+  if (!quitWatch) return;
+  {
+    std::lock_guard<std::mutex> lock(quitWatch->mutex);
+    quitWatch->done = true;
+  }
+  quitWatch->wake.notify_one();
+}
+
+// Destroyed just before the player: everything declared after it is gone.
+struct QuitWatchdogArm {
+  ~QuitWatchdogArm() { armQuitWatchdog(); }
+};
+
 int run(GLFWwindow* window, const Options& opts) {
   WindowPtr mirrorWindow(nullptr, glfwDestroyWindow);
   GpuRequirements requirements;
@@ -638,6 +690,7 @@ int run(GLFWwindow* window, const Options& opts) {
   DirectVideo direct;  // before the player, which hands it frames
   if (requirements.directVideo && direct.init(gpu)) renderer.setDirectVideo(&direct);
   VideoPlayer player;
+  QuitWatchdogArm quitWatchdogArm;
   if (!player.init(opts.hwdec, interop, opts.timing, opts.decoderQueue)) return 1;
   player.command(("set volume " + std::to_string(settings.volume)).c_str());
   if (direct.available()) player.setDirectVideo(&direct);
@@ -3452,6 +3505,7 @@ int main(int argc, char** argv) {
 
   catchQuitSignals();
   const int rc = run(window, opts);
+  disarmQuitWatchdog();
   Stash::finishStopping();  // a sync under way gives up within about a second
 
   glfwDestroyWindow(window);

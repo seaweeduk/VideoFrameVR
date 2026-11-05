@@ -238,3 +238,10 @@ void queueConfigWork(std::function<void()> work) {
   }
   writer.wake.notify_one();
 }
+
+bool drainConfigWork(double seconds) {
+  auto done = std::make_shared<std::promise<void>>();
+  auto finished = done->get_future();
+  queueConfigWork([done] { done->set_value(); });
+  return finished.wait_for(std::chrono::duration<double>(seconds)) == std::future_status::ready;
+}
