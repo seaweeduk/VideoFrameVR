@@ -157,8 +157,11 @@ bool decodeFrame(const std::string& path, AVBufferRef* gpu, Size size,
       codec->thread_count = 1;
     }
     if (avcodec_open2(codec, decoder, nullptr) < 0) break;
+    // Timestamps count from the file's start time: hours in on a Blu-ray
+    // disc's transport streams.
+    const int64_t start = format->start_time != AV_NOPTS_VALUE ? format->start_time : 0;
     if (!isPhotoFile(path) && format->duration > 0)
-      av_seek_frame(format, -1, format->duration / 5, AVSEEK_FLAG_BACKWARD);
+      av_seek_frame(format, -1, start + format->duration / 5, AVSEEK_FLAG_BACKWARD);
 
     bool got = false, ended = false;
     for (int reads = 0; !got && reads < 3000 && !Interrupt::check(&interrupt); ++reads) {
