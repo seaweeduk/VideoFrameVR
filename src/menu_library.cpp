@@ -68,7 +68,7 @@ bool Menu::libraryCatalogChanged() const {
 // it plays from (stashSceneLocation()), added when it was added to Stash. A
 // file in the pins is a scene's by its path, else by the oshash the library
 // knows for it, else by its name and size (the same file through a mount
-// and SMB, or with Stash's folder not mapped to it).
+// and SMB or SFTP, or with Stash's folder not mapped to it).
 void Menu::addLibraryScenes() {
   const auto& catalog = stashCatalog();
   libraryCatalog_ = catalog;

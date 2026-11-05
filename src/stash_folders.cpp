@@ -1,6 +1,7 @@
 #include "stash_folders.h"
 
-#include "smb.h"
+#include "remote.h"
+#include "sftp.h"
 #include "stash_settings.h"
 
 #include <algorithm>
@@ -80,9 +81,9 @@ struct Search {
     if (stopped()) return {};
     ++stats;
     Info info;
-    if (smb::isSmb(path)) {
-      smb::Entry entry;
-      if (smb::stat(path, entry) == smb::Status::Ok)
+    if (remote::isRemote(path)) {
+      remote::Entry entry;
+      if (remote::stat(path, entry) == remote::Status::Ok)
         info = {!entry.folder, entry.folder, entry.size};
     } else {
       struct stat st;
@@ -103,10 +104,10 @@ struct Search {
       return none;
     }
     ++listings;
-    if (smb::isSmb(folder)) {
-      std::vector<smb::Entry> entries;
-      if (smb::list(folder, entries) != smb::Status::Ok) return out;
-      const size_t limit = folder.find('/', 6) == std::string::npos ? kRoots : kSubfolders;
+    if (remote::isRemote(folder)) {
+      std::vector<remote::Entry> entries;
+      if (remote::list(folder, entries) != remote::Status::Ok) return out;
+      const size_t limit = remote::parent(folder).empty() ? kRoots : kSubfolders;
       for (const auto& entry : entries) {
         if (stopped()) break;
         if (entry.name == "." || entry.name == "..") continue;
@@ -136,10 +137,15 @@ struct Search {
 
   std::vector<std::string> roots() {
     std::vector<std::string> roots;
-    for (const auto& server : smb::servers()) {
+    for (const auto& server : remote::servers()) {
       if (stopped() || roots.size() >= kRoots) break;
-      const std::string host = "smb://" + server.host;
-      for (const auto& share : list(host).folders) {
+      if (server.root.rfind("sftp://", 0) == 0) {  // its "/" (Stash's own computer) and the account's home
+        roots.push_back(server.root);
+        std::string home;
+        if (sftp::home(server.root, home) == remote::Status::Ok && home != server.root) roots.push_back(home);
+        continue;
+      }
+      for (const auto& share : list(server.root).folders) {
         if (roots.size() >= kRoots) break;
         if (share.back() != '$') roots.push_back(share);
       }

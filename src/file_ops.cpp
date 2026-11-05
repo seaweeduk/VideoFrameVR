@@ -1,6 +1,6 @@
 #include "file_ops.h"
 
-#include "smb.h"
+#include "remote.h"
 
 #include <cerrno>
 #include <cstring>
@@ -23,14 +23,14 @@ DeleteStatus statusOf(int error) {
   }
 }
 
-DeleteStatus statusOf(smb::Status status) {
+DeleteStatus statusOf(remote::Status status) {
   switch (status) {
-    case smb::Status::Ok: return DeleteStatus::Ok;
-    case smb::Status::Missing: return DeleteStatus::Gone;
-    case smb::Status::Denied:
-    case smb::Status::NeedsLogin: return DeleteStatus::Denied;
-    case smb::Status::InUse: return DeleteStatus::InUse;
-    case smb::Status::Changed: return DeleteStatus::Changed;
+    case remote::Status::Ok: return DeleteStatus::Ok;
+    case remote::Status::Missing: return DeleteStatus::Gone;
+    case remote::Status::Denied:
+    case remote::Status::NeedsLogin: return DeleteStatus::Denied;
+    case remote::Status::InUse: return DeleteStatus::InUse;
+    case remote::Status::Changed: return DeleteStatus::Changed;
     default: return DeleteStatus::Offline;
   }
 }
@@ -38,10 +38,10 @@ DeleteStatus statusOf(smb::Status status) {
 }  // namespace
 
 DeleteStatus stampOf(const std::string& location, FileStamp& stamp) {
-  if (smb::isSmb(location)) {
-    smb::Entry entry;
-    const smb::Status status = smb::stat(location, entry);
-    if (status != smb::Status::Ok) return statusOf(status);
+  if (remote::isRemote(location)) {
+    remote::Entry entry;
+    const remote::Status status = remote::stat(location, entry);
+    if (status != remote::Status::Ok) return statusOf(status);
     if (entry.folder) return DeleteStatus::NotAFile;
     stamp = {entry.size, entry.modified, 0};
     return DeleteStatus::Ok;
@@ -54,8 +54,8 @@ DeleteStatus stampOf(const std::string& location, FileStamp& stamp) {
 }
 
 DeleteStatus removeFile(const std::string& location, const FileStamp& expected, std::string& error) {
-  if (smb::isSmb(location))
-    return statusOf(smb::remove(location, expected.size, expected.modified));
+  if (remote::isRemote(location))
+    return statusOf(remote::remove(location, expected.size, expected.modified));
   FileStamp now;
   const DeleteStatus status = stampOf(location, now);
   if (status != DeleteStatus::Ok) return status;

@@ -4,7 +4,7 @@
 #include <list>
 #include <vector>
 
-// Playback's read-ahead over the network (SMB, Stash's stream): up to three
+// Playback's read-ahead over the network (SMB, SFTP, Stash's stream): up to three
 // windows per stream, each reading two blocks ahead of where it was last read
 // and keeping the block behind it. A file whose audio is stored apart from its
 // video is read from two places in turn, about once a frame, each time again

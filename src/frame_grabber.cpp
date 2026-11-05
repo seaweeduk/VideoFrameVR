@@ -1,5 +1,5 @@
 #include "frame_grabber.h"
-#include "smb.h"
+#include "remote.h"
 #include "stash_stream.h"
 
 #include <mpv/client.h>
@@ -71,7 +71,7 @@ bool FrameGrabber::init(GlInterop& interop, const std::string& hwdec, int maxWid
     std::fprintf(stderr, "Frame grabber: mpv_initialize failed\n");
     return false;
   }
-  smb::addTo(mpv_, true);
+  remote::addTo(mpv_, true);
   addStashStreams(mpv_, true);
   // Observed rather than read: reading waits while mpv opens a decoder
   // (about 0.2 s), and this runs on the thread that draws the headset's frames.
@@ -103,7 +103,7 @@ void FrameGrabber::open(const std::string& path, const std::string& start) {
   hasFrame_ = false;
   failed_ = false;
   const std::string options = "start=" + start;
-  const std::string url = smb::mpvUrl(path);
+  const std::string url = remote::mpvUrl(path);
   const char* cmd[] = {"loadfile", url.c_str(), "replace", "-1", options.c_str(), nullptr};
   mpv_command(mpv_, cmd);  // returns at once; mpv opens the file in its own thread
 }

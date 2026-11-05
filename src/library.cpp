@@ -1,5 +1,5 @@
 #include "library.h"
-#include "smb.h"
+#include "remote.h"
 
 #include "file_util.h"
 #include "library_schema.h"  // kLibrarySchema, made from library_schema.sql at build time
@@ -41,7 +41,7 @@ constexpr int64_t kDay = 24 * 60 * 60;
 int64_t now() { return static_cast<int64_t>(std::time(nullptr)); }
 
 bool isStream(const std::string& location) {
-  return location.find("://") != std::string::npos && !smb::isSmb(location);
+  return location.find("://") != std::string::npos && !remote::isRemote(location);
 }
 
 bool endsWith(const std::string& s, const char* tail) {
@@ -57,7 +57,7 @@ const fs::path workingDirectory = [] {
 }();
 
 std::string normalPath(const std::string& path) {
-  if (path.empty() || smb::isSmb(path)) return path;
+  if (path.empty() || remote::isRemote(path)) return path;
   if (path[0] == '/' && path.find("//") == std::string::npos &&
       path.find("/./") == std::string::npos && path.find("/../") == std::string::npos &&
       (path.size() == 1 || path.back() != '/') && !endsWith(path, "/.") && !endsWith(path, "/.."))
@@ -393,7 +393,7 @@ struct Library::Writer {
       text(1, op.file.path);
       if (op.kind == Op::PutFile) {
         const File& f = op.file.file;
-        folder = smb::isSmb(op.file.path) ? smb::parent(op.file.path)
+        folder = remote::isRemote(op.file.path) ? remote::parent(op.file.path)
                                         : fs::path(op.file.path).parent_path().string();
         text(2, folder);
         integer(3, f.videoId, false);
@@ -484,27 +484,27 @@ struct Library::Checker {
         from.pop_front();
       }
       Result result;
-      auto metadata = [](const std::string& path, smb::Entry& entry) {
-        if (smb::isSmb(path)) return smb::stat(path, entry);
+      auto metadata = [](const std::string& path, remote::Entry& entry) {
+        if (remote::isRemote(path)) return remote::stat(path, entry);
         struct stat st;
         if (::stat(path.c_str(), &st) == 0) {
           entry.size = st.st_size;
           entry.modified = st.st_mtime;
-          return smb::Status::Ok;
+          return remote::Status::Ok;
         }
-        return errno == ENOENT || errno == ENOTDIR ? smb::Status::Missing : smb::Status::Offline;
+        return errno == ENOENT || errno == ENOTDIR ? remote::Status::Missing : remote::Status::Offline;
       };
-      smb::Entry st;
+      remote::Entry st;
       switch (job.kind) {
         case Job::Resolve:
-          if (!job.oshash.empty() && metadata(job.path, st) == smb::Status::Ok &&
+          if (!job.oshash.empty() && metadata(job.path, st) == remote::Status::Ok &&
               st.size == job.size && st.modified == job.mtime)
             result.print = {job.oshash, job.size, job.mtime};
           else
             result.print = fingerprintFile(job.path);
           break;
         case Job::Verify:
-          if (metadata(job.path, st) != smb::Status::Ok) break;
+          if (metadata(job.path, st) != remote::Status::Ok) break;
           if (st.size != job.size || st.modified != job.mtime)
             result.print = fingerprintFile(job.path);
           else
@@ -513,7 +513,7 @@ struct Library::Checker {
         case Job::Move:
         case Job::Prune:
           for (const std::string& path : job.candidates)
-            if (metadata(path, st) == smb::Status::Missing)
+            if (metadata(path, st) == remote::Status::Missing)
               result.gone.push_back(path);
           // A moved file, or a copy of a recorded one: the size alone can't
           // tell, the fingerprint does.

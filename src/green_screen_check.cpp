@@ -1,6 +1,6 @@
 #include "green_screen_check.h"
 
-#include "smb_avio.h"
+#include "remote_avio.h"
 #include "thumbnailer.h"  // frameScaler
 
 extern "C" {
@@ -182,7 +182,7 @@ bool hasGreenScreen(const std::string& path, StereoLayout stereo, Interrupt& int
   AVFormatContext* format = avformat_alloc_context();
   if (!format) return false;
   format->interrupt_callback = {Interrupt::check, &interrupt};
-  SmbAvio remote;
+  RemoteAvio remote;
   if (!remote.attach(format, path)) {
     avformat_free_context(format);
     return false;

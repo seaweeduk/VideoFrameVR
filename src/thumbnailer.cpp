@@ -3,7 +3,7 @@
 #include "file_util.h"
 #include "platform.h"
 #include "settings.h"  // cacheDir
-#include "smb_avio.h"
+#include "remote_avio.h"
 #include "stash_images.h"  // encodeJpeg, decodeJpeg
 #include "stash_stream.h"
 #include "video_format.h"
@@ -127,7 +127,7 @@ bool decodeFrame(const std::string& path, AVBufferRef* gpu, Size size,
   AVFormatContext* format = avformat_alloc_context();
   if (!format) return false;
   format->interrupt_callback = {Interrupt::check, &interrupt};
-  SmbAvio remote;
+  RemoteAvio remote;
   if (!remote.attach(format, path)) {
     avformat_free_context(format);
     return false;
@@ -512,9 +512,9 @@ void Thumbnailer::work(const std::shared_ptr<Worker>& worker) {
     struct stat file{};
     bool exists;
     std::string key = path;  // of its disk cache's name
-    if (smb::isSmb(path)) {
-      smb::Entry entry;
-      exists = smb::stat(path, entry) == smb::Status::Ok;
+    if (remote::isRemote(path)) {
+      remote::Entry entry;
+      exists = remote::stat(path, entry) == remote::Status::Ok;
       file.st_size = entry.size;
       file.st_mtim.tv_sec = entry.modified;
     } else if (isStashScene(path)) {

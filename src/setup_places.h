@@ -1,7 +1,7 @@
 #pragma once
 
 #include "removable_drives.h"
-#include "smb.h"
+#include "remote.h"
 
 #include <memory>
 #include <mutex>
@@ -23,9 +23,9 @@ std::vector<RemovableDrives::Drive> findDrives();
 // One folder as the tree shows it, from a single listing: its subfolders
 // (lost+found, trash and recycle bins left out, and /proc, /sys and /dev;
 // hidden ones after the others), and how many videos are directly in it. Nothing deeper is read
-// and no file is opened. smb://host lists the host's shares.
+// and no file is opened. smb://host lists the host's shares (remote.h).
 struct Folder {
-  smb::Status status = smb::Status::Ok;
+  remote::Status status = remote::Status::Ok;
   struct Sub {
     std::string name;
     // Whether it has subfolders, where its link count tells without

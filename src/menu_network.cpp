@@ -2,7 +2,7 @@
 
 #include "menu_setup.h"
 
-#include "smb.h"
+#include "remote.h"
 
 #include <algorithm>
 #include <thread>
@@ -10,7 +10,7 @@
 // The browser's Network page (SMB servers found on the network and those
 // signed in to) and the form that signs in to one, adds one by its name or
 // address, or opens a share a server doesn't list. The shares and folders
-// themselves are the file browser's (smb.h locators).
+// themselves are the file browser's (remote.h locators).
 
 namespace {
 
@@ -37,22 +37,22 @@ void Menu::showNetwork() {
 
 // The servers to list: those signed in to, then those found that aren't,
 // by name.
-std::vector<smb::Server> Menu::networkServers() const {
-  std::vector<smb::Server> list = smb::servers();
+std::vector<remote::Server> Menu::networkServers() const {
+  std::vector<remote::Server> list = remote::servers();
   for (const SmbDiscovery::Server& found : discovery_.servers()) {
-    const std::string host = lower(found.address);
-    if (std::none_of(list.begin(), list.end(), [&](const smb::Server& s) { return s.host == host; }))
-      list.push_back({host, found.name});
+    const std::string root = remote::root("smb://" + found.address);
+    if (std::none_of(list.begin(), list.end(), [&](const remote::Server& s) { return s.root == root; }))
+      list.push_back({root, found.name});
   }
-  std::sort(list.begin(), list.end(), [](const smb::Server& a, const smb::Server& b) {
+  std::sort(list.begin(), list.end(), [](const remote::Server& a, const remote::Server& b) {
     return lower(a.name) < lower(b.name);
   });
   return list;
 }
 
-void Menu::openServer(const smb::Server& server) {
+void Menu::openServer(const remote::Server& server) {
   fileKind_ = FileKind::Video;
-  openDirectory("smb://" + server.host);
+  openDirectory(server.root);
   showPage(Page::Files);
 }
 
@@ -88,17 +88,17 @@ void Menu::layoutNetworkPage() {
     return;
   }
   std::vector<ListItem> items;
-  for (const smb::Server& server : networkServers()) {
+  for (const remote::Server& server : networkServers()) {
     ListItem item{server.name, false, [this, server] {
                     openServer(server);
                     return MenuCommand{};
                   }};
     item.folder = true;
-    smb::Login login;
+    remote::Login login;
     bool remembered = false;
-    if (smb::knownLogin(server.host, login, remembered))
-      item.trash = [this, host = server.host] {
-        smb::forget(host);
+    if (remote::knownLogin(server.root, login, remembered))
+      item.trash = [this, root = server.root] {
+        remote::forget(root);
         dirty_ = true;
         return MenuCommand{};
       };
@@ -119,14 +119,14 @@ const char* Menu::networkState() const {
 }
 
 // Opens the form; on the Files page it belongs to the server being browsed.
-void Menu::openSmbForm(SmbForm::Kind kind, const std::string& host) {
+void Menu::openSmbForm(SmbForm::Kind kind, const std::string& root) {
   const NetworkStrings& t = text().network;
   smbForm_ = {};
   smbForm_.kind = kind;
-  smbForm_.host = host;
-  smb::Login login;
+  smbForm_.root = root;
+  remote::Login login;
   bool remembered = true;
-  const bool known = kind == SmbForm::Kind::SignIn && smb::knownLogin(host, login, remembered);
+  const bool known = kind == SmbForm::Kind::SignIn && remote::knownLogin(root, login, remembered);
   smbForm_.text[1] = login.user;
   smbForm_.remember = remembered;
   // A login known but refused: the password has changed.
@@ -231,7 +231,7 @@ void Menu::layoutSmbForm(double top) {
   std::string title = share ? t.shareTitle : t.addTitle;
   if (smbForm_.kind == SmbForm::Kind::SignIn) {
     char line[256];
-    std::snprintf(line, sizeof(line), t.signInTitle, serverName(smbForm_.host).c_str());
+    std::snprintf(line, sizeof(line), t.signInTitle, serverName(smbForm_.root).c_str());
     title = line;
   }
   addGroup(x0, top, w, y - top, title);
@@ -261,31 +261,32 @@ MenuCommand Menu::submitSmbForm() {
     std::string name = smbForm_.text[0];
     name.erase(0, name.find_first_not_of("/\\ "));
     if (name.empty()) return {};
-    const std::string host = smbForm_.host;
+    const std::string root = smbForm_.root;
     smbForm_ = {};
     editing_ = false;
-    openDirectory("smb://" + host + "/" + name);
+    openDirectory(root + "/" + name);
     return {};
   }
   // "smb://nas/media", "\\nas\media" and "nas/media" all name nas, then
   // open the share (and folder) after it.
-  std::string server = smbForm_.kind == SmbForm::Kind::AddServer ? smbForm_.text[0] : smbForm_.host;
+  std::string server = smbForm_.kind == SmbForm::Kind::AddServer ? smbForm_.text[0] : smbForm_.root;
   std::replace(server.begin(), server.end(), '\\', '/');
   if (server.rfind("smb://", 0) == 0) server.erase(0, 6);
   server.erase(0, server.find_first_not_of("/ "));
   const size_t slash = server.find('/');
-  smbForm_.host = lower(server.substr(0, slash));
+  const std::string host = lower(server.substr(0, slash));
   smbForm_.then = slash == std::string::npos ? "" : server.substr(slash + 1);
   while (!smbForm_.then.empty() && smbForm_.then.back() == '/') smbForm_.then.pop_back();
-  if (smbForm_.host.empty()) return {};
+  if (host.empty()) return {};
+  smbForm_.root = remote::root("smb://" + host);
   auto result = std::make_shared<std::atomic<int>>(-1);
   smbForm_.signing = result;
   smbForm_.error.clear();
   // --first-run's setup saves it only when it ends (SetupPages::signedIn()).
   const bool remember = smbForm_.remember && !(setup_ && setup_->holdWrites);
-  std::thread([result, host = smbForm_.host, login = smb::Login{smbForm_.text[1], smbForm_.text[2]},
+  std::thread([result, root = smbForm_.root, login = remote::Login{smbForm_.text[1], smbForm_.text[2]},
                remember] {
-    *result = static_cast<int>(smb::signIn(host, login, remember));
+    *result = static_cast<int>(remote::signIn(root, login, remember));
   }).detach();
   dirty_ = true;
   return {};
@@ -296,13 +297,13 @@ MenuCommand Menu::submitSmbForm() {
 void Menu::updateNetwork() {
   if (discovery_.poll() && (page_ == Page::Network || setup_)) dirty_ = true;
   if (smbForm_.signing && *smbForm_.signing >= 0) {
-    const auto status = static_cast<smb::Status>(smbForm_.signing->load());
+    const auto status = static_cast<remote::Status>(smbForm_.signing->load());
     const NetworkStrings& t = text().network;
     smbForm_.signing.reset();
     dirty_ = true;
-    if (status == smb::Status::Ok) {
-      const std::string where = "smb://" + smbForm_.host + (smbForm_.then.empty() ? "" : "/" + smbForm_.then);
-      smb::setName(smbForm_.host, serverName(smbForm_.host));
+    if (status == remote::Status::Ok) {
+      const std::string where = smbForm_.root + (smbForm_.then.empty() ? "" : "/" + smbForm_.then);
+      remote::setName(smbForm_.root, serverName(smbForm_.root));
       if (setup_) {
         SetupPages::signedIn(*this);
         return;
@@ -317,8 +318,8 @@ void Menu::updateNetwork() {
       showPage(Page::Files);
       return;
     }
-    smbForm_.error = status == smb::Status::Offline ? t.offline
-                     : status == smb::Status::Denied ? t.denied
+    smbForm_.error = status == remote::Status::Offline ? t.offline
+                     : status == remote::Status::Denied ? t.denied
                                                      : t.wrongLogin;
     if (setup_) SetupPages::signInFailed(*this);
   }
@@ -327,27 +328,28 @@ void Menu::updateNetwork() {
 // The folder just read: an SMB server that wants a login gets the form, one
 // that doesn't list its shares the share's field.
 void Menu::smbFolderRead() {
-  if (page_ != Page::Files || !smb::isSmb(directory()) || smbForm_.kind != SmbForm::Kind::None) return;
-  const std::string host = smb::host(directory());
-  if (listing_.status() == smb::Status::NeedsLogin)
-    openSmbForm(SmbForm::Kind::SignIn, host);
-  else if (listing_.status() == smb::Status::Denied && smb::parent(directory()).empty())
-    openSmbForm(SmbForm::Kind::Share, host);
+  if (page_ != Page::Files || directory().rfind("smb://", 0) != 0 || smbForm_.kind != SmbForm::Kind::None)
+    return;
+  const std::string root = remote::root(directory());
+  if (listing_.status() == remote::Status::NeedsLogin)
+    openSmbForm(SmbForm::Kind::SignIn, root);
+  else if (listing_.status() == remote::Status::Denied && remote::parent(directory()).empty())
+    openSmbForm(SmbForm::Kind::Share, root);
 }
 
 // Its name as found on the network, else as signed in to (or typed).
-std::string Menu::serverName(const std::string& host) const {
+std::string Menu::serverName(const std::string& root) const {
   for (const SmbDiscovery::Server& found : discovery_.servers())
-    if (lower(found.address) == host) return found.name;
-  for (const smb::Server& s : smb::servers())
-    if (s.host == host) return s.name;
-  return host;
+    if (remote::root("smb://" + found.address) == root) return found.name;
+  for (const remote::Server& s : remote::servers())
+    if (s.root == root) return s.name;
+  return remote::host(root);
 }
 
 // A locator as the browser shows it: the server's name, then the share and
 // folders ("NAS/media/films").
 std::string Menu::shownLocation(const std::string& dir) const {
-  if (!smb::isSmb(dir)) return dir;
-  const std::string host = smb::host(dir);
-  return serverName(host) + dir.substr(6 + host.size());
+  if (!remote::isRemote(dir)) return dir;
+  const size_t path = std::min(dir.find('/', dir.find("://") + 3), dir.size());
+  return serverName(remote::root(dir)) + dir.substr(path);
 }

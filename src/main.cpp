@@ -40,7 +40,7 @@
 #include "settings.h"
 #include "setup_intro.h"
 #include "setup_placement.h"
-#include "smb.h"
+#include "remote.h"
 #include "stash.h"
 #include "stash_delete.h"
 #include "stash_stream.h"
@@ -379,7 +379,7 @@ const char* deleteLogged(DeleteStatus status) {
 
 // A link: a scene from Stash plays as its file does.
 bool isStream(const std::string& location) {
-  return location.find("://") != std::string::npos && !smb::isSmb(location) &&
+  return location.find("://") != std::string::npos && !remote::isRemote(location) &&
          !isStashScene(location);
 }
 
@@ -1906,13 +1906,13 @@ int run(GLFWwindow* window, const Options& opts) {
     timer.lap(FrameTimer::Events);
     if (player.shutdownRequested()) break;
 
-    // A Stash scene's file on SMB that doesn't play plays from Stash's
-    // stream instead (once: the stream is no SMB file), if that serves it.
-    if (player.failed() && smb::isSmb(app.currentFile) && stash && stash->catalog())
+    // A Stash scene's file on a server that doesn't play plays from Stash's
+    // stream instead (once: the stream is no server's file), if that serves it.
+    if (player.failed() && remote::isRemote(app.currentFile) && stash && stash->catalog())
       if (const int i = stash->catalog()->sceneByPath(app.currentFile); i >= 0) {
         const StashScene& scene = stash->catalog()->scenes()[i];
         if (!scene.oshashes.empty() && scene.oshashes.front() == scene.oshash) {
-          std::printf("SMB failed: the scene plays from Stash\n");
+          std::printf("Server failed: the scene plays from Stash\n");
           const std::string listed = openedAs;
           openVideo(stashStream(scene));
           openedAs = listed;
@@ -2064,7 +2064,7 @@ int run(GLFWwindow* window, const Options& opts) {
       const bool stream = isStashScene(target);
       std::printf("Delete: %s%s%s: %s%s%s\n",
                   stream                ? "a scene's file in Stash"
-                  : smb::isSmb(target) ? "a file on an SMB share"
+                  : remote::isRemote(target) ? "a file on a server"
                                        : "a file on this device",
                   deletion.info.source.empty() ? "" : " and its downloaded copy",
                   deletion.throughStash ? " through Stash" : "", deleteLogged(outcome.status),

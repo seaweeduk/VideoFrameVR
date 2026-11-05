@@ -155,7 +155,7 @@ struct StashScene {
   std::vector<std::string> urls;
   std::string cover;  // URL, empty = none
   // Its file here: the first of its files (Stash's primary first) that is,
-  // one on this device before one on SMB. Without one, `path` is empty and
+  // one on this device before one on a server. Without one, `path` is empty and
   // the rest is Stash's first file, which its stream serves.
   std::string path, stashPath, oshash;
   uint64_t size = 0;

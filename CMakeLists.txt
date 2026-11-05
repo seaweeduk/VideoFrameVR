@@ -19,6 +19,7 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavut
 pkg_check_modules(SQLITE REQUIRED IMPORTED_TARGET sqlite3)
 pkg_check_modules(RSVG REQUIRED IMPORTED_TARGET librsvg-2.0)
 pkg_check_modules(SMB2 REQUIRED IMPORTED_TARGET libsmb2)
+pkg_check_modules(LIBSSH REQUIRED IMPORTED_TARGET libssh>=0.12)
 find_package(nlohmann_json REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenGL REQUIRED COMPONENTS OpenGL)
@@ -104,6 +105,9 @@ add_executable(videoframevr
   src/pixel_path.cpp
   src/read_ahead.cpp
   src/release_update.cpp
+  src/remote.cpp
+  src/remote_avio.cpp
+  src/remote_connection.cpp
   src/removable_drives.cpp
   src/run_log.cpp
   src/scene_renderer.cpp
@@ -114,8 +118,8 @@ add_executable(videoframevr
   src/setup_intro.cpp
   src/setup_placement.cpp
   src/setup_places.cpp
+  src/sftp.cpp
   src/smb.cpp
-  src/smb_avio.cpp
   src/stash.cpp
   src/stash_catalog.cpp
   src/stash_similarity.cpp
@@ -263,6 +267,7 @@ target_link_libraries(videoframevr PRIVATE
   PkgConfig::SQLITE
   PkgConfig::RSVG
   PkgConfig::SMB2
+  PkgConfig::LIBSSH
   nlohmann_json::nlohmann_json
   Threads::Threads
   OpenGL::OpenGL

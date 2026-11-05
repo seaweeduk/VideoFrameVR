@@ -66,6 +66,7 @@ json_source=/work/source/json
 mpv_source=/work/source/mpv-0.40.0
 ffmpeg_source=/work/source/rpi-ffmpeg-d0fe46c27ff128e6263ceb3251cbc9d0ed3d3932
 smb2_source=/work/source/libsmb2-2bcb014b23a8c8cccf534eea8bda2fe5df453cfd
+ssh_source=/work/source/libssh-0.12.2
 if [[ ! -f /work/.dependencies-complete ]]; then
   # No compiler, package or source download is permitted in this phase.
   python3 - <<'PY'
@@ -87,6 +88,16 @@ cmake --build /work/libsmb2-build -j"$jobs"
 cmake --install /work/libsmb2-build
 cp /work/libsmb2-build/CMakeCache.txt /work/config/libsmb2-cmake-cache.txt
 "$PKG_CONFIG" --modversion libsmb2
+# SFTP. OpenSSL is the Platform's; no server, compression, GSSAPI or pcap.
+cmake -S "$ssh_source" -B /work/libssh-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON \
+  -DWITH_GSSAPI=OFF -DWITH_SERVER=OFF -DWITH_ZLIB=OFF -DWITH_PCAP=OFF -DWITH_EXAMPLES=OFF \
+  -DWITH_DEBUG_CALLTRACE=OFF -DWITH_NACL=OFF -DUNIT_TESTING=OFF -DCLIENT_TESTING=OFF \
+  -DSERVER_TESTING=OFF "${cmake_cross[@]}"
+cmake --build /work/libssh-build -j"$jobs"
+cmake --install /work/libssh-build
+cp /work/libssh-build/CMakeCache.txt /work/config/libssh-cmake-cache.txt
+"$PKG_CONFIG" --modversion libssh
 if [[ $arch == aarch64 ]]; then
   patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-reset.patch
   patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-hardware-only.patch

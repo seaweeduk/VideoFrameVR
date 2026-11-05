@@ -156,7 +156,7 @@ void Menu::endSetup(bool finished) {
     for (auto it = setup_->places.rbegin(); it != setup_->places.rend(); ++it)
       if (!places_.pinned(*it)) places_.togglePin(*it);
     pinsChanged();
-    for (const std::string& host : setup_->logins) smb::remember(host);
+    for (const std::string& root : setup_->logins) remote::remember(root);
   }
   if (setup_ && setup_->stash.client) setup_->stash.client->cancel();
   setup_.reset();

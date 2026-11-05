@@ -4,7 +4,7 @@
 #include "oshash.h"
 #include "removable_drives.h"
 #include "settings.h"
-#include "smb.h"
+#include "remote.h"
 #include "stash_stream.h"
 
 #include <nlohmann/json.hpp>
@@ -57,7 +57,7 @@ std::string fileName(const std::string& location) {
 
 std::string stem(const std::string& name) { return fs::path(name).stem().string(); }
 
-// The subtitles beside a local video, as smb::subtitlesBeside() finds them.
+// The subtitles beside a local video, as remote::subtitlesBeside() finds them.
 std::vector<std::string> localSubtitles(const std::string& video) {
   const fs::path folder = fs::path(video).parent_path();
   const std::string base = foldFileName(stem(fileName(video))), prefix = base + ".";
@@ -76,13 +76,13 @@ std::vector<std::string> localSubtitles(const std::string& video) {
 
 // A small file's bytes; false if it can't be read.
 bool readWhole(const std::string& location, std::string& bytes) {
-  if (!smb::isSmb(location)) {
+  if (!remote::isRemote(location)) {
     std::ifstream in(location, std::ios::binary);
     bytes.assign(std::istreambuf_iterator<char>(in), {});
     return static_cast<bool>(in) || in.eof();
   }
-  smb::Status status;
-  auto file = smb::File::open(location, status);
+  remote::Status status;
+  auto file = remote::File::open(location, status);
   if (!file || file->size() > 64 * kChunk) return false;
   bytes.resize(file->size());
   for (uint64_t at = 0; at < bytes.size();) {
@@ -98,11 +98,13 @@ bool exists(const std::string& path) {
   return ::stat(path.c_str(), &st) == 0;
 }
 
-// Whether a server answers on SMB's port within two seconds.
-bool answers(const std::string& host) {
+// Whether a server (its root locator) answers on its port within two seconds.
+bool answers(const std::string& server) {
   addrinfo hints{}, *found = nullptr;
   hints.ai_socktype = SOCK_STREAM;
-  if (getaddrinfo(host.c_str(), "445", &hints, &found) != 0) return false;
+  if (getaddrinfo(remote::host(server).c_str(), std::to_string(remote::port(server)).c_str(), &hints,
+                  &found) != 0)
+    return false;
   bool ok = false;
   for (addrinfo* a = found; a && !ok; a = a->ai_next) {
     const int fd = socket(a->ai_family, a->ai_socktype | SOCK_NONBLOCK | SOCK_CLOEXEC, a->ai_protocol);
@@ -132,14 +134,14 @@ struct Offline::Shared {
   std::vector<Download> items;
   int64_t nextId = 1;
   std::vector<Drive> drives;
-  std::set<std::string> hosts, down;  // the servers to ask, and those that don't answer
+  std::set<std::string> hosts, down;  // the servers to ask, and those that don't answer (roots)
   std::vector<Download> finished;
   std::vector<std::string> deleting;  // files of downloads cancelled or removed
   uint64_t version = 1;
   bool dirty = false;      // offline.json is to be written
   int64_t current = 0;     // the download being copied
   bool stopCurrent = false;  // ... is cancelled
-  smb::Reader* reader = nullptr;
+  remote::Reader* reader = nullptr;
   StashReader* stashReader = nullptr;
   std::thread worker, watcher;
 
@@ -267,7 +269,7 @@ void Offline::Shared::work() {
           if (d.state == State::Done || d.state == State::Failed) continue;
           const auto at = retryAt.find(d.id);
           if (d.state == State::Waiting && at != retryAt.end() && at->second > Clock::now()) continue;
-          const bool unreachable = smb::isSmb(d.source) ? down.count(smb::host(d.source)) > 0
+          const bool unreachable = remote::isRemote(d.source) ? down.count(remote::root(d.source)) > 0
                                                         : isStashSource(d.source) && stashDown;
           if (unreachable) {
             if (d.why != Why::Server) {
@@ -327,9 +329,9 @@ void Offline::Shared::copy(Download d) {
   bool gone = false;
   const FileFingerprint source = stash ? stashFingerprint(d.source, gone) : fingerprintFile(d.source);
   if (source.oshash.empty()) {
-    if (smb::isSmb(d.source)) {
-      smb::Entry entry;
-      gone = smb::stat(d.source, entry) == smb::Status::Missing;
+    if (remote::isRemote(d.source)) {
+      remote::Entry entry;
+      gone = remote::stat(d.source, entry) == remote::Status::Missing;
     } else if (!stash) {
       gone = !exists(d.source);
     }
@@ -410,12 +412,12 @@ void Offline::Shared::copy(Download d) {
   save();
   std::printf("Offline: %s a download\n", offset ? "continuing" : "starting");
 
-  std::unique_ptr<smb::Reader> remote;
+  std::unique_ptr<remote::Reader> remote;
   std::unique_ptr<StashReader> streamed;
   int in = -1;
-  if (smb::isSmb(d.source)) {
-    smb::Status status;
-    remote = smb::Reader::open(d.source, offset, status);
+  if (remote::isRemote(d.source)) {
+    remote::Status status;
+    remote = remote::Reader::open(d.source, offset, status);
     std::lock_guard lock(mutex);
     reader = remote.get();
     if (quit || stopCurrent || pausedAll || playing) reader = nullptr, remote.reset();
@@ -541,7 +543,7 @@ void Offline::Shared::copy(Download d) {
   // Subtitles beside it with its name, under the copy's; Stash's captions as
   // WebVTT, as it serves them.
   std::vector<std::string> subtitles, beside;
-  if (smb::isSmb(d.source)) beside = smb::subtitlesBeside(d.source);
+  if (remote::isRemote(d.source)) beside = remote::subtitlesBeside(d.source);
   else if (!stash) beside = localSubtitles(d.source);
   const std::string sourceStem = stem(fileName(d.source)), copyStem = stem(fileName(d.path));
   auto keep = [&](const std::string& name, const std::string& bytes) {
@@ -596,13 +598,13 @@ void Offline::Shared::watch() {
     bool stashNowDown = stashDown;
     lock.unlock();
     bool back = false;
-    for (const std::string& host : hosts) {
-      auto& at = askAt[host];
+    for (const std::string& server : hosts) {
+      auto& at = askAt[server];
       if (Clock::now() < at) continue;
-      const bool up = answers(host);
+      const bool up = answers(server);
       at = Clock::now() + std::chrono::seconds(up ? 20 : 4);
-      if (up && nowDown.erase(host)) back = true;
-      if (!up) nowDown.insert(host);
+      if (up && nowDown.erase(server)) back = true;
+      if (!up) nowDown.insert(server);
     }
     // Stash by an HTTP request (its proxy, redirects and certificate as
     // for anything else asked of it), less often.
@@ -680,7 +682,7 @@ bool Offline::poll(std::vector<Download>& finished) {
   if (Clock::now() >= serversAt_) {
     serversAt_ = Clock::now() + std::chrono::seconds(2);
     std::vector<std::string> hosts;
-    for (const smb::Server& s : smb::servers()) hosts.push_back(s.host);
+    for (const remote::Server& s : remote::servers()) hosts.push_back(s.root);
     setServers(hosts);
   }
   Shared& sh = *shared_;
@@ -765,7 +767,7 @@ void Offline::add(const std::string& location, uint64_t size, const std::string&
                                  [](const Download& x) { return x.state == State::Done; }),
                     d);
     sh.changed();
-    if (smb::isSmb(source)) sh.hosts.insert(smb::host(source));
+    if (remote::isRemote(source)) sh.hosts.insert(remote::root(source));
   }
   sh.wake.notify_all();
   sh.watchWake.notify_all();
@@ -866,7 +868,7 @@ void Offline::setServers(const std::vector<std::string>& hosts) {
   {
     std::lock_guard lock(sh.mutex);
     for (const Download& d : sh.items)
-      if (d.state != State::Done && smb::isSmb(d.source)) wanted.insert(smb::host(d.source));
+      if (d.state != State::Done && remote::isRemote(d.source)) wanted.insert(remote::root(d.source));
     if (wanted == sh.hosts) return;
     sh.hosts = std::move(wanted);
     ++sh.version;
@@ -886,7 +888,7 @@ void Offline::watchStash(bool watch) {
 
 bool Offline::serverDown(const std::string& location) const {
   if (isStashScene(location) || isStashSource(location)) return stashDown_;
-  return !down_.empty() && smb::isSmb(location) && down_.count(smb::host(location));
+  return !down_.empty() && remote::isRemote(location) && down_.count(remote::root(location));
 }
 
 bool Offline::allServersDown() const {

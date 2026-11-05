@@ -1067,7 +1067,7 @@ void Menu::layoutNavigation() {
     return buttons_.back();
   };
   double y = kPagePad - 4;
-  const bool network = folder && smb::isSmb(directory()) && placeOf(directory()) < 0;
+  const bool network = folder && remote::isRemote(directory()) && placeOf(directory()) < 0;
   Button& explorer = row(t.fileExplorer, Icon::Folder, folder && placeOf(directory()) < 0 && !network,
                          y, kNavRowH, 27, 0, [this] { showFileBrowser(); });
   if (places_.ready()) {

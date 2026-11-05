@@ -5,7 +5,7 @@
 
 // Deleting the playing file (docs/alpha/delete-file.md): one regular file,
 // for good, never a folder and never what a link points to; by its path
-// (also on a kernel-mounted share) or its SMB locator.
+// (also on a kernel-mounted share) or its remote locator (remote.h).
 
 // A file's size and date, as the delete dialog showed them.
 struct FileStamp {

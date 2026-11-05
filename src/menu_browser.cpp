@@ -28,8 +28,8 @@ void Menu::openFiles(FileKind kind) {
   std::vector<std::string> fallbacks;
   if (dir.empty()) {
     if (!startDirectory_.empty()) fallbacks.push_back(startDirectory_);
-    if (smb::isSmb(view_.currentFile))
-      fallbacks.push_back(smb::parent(view_.currentFile));
+    if (remote::isRemote(view_.currentFile))
+      fallbacks.push_back(remote::parent(view_.currentFile));
     else if (!view_.currentFile.empty() && view_.currentFile.find("://") == std::string::npos)
       fallbacks.push_back(fs::path(view_.currentFile).parent_path().string());
     fallbacks.push_back(std::getenv("HOME") ? std::getenv("HOME") : "/");
@@ -886,11 +886,11 @@ void Menu::layoutFilesPage() {
   Button& up = addRound(Icon::FolderUp, t.tipParent,
                         [this] {
                           const std::string parent =
-                              smb::isSmb(directory()) ? smb::parent(directory())
+                              remote::isRemote(directory()) ? remote::parent(directory())
                                                       : fs::path(directory()).parent_path().string();
                           if (!parent.empty())
                             openDirectory(parent);
-                          else if (smb::isSmb(directory()))
+                          else if (remote::isRemote(directory()))
                             showNetwork();
                           return MenuCommand{};
                         },
@@ -983,7 +983,7 @@ void Menu::drawListStates(cairo_t* cr) {
     return;
   else if (page_ == Page::Files && listing_.reading() && listing_.entries().empty())
     empty = t.readingFolder;
-  else if (page_ == Page::Files && listing_.status() == smb::Status::Offline)
+  else if (page_ == Page::Files && listing_.status() == remote::Status::Offline)
     empty = t.network.offline;
   else if (page_ == Page::Files && listing_.unavailable())
     empty = t.folderUnavailable;

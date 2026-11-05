@@ -148,7 +148,7 @@ bool Stash::poll() {
   if (sync_->catalog().get() != polledCatalog_) {
     polledCatalog_ = sync_->catalog().get();
     // The pages rate scenes by their streams: those without a file here,
-    // and those whose SMB server doesn't answer. Their thumbnails are kept
+    // and those whose server (SMB, SFTP) doesn't answer. Their thumbnails are kept
     // by the files they serve.
     if (polledCatalog_) {
       std::unordered_map<int64_t, FileFingerprint> files;

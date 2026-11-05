@@ -2,7 +2,7 @@
 
 #include "file_util.h"
 #include "settings.h"  // dataDir
-#include "smb.h"
+#include "remote.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -51,7 +51,7 @@ bool under(const std::string& path, const std::string& root) {
 }
 
 std::string parentOf(const std::string& path) {
-  return smb::isSmb(path) ? smb::parent(path) : fs::path(path).parent_path().string();
+  return remote::isRemote(path) ? remote::parent(path) : fs::path(path).parent_path().string();
 }
 
 bool exec(sqlite3* db, const char* sql) {
@@ -69,22 +69,23 @@ bool skipped(const std::string& name, bool folder) {
 
 // Names, sizes and dates only: one stat per video, none for other files.
 // Links to folders are not followed (one could lead back up).
-smb::Status LibraryIndex::list(const std::string& dir, Listing& out,
+remote::Status LibraryIndex::list(const std::string& dir, Listing& out,
                                const std::atomic<bool>* stop) {
-  if (smb::isSmb(dir)) {
-    std::vector<smb::Entry> entries;
-    const smb::Status status = smb::list(dir, entries);
-    for (const smb::Entry& e : entries) {
+  if (remote::isRemote(dir)) {
+    std::vector<remote::Entry> entries;
+    const remote::Status status = remote::list(dir, entries);
+    for (const remote::Entry& e : entries) {
       if (skipped(e.name, e.folder)) continue;
-      if (e.folder)
-        out.folders.push_back(dir + "/" + e.name);
-      else if (isVideoFile(e.name))
+      if (e.folder) {
+        if (!e.link) out.folders.push_back(dir + "/" + e.name);
+      } else if (isVideoFile(e.name)) {
         out.videos.push_back({dir + "/" + e.name, {e.size, e.modified}});
+      }
     }
     return status;
   }
   DIR* d = opendir(dir.c_str());
-  if (!d) return errno == ENOENT || errno == ENOTDIR ? smb::Status::Missing : smb::Status::Offline;
+  if (!d) return errno == ENOENT || errno == ENOTDIR ? remote::Status::Missing : remote::Status::Offline;
   const std::string prefix = dir.back() == '/' ? dir : dir + "/";
   errno = 0;
   bool stopped = false;
@@ -107,7 +108,7 @@ smb::Status LibraryIndex::list(const std::string& dir, Listing& out,
   }
   const bool failed = stopped || errno != 0;  // cut short: not a whole listing
   closedir(d);
-  return failed ? smb::Status::Offline : smb::Status::Ok;
+  return failed ? remote::Status::Offline : remote::Status::Ok;
 }
 
 // The main thread's requests and what the worker found for it; the rest is
@@ -478,12 +479,12 @@ void LibraryIndex::Shared::lookNext() {
   dirtyTodo = true;
   ++done;
   Listing listing;
-  const smb::Status status = list(dir, listing);
+  const remote::Status status = list(dir, listing);
   const bool root = roots.count(dir) > 0;
-  if (status == smb::Status::Ok) {
+  if (status == remote::Status::Ok) {
     apply(dir, listing);
     todo.insert(todo.end(), listing.folders.begin(), listing.folders.end());
-  } else if (status == smb::Status::Missing && !root) {
+  } else if (status == remote::Status::Missing && !root) {
     dropFolder(dir);
   } else if (root) {
     failed.insert(dir);  // a share that doesn't answer, a drive taken out: kept as it was

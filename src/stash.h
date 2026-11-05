@@ -160,11 +160,11 @@ class Stash {
 };
 
 // Where a scene plays from, the one place that picks it for the Stash pages
-// and Previous/Next: its file here (on this device before SMB, as the
+// and Previous/Next: its file here (on this device before a server, as the
 // catalog chose it), else Stash's stream; the stream too for a file on an
-// SMB server that doesn't answer (`offline`), if it serves that file. A
+// server that doesn't answer (`offline`), if it serves that file. A
 // copy on this device goes before either however a video is opened
-// (openVideo in main.cpp), and an SMB file that doesn't open plays from the
+// (openVideo in main.cpp), and a server's file that doesn't open plays from the
 // stream instead (stashStream()). Empty while Stash is off.
 std::string stashSceneLocation(const StashScene& scene, const Offline* offline = nullptr);
 // Its stream's locator (stash_stream.h), which serves Stash's first file.

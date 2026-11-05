@@ -41,10 +41,10 @@ FileFingerprint stashSceneFile(std::string_view location);
 // mpv: registers stashscene:// on this instance (once, after mpv_initialize).
 // Playback reads ahead as SMB's does (read_ahead.h) and reconnects at where
 // it was; background (seek previews) reads one request at a time, none
-// started while a playback stream opens. failed: as smb::addTo's.
+// started while a playback stream opens. failed: as remote::addTo's.
 void addStashStreams(mpv_handle* mpv, bool background = false,
                      std::atomic<bool>* failed = nullptr);
-// A scene read for FFmpeg (smb_avio.h: thumbnails) through mpv's stream
+// A scene read for FFmpeg (remote_avio.h: thumbnails) through mpv's stream
 // callbacks, as the seek previews read it but in larger requests; false
 // if it doesn't open.
 bool openStashScene(const std::string& locator, mpv_stream_cb_info& info);

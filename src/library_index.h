@@ -45,7 +45,7 @@ class LibraryIndex {
     std::vector<std::string> folders;
     std::vector<std::pair<std::string, File>> videos;
   };
-  static smb::Status list(const std::string& dir, Listing& out,
+  static remote::Status list(const std::string& dir, Listing& out,
                           const std::atomic<bool>* stop = nullptr);
 
   LibraryIndex();

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "smb.h"
+#include "remote.h"
 
 #include <mpv/stream_cb.h>
 
@@ -10,11 +10,11 @@ extern "C" {
 
 struct AVFormatContext;
 
-// Background SMB input for FFmpeg, or a Stash scene's stream
+// Background input for FFmpeg from a remote file (remote.h), or a Stash scene's stream
 // (stash_stream.h). Keep it alive until after close_input().
-class SmbAvio {
+class RemoteAvio {
  public:
-  ~SmbAvio();
+  ~RemoteAvio();
   // Local paths need no custom IO and return true too.
   bool attach(AVFormatContext* format, const std::string& path);
 
@@ -22,7 +22,7 @@ class SmbAvio {
   static int read(void* opaque, uint8_t* out, int count);
   static int64_t seek(void* opaque, int64_t offset, int whence);
   int64_t size() const;
-  std::unique_ptr<smb::File> file_;
+  std::unique_ptr<remote::File> file_;
   mpv_stream_cb_info stash_{};  // a scene's, with its cookie
   AVIOContext* io_ = nullptr;
   AVIOInterruptCB interrupt_{};

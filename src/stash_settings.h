@@ -56,7 +56,7 @@ const char* stashSortName(StudioSort sort);
 // with `from` start with `to` here.
 struct StashFolderMap {
   std::string from;  // Stash's side, as Stash writes it: /media/x, D:\Videos, \\NAS\share
-  std::string to;    // this device's: a local path or an SMB locator
+  std::string to;    // this device's: a local path or a remote locator (remote.h)
   bool operator==(const StashFolderMap& o) const { return from == o.from && to == o.to; }
 };
 

@@ -31,7 +31,7 @@ struct SetupFolders {
   };
   std::vector<Place> places;  // as laid out
   std::string shown;          // the place shown (its root); empty: Add a computer
-  std::vector<std::string> hosts;  // computers added by their name or address
+  std::vector<std::string> hosts;  // computers added by their name or address (remote::root())
   std::string computer;            // ... typed
   setup_places::Async<std::vector<RemovableDrives::Drive>> finding;
   std::vector<RemovableDrives::Drive> drives;
@@ -128,7 +128,7 @@ struct SetupMenu {
   SetupControls controls;
   bool holdWrites = false;  // --first-run: logins remembered are saved at the end
   std::vector<std::string> places;  // ticked: pinned once it ends
-  std::vector<std::string> logins;  // hosts to remember at the end (holdWrites)
+  std::vector<std::string> logins;  // servers to remember at the end (holdWrites; remote::root())
   std::unique_ptr<SetupFolders> folders;  // while Add folders shows
   SetupStash stash;
   CairoCanvas canvas;       // the panel, and its keyboard under it

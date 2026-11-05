@@ -1,5 +1,5 @@
 #include "oshash.h"
-#include "smb.h"
+#include "remote.h"
 
 #include <cstdio>
 #include <cstring>
@@ -13,7 +13,7 @@ namespace {
 
 constexpr int64_t kChunk = 64 * 1024;
 
-bool readAt(int fd, smb::File* remote, unsigned char* buf, int64_t length, int64_t offset) {
+bool readAt(int fd, remote::File* remote, unsigned char* buf, int64_t length, int64_t offset) {
   while (length > 0) {
     const int64_t n = remote ? remote->read(offset, buf, length)
                             : ::pread(fd, buf, static_cast<size_t>(length), offset);
@@ -57,12 +57,12 @@ std::string oshashOfEnds(uint64_t size, const unsigned char* ends) {
 FileFingerprint fingerprintFile(const std::string& path) {
   FileFingerprint print;
   int fd = -1;
-  std::unique_ptr<smb::File> remote;
-  if (smb::isSmb(path)) {
-    smb::Entry st;
-    if (smb::stat(path, st) != smb::Status::Ok) return print;
-    smb::Status status;
-    remote = smb::File::open(path, status);
+  std::unique_ptr<remote::File> remote;
+  if (remote::isRemote(path)) {
+    remote::Entry st;
+    if (remote::stat(path, st) != remote::Status::Ok) return print;
+    remote::Status status;
+    remote = remote::File::open(path, status);
     if (!remote) return print;
     print.size = remote->size();
     print.mtime = st.modified;

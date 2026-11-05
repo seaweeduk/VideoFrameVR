@@ -1,7 +1,7 @@
 #include "stash_catalog.h"
 
 #include "stash_text.h"
-#include "smb.h"
+#include "remote.h"
 
 #include <algorithm>
 #include <atomic>
@@ -45,11 +45,11 @@ std::vector<char> existing(const std::vector<std::string>& paths) {
     for (size_t k; (k = next++) < list.size();) {
       const auto& [folder, files] = *list[k];
       std::unordered_set<std::string> names;
-      if (smb::isSmb(folder)) {
-        std::vector<smb::Entry> entries;
-        const auto status = smb::list(folder, entries);
-        if (status != smb::Status::Ok) {
-          if (status != smb::Status::Missing)
+      if (remote::isRemote(folder)) {
+        std::vector<remote::Entry> entries;
+        const auto status = remote::list(folder, entries);
+        if (status != remote::Status::Ok) {
+          if (status != remote::Status::Missing)
             for (const size_t i : files) there[i] = 1;
           continue;
         }
@@ -591,12 +591,12 @@ std::shared_ptr<const StashCatalog> StashCatalog::build(const StashData& data,
     const StashData::Scene& d = data.scenes[i];
     for (const StashData::File& f : d.files)
       if (!f.oshash.empty()) stashHashes.insert(f.oshash);
-    // A file here, one on this device before one on SMB; else Stash's
+    // A file here, one on this device before one on a server; else Stash's
     // stream, which serves its first file.
     int chosen = -1;
-    for (const bool smbToo : {false, true})
+    for (const bool remoteToo : {false, true})
       for (size_t f = 0; f < d.files.size() && chosen < 0; ++f)
-        if (there[firstFile[i] + f] && (smbToo || !smb::isSmb(local[firstFile[i] + f])))
+        if (there[firstFile[i] + f] && (remoteToo || !remote::isRemote(local[firstFile[i] + f])))
           chosen = static_cast<int>(f);
     const bool streamed = chosen < 0;
     if (streamed) {

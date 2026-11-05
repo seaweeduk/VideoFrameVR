@@ -10,11 +10,12 @@ every dependency itself.
 sudo apt install build-essential cmake pkg-config curl libopenxr-dev libmpv-dev libglfw3-dev libgl-dev \
   libvulkan-dev libpango1.0-dev libcairo2-dev libcurl4-openssl-dev libgdk-pixbuf-2.0-dev \
   nlohmann-json3-dev libglib2.0-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
-  libsqlite3-dev librsvg2-dev glslang-tools fonts-noto-extra
+  libsqlite3-dev librsvg2-dev glslang-tools fonts-noto-extra libssl-dev
 ```
 
-The app also needs **libsmb2 6.3 or newer**. Ubuntu 26.04 has 6.2, so build the
-pinned version first, outside this checkout:
+The app also needs **libsmb2 6.3 or newer** and **libssh 0.12 or newer**.
+Ubuntu 26.04 has libsmb2 6.2 and libssh 0.11, so build the pinned versions
+first, outside this checkout:
 
 ```sh
 curl -fL https://codeload.github.com/sahlberg/libsmb2/tar.gz/2bcb014b23a8c8cccf534eea8bda2fe5df453cfd -o libsmb2.tar.gz
@@ -27,10 +28,20 @@ cmake --build libsmb2-build -j2
 sudo cmake --install libsmb2-build
 sudo ldconfig
 pkg-config --modversion libsmb2
+
+curl -fLO https://www.libssh.org/files/0.12/libssh-0.12.2.tar.xz
+echo '49560f677d96e3706a904ac2de1116e25f3680937d51e5c92198fcba4a1c1e9f  libssh-0.12.2.tar.xz' | sha256sum -c -
+tar -xf libssh-0.12.2.tar.xz
+cmake -S libssh-0.12.2 -B libssh-build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
+  -DWITH_GSSAPI=OFF -DWITH_SERVER=OFF -DWITH_ZLIB=OFF -DWITH_PCAP=OFF -DWITH_EXAMPLES=OFF
+cmake --build libssh-build -j2
+sudo cmake --install libssh-build
+sudo ldconfig
+pkg-config --modversion libssh
 ```
 
-If you install it somewhere else, point `PKG_CONFIG_PATH` at its `lib/pkgconfig`
-before the first build.
+If you install them somewhere else, point `PKG_CONFIG_PATH` at their
+`lib/pkgconfig` before the first build.
 
 ## Build and run
 

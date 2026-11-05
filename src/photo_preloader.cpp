@@ -1,7 +1,7 @@
 #include "photo_preloader.h"
 
 #include "thumbnailer.h"  // frameScaler, scaleInto
-#include "smb_avio.h"
+#include "remote_avio.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -57,7 +57,7 @@ bool decodePhoto(const std::string& path, int maxSize, std::vector<uint32_t>& pi
   AVFormatContext* format = avformat_alloc_context();
   if (!format) return false;
   format->interrupt_callback = {Interrupt::check, &interrupt};
-  SmbAvio remote;
+  RemoteAvio remote;
   if (!remote.attach(format, path)) {
     avformat_free_context(format);
     return false;

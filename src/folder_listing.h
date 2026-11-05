@@ -1,6 +1,6 @@
 #pragma once
 
-#include "smb.h"
+#include "remote.h"
 
 #include <cstdint>
 #include <memory>
@@ -46,7 +46,7 @@ class FolderListing {
   bool poll();
   bool reading() const { return reading_; }
   bool unavailable() const { return unavailable_; }
-  smb::Status status() const { return status_; }
+  remote::Status status() const { return status_; }
   const std::string& directory() const { return directory_; }
   const std::vector<Entry>& entries() const { return entries_; }
   // Puts the entries in this order: entries()[order[i]] becomes the i-th.
@@ -65,5 +65,5 @@ class FolderListing {
   std::shared_ptr<Pending> pending_;  // the background read, if one is still due
   bool reading_ = false;              // ... and its entries have not arrived yet
   bool unavailable_ = false;
-  smb::Status status_ = smb::Status::Ok;
+  remote::Status status_ = remote::Status::Ok;
 };

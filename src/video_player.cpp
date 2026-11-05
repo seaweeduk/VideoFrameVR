@@ -1,5 +1,5 @@
 #include "video_player.h"
-#include "smb.h"
+#include "remote.h"
 #include "stash_stream.h"
 
 #include <thread>
@@ -256,8 +256,8 @@ bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, bool timing
     std::fprintf(stderr, "mpv_initialize failed\n");
     return false;
   }
-  smb::addTo(mpv_, false, &smbFailed_);
-  addStashStreams(mpv_, false, &smbFailed_);
+  remote::addTo(mpv_, false, &remoteFailed_);
+  addStashStreams(mpv_, false, &remoteFailed_);
   mpv_observe_property(mpv_, 0, "time-pos", MPV_FORMAT_DOUBLE);
   mpv_observe_property(mpv_, 0, "duration", MPV_FORMAT_DOUBLE);
   mpv_observe_property(mpv_, 0, "demuxer-cache-time", MPV_FORMAT_DOUBLE);
@@ -336,14 +336,14 @@ void VideoPlayer::load(const std::string& path, double start) {
   ++sizeRequest_;
   ++loadRequest_;
   path_ = path;
-  smbFailed_ = false;
+  remoteFailed_ = false;
   sidecarSubtitles_ = {};
-  if (smb::isSmb(path) || isStashScene(path)) {
+  if (remote::isRemote(path) || isStashScene(path)) {
     std::packaged_task<std::vector<Sidecar>()> find([path] {
       std::vector<Sidecar> subtitles;
       const std::string stem = std::filesystem::path(path).stem().string();
-      if (smb::isSmb(path))
-        for (const std::string& sub : smb::subtitlesBeside(path)) subtitles.push_back({smb::mpvUrl(sub, true)});
+      if (remote::isRemote(path))
+        for (const std::string& sub : remote::subtitlesBeside(path)) subtitles.push_back({remote::mpvUrl(sub, true)});
       else
         for (const StashCaption& c : stashCaptions(path))
           subtitles.push_back({"memory://" + c.text,
@@ -372,7 +372,7 @@ void VideoPlayer::load(const std::string& path, double start) {
   // sleeping file's vid=no must never disable the next file or reopen the old.
   const std::string startOption = "start=" + std::to_string(start) + ",vid=auto,pause=" +
       (wasAsleep && sleepPaused_ ? "yes" : "no");
-  const std::string url = smb::mpvUrl(path);
+  const std::string url = remote::mpvUrl(path);
   const char* resumed[] = {"loadfile", url.c_str(), "replace", "-1", startOption.c_str(), nullptr};
   countedEntry_ = loadFile(resumed);
   if (countedEntry_ < 0) {
@@ -418,7 +418,7 @@ void VideoPlayer::stop() {
   deferredLoadPath_.clear();
   deferredStop_ = false;
   cancelVideoSleep();
-  smbFailed_ = false;
+  remoteFailed_ = false;
   sidecarSubtitles_ = {};
   ++sizeRequest_;
   ++loadRequest_;
@@ -689,7 +689,7 @@ void VideoPlayer::resetSeeks() {
 }
 
 void VideoPlayer::addSubtitle(const std::string& path) {
-  const std::string url = smb::mpvUrl(path, true);
+  const std::string url = remote::mpvUrl(path, true);
   const char* cmd[] = {"sub-add", url.c_str(), "select", nullptr};
   mpv_command_async(mpv_, 0, cmd);
 }
@@ -1024,7 +1024,7 @@ void VideoPlayer::pollEvents() {
     }
   }
   // mpv can treat a custom-stream read error as EOF or keep retrying it.
-  if (smbFailed_.load(std::memory_order_relaxed) && !failed_) {
+  if (remoteFailed_.load(std::memory_order_relaxed) && !failed_) {
     const char* cmd[] = {"stop", nullptr};
     mpv_command_async(mpv_, 0, cmd);
     failed_ = true;

@@ -33,7 +33,7 @@ struct DeleteOutcome {
 // Deletes the scene's file with that path and oshash, looked up again
 // first: Stash deletes it, with the scene if it is the scene's only file,
 // else alone (another file made the primary first). `here`: the file on
-// this device or an SMB share, checked against `stamp` before anything is
+// this device or a server (remote.h), checked against `stamp` before anything is
 // sent; empty: only Stash's stream has it. If Stash can't and the file is
 // here, the app deletes it (removeFile()), then removes Stash's entry as
 // Clean would; not if `trashPromised` (the dialog said Stash moves it to

@@ -3,7 +3,7 @@
 #include "file_util.h"
 #include "removable_drives.h"
 #include "settings.h"
-#include "smb.h"
+#include "remote.h"
 
 #include <glib.h>
 
@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 namespace {
 
 bool isDirectory(const std::string& path) {
-  if (smb::isSmb(path)) return true;
+  if (remote::isRemote(path)) return true;
   std::error_code ec;
   return !path.empty() && fs::is_directory(path, ec);
 }
@@ -56,7 +56,7 @@ std::vector<Places::Entry> readEntries() {
       if (tab != std::string::npos) names.emplace_back(line.substr(tab + 1), line.substr(5, tab - 5));
       continue;
     }
-    if (!smb::isSmb(path)) {
+    if (!remote::isRemote(path)) {
       if (!fs::path(path).is_absolute()) continue;
       path = fs::path(path).lexically_normal().string();
     }

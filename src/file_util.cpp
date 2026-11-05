@@ -1,7 +1,7 @@
 #include "file_util.h"
 
 #include "stash_text.h"
-#include "smb.h"
+#include "remote.h"
 
 #include <glib.h>
 #include <langinfo.h>
@@ -118,7 +118,7 @@ const auto mediaCache = std::make_shared<ListingCache>();
 // The videos (or photos) in the folder of `current`, in file browser order.
 std::vector<std::string> sameKindNames(const std::string& current, ListingCache& shared) {
   const bool photos = isPhotoFile(current);
-  const std::string folder = smb::isSmb(current) ? smb::parent(current)
+  const std::string folder = remote::isRemote(current) ? remote::parent(current)
                                                 : fs::path(current).parent_path().string();
   const auto now = std::chrono::steady_clock::now();
   unsigned generation;
@@ -132,9 +132,9 @@ std::vector<std::string> sameKindNames(const std::string& current, ListingCache&
   }
   std::vector<std::string> names;
   std::error_code ec;
-  if (smb::isSmb(current)) {
-    std::vector<smb::Entry> entries;
-    if (smb::list(folder, entries) != smb::Status::Ok) return {};
+  if (remote::isRemote(current)) {
+    std::vector<remote::Entry> entries;
+    if (remote::list(folder, entries) != remote::Status::Ok) return {};
     for (const auto& item : entries)
       if (!item.folder && !item.name.empty() && item.name[0] != '.' &&
           (photos ? isPhotoFile(item.name) : isVideoFile(item.name))) names.push_back(item.name);
@@ -174,7 +174,7 @@ void forgetFolderListing() {
 std::future<std::string> mediaNeighbor(const std::string& current, int step, bool wrap) {
   std::packaged_task<std::string()> task([current, step, wrap, cache = mediaCache]() -> std::string {
     const fs::path path(current);
-    const std::string folder = smb::isSmb(current) ? smb::parent(current)
+    const std::string folder = remote::isRemote(current) ? remote::parent(current)
                                                 : path.parent_path().string();
     const std::string prefix = folder + (!folder.empty() && folder.back() != '/' ? "/" : "");
     auto pick = [&](const std::vector<std::string>& names) {
@@ -188,7 +188,7 @@ std::future<std::string> mediaNeighbor(const std::string& current, int step, boo
     // The listing can be 10 s old: a local file deleted or moved since then
     // means listing the folder again.
     std::error_code ec;
-    if (!next.empty() && !smb::isSmb(next) && !fs::exists(next, ec)) {
+    if (!next.empty() && !remote::isRemote(next) && !fs::exists(next, ec)) {
       {
         std::lock_guard<std::mutex> lock(cache->mutex);
         cache->listing = Listing();

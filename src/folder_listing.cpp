@@ -29,7 +29,7 @@ std::string searchable(const std::string& text) {
 
 // What read() finds, in order.
 std::vector<FolderListing::Entry> listFolder(const std::string& dir, bool subtitles,
-                                            FolderListing::Order order, smb::Status& status) {
+                                            FolderListing::Order order, remote::Status& status) {
   using Entry = FolderListing::Entry;
   using Order = FolderListing::Order;
   std::vector<Entry> entries;
@@ -39,10 +39,10 @@ std::vector<FolderListing::Entry> listFolder(const std::string& dir, bool subtit
     struct stat st;
     return ::stat(item.path().c_str(), &st) == 0 ? static_cast<int64_t>(st.st_mtime) : 0;
   };
-  if (smb::isSmb(dir)) {
-    std::vector<smb::Entry> remote;
-    status = smb::list(dir, remote);
-    if (status != smb::Status::Ok) return {};
+  if (remote::isRemote(dir)) {
+    std::vector<remote::Entry> remote;
+    status = remote::list(dir, remote);
+    if (status != remote::Status::Ok) return {};
     for (const auto& item : remote) {
       if (item.name.empty() || (item.name[0] == '.' && !item.folder)) continue;
       if (item.folder || (subtitles ? isSubtitleFile(item.name)
@@ -86,10 +86,10 @@ std::vector<FolderListing::Entry> listFolder(const std::string& dir, bool subtit
   }
   if (ec) {
     status = ec == std::errc::no_such_file_or_directory || ec == std::errc::not_a_directory
-        ? smb::Status::Missing : smb::Status::Offline;
+        ? remote::Status::Missing : remote::Status::Offline;
     return {};
   }
-  status = smb::Status::Ok;
+  status = remote::Status::Ok;
   for (Entry& entry : entries) {
     const std::string folded = foldFileName(entry.name);
     entry.nameKey = fileNameSortKey(folded);
@@ -123,7 +123,7 @@ std::vector<FolderListing::Entry> listFolder(const std::string& dir, bool subtit
 // The files' dates and sizes not read for the order: one stat each.
 void addDetails(std::vector<FolderListing::Entry>& entries) {
   for (FolderListing::Entry& e : entries) {
-    if (e.directory || smb::isSmb(e.path) || (e.modified && e.size)) continue;
+    if (e.directory || remote::isRemote(e.path) || (e.modified && e.size)) continue;
     struct stat st;
     if (::stat(e.path.c_str(), &st) != 0) continue;
     e.modified = st.st_mtime;
@@ -138,7 +138,7 @@ struct FolderListing::Pending {
   const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
   bool done = false, taken = false;  // the entries are there; poll() has them
   bool unavailable = false;
-  smb::Status status = smb::Status::Ok;
+  remote::Status status = remote::Status::Ok;
   std::string directory;
   std::vector<Entry> entries;
   bool detailsDone = false;  // ... then the same with the files' dates and sizes
@@ -155,20 +155,20 @@ void FolderListing::read(const std::string& dir, bool subtitles, Order order,
   pending_ = job;
   reading_ = true;
   unavailable_ = false;
-  status_ = smb::Status::Ok;
+  status_ = remote::Status::Ok;
   std::thread([job, dir, subtitles, order, fallbacks] {
     std::string folder = dir;
-    smb::Status status = smb::Status::Ok;
+    remote::Status status = remote::Status::Ok;
     size_t fallback = 0;
     std::vector<Entry> entries;
     while (!folder.empty()) {
       entries = listFolder(folder, subtitles, order, status);
-      if (status != smb::Status::Missing) break;
+      if (status != remote::Status::Missing) break;
       if (fallback < fallbacks.size()) {
         folder = fallbacks[fallback++];
         continue;
       }
-      const std::string parent = smb::isSmb(folder) ? smb::parent(folder)
+      const std::string parent = remote::isRemote(folder) ? remote::parent(folder)
                                                    : fs::path(folder).parent_path().string();
       if (parent == folder || parent.empty()) break;
       folder = parent;
@@ -178,8 +178,8 @@ void FolderListing::read(const std::string& dir, bool subtitles, Order order,
       std::lock_guard<std::mutex> lock(job->mutex);
       job->directory = folder;
       job->entries = std::move(entries);
-      job->unavailable = status != smb::Status::Ok;
-      job->status = smb::isSmb(folder) ? status : smb::Status::Ok;
+      job->unavailable = status != remote::Status::Ok;
+      job->status = remote::isRemote(folder) ? status : remote::Status::Ok;
       job->done = true;
     }
     addDetails(details);
@@ -200,7 +200,7 @@ bool FolderListing::poll() {
       entries_.clear();
       reading_ = false;
       unavailable_ = true;
-      if (smb::isSmb(directory_)) status_ = smb::Status::Offline;
+      if (remote::isRemote(directory_)) status_ = remote::Status::Offline;
       // A late successful read can still recover this folder, unless we move on.
       return true;
     }

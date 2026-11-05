@@ -212,13 +212,13 @@ class VideoPlayer {
   uint64_t loadRequest_ = 0;
   PlaybackState playback_;
   std::string path_;  // of the loaded file, for redacting it from log output
-  // Subtitles to add once the file is loaded: SMB's beside it, or a Stash
+  // Subtitles to add once the file is loaded: a remote file's beside it, or a Stash
   // scene's captions (in memory, titled by their file's name).
   struct Sidecar {
     std::string url, title, lang;
   };
   std::future<std::vector<Sidecar>> sidecarSubtitles_;
-  std::atomic<bool> smbFailed_{false};  // or Stash's stream
+  std::atomic<bool> remoteFailed_{false};  // a remote file's read, or Stash's stream
   bool subtitlesInFrame_ = true;
   bool loading_ = false;
   bool failed_ = false;

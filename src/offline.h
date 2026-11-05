@@ -12,14 +12,14 @@
 // on this device, each remembered as a copy of its video, in one folder,
 // "Offline videos", at the top of a drive: internal storage (the home
 // folder) or a microSD card or USB drive. One video at a time joins a queue,
-// copied in order on a worker thread at the lowest priority: SMB files with
-// two reads in flight, Stash's streams with playback's reader
+// copied in order on a worker thread at the lowest priority: SMB and SFTP
+// files with two blocks in flight, Stash's streams with playback's reader
 // (stash_stream.h), local ones as they are. The queue is kept in
 // dataDir()/offline.json, so a download continues after a restart, a lost
 // connection or a card taken out: from its .part file's length less the
 // last 8 MiB, or from the start if the source changed. A copy is checked by
 // its size and oshash before it is renamed into place; its subtitles come
-// with it. Downloads pause while a video plays. A second thread asks the SMB
+// with it. Downloads pause while a video plays. A second thread asks the
 // servers signed in to whether they answer (away from home they don't), and
 // Stash while a scene may play or download from its stream.
 // Main thread only; nothing here waits for a file or the network.
@@ -39,7 +39,7 @@ class Offline {
   enum class Why { None, Server, Drive, Gone, NoRoom, Broken };  // Waiting or Failed
   struct Download {
     int64_t id = 0;
-    std::string source;  // a path, an smb:// locator or a Stash scene's (stashSource())
+    std::string source;  // a path, a remote locator (remote.h) or a Stash scene's (stashSource())
     std::string root;    // the drive it goes to (Drive::root)
     std::string path;    // the copy, once its name is chosen
     std::string oshash;  // the video's, once known
@@ -95,7 +95,7 @@ class Offline {
   // Drives came or went: looked at again now.
   void drivesChanged();
 
-  // Whether `location` is on an SMB server that doesn't answer now, or is
+  // Whether `location` is on a server (remote.h) that doesn't answer now, or is
   // Stash's stream (a locator or a source) while Stash doesn't.
   bool serverDown(const std::string& location) const;
   // Stash is asked whether it answers while `watch` (a scene may play from
@@ -104,7 +104,7 @@ class Offline {
   bool stashDown() const { return stashDown_; }
   // Whether every server signed in to is down (and there is one).
   bool allServersDown() const;
-  const std::set<std::string>& downServers() const { return down_; }
+  const std::set<std::string>& downServers() const { return down_; }  // their roots
 
  private:
   struct Shared;

@@ -29,10 +29,10 @@ Folder readFolder(const std::string& path) {
       ++f.videos;  // as the Library index lists them: hidden files left out
     }
   };
-  if (smb::isSmb(path)) {
-    std::vector<smb::Entry> entries;
-    f.status = smb::list(path, entries);
-    for (const smb::Entry& e : entries)
+  if (remote::isRemote(path)) {
+    std::vector<remote::Entry> entries;
+    f.status = remote::list(path, entries);
+    for (const remote::Entry& e : entries)
       if (!e.name.empty()) add(e.name, e.folder, -1);
   } else if (DIR* dir = opendir(path.c_str())) {
     const int fd = dirfd(dir);
@@ -52,7 +52,7 @@ Folder readFolder(const std::string& path) {
     }
     closedir(dir);
   } else {
-    f.status = errno == ENOENT || errno == ENOTDIR ? smb::Status::Missing : smb::Status::Denied;
+    f.status = errno == ENOENT || errno == ENOTDIR ? remote::Status::Missing : remote::Status::Denied;
   }
   std::sort(f.folders.begin(), f.folders.end(), [](const Folder::Sub& a, const Folder::Sub& b) {
     if (hiddenName(a.name) != hiddenName(b.name)) return hiddenName(b.name);

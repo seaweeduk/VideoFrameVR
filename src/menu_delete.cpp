@@ -76,7 +76,7 @@ void Menu::drawDeleteDialog(cairo_t* cr, double textX, double boxY) {
   drawText(cr, name, textX, boxY + 95, textW, 50, 28, false, true, 0.85, 0.85, 0.9);
   const std::string& at = info.source.empty() ? info.file : info.source;
   std::string where = isStashScene(at) || isStashSource(at) ? std::string(d.inStash)
-                      : smb::isSmb(at) ? stashPrinted(d.onServer, serverName(smb::host(at)))
+                      : remote::isRemote(at) ? stashPrinted(d.onServer, serverName(remote::root(at)))
                                        : std::string(d.onDevice);
   if (!info.source.empty())
     where += " · " + stashPrinted(t.offline.tipDownloaded, driveName(info.copyRoot, false));

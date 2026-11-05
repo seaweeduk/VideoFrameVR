@@ -19,7 +19,7 @@ class StashFolderFinder {
   };
   struct Mapping {
     std::string pathFrom;  // Stash's side
-    std::string pathTo;    // this device's: a local path or an SMB locator
+    std::string pathTo;    // this device's: a local path or a remote locator (remote.h)
     int found = 0;         // of the files looked for
   };
 
@@ -37,9 +37,10 @@ class StashFolderFinder {
   StashFolderFinder();
   ~StashFolderFinder();  // stops the search and waits for it
 
-  // Looks for each job's files under `roots` (local paths or SMB locators).
+  // Looks for each job's files under `roots` (local paths or remote locators).
   // Empty: every likely place: the shares of the SMB servers signed in to,
-  // mounted drives and network mounts, and the home folder, after `also`.
+  // the SFTP servers' "/" and home folders, mounted drives and network
+  // mounts, and the home folder, after `also`.
   // A new search replaces one that is running. Per job: at most 64 roots, 50
   // subfolders per root (two levels), 128 listings and 16,384 stats; what
   // one job read is not read again for the next.

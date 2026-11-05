@@ -31,7 +31,7 @@ class GreenScreenCheck {
   GreenScreenCheck& operator=(const GreenScreenCheck&) = delete;
   ~GreenScreenCheck();
 
-  // Checks this video (a local file or SMB), replacing a check in progress.
+  // Checks this video (a local file or a remote one), replacing a check in progress.
   void start(const std::string& path, StereoLayout stereo);
   // A finished check, once: its video and whether it has a green screen.
   bool result(std::string& path, bool& found);

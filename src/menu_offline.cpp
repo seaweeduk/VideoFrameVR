@@ -108,7 +108,7 @@ const Offline::Download* Menu::downloadOf(const std::string& path) const {
 // downloaded or queued.
 bool Menu::downloadable(const std::string& path) const {
   if (!offline_ || path.empty() || !isVideoFile(path)) return false;
-  if (!smb::isSmb(path) && !isStashScene(path) && path[0] != '/') return false;
+  if (!remote::isRemote(path) && !isStashScene(path) && path[0] != '/') return false;
   return !offline_->serverDown(path) && !downloadOf(path);
 }
 
@@ -1012,7 +1012,7 @@ void Menu::drawOfflineDialog(cairo_t* cr, double boxX, double boxY) {
                        driveName(d->root, false).c_str()),
                textX, boxY + 95, textW, 50, 28, false, true, 0.85, 0.85, 0.9);
     const std::string warning =
-        smb::isSmb(dialogPath_) ? printed(t.removeWarning, serverName(smb::host(dialogPath_)).c_str())
+        remote::isRemote(dialogPath_) ? printed(t.removeWarning, serverName(remote::root(dialogPath_)).c_str())
                                 : std::string(t.removeWarningLocal);
     drawText(cr, warning, textX, boxY + 160, textW, 50, 26, true, true, 1.0, 0.45, 0.4);
   }

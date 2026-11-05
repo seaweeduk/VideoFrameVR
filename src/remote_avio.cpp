@@ -1,4 +1,4 @@
-#include "smb_avio.h"
+#include "remote_avio.h"
 #include "stash_stream.h"
 
 extern "C" {
@@ -9,19 +9,19 @@ extern "C" {
 #include <cerrno>
 #include <limits>
 
-SmbAvio::~SmbAvio() {
+RemoteAvio::~RemoteAvio() {
   if (stash_.cookie) stash_.close_fn(stash_.cookie);
   if (io_) av_freep(&io_->buffer);
   avio_context_free(&io_);
 }
 
-bool SmbAvio::attach(AVFormatContext* format, const std::string& path) {
+bool RemoteAvio::attach(AVFormatContext* format, const std::string& path) {
   if (isStashScene(path)) {
     if (!openStashScene(path, stash_)) return false;
   } else {
-    if (!smb::isSmb(path)) return true;
-    smb::Status status;
-    file_ = smb::File::open(path, status);
+    if (!remote::isRemote(path)) return true;
+    remote::Status status;
+    file_ = remote::File::open(path, status);
     if (!file_) return false;
   }
   constexpr int kBufferSize = 256 * 1024;
@@ -38,8 +38,8 @@ bool SmbAvio::attach(AVFormatContext* format, const std::string& path) {
   return true;
 }
 
-int SmbAvio::read(void* opaque, uint8_t* out, int count) {
-  auto& self = *static_cast<SmbAvio*>(opaque);
+int RemoteAvio::read(void* opaque, uint8_t* out, int count) {
+  auto& self = *static_cast<RemoteAvio*>(opaque);
   if (self.interrupt_.callback && self.interrupt_.callback(self.interrupt_.opaque))
     return AVERROR_EXIT;
   const int64_t n = !self.stash_.cookie ? self.file_->read(self.position_, out, count)
@@ -52,8 +52,8 @@ int SmbAvio::read(void* opaque, uint8_t* out, int count) {
   return static_cast<int>(n);
 }
 
-int64_t SmbAvio::seek(void* opaque, int64_t offset, int whence) {
-  auto& self = *static_cast<SmbAvio*>(opaque);
+int64_t RemoteAvio::seek(void* opaque, int64_t offset, int whence) {
+  auto& self = *static_cast<RemoteAvio*>(opaque);
   whence &= ~AVSEEK_FORCE;
   if (whence == AVSEEK_SIZE) return self.size();
   int64_t base = 0;
@@ -66,6 +66,6 @@ int64_t SmbAvio::seek(void* opaque, int64_t offset, int whence) {
   return self.position_;
 }
 
-int64_t SmbAvio::size() const {
+int64_t RemoteAvio::size() const {
   return stash_.cookie ? stash_.size_fn(stash_.cookie) : static_cast<int64_t>(file_->size());
 }

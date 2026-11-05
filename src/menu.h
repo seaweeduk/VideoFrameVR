@@ -12,7 +12,7 @@
 #include "release_update.h"
 #include "menu_geometry.h"
 #include "settings.h"
-#include "smb.h"
+#include "remote.h"
 #include "smb_discovery.h"
 #include "stash_folders.h"
 #include "strings.h"
@@ -220,7 +220,7 @@ struct MenuView {
 // what the app found out about it in the background. Until `ready`, only
 // Cancel can be pressed.
 struct DeleteInfo {
-  std::string file;  // the file playing: a path or an SMB locator
+  std::string file;  // the file playing: a path or a remote locator (remote.h)
   std::string name;  // its file name
   bool photo = false;
   bool ready = false;
@@ -1286,28 +1286,28 @@ class Menu {
   // The Network page and the SMB form (menu_network.cpp).
   struct SmbForm {
     enum class Kind { None, AddServer, SignIn, Share } kind = Kind::None;
-    std::string host;  // the server's (the one signing in to, once Sign in is chosen)
+    std::string root;  // the server's (the one signing in to, once Sign in is chosen): remote::root()
     std::string then;  // Add server: the share (and folders) typed after the server
     int field = 0;     // typed into: 0 server (or share), 1 user name, 2 password
     std::array<std::string, 3> text;
     bool remember = true, showPassword = false;
     std::string error;
-    std::shared_ptr<std::atomic<int>> signing;  // a sign-in under way: its smb::Status, -1 until done
+    std::shared_ptr<std::atomic<int>> signing;  // a sign-in under way: its remote::Status, -1 until done
   };
   SmbForm smbForm_;
   SmbDiscovery discovery_;
   void showNetwork();
-  std::vector<smb::Server> networkServers() const;
-  void openServer(const smb::Server& server);
+  std::vector<remote::Server> networkServers() const;
+  void openServer(const remote::Server& server);
   void layoutNetworkPage();
   const char* networkState() const;
-  void openSmbForm(SmbForm::Kind kind, const std::string& host);
+  void openSmbForm(SmbForm::Kind kind, const std::string& root);
   void layoutSmbForm(double top);
   std::vector<int> smbFields() const;
   MenuCommand submitSmbForm();
   void updateNetwork();
   void smbFolderRead();
-  std::string serverName(const std::string& host) const;
+  std::string serverName(const std::string& root) const;
   std::string shownLocation(const std::string& dir) const;
 
   // Where Stash's videos are here (menu_stash_folders.cpp): looked for once

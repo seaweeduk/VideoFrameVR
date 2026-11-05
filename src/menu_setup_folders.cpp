@@ -131,8 +131,8 @@ void SetupPages::update(Menu& m) {
     folder.read = true;
     if (s.step != SetupMenu::Step::Folders || f.page != Page::Pick || placeOf(m, path) != f.shown) continue;
     if (path == f.shown) {  // the place itself: its folders, or its sign-in
-      if (folder.listing.status == smb::Status::NeedsLogin && m.smbForm_.kind == Menu::SmbForm::Kind::None)
-        m.openSmbForm(Menu::SmbForm::Kind::SignIn, smb::host(path));
+      if (folder.listing.status == remote::Status::NeedsLogin && m.smbForm_.kind == Menu::SmbForm::Kind::None)
+        m.openSmbForm(Menu::SmbForm::Kind::SignIn, remote::root(path));
       m.dirty_ = true;
       continue;
     }
@@ -284,11 +284,11 @@ void SetupPages::showPlace(Menu& m, const std::string& root) {
   if (root.empty()) {
     f.computer.clear();
   } else if (!f.folders.count(root) || (!f.folders[root].read && !f.folders[root].reading.running()) ||
-             (f.folders[root].read && f.folders[root].listing.status != smb::Status::Ok &&
-              f.folders[root].listing.status != smb::Status::NeedsLogin)) {
+             (f.folders[root].read && f.folders[root].listing.status != remote::Status::Ok &&
+              f.folders[root].listing.status != remote::Status::NeedsLogin)) {
     readFolder(m, root);
-  } else if (f.folders[root].read && f.folders[root].listing.status == smb::Status::NeedsLogin) {
-    m.openSmbForm(Menu::SmbForm::Kind::SignIn, smb::host(root));
+  } else if (f.folders[root].read && f.folders[root].listing.status == remote::Status::NeedsLogin) {
+    m.openSmbForm(Menu::SmbForm::Kind::SignIn, remote::root(root));
   }
   m.dirty_ = true;
 }
@@ -317,15 +317,14 @@ void SetupPages::layoutPick(Menu& m, const Menu::Button& later) {
                         twin ? (drive.label.empty() ? lastPart(drive.mountPoint) : drive.label) : name});
   }
   const size_t computers = f.places.size();
-  auto addComputerPlace = [&](const std::string& host) {
-    const std::string root = "smb://" + host;
+  auto addComputerPlace = [&](const std::string& root) {
     if (std::none_of(f.places.begin(), f.places.end(), [&](const Place& p) { return p.root == root; }))
-      f.places.push_back({Kind::Computer, root, m.serverName(host)});
+      f.places.push_back({Kind::Computer, root, m.serverName(root)});
   };
-  for (const smb::Server& server : m.networkServers()) addComputerPlace(server.host);
-  for (const std::string& host : f.hosts) addComputerPlace(host);
+  for (const remote::Server& server : m.networkServers()) addComputerPlace(server.root);
+  for (const std::string& root : f.hosts) addComputerPlace(root);
   for (const std::string& tick : s.places)  // ticked before setup was left
-    if (smb::isSmb(tick)) addComputerPlace(smb::host(tick));
+    if (remote::isRemote(tick)) addComputerPlace(remote::root(tick));
 
   double y = kPaneY;
   auto row = [&](const std::string& label, Icon icon, bool on, std::function<MenuCommand()> action) -> Menu::Button& {
@@ -464,8 +463,8 @@ void SetupPages::treeRows(Menu& m) {
       return;
     }
     const setup_places::Folder& listing = it->second.listing;
-    if (listing.status != smb::Status::Ok) {
-      line(path, depth - 1, listing.status == smb::Status::Offline ? m.text().network.offline : t.cantOpen, true);
+    if (listing.status != remote::Status::Ok) {
+      line(path, depth - 1, listing.status == remote::Status::Offline ? m.text().network.offline : t.cantOpen, true);
       return;
     }
     for (const setup_places::Folder::Sub& sub : listing.folders) {
@@ -476,7 +475,7 @@ void SetupPages::treeRows(Menu& m) {
       r.opened = f.open.count(r.path) > 0;
       // Its chevron unless it is known to have no subfolders.
       const auto read = f.folders.find(r.path);
-      r.chevron = read != f.folders.end() && read->second.read && read->second.listing.status == smb::Status::Ok
+      r.chevron = read != f.folders.end() && read->second.read && read->second.listing.status == remote::Status::Ok
                       ? !read->second.listing.folders.empty()
                       : sub.folders != 0;
       r.y = y;
@@ -516,7 +515,7 @@ void SetupPages::treeRows(Menu& m) {
     top("/", t.fileSystem, false);
   } else {
     if (kind != Kind::Computer && root != f.folders.end() && root->second.read &&
-        root->second.listing.status == smb::Status::Ok)
+        root->second.listing.status == remote::Status::Ok)
       top(f.shown, kind == Kind::Card ? t.wholeCard : t.wholeDrive, true);
     walk(f.shown, 0);
   }
@@ -533,7 +532,7 @@ void SetupPages::layoutTree(Menu& m) {
   treeRows(m);
   // The place itself not read: Try again.
   const auto root = f.folders.find(f.shown);
-  if (root != f.folders.end() && root->second.read && root->second.listing.status != smb::Status::Ok) {
+  if (root != f.folders.end() && root->second.read && root->second.listing.status != remote::Status::Ok) {
     Menu::Button again = m.textButton(t.tryAgain, Menu::Icon::None, [&m] {
       readFolder(m, m.setup_->folders->shown);
       return MenuCommand{};
@@ -701,7 +700,7 @@ void SetupPages::toggleOpen(Menu& m, const std::string& path) {
     f.open.insert(path);
     const auto it = f.folders.find(path);
     if (it == f.folders.end() || (!it->second.read && !it->second.reading.running()) ||
-        (it->second.read && it->second.listing.status != smb::Status::Ok))
+        (it->second.read && it->second.listing.status != remote::Status::Ok))
       readFolder(m, path);
     f.reveal = f.folders[path].read ? "" : path;
   }
@@ -764,7 +763,7 @@ void SetupPages::drawSignIn(Menu& m, cairo_t* cr) {
   const Palette pal = m.palette();
   const NetworkStrings& n = m.text().network;
   const Menu::SmbForm& form = m.smbForm_;
-  m.drawText(cr, printed(n.signInTitle, m.serverName(form.host)), kFormX, kPaneY + 36, kPaneR - kFormX - 48, 50,
+  m.drawText(cr, printed(n.signInTitle, m.serverName(form.root)), kFormX, kPaneY + 36, kPaneR - kFormX - 48, 50,
              30, true, false, pal.text.r, pal.text.g, pal.text.b);
   for (const auto& [label, y] : {std::pair{n.fields[1], 110.0}, {n.fields[2], 230.0}})
     m.drawText(cr, label, kFormX + 4, kPaneY + y, kFieldW, 34, 23, false, false, pal.textDim.r, pal.textDim.g,
@@ -817,8 +816,9 @@ void SetupPages::addComputer(Menu& m) {
   while (!host.empty() && host.back() == ' ') host.pop_back();
   for (char& c : host) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   if (host.empty()) return;
-  if (std::find(f.hosts.begin(), f.hosts.end(), host) == f.hosts.end()) f.hosts.push_back(host);
-  showPlace(m, "smb://" + host);
+  const std::string root = remote::root("smb://" + host);
+  if (std::find(f.hosts.begin(), f.hosts.end(), root) == f.hosts.end()) f.hosts.push_back(root);
+  showPlace(m, root);
 }
 
 // The field typed into: a computer's name, a sign-in's (Menu::smbForm_),
@@ -836,14 +836,14 @@ std::string* SetupPages::typed(Menu& m) {
 // (Menu::endSetup()).
 void SetupPages::signedIn(Menu& m) {
   SetupMenu& s = *m.setup_;
-  const std::string host = m.smbForm_.host;
+  const std::string root = m.smbForm_.root;
   if (s.holdWrites && m.smbForm_.remember &&
-      std::find(s.logins.begin(), s.logins.end(), host) == s.logins.end())
-    s.logins.push_back(host);
+      std::find(s.logins.begin(), s.logins.end(), root) == s.logins.end())
+    s.logins.push_back(root);
   m.smbForm_ = {};
   m.editing_ = false;
   m.dirty_ = true;
-  if (s.folders) readFolder(m, "smb://" + host);
+  if (s.folders) readFolder(m, root);
 }
 
 // Refused: the password again, typed anew.
