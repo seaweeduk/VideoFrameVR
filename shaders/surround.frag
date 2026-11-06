@@ -48,18 +48,20 @@ struct SurroundDraw {
 DECLARE_PUSH(SurroundDraw)
 uint drawFlags() { return pc.draw.mode.y; }
 
-// The pipeline's mode (Pipelines::surround): -1 for the general pipelines,
-// which take everything from the draw (with mipmaps, footprint taps, the tone
-// look and adjustments, and the rest of the rarer cases); otherwise a common
-// mode, which samples the full-size level with one tap.
+// The pipeline's mode (Pipelines::surround). A projection of -1 makes a
+// general pipeline, which takes everything else from the draw too (with
+// mipmaps, footprint taps, the tone look, sharpening and the rarer cases);
+// otherwise a common mode, which samples the full-size level with one tap.
 layout(constant_id = 0) const int kProjection = -1;  // 0: 180 or 360, 1: fisheye, 2: either cubemap
-layout(constant_id = 1) const int kSource = -1;      // 0: an RGBA image, 1: a decoded frame's planes
+// What tex holds (video.glsl's kSource...); -1: an image or planes, from the
+// draw (general pipelines only).
+layout(constant_id = 1) const int kSource = -1;
 // 0: no packed mask or green screen, 1: the packed mask (looked up first,
 // with transparent output in a common mode), 2: a green screen without
 // shrink (common modes only).
 layout(constant_id = 2) const int kSeeThrough = -1;
 layout(constant_id = 3) const bool kSharpen = false;  // general pipelines: sharpening, for a strength above 0
-const bool kCommon = kSource >= 0;
+const bool kCommon = kProjection >= 0;
 const bool kMaskFirst = kSeeThrough == 1;
 
 #ifdef TP10
@@ -70,13 +72,17 @@ layout(set = 0, binding = 0) uniform sampler2D tex;
 layout(set = 0, binding = 1) uniform sampler2D chromaTex;  // kYuv
 
 #ifdef TP10
-bool isYuv() { return true; }
+int source() { return kSourcePlanes; }
 #else
-bool isYuv() { return kCommon ? kSource == 1 : (pc.draw.mode.y & kYuv) != 0u; }
+int source() {
+  if (kSource >= 0) return kSource;
+  return (pc.draw.mode.y & kYuv) != 0u ? kSourcePlanes : kSourceImage;
+}
 #endif
+bool isYuv() { return source() != kSourceImage; }
 vec4 yuvMatrix() { return vec4(pc.draw.params.zw, pc.draw.alpha.zw); }
 // The picture at p (texture coordinates), full-size level, linear colour.
-vec3 tap(vec2 p) { return videoTap(tex, chromaTex, p, isYuv(), pc.draw.yuv, yuvMatrix()); }
+vec3 tap(vec2 p) { return videoTap(tex, chromaTex, p, source(), pc.draw.yuv, yuvMatrix()); }
 
 layout(location = 0) in vec2 vNdc;
 layout(location = 0) out vec4 fragColor;
@@ -87,7 +93,7 @@ layout(location = 0) out vec4 fragColor;
 vec3 picture(vec2 uv, vec2 lo, vec2 hi, vec2 dx, vec2 dy, EyeData e, uint flags, vec2 fragCoord) {
   vec3 c;
   if (kCommon || baseLevel(flags)) {
-    c = footprintSample(tex, chromaTex, isYuv(), pc.draw.yuv, yuvMatrix(), uv, dx, dy, e.stereo, lo,
+    c = footprintSample(tex, chromaTex, source(), pc.draw.yuv, yuvMatrix(), uv, dx, dy, e.stereo, lo,
                         hi, kCommon ? 1 : int(pc.draw.mode.z));
   } else {
     vec2 eyeUv = e.stereo.zw + clamp(uv, lo, hi) * e.stereo.xy;

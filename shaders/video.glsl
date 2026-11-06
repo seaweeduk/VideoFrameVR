@@ -90,19 +90,36 @@ float tp10Luma(sampler2D chroma, vec2 p) {
 #define baseLevel(flags) (((flags) & kBaseLevel) != 0u)
 #endif
 
+// What tex holds (videoTap): an RGBA image (mpv's), a decoded frame's luma
+// (its chroma at binding 1), or a decoded frame through a Y'CbCr sampler with
+// an identity conversion, whose one lookup returns Cr, Y, Cb. A Q10C frame's
+// TP10 bands are built apart (TP10).
+const int kSourceImage = 0;
+const int kSourcePlanes = 1;
+const int kSourceYcbcr = 2;
+
 // The picture at p (texture coordinates) from its full-size level, bilinear,
-// linear colour: the image, or (yuv) a decoded frame's planes as mpv would
-// have drawn them into the sRGB image the other path samples. range as
-// yuvToRgb's; matrix: Kr, Kb, then the chroma lookup's offset.
-vec3 videoTap(sampler2D tex, sampler2D chroma, vec2 p, bool yuv, vec4 range, vec4 matrix) {
-#ifdef TP10
-  float y = tp10Luma(chroma, p);
-#else
-  if (!yuv) return textureLod(tex, p, 0.0).rgb;
+// linear colour: the image, or a decoded frame as mpv would have drawn it
+// into the sRGB image the other path samples. range as yuvToRgb's; matrix:
+// Kr, Kb, then the chroma lookup's offset (planes).
+vec3 videoTap(sampler2D tex, sampler2D chroma, vec2 p, int source, vec4 range, vec4 matrix) {
   // Lookups at full precision: half precision ones move the taps.
-  float y = textureLod(tex, p, 0.0).r;
+  float y;
+  vec2 c;
+#ifdef TP10
+  y = tp10Luma(chroma, p);
+  c = textureLod(chroma, p + matrix.zw, 0.0).rg;
+#else
+  if (source == kSourceImage) return textureLod(tex, p, 0.0).rgb;
+  if (source == kSourceYcbcr) {
+    vec3 s = textureLod(tex, p, 0.0).rgb;
+    y = s.g;
+    c = s.br;
+  } else {
+    y = textureLod(tex, p, 0.0).r;
+    c = textureLod(chroma, p + matrix.zw, 0.0).rg;
+  }
 #endif
-  vec2 c = textureLod(chroma, p + matrix.zw, 0.0).rg;
   mediump vec3 e = clamp(yuvToRgb(y, c, range, matrix.xy), 0.0, 1.0);
   // To linear light as mpv's image would be sampled: sRGB's curve, or with TV
   // gamma, the 2.4 power mpv converts BT.1886 video with (the same work).
@@ -120,19 +137,19 @@ vec3 videoTap(sampler2D tex, sampler2D chroma, vec2 p, bool yuv, vec4 range, vec
 // Anti-shimmer setting (anti_shimmer.h), from the draw's push constants: 1
 // is one bilinear tap whatever the footprint. Magnified or about
 // 1:1 it is one bilinear tap as before. No mipmaps, so nothing extra per video
-// frame. Taps stay within lo..hi. Linear colour. chroma, yuv, range, matrix:
-// videoTap's.
-vec3 footprintSample(sampler2D tex, sampler2D chroma, bool yuv, vec4 range, vec4 matrix, vec2 uv,
+// frame. Taps stay within lo..hi. Linear colour. chroma, source, range,
+// matrix: videoTap's.
+vec3 footprintSample(sampler2D tex, sampler2D chroma, int source, vec4 range, vec4 matrix, vec2 uv,
                      vec2 dx, vec2 dy, vec4 stereo, vec2 lo, vec2 hi, int maxTaps) {
   if (maxTaps <= 1)
-    return videoTap(tex, chroma, stereo.zw + clamp(uv, lo, hi) * stereo.xy, yuv, range, matrix);
+    return videoTap(tex, chroma, stereo.zw + clamp(uv, lo, hi) * stereo.xy, source, range, matrix);
   vec2 size = videoSize(tex, chroma) * stereo.xy;
   float lx = length(dx * size), ly = length(dy * size);
   if (max(lx, ly) > kFootprintJump) lx = ly = 1.0;
   float spanX, spanY;
   int nx = footprintTaps(lx, maxTaps, spanX), ny = footprintTaps(ly, maxTaps, spanY);
   if (nx * ny == 1)
-    return videoTap(tex, chroma, stereo.zw + clamp(uv, lo, hi) * stereo.xy, yuv, range, matrix);
+    return videoTap(tex, chroma, stereo.zw + clamp(uv, lo, hi) * stereo.xy, source, range, matrix);
   // From one end to the other, in steps along dx and dy.
   vec2 stepX = nx > 1 ? dx * (spanX / lx / float(nx - 1)) : vec2(0.0);
   vec2 stepY = ny > 1 ? dy * (spanY / ly / float(ny - 1)) : vec2(0.0);
@@ -141,7 +158,7 @@ vec3 footprintSample(sampler2D tex, sampler2D chroma, bool yuv, vec4 range, vec4
   for (int j = 0; j < ny; ++j)
     for (int i = 0; i < nx; ++i) {
       vec2 p = clamp(first + stepX * float(i) + stepY * float(j), lo, hi);
-      sum += videoTap(tex, chroma, stereo.zw + p * stereo.xy, yuv, range, matrix);
+      sum += videoTap(tex, chroma, stereo.zw + p * stereo.xy, source, range, matrix);
     }
   return sum / float(nx * ny);
 }

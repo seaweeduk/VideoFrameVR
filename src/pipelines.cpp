@@ -35,6 +35,15 @@ constexpr int32_t kMaskFirst[] = {-1, -1, 1, 0};
 constexpr int32_t kSharpened[] = {-1, -1, -1, 1};
 constexpr int32_t kMaskFirstSharpened[] = {-1, -1, 1, 1};
 
+// A common mode's source as the shader's constant (video.glsl's kSource...).
+int32_t sourceConstant(Pipelines::SurroundSource source) {
+  switch (source) {
+    case Pipelines::kImage: return 0;
+    case Pipelines::kPlanes: return 1;
+    default: return 1;  // TP10: its own build of the shader, which ignores it
+  }
+}
+
 }  // namespace
 
 Pipelines::~Pipelines() {
@@ -202,7 +211,7 @@ void Pipelines::addSurround(std::vector<Job>& jobs, std::initializer_list<Surrou
     for (int p = 0; p < kProjectionCount; ++p)
       for (int c = 0; c < kCutCount; ++c)
         for (int plain = 0; plain < (plainEyePass_ == eyePass_ ? 1 : 2); ++plain) {
-          const int32_t constants[] = {p, source == kImage ? 0 : 1, c, 0};
+          const int32_t constants[] = {p, sourceConstant(source), c, 0};
           add(jobs,
               {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment, fragmentBytes,
                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, 4},

@@ -21,7 +21,7 @@ layout(location = 0) out vec4 fragColor;
 // pixel's footprint.
 vec3 picture(vec2 uv, vec2 m, vec2 dx, vec2 dy, EyeData e, uint flags) {
   if (baseLevel(flags))
-    return footprintSample(tex, chromaTex, (flags & kYuv) != 0u, pc.draw.yuv, pc.draw.yuvMatrix, uv, dx,
+    return footprintSample(tex, chromaTex, (flags & kYuv) != 0u ? kSourcePlanes : kSourceImage, pc.draw.yuv, pc.draw.yuvMatrix, uv, dx,
                            dy, e.stereo, m, 1.0 - m, int(pc.draw.mode.z));
   vec2 eyeUv = e.stereo.zw + clamp(uv, m, 1.0 - m) * e.stereo.xy;
   return textureGrad(tex, eyeUv, dx * e.stereo.xy, dy * e.stereo.xy).rgb;
