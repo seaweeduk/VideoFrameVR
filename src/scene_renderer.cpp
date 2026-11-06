@@ -365,15 +365,15 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   // A Q10C frame: its TP10 descriptors, for the pipelines for them (no
   // sharpening: VideoPlayer::setSharpened has mpv convert frames then).
   const bool tp10 = yuv && yuv->tp10() && direct_;
-  auto bind = [&](bool screen, bool maskFirst) {
-    if (tp10) {
-      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_.tp10(screen, maskFirst, plainEye_));
-      direct_->bindTp10(cmd, pipelines_.tp10Layout(), *yuv);
-      return;
-    }
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      pipeline(Pipelines::videoPipeline(screen, maskFirst, sharpen > 0.0f)));
-    pipelines_.bindTextures(cmd, v.texture, sampler, chroma);
+  auto bind = [&](VkPipeline pipeline) {
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    if (tp10) direct_->bindTp10(cmd, pipelines_.tp10Layout(), *yuv);
+    else pipelines_.bindTextures(cmd, v.texture, sampler, chroma);
+  };
+  // The general pipelines.
+  auto general = [&](bool screen, bool maskFirst) {
+    return tp10 ? pipelines_.tp10(screen, maskFirst, plainEye_)
+                : pipeline(Pipelines::videoPipeline(screen, maskFirst, sharpen > 0.0f));
   };
 
   if (v.format.projection == Projection::Flat) {
@@ -399,7 +399,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
         p.yuv[i] = yuv->color().range[i];
         p.yuvMatrix[i] = yuv->color().matrix[i];
       }
-    bind(true, false);
+    bind(general(true, false));
     pushEye(cmd, eye);
     pushDraw(cmd, p);
     vkCmdDraw(cmd, 2 * 65, 1, 0, 0);
@@ -436,6 +436,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
     p.chroma[3] = 6.0f * v.key.shrink / 100.0f;
   }
   const EyeCorrection& correct = v.correction.eyes[index];
+  eye.viewer[3] = 1.0f;  // without correction: a unit sphere around the eye, which changes nothing
   if (index < 2 && correct.on) {
     flags |= kCorrect;
     eye.viewer[0] = correct.viewer.x;
@@ -448,7 +449,8 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   }
   p.mode[0] = static_cast<uint32_t>(projection);
   p.mode[1] = flags;
-  p.mode[2] = static_cast<uint32_t>(antiShimmerTaps(v.antiShimmer));
+  const int taps = antiShimmerTaps(v.antiShimmer);
+  p.mode[2] = static_cast<uint32_t>(taps);
   if (yuv) {
     const YuvColor& c = yuv->color();
     for (int i = 0; i < 4; ++i) p.yuv[i] = c.range[i];
@@ -458,7 +460,23 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
     p.alpha[3] = c.matrix[3];
   }
   const bool maskFirst = (flags & kPackedAlpha) && (flags & (kKeyGreen | kAlphaOut));
-  bind(false, maskFirst);
+  // A common mode has a pipeline of its own: the full-size level with one
+  // tap, no look or adjustments, no sharpening, and a packed mask only with
+  // transparent output.
+  const bool adjusted = v.adjust[0] != 0.0f || v.adjust[1] != 0.0f || v.adjust[2] != 0.0f;
+  if ((flags & kBaseLevel) && taps == 1 && !v.look && !adjusted && sharpen <= 0.0f &&
+      !glassPass_ && !(maskFirst && (flags & kKeyGreen))) {
+    const auto family = projection >= 3   ? Pipelines::kCubemap
+                        : projection == 2 ? Pipelines::kFisheye
+                                          : Pipelines::kEquirect;
+    const auto source = tp10 ? Pipelines::kTp10 : yuv ? Pipelines::kPlanes : Pipelines::kImage;
+    const auto cut = maskFirst            ? Pipelines::kPackedMask
+                     : flags & kChromaKey ? Pipelines::kGreenScreen
+                                          : Pipelines::kUncut;
+    bind(pipelines_.surround(family, source, cut, plainEye_));
+  } else {
+    bind(general(false, maskFirst));
+  }
   pushEye(cmd, eye);
   pushDraw(cmd, p);
   vkCmdDraw(cmd, 3, 1, 0, 0);

@@ -18,14 +18,20 @@
 #include "shaders/screen_sharpen.frag.h"
 #include "shaders/screen_tp10.frag.h"
 #include "shaders/surround.frag.h"
-#include "shaders/surround_mask.frag.h"
-#include "shaders/surround_mask_sharpen.frag.h"
-#include "shaders/surround_mask_tp10.frag.h"
-#include "shaders/surround_sharpen.frag.h"
 #include "shaders/surround_tp10.frag.h"
 
 #include <algorithm>
 #include <cstdio>
+
+namespace {
+
+// surround.frag's pipeline constants (projection, source, cut, sharpening)
+// for its general pipelines: -1, from the draw.
+constexpr int32_t kMaskFirst[] = {-1, -1, 1, 0};
+constexpr int32_t kSharpened[] = {-1, -1, -1, 1};
+constexpr int32_t kMaskFirstSharpened[] = {-1, -1, 1, 1};
+
+}  // namespace
 
 Pipelines::~Pipelines() {
   if (!gpu_) return;
@@ -37,6 +43,10 @@ Pipelines::~Pipelines() {
   pipelines.insert(pipelines.end(), std::begin(foveation_), std::end(foveation_));
   pipelines.insert(pipelines.end(), std::begin(tp10_), std::end(tp10_));
   pipelines.insert(pipelines.end(), std::begin(tp10Plain_), std::end(tp10Plain_));
+  for (const auto& pass : surround_)
+    for (const auto& projection : pass)
+      for (const auto& cuts : projection)
+        pipelines.insert(pipelines.end(), std::begin(cuts), std::end(cuts));
   std::vector<VkSampler> samplers(std::begin(samplers_), std::end(samplers_));
   VkPipelineLayout layout = layout_, tp10Layout = tp10Layout_;
   VkDescriptorSetLayout setLayout = setLayout_;
@@ -94,12 +104,13 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
        sizeof(kSpirv_pointer_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, true},
       {kSpirv_preview_vert, sizeof(kSpirv_preview_vert), kSpirv_preview_frag,
        sizeof(kSpirv_preview_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, true},
-      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_mask_frag,
-       sizeof(kSpirv_surround_mask_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
-      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_sharpen_frag,
-       sizeof(kSpirv_surround_sharpen_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
-      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_mask_sharpen_frag,
-       sizeof(kSpirv_surround_mask_sharpen_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_frag,
+       sizeof(kSpirv_surround_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kMaskFirst, 4},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_frag,
+       sizeof(kSpirv_surround_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kSharpened, 4},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_frag,
+       sizeof(kSpirv_surround_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kMaskFirstSharpened,
+       4},
       {kSpirv_screen_vert, sizeof(kSpirv_screen_vert), kSpirv_screen_sharpen_frag,
        sizeof(kSpirv_screen_sharpen_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, false},
   };
@@ -121,6 +132,9 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
     plain_[i] = create(descs[i], plainEyePass, names[i]);
     if (!plain_[i]) return false;
   }
+  if (!createSurround(kImage, kSpirv_surround_frag, sizeof(kSpirv_surround_frag), layout_) ||
+      !createSurround(kPlanes, kSpirv_surround_frag, sizeof(kSpirv_surround_frag), layout_))
+    return false;
   if (gpu.caps().foveation) {
     const Desc debug{kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_foveation_frag,
                      sizeof(kSpirv_foveation_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, true};
@@ -157,8 +171,8 @@ bool Pipelines::initTp10(VkDescriptorSetLayout setLayout) {
   const Desc descs[3] = {
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_tp10_frag,
        sizeof(kSpirv_surround_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
-      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_mask_tp10_frag,
-       sizeof(kSpirv_surround_mask_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_tp10_frag,
+       sizeof(kSpirv_surround_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kMaskFirst, 4},
       {kSpirv_screen_vert, sizeof(kSpirv_screen_vert), kSpirv_screen_tp10_frag,
        sizeof(kSpirv_screen_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, false},
   };
@@ -170,6 +184,23 @@ bool Pipelines::initTp10(VkDescriptorSetLayout setLayout) {
     tp10Plain_[i] = create(descs[i], plainEyePass_, names[i], tp10Layout_);
     if (!tp10Plain_[i]) return false;
   }
+  return createSurround(kTp10, kSpirv_surround_tp10_frag, sizeof(kSpirv_surround_tp10_frag),
+                        tp10Layout_);
+}
+
+bool Pipelines::createSurround(SurroundSource source, const uint32_t* fragment,
+                               size_t fragmentBytes, VkPipelineLayout layout) {
+  for (int p = 0; p < kProjectionCount; ++p)
+    for (int c = 0; c < kCutCount; ++c) {
+      const int32_t constants[] = {p, source == kImage ? 0 : 1, c, 0};
+      const Desc desc{kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment,
+                      fragmentBytes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, 4};
+      for (int plain = 0; plain < (plainEyePass_ == eyePass_ ? 1 : 2); ++plain) {
+        VkPipeline& pipeline = surround_[plain][p][source][c];
+        pipeline = create(desc, plain ? plainEyePass_ : eyePass_, "surround (common mode)", layout);
+        if (!pipeline) return false;
+      }
+    }
   return true;
 }
 
@@ -196,6 +227,12 @@ VkPipeline Pipelines::create(const Desc& desc, VkRenderPass pass, const char* wh
   stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
   stages[1].module = modules[1];
   stages[1].pName = "main";
+  VkSpecializationMapEntry entries[4] = {};
+  for (uint32_t i = 0; i < desc.constantCount; ++i)
+    entries[i] = {i, i * static_cast<uint32_t>(sizeof(int32_t)), sizeof(int32_t)};
+  const VkSpecializationInfo specialization{desc.constantCount, entries,
+                                            desc.constantCount * sizeof(int32_t), desc.constants};
+  if (desc.constantCount) stages[1].pSpecializationInfo = &specialization;
 
   // Vertices come from gl_VertexIndex alone.
   VkPipelineVertexInputStateCreateInfo vertexInput{
