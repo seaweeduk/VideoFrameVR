@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 
 // The scene's pipelines, made once at startup against the eye render pass,
 // whatever the settings (docs/vulkan-renderer.md, 2.5), with their one
@@ -114,9 +115,14 @@ class Pipelines {
 
  private:
   bool createSamplers();
-  // The common modes' surround pipelines of one source for the eye passes.
-  bool createSurround(SurroundSource source, const uint32_t* fragment, size_t fragmentBytes,
-                      VkPipelineLayout layout);
+  VkShaderModule module(const uint32_t* code, size_t bytes, const char* what);
+  // create() with these modules for desc's code (which it doesn't read).
+  VkPipeline create(const Desc& desc, VkShaderModule vertex, VkShaderModule fragment,
+                    VkRenderPass pass, const char* what, VkPipelineLayout layout);
+  // The common modes' surround pipelines of these sources (all of one shader
+  // and layout) for the eye passes, compiled on several threads at once.
+  bool createSurround(std::initializer_list<SurroundSource> sources, const uint32_t* fragment,
+                      size_t fragmentBytes, VkPipelineLayout layout);
   bool createDummy();
 
   GpuContext* gpu_ = nullptr;

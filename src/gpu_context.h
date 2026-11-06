@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -206,7 +207,7 @@ class GpuContext {
   uint64_t currentUse() const { return recording_ ? submitted_ + 1 : submitted_; }
 
   GpuDevice device_;
-  bool lost_ = false;
+  std::atomic<bool> lost_{false};  // set by check() from any thread (pipeline workers)
   VkPhysicalDeviceMemoryProperties memory_{};
   VkSemaphore frameTimeline_ = VK_NULL_HANDLE;
   VkSemaphore glTimeline_ = VK_NULL_HANDLE;

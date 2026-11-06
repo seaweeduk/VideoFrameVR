@@ -21,7 +21,11 @@
 #include "shaders/surround_tp10.frag.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
+#include <system_error>
+#include <thread>
+#include <vector>
 
 namespace {
 
@@ -132,8 +136,8 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
     plain_[i] = create(descs[i], plainEyePass, names[i]);
     if (!plain_[i]) return false;
   }
-  if (!createSurround(kImage, kSpirv_surround_frag, sizeof(kSpirv_surround_frag), layout_) ||
-      !createSurround(kPlanes, kSpirv_surround_frag, sizeof(kSpirv_surround_frag), layout_))
+  if (!createSurround({kImage, kPlanes}, kSpirv_surround_frag, sizeof(kSpirv_surround_frag),
+                      layout_))
     return false;
   if (gpu.caps().foveation) {
     const Desc debug{kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_foveation_frag,
@@ -184,48 +188,92 @@ bool Pipelines::initTp10(VkDescriptorSetLayout setLayout) {
     tp10Plain_[i] = create(descs[i], plainEyePass_, names[i], tp10Layout_);
     if (!tp10Plain_[i]) return false;
   }
-  return createSurround(kTp10, kSpirv_surround_tp10_frag, sizeof(kSpirv_surround_tp10_frag),
+  return createSurround({kTp10}, kSpirv_surround_tp10_frag, sizeof(kSpirv_surround_tp10_frag),
                         tp10Layout_);
 }
 
-bool Pipelines::createSurround(SurroundSource source, const uint32_t* fragment,
-                               size_t fragmentBytes, VkPipelineLayout layout) {
-  for (int p = 0; p < kProjectionCount; ++p)
-    for (int c = 0; c < kCutCount; ++c) {
-      const int32_t constants[] = {p, source == kImage ? 0 : 1, c, 0};
-      const Desc desc{kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment,
-                      fragmentBytes, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, 4};
-      for (int plain = 0; plain < (plainEyePass_ == eyePass_ ? 1 : 2); ++plain) {
-        VkPipeline& pipeline = surround_[plain][p][source][c];
-        pipeline = create(desc, plain ? plainEyePass_ : eyePass_, "surround (common mode)", layout);
-        if (!pipeline) return false;
-      }
+// One after another these take about a second on the Frame when nothing is
+// cached yet (after an update); four threads take a quarter of that.
+bool Pipelines::createSurround(std::initializer_list<SurroundSource> sources,
+                               const uint32_t* fragment, size_t fragmentBytes,
+                               VkPipelineLayout layout) {
+  struct Job {
+    int32_t constants[4];
+    VkRenderPass pass;
+    VkPipeline* pipeline;
+  };
+  std::vector<Job> jobs;
+  for (SurroundSource source : sources)
+    for (int p = 0; p < kProjectionCount; ++p)
+      for (int c = 0; c < kCutCount; ++c)
+        for (int plain = 0; plain < (plainEyePass_ == eyePass_ ? 1 : 2); ++plain)
+          jobs.push_back({{p, source == kImage ? 0 : 1, c, 0}, plain ? plainEyePass_ : eyePass_,
+                          &surround_[plain][p][source][c]});
+  const char* what = "surround (common mode)";
+  const VkShaderModule vertexModule =
+      module(kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), what);
+  const VkShaderModule fragmentModule =
+      vertexModule ? module(fragment, fragmentBytes, what) : VK_NULL_HANDLE;
+  std::atomic<size_t> next{0};
+  auto work = [&] {
+    for (size_t i; (i = next++) < jobs.size();) {
+      const Desc desc{nullptr, 0, nullptr, 0, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false,
+                      jobs[i].constants, 4};
+      *jobs[i].pipeline = create(desc, vertexModule, fragmentModule, jobs[i].pass, what, layout);
     }
+  };
+  if (fragmentModule) {
+    // This thread works the queue too; a worker that can't start leaves its
+    // share to the others.
+    std::vector<std::thread> threads;
+    const size_t workers =
+        std::min<size_t>(std::clamp(std::thread::hardware_concurrency(), 1u, 4u), jobs.size()) - 1;
+    threads.reserve(workers);
+    try {
+      while (threads.size() < workers) threads.emplace_back(work);
+    } catch (const std::system_error&) {
+    }
+    work();
+    for (std::thread& t : threads) t.join();
+  }
+  VkDevice d = gpu_->device();
+  vkDestroyShaderModule(d, vertexModule, nullptr);
+  vkDestroyShaderModule(d, fragmentModule, nullptr);
+  for (const Job& job : jobs)
+    if (!*job.pipeline) return false;
   return true;
+}
+
+VkShaderModule Pipelines::module(const uint32_t* code, size_t bytes, const char* what) {
+  VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+  info.codeSize = bytes;
+  info.pCode = code;
+  VkShaderModule m = VK_NULL_HANDLE;
+  gpu_->check(vkCreateShaderModule(gpu_->device(), &info, nullptr, &m), what);
+  return m;
 }
 
 VkPipeline Pipelines::create(const Desc& desc, VkRenderPass pass, const char* what,
                              VkPipelineLayout layout) {
-  VkDevice d = gpu_->device();
-  VkShaderModule modules[2] = {};
-  const uint32_t* code[2] = {desc.vertex, desc.fragment};
-  const size_t bytes[2] = {desc.vertexBytes, desc.fragmentBytes};
-  for (int i = 0; i < 2; ++i) {
-    VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    info.codeSize = bytes[i];
-    info.pCode = code[i];
-    if (!gpu_->check(vkCreateShaderModule(d, &info, nullptr, &modules[i]), what)) {
-      if (modules[0]) vkDestroyShaderModule(d, modules[0], nullptr);
-      return VK_NULL_HANDLE;
-    }
-  }
+  const VkShaderModule vertex = module(desc.vertex, desc.vertexBytes, what);
+  const VkShaderModule fragment =
+      vertex ? module(desc.fragment, desc.fragmentBytes, what) : VK_NULL_HANDLE;
+  const VkPipeline pipeline =
+      fragment ? create(desc, vertex, fragment, pass, what, layout) : VK_NULL_HANDLE;
+  vkDestroyShaderModule(gpu_->device(), vertex, nullptr);
+  vkDestroyShaderModule(gpu_->device(), fragment, nullptr);
+  return pipeline;
+}
+
+VkPipeline Pipelines::create(const Desc& desc, VkShaderModule vertex, VkShaderModule fragment,
+                             VkRenderPass pass, const char* what, VkPipelineLayout layout) {
   VkPipelineShaderStageCreateInfo stages[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO},
                                                {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
   stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-  stages[0].module = modules[0];
+  stages[0].module = vertex;
   stages[0].pName = "main";
   stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-  stages[1].module = modules[1];
+  stages[1].module = fragment;
   stages[1].pName = "main";
   VkSpecializationMapEntry entries[4] = {};
   for (uint32_t i = 0; i < desc.constantCount; ++i)
@@ -288,10 +336,9 @@ VkPipeline Pipelines::create(const Desc& desc, VkRenderPass pass, const char* wh
   info.renderPass = pass;
   info.subpass = 0;
   VkPipeline pipeline = VK_NULL_HANDLE;
-  gpu_->check(vkCreateGraphicsPipelines(d, gpu_->pipelineCache(), 1, &info, nullptr, &pipeline),
+  gpu_->check(vkCreateGraphicsPipelines(gpu_->device(), gpu_->pipelineCache(), 1, &info, nullptr,
+                                        &pipeline),
               what);
-  vkDestroyShaderModule(d, modules[0], nullptr);
-  vkDestroyShaderModule(d, modules[1], nullptr);
   return pipeline;
 }
 
