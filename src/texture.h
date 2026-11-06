@@ -11,6 +11,9 @@ class SharedImage;
 // (shaders/video.glsl, yuvToRgb; DirectVideo).
 struct YuvColor {
   float range[4];   // luma scale, offset; chroma scale, offset: from a plane's sampled value
+  // The same without brightness, contrast and saturation: for what masks, keys
+  // and stereo focus read, which those must not change.
+  float neutralRange[4];
   float matrix[4];  // Kr, Kb; the chroma plane's lookup offset (x, y), in texture coordinates
   bool tvGamma = false;  // BT.1886 video shown with TV gamma (kTvGamma)
 };

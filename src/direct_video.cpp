@@ -556,6 +556,12 @@ void DirectVideo::computeColor(DirectFrame& f) const {
   c.range[1] = static_cast<float>(-ymul * ymin + brightness_ / 100.0);
   c.range[2] = static_cast<float>(cmul * toValue);
   c.range[3] = static_cast<float>(-cmul * 128 * s);
+  // Computed as range is, so the two are the same at the settings' 0.
+  const double ymul0 = 1.0 / yrange, cmul0 = 1.0 / crange;
+  c.neutralRange[0] = static_cast<float>(ymul0 * toValue);
+  c.neutralRange[1] = static_cast<float>(-ymul0 * ymin);
+  c.neutralRange[2] = static_cast<float>(cmul0 * toValue);
+  c.neutralRange[3] = static_cast<float>(-cmul0 * 128 * s);
   float kr = 0.2126f, kb = 0.0722f;
   if (f.matrix_ == VIDEO_EXPORT_MATRIX_BT601) kr = 0.299f, kb = 0.114f;
   if (f.matrix_ == VIDEO_EXPORT_MATRIX_BT2020) kr = 0.2627f, kb = 0.0593f;
