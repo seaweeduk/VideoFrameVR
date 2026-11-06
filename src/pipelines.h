@@ -51,7 +51,7 @@ class Pipelines {
   enum SurroundProjection { kEquirect, kFisheye, kCubemap, kProjectionCount };  // 180 or 360; both grids
   enum SurroundSource { kImage, kPlanes, kTp10, kSourceCount };  // RGBA, YUV planes, a Q10C frame
   // No packed mask or green screen; the packed mask, with transparent output
-  // only; a green screen.
+  // only; a green screen without shrink.
   enum SurroundCut { kUncut, kPackedMask, kGreenScreen, kCutCount };
   // A pipeline's shaders (embedded SPIR-V) and fixed state.
   struct Desc {

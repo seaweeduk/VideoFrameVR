@@ -55,8 +55,8 @@ uint drawFlags() { return pc.draw.mode.y; }
 layout(constant_id = 0) const int kProjection = -1;  // 0: 180 or 360, 1: fisheye, 2: either cubemap
 layout(constant_id = 1) const int kSource = -1;      // 0: an RGBA image, 1: a decoded frame's planes
 // 0: no packed mask or green screen, 1: the packed mask (looked up first,
-// with transparent output in a common mode), 2: a green screen (common
-// modes only).
+// with transparent output in a common mode), 2: a green screen without
+// shrink (common modes only).
 layout(constant_id = 2) const int kSeeThrough = -1;
 layout(constant_id = 3) const bool kSharpen = false;  // general pipelines: sharpening, for a strength above 0
 const bool kCommon = kSource >= 0;
@@ -238,8 +238,9 @@ void main() {
     alpha = kMaskFirst ? maskAlpha : packedAlpha(uv, e, dx, dy);
   } else if (keyed) {
     alpha = chromaAlpha(linearToSrgb(c), chroma);
-    if (chroma.w > 0.0 && alpha > 0.0) {
-      // Shrink: cut where any neighbour that far away is cut.
+    if (!kCommon && chroma.w > 0.0 && alpha > 0.0) {
+      // Shrink (general pipelines): cut where any neighbour that far away is
+      // cut.
       vec2 texel = chroma.w / videoSize(tex, chromaTex);
       vec2 dxs = dx * eyeScale, dys = dy * eyeScale;
       for (int i = 0; i < 4; ++i) {

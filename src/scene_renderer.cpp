@@ -461,11 +461,12 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   }
   const bool maskFirst = (flags & kPackedAlpha) && (flags & (kKeyGreen | kAlphaOut));
   // A common mode has a pipeline of its own: the full-size level with one
-  // tap, no look or adjustments, no sharpening, and a packed mask only with
-  // transparent output.
+  // tap, no look or adjustments, no sharpening, a packed mask only with
+  // transparent output, and a green screen without shrink.
   const bool adjusted = v.adjust[0] != 0.0f || v.adjust[1] != 0.0f || v.adjust[2] != 0.0f;
   if ((flags & kBaseLevel) && taps == 1 && !v.look && !adjusted && sharpen <= 0.0f &&
-      !glassPass_ && !(maskFirst && (flags & kKeyGreen))) {
+      !glassPass_ && !(maskFirst && (flags & kKeyGreen)) &&
+      !((flags & kChromaKey) && p.chroma[3] > 0.0f)) {
     const auto family = projection >= 3   ? Pipelines::kCubemap
                         : projection == 2 ? Pipelines::kFisheye
                                           : Pipelines::kEquirect;
