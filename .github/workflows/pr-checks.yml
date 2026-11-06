@@ -1,7 +1,8 @@
 name: PR checks
 
 on:
-  pull_request:
+  # Metadata only: never check out or execute pull request code here.
+  pull_request_target:
     types: [opened, edited, reopened, synchronize, labeled, unlabeled]
 
 permissions: {}
