@@ -1,0 +1,50 @@
+name: PR checks
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # One job for both checks: each job is billed at least a minute.
+      - name: Check AI disclosure and release label
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        shell: python3 {0}
+        run: |
+          import json, os, re, sys
+          failures = []
+
+          body = os.environ.get("BODY") or ""
+          none = re.search(r"^- \[[xX]\] None\b", body, re.M)
+          used = re.search(r"^- \[[xX]\] AI used\. Model and harness:[ \t]*(\S.*)$", body, re.M)
+          # The disclosure block that agents add: a table with at least one model row and the harness.
+          block = re.search(r"\*\*AI disclosure\*\*", body) and re.search(
+              r"^> \| `[^`]+` \|", body, re.M) and re.search(r"Agent harness", body)
+          if none and used:
+              failures.append("Tick only one AI use box.")
+          elif none or used or block:
+              print("AI use is disclosed.")
+          else:
+              failures.append("Say whether AI wrote any of this PR: tick \"None\", or tick \"AI used\" "
+                              "and name the model and the harness (see CONTRIBUTING.md).")
+
+          # Release notes are grouped by these labels (.github/release.yml).
+          kinds = {"feature", "fix", "performance", "translation", "skip-changelog"}
+          chosen = sorted(kinds & set(json.loads(os.environ.get("LABELS") or "[]")))
+          if len(chosen) == 1:
+              print(f"Release label: {chosen[0]}.")
+          elif chosen:
+              failures.append("Use only one release label, not " + ", ".join(chosen) + ".")
+          else:
+              failures.append("Needs one release label: " + ", ".join(sorted(kinds)) +
+                              ". The maintainer adds it.")
+
+          if failures:
+              sys.exit("\n".join(failures))

@@ -64,7 +64,7 @@ jobs:
           - Never add unit tests, regression tests, test targets, test frameworks or fixtures. The project has no test code by policy.
           - Keep changes consistent with the surrounding code. The app is one C++17 executable; CMake lists every source file and shader explicitly, so new `.cpp` files and `shaders/` stages must be added to `CMakeLists.txt`.
           - Write pull request titles as user-facing changes; release notes are generated from them.
-          - Every pull request body must disclose AI use, or the AI disclosure check fails. Use the template in `.github/pull_request_template.md`, tick "AI used" and name the model and harness on that line, for example `- [x] AI used. Model and harness: <model> in OpenCode (GitHub Actions)`.
+          - Every pull request body must disclose AI use, or the PR checks fail. Use the template in `.github/pull_request_template.md`, tick "AI used" and name the model and harness on that line, for example `- [x] AI used. Model and harness: <model> in OpenCode (GitHub Actions)`.
           - Say in the pull request body that the change has not been tested on a headset when it affects playback, rendering, input or the menu.
           EOF
 

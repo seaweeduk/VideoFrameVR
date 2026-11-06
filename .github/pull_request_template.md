@@ -1,6 +1,7 @@
 ## What this changes
 
-<!-- What it does for users, and how you tested it (device, video). -->
+<!-- What it does for users, and how you tested it (device, video).
+The maintainer adds the release label (feature, fix, ...); the PR check waits for it. -->
 
 ## AI use (required)
 
