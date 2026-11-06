@@ -144,14 +144,15 @@ void main() {
   vec3 dir = normalize(toPicture * rotateByQuat(e.orientation, ray));
   // Stereo correction (stereo_correction.h): intersect a sphere of the focus
   // distance's radius around this eye's source camera. Both the ray origin
-  // and the resulting lookup direction are relative to that camera. Always
-  // in a common mode: without correction the draw gives a unit sphere
-  // around the eye, which leaves the direction as it is.
-  if (kCommon || ((flags & kCorrect) != 0u && e.viewer.w > 0.0)) {
+  // and the resulting lookup direction are relative to that camera. A
+  // common mode computes it always and selects it rather than branching.
+  bool correct = (flags & kCorrect) != 0u && e.viewer.w > 0.0;
+  if (kCommon || correct) {
     vec3 viewer = e.viewer.xyz - e.camera.xyz;
     float along = dot(viewer, dir);
     float reach = along * along - dot(viewer, viewer) + e.viewer.w * e.viewer.w;
-    dir = normalize(viewer + dir * (sqrt(max(reach, 0.0)) - along));
+    vec3 corrected = normalize(viewer + dir * (sqrt(max(reach, 0.0)) - along));
+    dir = correct ? corrected : dir;
   }
   bool inside;
   vec2 uv = surroundUv(dir, projection, inside);

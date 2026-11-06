@@ -436,7 +436,6 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
     p.chroma[3] = 6.0f * v.key.shrink / 100.0f;
   }
   const EyeCorrection& correct = v.correction.eyes[index];
-  eye.viewer[3] = 1.0f;  // without correction: a unit sphere around the eye, which changes nothing
   if (index < 2 && correct.on) {
     flags |= kCorrect;
     eye.viewer[0] = correct.viewer.x;
