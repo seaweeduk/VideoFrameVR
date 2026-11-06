@@ -48,7 +48,8 @@ int footprintTaps(float texels, int maxTaps, out float span) {
 // What mpv draws from a decoded frame's planes (DirectVideo::computeColor),
 // display values: y, c as sampled; range: luma scale and offset, chroma scale
 // and offset; k: Kr, Kb. In half precision (the planes hold 10 bits at most):
-// fewer registers, which limit the eye passes (1.3 ms at 3456 per eye).
+// on the Frame full precision takes fewer instructions but runs the NV12 eye
+// passes about 2% slower.
 mediump vec3 yuvToRgb(mediump float y, mediump vec2 c, mediump vec4 range, mediump vec2 k) {
   y = y * range.x + range.y;
   c = c * range.z + range.w;
