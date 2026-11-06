@@ -64,7 +64,7 @@ class VideoPlayer {
             bool decoderQueue = true);
   // Frame: mpv hands out decoded frames for the eyes to sample instead of
   // drawing them, where they allow it (docs/vulkan-renderer.md 11).
-  void setDirectVideo(DirectVideo* direct) { direct_ = direct; }
+  void setDirectVideo(DirectVideo* direct);
   // Opens a file, from `start` seconds on (mpv's start option: no visible seek).
   void load(const std::string& path, double start = 0);
   // True once for each load() that delivered its first video frame:
@@ -102,9 +102,9 @@ class VideoPlayer {
   // from its full-size level only (bilinear); they are
   // made for each new frame only while on.
   void setMipmaps(bool enabled);
-  // Sharpening on: the scene has no pipelines for it with Main 10 frames as
-  // the decoder wrote them (Q10C, DirectVideo), so mpv converts them.
-  void setSharpened(bool sharpened) { sharpened_ = sharpened; }
+  // Sharpening on: the scene has no pipelines for it with frames as the
+  // decoder wrote them (Q10C, Q08C: DirectVideo), so mpv converts them.
+  void setSharpened(bool sharpened);
   const PlaybackState& playback() const { return playback_; }
   void pollEvents();
   // Standalone session visibility, not focus. A hidden session releases its
@@ -173,6 +173,10 @@ class VideoPlayer {
   void applyTargetTrc();
   void releaseTarget();
   bool wantExport() const;
+  // Whether the decoder opened next writes 8-bit HEVC compressed (Q08C) for
+  // the eyes to sample, or linear for mpv to draw: told to mpv on a change,
+  // so a setting never reopens the one playing.
+  void updateCapture();
   void showDirect(DirectFrame* frame);
   void dropDirect();
   void returnFrames();
@@ -204,7 +208,9 @@ class VideoPlayer {
   DirectFrame* directCurrent_ = nullptr;
   DirectFrame* directPending_ = nullptr;
   bool exportRefused_ = false;  // this video's colour is not one the shaders reproduce
-  bool q10cRefused_ = false;    // its Main 10 frames cannot be sampled as the decoder wrote them
+  bool compressedRefused_ = false;  // its frames cannot be sampled as the decoder wrote them (Q10C, Q08C)
+  bool v4l2_ = false;               // hwdec v4l2m2m: the Frame's decoder, frames left in its buffers
+  bool q08cCapture_ = false;        // mpv's hwdec-v4l2-q08c, as updateCapture() last set it
   VideoTexture video_;
   int width_ = 0;
   int height_ = 0;

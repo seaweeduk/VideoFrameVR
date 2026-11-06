@@ -4,8 +4,11 @@
 // The SPIR-V headers declare bare arrays: <cstdint> first.
 #include "shaders/depth_patch.frag.h"
 #include "shaders/depth_patch_tp10.frag.h"
+#include "shaders/depth_patch_ycbcr.frag.h"
 
 #include <cstdio>
+#include <iterator>
+#include <vector>
 
 namespace {
 
@@ -37,8 +40,10 @@ DirectDepth::~DirectDepth() {
   VkRenderPass pass = pass_;
   VkSampler sampler = sampler_;
   VkDescriptorSetLayout setLayout = setLayout_;
-  VkPipelineLayout layouts[2] = {layout_, tp10Layout_};
-  VkPipeline pipelines[2] = {pipeline_, tp10Pipeline_};
+  std::vector<VkPipelineLayout> layouts{layout_, tp10Layout_};
+  std::vector<VkPipeline> pipelines{pipeline_, tp10Pipeline_};
+  layouts.insert(layouts.end(), std::begin(q08cLayout_), std::end(q08cLayout_));
+  pipelines.insert(pipelines.end(), std::begin(q08cPipeline_), std::end(q08cPipeline_));
   VkFramebuffer framebuffer = framebuffer_;
   VkBuffer buffer = buffer_;
   VkDeviceMemory memory = memory_;
@@ -159,6 +164,17 @@ bool DirectDepth::init(GpuContext& gpu, DirectVideo& direct) {
                                          VK_COLOR_COMPONENT_R_BIT, "focus patch pipeline");
     if (!tp10Pipeline_) std::printf("Focus: no automatic focus on Main 10 video\n");
   }
+  if (direct.acceptsQ08c()) {
+    bool all = true;
+    for (int s = 0; s < kQ08cSitings; ++s) {
+      if (makeLayout(direct.q08cSetLayouts()[s], q08cLayout_[s]))
+        q08cPipeline_[s] = fullscreenPipeline(gpu, q08cLayout_[s], pass_, kSpirv_depth_patch_ycbcr_frag,
+                                              sizeof(kSpirv_depth_patch_ycbcr_frag), 0,
+                                              VK_COLOR_COMPONENT_R_BIT, "focus patch pipeline");
+      all = all && q08cPipeline_[s];
+    }
+    if (!all) std::printf("Focus: no automatic focus on some 8-bit video\n");
+  }
 
   // Read back by the CPU: cached memory if there is such.
   VkBufferCreateInfo bufferInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -188,7 +204,10 @@ bool DirectDepth::init(GpuContext& gpu, DirectVideo& direct) {
 }
 
 DepthPatchDrawer* DirectDepth::source(DirectFrame* frame) {
-  source_ = gpu_ && frame && (!frame->tp10() || tp10Pipeline_) ? frame : nullptr;
+  source_ = gpu_ && frame && (!frame->tp10() || tp10Pipeline_) &&
+                    (frame->q08c() < 0 || q08cPipeline_[frame->q08c()])
+                ? frame
+                : nullptr;
   return source_ ? this : nullptr;
 }
 
@@ -221,10 +240,20 @@ void DirectDepth::submit() {
   begin.framebuffer = framebuffer_;
   begin.renderArea = {{0, 0}, {static_cast<uint32_t>(w), rows}};
   vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_INLINE);
-  const VkPipelineLayout layout = frame.tp10() ? tp10Layout_ : layout_;
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, frame.tp10() ? tp10Pipeline_ : pipeline_);
+  const int q08c = frame.q08c();
+  const VkPipelineLayout layout = frame.tp10() ? tp10Layout_ : q08c >= 0 ? q08cLayout_[q08c] : layout_;
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    frame.tp10() ? tp10Pipeline_ : q08c >= 0 ? q08cPipeline_[q08c] : pipeline_);
   if (frame.tp10()) {
     direct_->bindTp10(cmd, layout, frame);
+  } else if (q08c >= 0) {
+    // The one image, through the immutable sampler of its siting's set layout.
+    const VkDescriptorImageInfo image{VK_NULL_HANDLE, frame.texture().view, VK_IMAGE_LAYOUT_GENERAL};
+    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &image;
+    gpu_->cmdPushDescriptorSet(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &write);
   } else {
     VkDescriptorImageInfo images[2] = {};
     VkWriteDescriptorSet writes[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET},

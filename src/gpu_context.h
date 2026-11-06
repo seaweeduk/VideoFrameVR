@@ -31,6 +31,7 @@ struct GpuCapabilities {
   bool directVideo = false;    // requested, and DMA-BUF images with DRM modifiers
   bool foreignQueue = false;   // ... and VK_EXT_queue_family_foreign
   bool tp10 = false;           // ... and descriptor buffers: Q10C frames sampled as TP10
+  bool q08c = false;           // ... and Y'CbCr conversions: Q08C frames sampled as NV12
   VkExtent2D densityOffsetGranularity{1, 1};
   VkExtent2D minDensityTexelSize{}, maxDensityTexelSize{};
   uint32_t maxPushDescriptors = 0;

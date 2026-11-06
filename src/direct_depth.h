@@ -12,8 +12,9 @@
 // hands out (Frame, docs/vulkan-renderer.md 11), which stay out of GL: an
 // import there kept a decoder buffer after its frames were gone, and with it
 // room the decoder's next session needed. Drawn by Vulkan with the GL
-// program's lookups, from the frame's two planes or a Q10C frame's TP10
-// descriptors, into an R32F image copied to host memory. Submitted on its
+// program's lookups, from the frame's two planes, a Q10C frame's TP10
+// descriptors or a Q08C frame's one image, into an R32F image copied to host
+// memory. Submitted on its
 // own after the frame's (submit()), so the eye passes never wait for it.
 // Main thread.
 class DirectDepth : public DepthPatchDrawer {
@@ -23,8 +24,8 @@ class DirectDepth : public DepthPatchDrawer {
   DirectDepth& operator=(const DirectDepth&) = delete;
   ~DirectDepth() override;
 
-  // False (and nothing drawn) unless direct is available. Q10C frames need
-  // direct to sample them (acceptsQ10c()) by then.
+  // False (and nothing drawn) unless direct is available. Q10C and Q08C
+  // frames need direct to sample them (acceptsQ10c(), acceptsQ08c()) by then.
   bool init(GpuContext& gpu, DirectVideo& direct);
   // The drawer for automatic focus to use with frame (the shown one), or
   // nullptr if there is none or it cannot be drawn.
@@ -46,6 +47,9 @@ class DirectDepth : public DepthPatchDrawer {
   VkPipeline pipeline_ = VK_NULL_HANDLE;
   VkPipelineLayout tp10Layout_ = VK_NULL_HANDLE;  // Q10C frames (VK_NULL_HANDLE without)
   VkPipeline tp10Pipeline_ = VK_NULL_HANDLE;
+  // Q08C frames, for each chroma siting (VK_NULL_HANDLE without).
+  VkPipelineLayout q08cLayout_[kQ08cSitings] = {};
+  VkPipeline q08cPipeline_[kQ08cSitings] = {};
   VkFramebuffer framebuffer_ = VK_NULL_HANDLE;
   GpuImage image_;
   VkBuffer buffer_ = VK_NULL_HANDLE;
