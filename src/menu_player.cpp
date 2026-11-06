@@ -485,7 +485,7 @@ void Menu::drawMainPage(cairo_t* cr) {
   }
   cairo_new_path(cr);
   const std::string title = view_.currentFile.empty() ? t.noVideo
-                            : view_.playbackFailed    ? t.playbackFailed
+                            : view_.playbackFailed    ? (view_.discEncrypted ? t.discEncrypted : t.playbackFailed)
                             : p.title.empty()         ? t.loading
                                                       : p.title;
   double titleRight = x + w - 24;

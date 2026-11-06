@@ -8,6 +8,7 @@
 #include <vector>
 
 struct mpv_handle;
+struct mpv_stream_cb_info;
 
 // Files on other computers, browsed and read in the app without an OS
 // mount, on the desktop and the Steam Frame: SMB2/3 shares (smb.cpp,
@@ -153,5 +154,9 @@ void setName(const std::string& root, const std::string& name);
 // failed: optional read-error flag, kept alive until mpv is destroyed.
 void addTo(mpv_handle* mpv, bool background = false, std::atomic<bool>* failed = nullptr);
 std::string mpvUrl(const std::string& locator, bool background = false);
+// Opens `locator` as those protocols do, for a protocol of mpv's that
+// serves parts of it (disc images, bluray.h). False if it can't be opened.
+bool openMpvStream(const std::string& locator, bool background, std::atomic<bool>* failed,
+                   mpv_stream_cb_info* info);
 
 }  // namespace remote

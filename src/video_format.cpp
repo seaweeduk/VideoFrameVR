@@ -1,5 +1,6 @@
 #include "video_format.h"
 
+#include "bluray.h"
 #include "file_util.h"
 
 #include <algorithm>
@@ -100,7 +101,19 @@ StereoLayout nextStereo(StereoLayout s) {
                                    static_cast<int>(StereoLayout::kCount));
 }
 
-VideoFormat guessVideoFormat(const std::string& path, int width, int height) {
+VideoFormat guessVideoFormat(const std::string& path, int width, int height, TwoViews views) {
+  // Its name and size tell nothing then.
+  if (views != TwoViews::No) {
+    VideoFormat f;
+    if (views == TwoViews::Both) {
+      f.stereo = StereoLayout::SideBySide;
+      f.packing = Packing::Full;
+    }
+    return f;
+  }
+  // A disc image is flat; a 3D title shows in 3D once mpv says it decodes
+  // both views (above).
+  if (bdmv::isDiscImage(path)) return {};
   std::string name = path.substr(path.find_last_of('/') + 1);
   std::transform(name.begin(), name.end(), name.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });

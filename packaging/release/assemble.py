@@ -128,6 +128,8 @@ def assemble(bundle, app, work, sdk, cache, supplement, metadata, source_name):
     patterns = {
         "libsmb2": ["COPYING", "LICENCE-LGPL-2.1.txt"],
         "libssh": ["COPYING", "BSD"],
+        "libudfread": ["COPYING"],
+        "libbluray": ["COPYING"],
         "json": ["LICENSE.MIT"],
         "mpv": ["LICENSE*", "Copyright"],
         "ffmpeg": ["COPYING*", "LICENSE*"],
@@ -137,8 +139,13 @@ def assemble(bundle, app, work, sdk, cache, supplement, metadata, source_name):
     descriptions = {
         "libsmb2": "LGPL-2.1-or-later with per-file public-domain/RSA notices; shared, replaceable; Kerberos/GSSAPI/examples disabled; local patches, if any, recorded in BUILD-INFO.json",
         "libssh": "LGPL-2.1-or-later with BSD-2-Clause parts (BSD); shared, replaceable; unmodified; server, GSSAPI, zlib and examples disabled; OpenSSL from the Steam Linux Runtime",
+        "libudfread": "LGPL-2.1-or-later; shared, replaceable; unmodified; examples disabled",
+        "libbluray": ("LGPL-2.1-or-later; shared, replaceable; unmodified; used to read disc playlists only; "
+                      "BD-J (Java), tools, FreeType, fontconfig and libxml2 disabled; no AACS or BD+ library bundled"),
         "json": "MIT; compiled-in header library, unmodified",
-        "mpv": "upstream GPL-2.0-or-later, combined under GPLv3; Frame build modified by mpv-v4l2-reset.patch, mpv-v4l2-hardware-only.patch and dmabuf_ubwc sources",
+        "mpv": ("upstream GPL-2.0-or-later, combined under GPLv3; both builds modified by mpv-mvc.patch and the "
+                "packaging/mpv/mvc sources (3D Blu-ray, GPL-3.0); Frame build also by mpv-v4l2-reset.patch, "
+                "mpv-v4l2-hardware-only.patch and dmabuf_ubwc sources"),
         "ffmpeg": ("upstream LGPL-2.1-or-later fork. Desktop build: unmodified, LGPL-2.1-or-later. "
                    "Frame build: modified by ffmpeg-iris.patch, ffmpeg-main10.patch, ffmpeg-capture-pool.patch, "
                    "ffmpeg-drain-seek.patch, ffmpeg-staged-start.patch and iris_bootstrap.py (GPL-3.0), so this "

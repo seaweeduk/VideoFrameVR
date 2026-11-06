@@ -1,4 +1,5 @@
 #include "frame_grabber.h"
+#include "bluray.h"
 #include "remote.h"
 #include "stash_stream.h"
 
@@ -73,6 +74,7 @@ bool FrameGrabber::init(GlInterop& interop, const std::string& hwdec, int maxWid
   }
   remote::addTo(mpv_, true);
   addStashStreams(mpv_, true);
+  bdmv::addTo(mpv_, true);
   // Observed rather than read: reading waits while mpv opens a decoder
   // (about 0.2 s), and this runs on the thread that draws the headset's frames.
   mpv_observe_property(mpv_, 0, "dwidth", MPV_FORMAT_INT64);
@@ -103,7 +105,8 @@ void FrameGrabber::open(const std::string& path, const std::string& start) {
   hasFrame_ = false;
   failed_ = false;
   const std::string options = "start=" + start;
-  const std::string url = remote::mpvUrl(path);
+  // A 3D Blu-ray's base view, as thumbnails show: half the reading and decoding.
+  const std::string url = bdmv::isDiscImage(path) ? bdmv::mpvUrl(path, true) : remote::mpvUrl(path);
   const char* cmd[] = {"loadfile", url.c_str(), "replace", "-1", options.c_str(), nullptr};
   mpv_command(mpv_, cmd);  // returns at once; mpv opens the file in its own thread
 }

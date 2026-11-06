@@ -1,4 +1,5 @@
 #include "video_player.h"
+#include "bluray.h"
 #include "remote.h"
 #include "stash_stream.h"
 
@@ -34,6 +35,7 @@ constexpr uint64_t kTracksReply = uint64_t(1) << 34;
 constexpr uint64_t kSleepVideoReply = uint64_t(1) << 35;
 constexpr uint64_t kWakeVideoReply = uint64_t(1) << 36;
 constexpr uint64_t kLoadReply = uint64_t(1) << 37;
+constexpr uint64_t kViewsReply = uint64_t(1) << 38;
 constexpr uint64_t kPixelPathReply = 2;
 constexpr uint64_t kCommandReply = 3;
 // How long the last file may take to close before a switch counts as failed.
@@ -136,6 +138,7 @@ std::vector<Track> parseTracks(const mpv_node& list) {
       else if (key == "lang" && v.format == MPV_FORMAT_STRING) t.lang = v.u.string;
       else if (key == "codec" && v.format == MPV_FORMAT_STRING) t.codec = v.u.string;
       else if (key == "selected" && v.format == MPV_FORMAT_FLAG) t.selected = v.u.flag != 0;
+      else if (key == "src-id" && v.format == MPV_FORMAT_INT64) t.sourceId = v.u.int64;
     }
     tracks.push_back(t);
   }
@@ -240,7 +243,8 @@ bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, bool timing
   mpv_set_option_string(mpv_, "cache", "yes");
   mpv_set_option_string(mpv_, "demuxer-max-bytes", kStandaloneHeadset ? "384MiB" : "1536MiB");
   mpv_set_option_string(mpv_, "demuxer-max-back-bytes", kStandaloneHeadset ? "64MiB" : "256MiB");
-  mpv_request_log_messages(mpv_, "info");
+  // Info and up, as msg-level above says per module ("info" would ignore it).
+  mpv_request_log_messages(mpv_, "terminal-default");
   // Benchmark hook: VIDEOFRAMEVR_MPV_OPTS="key=value,key=value" overrides the above.
   if (const char* extra = std::getenv("VIDEOFRAMEVR_MPV_OPTS")) {
     std::string opts = extra;
@@ -265,6 +269,11 @@ bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, bool timing
   }
   remote::addTo(mpv_, false, &remoteFailed_);
   addStashStreams(mpv_, false, &remoteFailed_);
+  bdmv::addTo(mpv_, false, &remoteFailed_);
+  // This app's own mpv decodes both views of 3D Blu-ray (MVC) video.
+  char* mvc = mpv_get_property_string(mpv_, "option-info/vd-lavc-mvc/name");
+  bdmv::setPlayBothViews(mvc != nullptr);
+  mpv_free(mvc);
   mpv_observe_property(mpv_, 0, "time-pos", MPV_FORMAT_DOUBLE);
   mpv_observe_property(mpv_, 0, "duration", MPV_FORMAT_DOUBLE);
   mpv_observe_property(mpv_, 0, "demuxer-cache-time", MPV_FORMAT_DOUBLE);
@@ -285,6 +294,7 @@ bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, bool timing
   mpv_observe_property(mpv_, 0, "audio-params/channel-count", MPV_FORMAT_INT64);
   mpv_observe_property(mpv_, 0, "chapter-list", MPV_FORMAT_NODE);
   mpv_observe_property(mpv_, 0, "chapter", MPV_FORMAT_INT64);
+  mpv_observe_property(mpv_, 0, "video-mvc", MPV_FORMAT_STRING);
   // Always: the strip warns of software decoding. It changes only as a
   // decoder starts.
   mpv_observe_property(mpv_, 1, "hwdec-current", MPV_FORMAT_STRING);
@@ -334,6 +344,7 @@ void VideoPlayer::load(const std::string& path, double start) {
     deferredActionAt_ = nowSeconds();
     loading_ = true;
     opened_ = false;
+    newVideoSized_ = false;
     return;
   }
   deferredLoadPath_.clear();
@@ -344,6 +355,7 @@ void VideoPlayer::load(const std::string& path, double start) {
   ++loadRequest_;
   path_ = path;
   remoteFailed_ = false;
+  discChapters_ = false;
   sidecarSubtitles_ = {};
   if (remote::isRemote(path) || isStashScene(path)) {
     std::packaged_task<std::vector<Sidecar>()> find([path] {
@@ -363,6 +375,7 @@ void VideoPlayer::load(const std::string& path, double start) {
   loading_ = true;
   failed_ = false;
   playback_.title.clear();  // "Loading …" until this file's title, not the last one's
+  playback_.views = TwoViews::No;  // until mpv says (setViews())
   exportRefused_ = compressedRefused_ = false;
   fileLoaded_ = false;
   newVideoSized_ = false;
@@ -377,9 +390,11 @@ void VideoPlayer::load(const std::string& path, double start) {
   if (direct_) direct_->dropStill();
   // File-local track selection restores itself when this file closes. A
   // sleeping file's vid=no must never disable the next file or reopen the old.
+  const std::string discOptions = bdmv::mpvOptions(path);
+  baseViewRight_ = !discOptions.empty();
   const std::string startOption = "start=" + std::to_string(start) + ",vid=auto,pause=" +
-      (wasAsleep && sleepPaused_ ? "yes" : "no");
-  const std::string url = remote::mpvUrl(path);
+      (wasAsleep && sleepPaused_ ? "yes" : "no") + discOptions;
+  const std::string url = bdmv::isDiscImage(path) ? bdmv::mpvUrl(path) : remote::mpvUrl(path);
   const char* resumed[] = {"loadfile", url.c_str(), "replace", "-1", startOption.c_str(), nullptr};
   loadFile(resumed);
 }
@@ -425,6 +440,7 @@ void VideoPlayer::stop() {
   const char* cmd[] = {"stop", nullptr};
   mpv_command_async(mpv_, 0, cmd);
   path_.clear();
+  updateChapters();
   loading_ = false;
   failed_ = false;
   countedEntry_ = -1;
@@ -611,6 +627,66 @@ void VideoPlayer::finishVideoResume() {
   }
 }
 
+// A disc's transport streams carry no languages; its playlist names them by
+// PID, which mpv gives as each track's src-id.
+void VideoPlayer::labelDiscTracks() {
+  if (!bdmv::isDiscImage(path_)) return;
+  const auto disc = bdmv::known(path_);
+  if (!disc) return;
+  for (Track& track : playback_.tracks) {
+    if (!track.lang.empty()) continue;
+    for (const bdmv::Track& t : disc->title.tracks)
+      if (t.pid == track.sourceId) track.lang = t.lang;
+  }
+}
+
+// How mpv decodes this file's two views (video-mvc; null: not MVC).
+void VideoPlayer::setViews(const char* mode) {
+  const TwoViews views = !mode                             ? TwoViews::No
+                         : std::strcmp(mode, "stereo") == 0 ? TwoViews::Both
+                                                            : TwoViews::BaseOnly;
+  const TwoViews was = playback_.views;
+  playback_.views = views;
+  // The disc was read after the file was asked for: its base view is the
+  // right eye's. mpv restarts the decoder where it is.
+  if (views == TwoViews::Both && !baseViewRight_ && !bdmv::mpvOptions(path_).empty()) {
+    baseViewRight_ = true;
+    const char* right = "right";
+    mpv_set_property_async(mpv_, 0, "file-local-options/vd-lavc-mvc-base-view", MPV_FORMAT_STRING,
+                           &right);
+  }
+  // 3D gave up during playback (mpv says why): its decoder carries on in 2D
+  // from the next keyframe. Decoding again from the last one, out of the
+  // cache, keeps the picture going.
+  if (was == TwoViews::Both && views == TwoViews::BaseOnly && current_ && !loading_ &&
+      videoSleep_ == VideoSleep::Awake && !seeking())
+    seekTo(playback_.position, true);
+}
+
+// mpv's chapters, else a disc playlist's. Also once a file has loaded: mpv
+// tells nothing when its list is the last file's (none, for most discs).
+void VideoPlayer::updateChapters() {
+  playback_.chapters = mpvChapters_;
+  discChapters_ = false;
+  if (playback_.chapters.empty() && bdmv::isDiscImage(path_))
+    if (const auto disc = bdmv::known(path_)) {
+      for (const double time : disc->title.chapters) playback_.chapters.push_back({time, {}});
+      discChapters_ = !playback_.chapters.empty();
+    }
+  if (discChapters_)
+    updateDiscChapter();
+  else
+    playback_.chapter = mpvChapter_;
+}
+
+void VideoPlayer::updateDiscChapter() {
+  if (!discChapters_) return;
+  int chapter = -1;
+  for (size_t i = 0; i < playback_.chapters.size(); ++i)
+    if (playback_.chapters[i].time <= playback_.position + 0.01) chapter = static_cast<int>(i);
+  playback_.chapter = chapter;
+}
+
 // A keyframe seek on its way holds the next back this long at most, waiting
 // for its picture; one that never arrives is forgotten after kSeekGiveUp.
 constexpr double kSeekPatience = 1.5;
@@ -757,8 +833,10 @@ void VideoPlayer::applyTargetTrc() {
   if (target == targetTrc_) return;
   targetTrc_ = target;
   setProperty(mpv_, "target-trc", target);
-  std::printf("Video transfer %s, shown as %s\n", sourceTrc_.empty() ? "unknown" : sourceTrc_.c_str(),
-              target == sourceTrc_ ? "is (no conversion)" : "sRGB");
+  // Not while a new file's is still unknown: it follows once known.
+  if (!sourceTrc_.empty())
+    std::printf("Video transfer %s, shown as %s\n", sourceTrc_.c_str(),
+                target == sourceTrc_ ? "is (no conversion)" : "sRGB");
 }
 
 void VideoPlayer::pollEvents() {
@@ -836,6 +914,7 @@ void VideoPlayer::pollEvents() {
         if (loadReplyPending_ || (countedEntry_ > 0 && countedEntry_ != startedEntry_)) break;
         fileLoaded_ = true;
         loadedAt_ = nowSeconds();
+        updateChapters();
         if (countedEntry_ > 0) {
           countedEntry_ = -1;
           opened_ = current_ = true;
@@ -867,7 +946,26 @@ void VideoPlayer::pollEvents() {
               failed_ = true;
               loading_ = opened_ = false;
             }
+            // A disc's main video, never a 3D disc's second view (mpv may
+            // list both when they share a transport stream).
+            if (const auto disc = bdmv::isDiscImage(path_) ? bdmv::known(path_) : nullptr) {
+              const auto& wanted = disc->title.tracks;
+              const auto base = std::find_if(wanted.begin(), wanted.end(),
+                                             [](const bdmv::Track& t) { return t.kind == bdmv::Track::Video; });
+              const auto it = std::find_if(tracks.begin(), tracks.end(), [&](const Track& t) {
+                return base != wanted.end() && t.type == "video" && t.sourceId == base->pid;
+              });
+              if (it != tracks.end() && !it->selected) {
+                int64_t id = it->id;
+                mpv_set_property_async(mpv_, 0, "vid", MPV_FORMAT_INT64, &id);
+              }
+            }
           }
+        }
+        if (ev->reply_userdata == kViewsReply + loadRequest_ && !path_.empty()) {
+          const auto* prop = static_cast<mpv_event_property*>(ev->data);
+          setViews(ev->error >= 0 && prop->format == MPV_FORMAT_STRING
+                       ? *static_cast<char**>(prop->data) : nullptr);
         }
         if (ev->reply_userdata == kSizeReply + sizeRequest_ && !path_.empty()) {
           const auto* prop = static_cast<mpv_event_property*>(ev->data);
@@ -915,6 +1013,7 @@ void VideoPlayer::pollEvents() {
             if (videoSleep_ == VideoSleep::Awake) {
               playback_.position = v;
               positionKnown_ = current_;
+              updateDiscChapter();
             }
           }
           else if (name == "duration") playback_.duration = v;
@@ -924,7 +1023,10 @@ void VideoPlayer::pollEvents() {
         } else if (prop->format == MPV_FORMAT_INT64) {
           const int v = static_cast<int>(*static_cast<int64_t*>(prop->data));
           if (name == "audio-params/channel-count") playback_.audioChannels = v;
-          else if (name == "chapter") playback_.chapter = v;
+          else if (name == "chapter") {
+            mpvChapter_ = v;
+            if (!discChapters_) playback_.chapter = v;
+          }
         } else if (prop->format == MPV_FORMAT_FLAG) {
           const bool v = *static_cast<int*>(prop->data) != 0;
           if (name == "pause") playback_.paused = videoSleep_ == VideoSleep::Awake ? v : sleepPaused_;
@@ -941,14 +1043,19 @@ void VideoPlayer::pollEvents() {
             applyTargetTrc();
           }
           else if (name == "audio-codec-name") playback_.audioCodec = s;
+          else if (name == "video-mvc") setViews(s);
         } else if (prop->format == MPV_FORMAT_NODE) {
-          if (name == "track-list") playback_.tracks = parseTracks(*static_cast<mpv_node*>(prop->data));
-          else if (name == "video-params" && loading_ && fileLoaded_ && !newVideoSized_)
+          if (name == "track-list") {
+            playback_.tracks = parseTracks(*static_cast<mpv_node*>(prop->data));
+            labelDiscTracks();
+          } else if (name == "video-params" && loading_ && fileLoaded_ && !newVideoSized_)
             // Prepare before decoding reaches the VO; video-out-params still
             // supplies the final filtered size before showing the first frame.
             updateVideoSize(*static_cast<mpv_node*>(prop->data), true);
-          else if (name == "chapter-list")
-            playback_.chapters = parseChapters(*static_cast<mpv_node*>(prop->data));
+          else if (name == "chapter-list") {
+            mpvChapters_ = parseChapters(*static_cast<mpv_node*>(prop->data));
+            updateChapters();
+          }
         } else if (prop->format == MPV_FORMAT_NONE) {  // property became unavailable
           if (name == "time-pos") {
             if (videoSleep_ == VideoSleep::Awake) {
@@ -967,8 +1074,16 @@ void VideoPlayer::pollEvents() {
           else if (name == "container-fps") playback_.fps = 0;
           else if (name == "audio-codec-name") playback_.audioCodec.clear();
           else if (name == "audio-params/channel-count") playback_.audioChannels = 0;
-          else if (name == "chapter-list") playback_.chapters.clear();
-          else if (name == "chapter") playback_.chapter = -1;
+          // Not while the video sleeps: the file's views stay what they are.
+          else if (name == "video-mvc" && videoSleep_ == VideoSleep::Awake) setViews(nullptr);
+          else if (name == "chapter-list") {
+            mpvChapters_.clear();
+            updateChapters();
+          }
+          else if (name == "chapter") {
+            mpvChapter_ = -1;
+            if (!discChapters_) playback_.chapter = -1;
+          }
         }
         break;
       }
@@ -1044,6 +1159,8 @@ void VideoPlayer::pollEvents() {
       case MPV_EVENT_PLAYBACK_RESTART:
         if (loading_ && fileLoaded_) {
           loadRestarted_ = true;
+          // Before its size: the format is chosen from both (sized()).
+          mpv_get_property_async(mpv_, kViewsReply + loadRequest_, "video-mvc", MPV_FORMAT_STRING);
           mpv_get_property_async(mpv_, kSizeReply + ++sizeRequest_, "video-out-params", MPV_FORMAT_NODE);
           framePending_ = true;  // redraw if the first frame arrived before its size reply
         }
@@ -1347,7 +1464,7 @@ void VideoPlayer::render() {
   }
 
   const auto countFrame = [&](int rendered) {
-    if (!counting_ || rendered < 0) return;
+    if (!counting_ || rendered < 0) return false;
     // An update can just redraw the old frame (subtitles/options, or a new
     // target with no frame queued) or repeat it for display sync. Count only
     // genuinely new queued video submissions.
@@ -1358,8 +1475,10 @@ void VideoPlayer::render() {
     else if (info.flags & MPV_RENDER_FRAME_INFO_PRESENT) {
       ++t.frames;
       ++counts_.newFrames;
+      return true;
     }
     else ++t.redraws;
+    return false;
   };
   const mpv_render_param exportParam{static_cast<mpv_render_param_type>(VIDEO_EXPORT_PARAM), &export_};
   // Frames done with go back to mpv with this call (its converter's buffers).
@@ -1386,7 +1505,7 @@ void VideoPlayer::render() {
         std::printf("Video: mpv draws this video (its colour needs mpv's conversion)\n");
       }
       if (DirectFrame* frame = direct_->accept(export_)) {
-        countFrame(rendered);
+        if (countFrame(rendered)) ++timingState_.direct;
         showDirect(frame);
         if (videoSleep_ == VideoSleep::Seeking && resumeFrameSeen_) resumePictureShown_ = true;
         return;
@@ -1464,7 +1583,7 @@ void VideoPlayer::logTiming(bool controlsVisible, bool previewBusy, bool xrRende
   const double now = nowSeconds();
   const auto resetInterval = [&] {
     t.since = now;
-    t.frames = t.redraws = t.repeats = t.unknown = 0;
+    t.frames = t.redraws = t.repeats = t.unknown = t.direct = 0;
     t.loops = t.controls = t.previews = t.xrFrames = t.xrFocused = 0;
   };
   if (path_.empty() || t.since == 0) {
@@ -1490,7 +1609,8 @@ void VideoPlayer::logTiming(bool controlsVisible, bool previewBusy, bool xrRende
               "vo_drop_delta=%lld vo_drop_total=%lld decoder_drop_delta=%lld "
               "decoder_drop_total=%lld av_sync_ms=%.1f cache_s=%.1f "
               "paused=%d buffering=%d seeking=%d loading=%d eof=%d "
-              "controls_pct=%.0f preview_busy_pct=%.0f xr_render_pct=%.0f xr_focused_pct=%.0f\n",
+              "controls_pct=%.0f preview_busy_pct=%.0f xr_render_pct=%.0f xr_focused_pct=%.0f "
+              "direct=%d\n",
               static_cast<unsigned long long>(t.file), width_, height_,
               playback_.videoCodec.c_str(), playback_.pixelFormat.c_str(), counts_.decoder.c_str(),
               playback_.position, playback_.fps, t.speed, elapsed, newFps, t.redraws, t.repeats,
@@ -1500,7 +1620,7 @@ void VideoPlayer::logTiming(bool controlsVisible, bool previewBusy, bool xrRende
               t.avSync * 1000, t.cacheSeconds, playback_.paused, t.buffering, t.seeking,
               loading_, playback_.endReached, 100.0 * t.controls / t.loops,
               100.0 * t.previews / t.loops, 100.0 * t.xrFrames / t.loops,
-              100.0 * t.xrFocused / t.loops);
+              100.0 * t.xrFocused / t.loops, t.direct);
   std::fflush(stdout);
   t.lastVoDrops = counts_.voDrops;
   t.lastDecoderDrops = counts_.decoderDrops;

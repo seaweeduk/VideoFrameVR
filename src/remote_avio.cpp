@@ -1,4 +1,5 @@
 #include "remote_avio.h"
+#include "bluray.h"
 #include "stash_stream.h"
 
 extern "C" {
@@ -10,14 +11,16 @@ extern "C" {
 #include <limits>
 
 RemoteAvio::~RemoteAvio() {
-  if (stash_.cookie) stash_.close_fn(stash_.cookie);
+  if (stream_.cookie) stream_.close_fn(stream_.cookie);
   if (io_) av_freep(&io_->buffer);
   avio_context_free(&io_);
 }
 
 bool RemoteAvio::attach(AVFormatContext* format, const std::string& path) {
   if (isStashScene(path)) {
-    if (!openStashScene(path, stash_)) return false;
+    if (!openStashScene(path, stream_)) return false;
+  } else if (bdmv::isDiscImage(path)) {
+    if (!bdmv::openFirstClip(path, stream_)) return false;
   } else {
     if (!remote::isRemote(path)) return true;
     remote::Status status;
@@ -42,10 +45,10 @@ int RemoteAvio::read(void* opaque, uint8_t* out, int count) {
   auto& self = *static_cast<RemoteAvio*>(opaque);
   if (self.interrupt_.callback && self.interrupt_.callback(self.interrupt_.opaque))
     return AVERROR_EXIT;
-  const int64_t n = !self.stash_.cookie ? self.file_->read(self.position_, out, count)
-                    : self.stash_.seek_fn(self.stash_.cookie, self.position_) < 0
+  const int64_t n = !self.stream_.cookie ? self.file_->read(self.position_, out, count)
+                    : self.stream_.seek_fn(self.stream_.cookie, self.position_) < 0
                         ? -1
-                        : self.stash_.read_fn(self.stash_.cookie, reinterpret_cast<char*>(out), count);
+                        : self.stream_.read_fn(self.stream_.cookie, reinterpret_cast<char*>(out), count);
   if (n < 0) return AVERROR(EIO);
   if (!n) return AVERROR_EOF;
   self.position_ += n;
@@ -67,5 +70,5 @@ int64_t RemoteAvio::seek(void* opaque, int64_t offset, int whence) {
 }
 
 int64_t RemoteAvio::size() const {
-  return stash_.cookie ? stash_.size_fn(stash_.cookie) : static_cast<int64_t>(file_->size());
+  return stream_.cookie ? stream_.size_fn(stream_.cookie) : static_cast<int64_t>(file_->size());
 }

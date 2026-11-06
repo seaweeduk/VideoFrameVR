@@ -10,12 +10,13 @@ extern "C" {
 
 struct AVFormatContext;
 
-// Background input for FFmpeg from a remote file (remote.h), or a Stash scene's stream
-// (stash_stream.h). Keep it alive until after close_input().
+// Background input for FFmpeg from a remote file (remote.h), a Stash scene's stream
+// (stash_stream.h), or a disc image's main title (bluray.h: its first clip,
+// local or remote). Keep it alive until after close_input().
 class RemoteAvio {
  public:
   ~RemoteAvio();
-  // Local paths need no custom IO and return true too.
+  // Local paths (but disc images) need no custom IO and return true too.
   bool attach(AVFormatContext* format, const std::string& path);
 
  private:
@@ -23,7 +24,7 @@ class RemoteAvio {
   static int64_t seek(void* opaque, int64_t offset, int whence);
   int64_t size() const;
   std::unique_ptr<remote::File> file_;
-  mpv_stream_cb_info stash_{};  // a scene's, with its cookie
+  mpv_stream_cb_info stream_{};  // a scene's or a disc's clip, with its cookie
   AVIOContext* io_ = nullptr;
   AVIOInterruptCB interrupt_{};
   int64_t position_ = 0;

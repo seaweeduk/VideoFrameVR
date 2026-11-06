@@ -67,6 +67,8 @@ mpv_source=/work/source/mpv-0.40.0
 ffmpeg_source=/work/source/rpi-ffmpeg-d0fe46c27ff128e6263ceb3251cbc9d0ed3d3932
 smb2_source=/work/source/libsmb2-2bcb014b23a8c8cccf534eea8bda2fe5df453cfd
 ssh_source=/work/source/libssh-0.12.2
+udfread_source=/work/source/libudfread-1.2.0
+bluray_source=/work/source/libbluray-1.5.1
 if [[ ! -f /work/.dependencies-complete ]]; then
   # No compiler, package or source download is permitted in this phase.
   python3 - <<'PY'
@@ -98,6 +100,29 @@ cmake --build /work/libssh-build -j"$jobs"
 cmake --install /work/libssh-build
 cp /work/libssh-build/CMakeCache.txt /work/config/libssh-cmake-cache.txt
 "$PKG_CONFIG" --modversion libssh
+# Blu-ray disc images, read for their file system and playlists only:
+# libbluray on the libudfread above, without BD-J, tools, FreeType,
+# fontconfig or libxml2. AACS and BD+ libraries are never bundled.
+meson setup /work/libudfread-build "$udfread_source" "${cross[@]}" \
+  --prefix="$prefix" --libdir=lib --buildtype=release -Ddefault_library=shared \
+  -Denable_examples=false
+ninja -C /work/libudfread-build -j"$jobs"
+meson install -C /work/libudfread-build
+meson setup /work/libbluray-build "$bluray_source" "${cross[@]}" \
+  --prefix="$prefix" --libdir=lib --buildtype=release --wrap-mode=nofallback \
+  -Ddefault_library=shared -Dbdj_jar=disabled -Dfreetype=disabled -Dfontconfig=disabled \
+  -Dlibxml2=disabled -Denable_tools=false -Denable_devtools=false -Denable_examples=false \
+  -Denable_docs=false
+ninja -C /work/libbluray-build -j"$jobs"
+meson install -C /work/libbluray-build
+cp /work/libudfread-build/meson-info/intro-buildoptions.json /work/config/libudfread-options.json
+cp /work/libbluray-build/meson-info/intro-buildoptions.json /work/config/libbluray-options.json
+"$PKG_CONFIG" --modversion libudfread libbluray
+# Both architectures: 3D Blu-ray (MVC) in both views. The Frame's patches
+# apply on top of it.
+mkdir -p "$mpv_source/video/decode/mvc"
+cp /src/packaging/mpv/mvc/*.[ch] "$mpv_source/video/decode/mvc/"
+patch -d "$mpv_source" -p1 < /src/packaging/mpv/mpv-mvc.patch
 if [[ $arch == aarch64 ]]; then
   patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-reset.patch
   patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-hardware-only.patch

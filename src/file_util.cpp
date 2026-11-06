@@ -38,7 +38,7 @@ std::string lowerCase(std::string s) {
 
 bool isVideoFile(const fs::path& p) {
   return hasExtension(p, {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".ts", ".m2ts", ".wmv",
-                          ".flv", ".mpg", ".mpeg"});
+                          ".flv", ".mpg", ".mpeg", ".iso"});
 }
 
 bool isPhotoFile(const fs::path& p) {

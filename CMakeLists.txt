@@ -20,6 +20,8 @@ pkg_check_modules(SQLITE REQUIRED IMPORTED_TARGET sqlite3)
 pkg_check_modules(RSVG REQUIRED IMPORTED_TARGET librsvg-2.0)
 pkg_check_modules(SMB2 REQUIRED IMPORTED_TARGET libsmb2)
 pkg_check_modules(LIBSSH REQUIRED IMPORTED_TARGET libssh>=0.12)
+pkg_check_modules(UDFREAD REQUIRED IMPORTED_TARGET libudfread>=1.2)
+pkg_check_modules(BLURAY REQUIRED IMPORTED_TARGET libbluray>=1.4)
 find_package(nlohmann_json REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenGL REQUIRED COMPONENTS OpenGL)
@@ -31,6 +33,8 @@ add_executable(videoframevr
   src/video_player.cpp
   src/gl_util.cpp
   src/autofocus.cpp
+  src/bluray.cpp
+  src/bluray_disc.cpp
   src/cairo_canvas.cpp
   src/colour_balance.cpp
   src/controller_guide.cpp
@@ -270,6 +274,8 @@ target_link_libraries(videoframevr PRIVATE
   PkgConfig::RSVG
   PkgConfig::SMB2
   PkgConfig::LIBSSH
+  PkgConfig::UDFREAD
+  PkgConfig::BLURAY
   nlohmann_json::nlohmann_json
   Threads::Threads
   OpenGL::OpenGL

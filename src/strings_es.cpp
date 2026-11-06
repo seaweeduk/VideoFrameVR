@@ -5,6 +5,7 @@ Strings spanishStrings(const Strings& english) {
   s.noVideo = "Sin vídeo. Elige un archivo";
   s.loading = "Cargando …";
   s.playbackFailed = "No se puede reproducir este vídeo. Prueba con otro archivo.";
+  s.discEncrypted = "Esta imagen de disco está cifrada y no se puede reproducir.";
   s.format = "Formato";
   s.projections[0] = "Pantalla";
   s.projections[1] = "180°";

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gl_util.h"
+#include "video_format.h"
 #include "video_export.h"
 #include "video_texture.h"
 
@@ -24,6 +25,7 @@ struct Track {
   std::string lang;
   std::string codec;
   bool selected = false;
+  int64_t sourceId = -1;  // the container's ID for it (a transport stream's PID), -1 if none
 };
 
 struct Chapter {
@@ -50,6 +52,7 @@ struct PlaybackState {
   int audioChannels = 0;
   std::vector<Chapter> chapters;
   int chapter = -1;  // the current one, -1 = before the first / none
+  TwoViews views = TwoViews::No;  // 3D Blu-ray (MVC) video: as mpv decodes it
 };
 
 // Decodes media with libmpv and renders each new video frame, including
@@ -159,6 +162,11 @@ class VideoPlayer {
   // texture still holds the previous video meanwhile.
   bool loading() const { return loading_; }
   bool failed() const { return failed_; }
+  // Whether width() and height() (and playback().views) are this file's,
+  // not still the last one's while it opens.
+  bool sized() const {
+    return width_ > 0 && !path_.empty() && !failed_ && (!loading_ || newVideoSized_);
+  }
   // The current frame for the scene, nullptr before the first one.
   const Texture* texture();
   // ... and for GL (depth estimation), after prepareRead(); 0 if none,
@@ -204,6 +212,12 @@ class VideoPlayer {
   void closeVideoForSleep(bool snapshot);
   void seekAfterSleep();
   void finishVideoResume();
+  // A Blu-ray disc image's: what its playlist tells and mpv doesn't (track
+  // languages, chapters).
+  void labelDiscTracks();
+  void updateChapters();
+  void updateDiscChapter();
+  void setViews(const char* mode);
 
   mpv_handle* mpv_ = nullptr;
   mpv_render_context* render_ = nullptr;
@@ -225,6 +239,7 @@ class VideoPlayer {
   uint64_t loadRequest_ = 0;
   PlaybackState playback_;
   std::string path_;  // of the loaded file, for redacting it from log output
+  bool baseViewRight_ = false;  // asked of mpv for this file (bdmv::mpvOptions())
   // Subtitles to add once the file is loaded: a remote file's beside it, or a Stash
   // scene's captions (in memory, titled by their file's name).
   struct Sidecar {
@@ -232,6 +247,9 @@ class VideoPlayer {
   };
   std::future<std::vector<Sidecar>> sidecarSubtitles_;
   std::atomic<bool> remoteFailed_{false};  // a remote file's read, or Stash's stream
+  bool discChapters_ = false;  // the chapters are a disc playlist's, not mpv's
+  std::vector<Chapter> mpvChapters_;  // as mpv last told them (chapter-list, chapter)
+  int mpvChapter_ = -1;
   bool subtitlesInFrame_ = true;
   bool loading_ = false;
   bool failed_ = false;
@@ -302,6 +320,7 @@ class VideoPlayer {
     uint64_t file = 0;  // anonymous load number, not a path or library identity
     double since = 0;
     int frames = 0, redraws = 0, repeats = 0, unknown = 0;
+    int direct = 0;  // of frames: handed straight to the eyes, not drawn by mpv
     int loops = 0, controls = 0, previews = 0, xrFrames = 0, xrFocused = 0;
     int64_t lastVoDrops = -1, lastDecoderDrops = -1;
     double avSync = std::numeric_limits<double>::quiet_NaN();

@@ -405,26 +405,23 @@ struct MpvStream {
   std::atomic<bool> cancelled{false};
   std::atomic<bool>* failed = nullptr;
 };
-// mpv's URLs: "smbfile://h/s/a" (playback) or "smbread://h/s/a" (previews)
-// for smb://h/s/a, as "sftpfile://" and "sftpread://" for sftp://.
-int openMpv(void* data, char* uri, mpv_stream_cb_info* info) {
-  const std::string url = uri;
-  const size_t colon = url.find("://");
-  if (colon == std::string::npos || colon < 4) return MPV_ERROR_LOADING_FAILED;
-  const std::string locator = url.substr(0, colon - 4) + url.substr(colon);
-  if (!isRemote(locator)) return MPV_ERROR_LOADING_FAILED;
+}  // namespace
+
+bool openMpvStream(const std::string& locator, bool background, std::atomic<bool>* failed,
+                   mpv_stream_cb_info* info) {
+  if (!isRemote(locator)) return false;
   auto p = std::make_unique<MpvStream>();
   p->connection = connection(root(locator));
-  if (data == &backgroundReader) {
+  if (background) {
     Status status;
     p->file = File::open(locator, status);
-    if (!p->file) return MPV_ERROR_LOADING_FAILED;
+    if (!p->file) return false;
   } else {
-    p->failed = static_cast<std::atomic<bool>*>(data);
+    p->failed = failed;
     if (p->failed) *p->failed = false;
     p->stream = std::make_shared<Stream>();
     p->stream->locator = locator;
-    if (openStream(*p->connection, p->stream, true) != Status::Ok) return MPV_ERROR_LOADING_FAILED;
+    if (openStream(*p->connection, p->stream, true) != Status::Ok) return false;
   }
   info->cookie = p.release();
   info->read_fn = [](void* cookie, char* out, uint64_t count) -> int64_t {
@@ -473,7 +470,20 @@ int openMpv(void* data, char* uri, mpv_stream_cb_info* info) {
     if (p->stream) { p->stream->cancelled = true; p->connection->notify(); }
     delete p;  // the worker retires pending reads and closes the handle
   };
-  return 0;
+  return true;
+}
+
+namespace {
+// mpv's URLs: "smbfile://h/s/a" (playback) or "smbread://h/s/a" (previews)
+// for smb://h/s/a, as "sftpfile://" and "sftpread://" for sftp://.
+int openMpv(void* data, char* uri, mpv_stream_cb_info* info) {
+  const std::string url = uri;
+  const size_t colon = url.find("://");
+  if (colon == std::string::npos || colon < 4) return MPV_ERROR_LOADING_FAILED;
+  const std::string locator = url.substr(0, colon - 4) + url.substr(colon);
+  const bool background = data == &backgroundReader;
+  return openMpvStream(locator, background, background ? nullptr : static_cast<std::atomic<bool>*>(data), info)
+             ? 0 : MPV_ERROR_LOADING_FAILED;
 }
 }  // namespace
 

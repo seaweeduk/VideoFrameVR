@@ -1,5 +1,6 @@
 #include "anti_shimmer.h"
 #include "autofocus.h"
+#include "bluray.h"
 #include "direct_depth.h"
 #include "direct_video.h"
 #include "eye_resolution.h"
@@ -949,6 +950,8 @@ int run(GLFWwindow* window, const Options& opts) {
   int activeHand = 1;  // the hand whose pointer drives the menu
   float laserLength = kLaserStartLength;
   int knownWidth = 0, knownHeight = 0;
+  TwoViews knownViews = TwoViews::No;
+  bool formatDetected = false;  // for this file: logged once, then as it changes
   // The stick's seek (HeldSeek): from where, whether it paused the video,
   // and whether the bar shows where it goes until the video is there.
   HeldSeek heldSeek;
@@ -1146,6 +1149,8 @@ int run(GLFWwindow* window, const Options& opts) {
     opacityShownUntil = 0;
     applyVideoSettings();
     knownWidth = knownHeight = 0;  // re-detect the format once the size is known
+    knownViews = TwoViews::No;
+    formatDetected = false;
     if (isPhotoFile(path)) {
       // Photos are shown by photoPreloader, not mpv: decoded in the
       // background, the next one (after the last the first, as the slideshow
@@ -2135,6 +2140,7 @@ int run(GLFWwindow* window, const Options& opts) {
         if (app.video.hasFormat && !kept.hasFormat) {
           app.formatChosenByUser = false;
           knownWidth = -1;
+          formatDetected = false;
         }
         app.video = kept;
         applyVideoSettings();
@@ -2262,12 +2268,21 @@ int run(GLFWwindow* window, const Options& opts) {
       rememberFormat();
       app.rememberFormat = false;
     }
-    if (player.width() != knownWidth || player.height() != knownHeight) {
+    // And once mpv says how it decodes a 3D Blu-ray video's two views. Not
+    // from the last file's while the next one opens.
+    const TwoViews views = player.playback().views;
+    if (player.sized() &&
+        (player.width() != knownWidth || player.height() != knownHeight || views != knownViews)) {
       knownWidth = player.width();
       knownHeight = player.height();
-      if (knownWidth > 0 && !app.formatChosenByUser) {
-        app.format = guessVideoFormat(app.currentFile, knownWidth, knownHeight);
-        printFormat(app.format, "detected");
+      knownViews = views;
+      if (!app.formatChosenByUser) {
+        const VideoFormat guess = guessVideoFormat(app.currentFile, knownWidth, knownHeight, views);
+        if (!formatDetected || guess.projection != app.format.projection ||
+            guess.stereo != app.format.stereo || guess.packing != app.format.packing)
+          printFormat(guess, "detected");
+        app.format = guess;
+        formatDetected = true;
       }
     }
 
@@ -2352,7 +2367,9 @@ int run(GLFWwindow* window, const Options& opts) {
         app.format.stereo != StereoLayout::Mono || app.format.projection != Projection::Flat;
     player.setSubtitlesInFrame(!floatingSubtitles);
     subtitles.setText(floatingSubtitles ? player.playback().subtitleText : "");
-    loadingText.setText(player.failed() ? strings().playbackFailed : strings().loading);
+    loadingText.setText(!player.failed()                     ? strings().loading
+                        : bdmv::isEncrypted(app.currentFile) ? strings().discEncrypted
+                                                             : strings().playbackFailed);
     // Until the new file's first frame arrives, the texture still holds the old
     // video, which would show cut apart in the new format; show nothing instead.
     bool photo = isPhotoFile(app.currentFile);
@@ -3036,6 +3053,7 @@ int run(GLFWwindow* window, const Options& opts) {
       view.screen = ScreenView::of(app.screen.size);
       view.currentFile = app.currentFile;
       view.playbackFailed = player.failed();
+      view.discEncrypted = player.failed() && bdmv::isEncrypted(app.currentFile);
       // No glass on the Frame (docs/vulkan-renderer.md, 7): Solid there,
       // keeping a saved Glass for the desktop.
       view.theme = kStandaloneHeadset ? Theme::Material : settings.theme;
@@ -3228,6 +3246,7 @@ int run(GLFWwindow* window, const Options& opts) {
         playing.location = app.currentFile;
         playing.duration = player.playback().duration;
         playing.format = app.format;
+        playing.views = player.playback().views;
         playing.flip = app.flipVideo;
         seekPreview.show(hoverFraction, playing, panel.panel(menu, Menu::kMain));
       } else {

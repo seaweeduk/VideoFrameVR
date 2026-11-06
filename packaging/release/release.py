@@ -134,6 +134,8 @@ def dependency_key(app, architecture):
     paths = [app / "packaging/release/build-sdk.sh", app / "packaging/release/sources.json",
              app / "packaging/release/debian.json", app / "src/video_export.h"]
     paths += sorted((app / "packaging/frame").glob("*.patch"))
+    paths += sorted((app / "packaging/mpv").glob("*.patch"))
+    paths += sorted((app / "packaging/mpv/mvc").glob("*.[ch]"))
     paths += sorted((app / "packaging/libsmb2").glob("*.patch"))
     paths += sorted((app / "packaging/frame/mpv").glob("dmabuf_ubwc.*"))
     for path in paths:

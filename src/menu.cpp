@@ -136,6 +136,7 @@ void Menu::update(const MenuView& view) {
       view.format.projection != view_.format.projection ||
       view.format.stereo != view_.format.stereo || view.halfPacked != view_.halfPacked ||
       view.currentFile != view_.currentFile || view.playbackFailed != view_.playbackFailed ||
+      view.discEncrypted != view_.discEncrypted ||
       view.theme != view_.theme || accent != view_.accent ||
       a.videoCodec != b.videoCodec ||
       a.pixelFormat != b.pixelFormat || a.fps != b.fps || a.audioCodec != b.audioCodec ||

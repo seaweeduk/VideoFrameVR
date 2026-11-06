@@ -153,6 +153,7 @@ struct MenuView {
   bool opacityApplies = false;  // the headset blends the video over the room (its own camera)
   std::string currentFile;
   bool playbackFailed = false;  // the current video couldn't be played
+  bool discEncrypted = false;   // ... because it is an encrypted disc image
   Theme theme = Theme::Glass;
   Accent accent;
   bool floatingSubtitles = false;
