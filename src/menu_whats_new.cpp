@@ -216,14 +216,16 @@ void Menu::drawWhatsNew(cairo_t* cr) {
         cairo_fill(cr);
         break;
       case Piece::Version: {  // the date on the version's baseline
+        // Done with the version before the date's layout: a new layout can
+        // empty textLayout()'s cache.
         PangoLayout* version = textLayout(cr, p.text, kVersionSize, true, -1, 0, false);
-        PangoLayout* date = textLayout(cr, p.date, kDateSize, false, -1, 0, false);
         int versionW = 0, versionH = 0;
         pango_layout_get_pixel_size(version, &versionW, &versionH);
         const double baseline = pango_layout_get_baseline(version) / double(PANGO_SCALE);
         setColor(cr, pal.textAccent);
         cairo_move_to(cr, x, onPixel(y));
         pango_cairo_show_layout(cr, version);
+        PangoLayout* date = textLayout(cr, p.date, kDateSize, false, -1, 0, false);
         setColor(cr, pal.textDim);
         const double dateBaseline = pango_layout_get_baseline(date) / double(PANGO_SCALE);
         cairo_move_to(cr, x + versionW + kDateGap, onPixel(y + baseline - dateBaseline));
