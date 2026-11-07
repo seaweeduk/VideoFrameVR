@@ -17,7 +17,7 @@ const uint kChromaKey = 64u;    // a green screen keyed here
 const uint kCorrect = 128u;     // stereo correction (EyeData.viewer) applies
 const uint kTexture = 256u;     // screen: a picture (else its placeholder colour)
 const uint kYuv = 512u;         // a decoded frame: the texture is its luma, binding 1 its chroma
-const uint kTvGamma = 1024u;    // kYuv: TV gamma, BT.1886's plain 2.4 power instead of sRGB's curve
+const uint kTvGamma = 1024u;    // TV gamma, BT.1886's plain 2.4 power instead of sRGB's curve
 const uint kPhoto = 2048u;      // a photo: brightness etc. as adjustPicture() applies them
 
 // The draw's flags (above), from its push constants: each shader defines it.

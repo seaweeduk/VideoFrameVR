@@ -107,7 +107,7 @@ vec3 picture(vec2 uv, vec2 lo, vec2 hi, vec2 dx, vec2 dy, EyeData e, uint flags)
 // video (DirectVideo::computeColor), in display values: contrast scales luma
 // and chroma, saturation chroma, brightness adds to all. k: Kr, Kb. tv: the
 // display values are BT.1886's 2.4 power (kTvGamma, as videoTap decoded
-// them), else sRGB's curve (mpv's image too).
+// them or mpv converted them), else sRGB's curve.
 vec3 adjustVideo(vec3 c, vec3 adjust, vec2 k, bool tv) {
   vec3 e = tv ? pow(c, vec3(1.0 / 2.4)) : linearToSrgb(c);
   float y = dot(e, vec3(k.x, 1.0 - k.x - k.y, k.y));

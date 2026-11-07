@@ -3082,6 +3082,7 @@ int run(GLFWwindow* window, const Options& opts) {
         video.adjust[1] = app.video.contrast / 100.0f;
         video.adjust[2] = app.video.saturation / 100.0f;
       }
+      video.tvGamma = !photo && player.tvGammaImage();
       video.mipmaps = photo || settings.videoMipmaps;  // photos always have theirs
       video.antiShimmer = antiShimmer;
       video.look = settings.toneLook;

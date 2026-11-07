@@ -744,6 +744,8 @@ void VideoPlayer::setTvGamma(bool tvGamma) {
 // mpv converts the video's transfer to target-trc. VR players show SDR video
 // with its own values, so the target is the source's transfer (no change);
 // HDR (and linear) video still goes to sRGB through mpv's tone mapping.
+bool VideoPlayer::tvGammaImage() const { return tvGamma_ && sourceTrc_ == kBt1886; }
+
 void VideoPlayer::applyTargetTrc() {
   static const char* const kToSrgb[] = {"pq", "hlg", "v-log", "s-log1", "s-log2", "st428",
                                         "linear"};

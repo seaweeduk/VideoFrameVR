@@ -48,6 +48,7 @@ struct VideoDraw {
   // Brightness, contrast, saturation -1..1: photos, and videos while
   // readsFrame(); else mpv or the decoded frame's YuvColor adjusts video.
   float adjust[3] = {0, 0, 0};
+  bool tvGamma = false;  // mpv's image: VideoPlayer::tvGammaImage()
   bool photo = false;
   bool mipmaps = true;          // trilinear through the mipmaps, else the full-size level
   AntiShimmer antiShimmer = AntiShimmer::Off;  // ... sampled over each pixel's footprint

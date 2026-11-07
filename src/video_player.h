@@ -102,6 +102,8 @@ class VideoPlayer {
   // then mpv converts it from a TV's gamma (BT.1886) to sRGB, darkening the
   // shadows. HDR is tone-mapped to sRGB either way.
   void setTvGamma(bool tvGamma);
+  // Whether mpv's image is BT.1886 video converted to sRGB for TV gamma.
+  bool tvGammaImage() const;
   // The scene samples the video through mipmaps (trilinear, the default) or
   // from its full-size level only (bilinear); they are
   // made for each new frame only while on.

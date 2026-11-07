@@ -361,7 +361,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   // A decoded frame: its planes, from their only level.
   const DirectFrame* yuv = v.texture ? v.texture->yuv : nullptr;
   if (yuv) flags |= kYuv | kBaseLevel;
-  if (yuv && yuv->color().tvGamma) flags |= kTvGamma;
+  if (yuv ? yuv->color().tvGamma : v.tvGamma) flags |= kTvGamma;
   const Pipelines::SamplerId sampler =
       v.mipmaps && !yuv ? Pipelines::kVideoTrilinear : Pipelines::kVideoBase;
   const Texture* chroma = yuv ? &yuv->chroma() : nullptr;
