@@ -325,7 +325,9 @@ void DirectDepth::submit() {
   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr,
                        1, &host, 0, nullptr);
   direct_->recordBarriers(cmd, frame, false);
-  const uint64_t value = gpu_->submitOneShot(cmd);
+  // The frame's last submission gave its images back to the converter's side
+  // first: the acquire above is ordered after that release.
+  const uint64_t value = gpu_->submitOneShot(cmd, {direct_->useWait(frame)});
   direct_->unpin(frame, value);
   done_ = value ? value : UINT64_MAX;
 }

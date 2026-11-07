@@ -100,8 +100,12 @@ class DirectVideo {
   void bindTp10(VkCommandBuffer cmd, VkPipelineLayout layout, const DirectFrame& frame) const;
   // Work outside the frames sampling a frame (DirectDepth): it is kept from
   // pin() until unpin() with the submission's frame timeline value, which
-  // takes its planes over and back as recordAcquires() and recordReleases().
+  // takes its planes over and back as recordAcquires() and recordReleases(),
+  // after useWait(): the last submission sampling it, which gave them back.
   void pin(DirectFrame& frame) { ++frame.pinned_; }
+  SemaphoreWait useWait(const DirectFrame& frame) const {
+    return {gpu_->frameTimeline(), frame.lastUse_, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+  }
   void unpin(DirectFrame& frame, uint64_t lastUse);
   void recordBarriers(VkCommandBuffer cmd, DirectFrame& frame, bool acquire);
   // Whether this frame's colour is one the shaders reproduce as mpv would

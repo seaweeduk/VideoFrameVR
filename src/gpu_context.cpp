@@ -370,7 +370,7 @@ VkCommandBuffer GpuContext::beginOneShot() {
   return cmd;
 }
 
-uint64_t GpuContext::submitOneShot(VkCommandBuffer cmd) {
+uint64_t GpuContext::submitOneShot(VkCommandBuffer cmd, const std::vector<SemaphoreWait>& waits) {
   if (!cmd) return 0;
   // A frame being recorded counts on the next value: one-shot work started
   // meanwhile (a texture made while recording) waits for the frame instead.
@@ -386,11 +386,24 @@ uint64_t GpuContext::submitOneShot(VkCommandBuffer cmd) {
     return 0;
   }
   const uint64_t value = submitted_ + 1;
+  std::vector<VkSemaphore> waitSemaphores;
+  std::vector<uint64_t> waitValues;
+  std::vector<VkPipelineStageFlags> waitStages;
+  for (const SemaphoreWait& w : waits) {
+    waitSemaphores.push_back(w.semaphore);
+    waitValues.push_back(w.value);
+    waitStages.push_back(w.stage);
+  }
   VkTimelineSemaphoreSubmitInfo timeline{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
+  timeline.waitSemaphoreValueCount = static_cast<uint32_t>(waitValues.size());
+  timeline.pWaitSemaphoreValues = waitValues.data();
   timeline.signalSemaphoreValueCount = 1;
   timeline.pSignalSemaphoreValues = &value;
   VkSubmitInfo info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
   info.pNext = &timeline;
+  info.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
+  info.pWaitSemaphores = waitSemaphores.data();
+  info.pWaitDstStageMask = waitStages.data();
   info.commandBufferCount = 1;
   info.pCommandBuffers = &cmd;
   info.signalSemaphoreCount = 1;

@@ -173,9 +173,10 @@ class GpuContext {
 
   // Work outside the frames (setup, a new texture's first transition): a
   // command buffer to record into, then submitted on its own as the next
-  // frame timeline value (returned, 0 on failure). Never waits.
+  // frame timeline value (returned, 0 on failure), its GPU work after
+  // `waits`. Never waits on the CPU.
   VkCommandBuffer beginOneShot();
-  uint64_t submitOneShot(VkCommandBuffer cmd);
+  uint64_t submitOneShot(VkCommandBuffer cmd, const std::vector<SemaphoreWait>& waits = {});
 
   // Runs `destroy` once the GPU has finished every submission made so far
   // (and the one being recorded), and GL has passed glValue on the GL
