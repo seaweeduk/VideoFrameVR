@@ -621,10 +621,10 @@ void Menu::layoutVideoSettings() {
   // Passthrough: the video's opacity (blended only by the headset itself,
   // with its own camera, below 100 % with passthrough off too, so shown
   // whenever it can), then with passthrough on its own mask, on or off
-  // (side-by-side fisheye only), then keying a green screen video, on or
-  // off, and its settings, then with advanced settings on the Frame Match the
+  // (side-by-side fisheye only), then unless its own mask is used keying a
+  // green screen video, on or off, and while on its settings, then with advanced settings on the Frame Match the
   // room's strengths, and Reset sliders with Match the room's switch, under
-  // the picture. Keying is not for videos whose own mask is used.
+  // the picture.
   const double top = pictureBottom + kGap;
   x = columnX(1) + kGroupPad;
   y = firstRow(top);
@@ -643,17 +643,20 @@ void Menu::layoutVideoSettings() {
                  !view_.maskFormat)
         .tooltip = view_.maskFormat ? t.packedMaskHint : t.packedMaskFormatHint;
     y += kSettingStep;
-    addToggleRow(x, y, w, t.greenScreenOn, view_.greenScreen.on && !own,
-                 command(MenuCommand::ToggleGreenScreen), own)
-        .tooltip = own ? t.greenScreenOwnMask : t.greenScreenHint;
-    y += kSettingStep;
-    const MenuCommand::Type types[] = {MenuCommand::SetKeyStrength, MenuCommand::SetKeyShrink,
-                                       MenuCommand::SetKeySoftness, MenuCommand::SetKeySpill};
-    const int values[] = {view_.greenScreen.strength, view_.greenScreen.shrink,
-                          view_.greenScreen.softness, view_.greenScreen.spill};
-    const char* names[] = {t.keyStrength, t.keyShrink, t.keySoftness, t.keySpill};
-    const bool off = !view_.greenScreen.on || own;
-    for (int i = 0; i < 4; ++i) slider(names[i], types[i], values[i], off, t.tipKey[i]);
+    if (!own) {
+      addToggleRow(x, y, w, t.greenScreenOn, view_.greenScreen.on,
+                   command(MenuCommand::ToggleGreenScreen))
+          .tooltip = t.greenScreenHint;
+      y += kSettingStep;
+    }
+    if (!own && view_.greenScreen.on) {
+      const MenuCommand::Type types[] = {MenuCommand::SetKeyStrength, MenuCommand::SetKeyShrink,
+                                         MenuCommand::SetKeySoftness, MenuCommand::SetKeySpill};
+      const int values[] = {view_.greenScreen.strength, view_.greenScreen.shrink,
+                            view_.greenScreen.softness, view_.greenScreen.spill};
+      const char* names[] = {t.keyStrength, t.keyShrink, t.keySoftness, t.keySpill};
+      for (int i = 0; i < 4; ++i) slider(names[i], types[i], values[i], false, t.tipKey[i]);
+    }
   }
   // How far Match the room goes (advanced: set once, to taste), above its
   // switch.
@@ -677,12 +680,13 @@ void Menu::layoutVideoSettings() {
   resetKey.h = kSettingRowH;
   resetKey.fontSize = kTextSize;
   resetKey.tooltip = t.greenScreenResetHint;
-  resetKey.disabled = own && !view_.opacityApplies && !strengths;
+  const bool keyShown = view_.passthrough && !own && view_.greenScreen.on;
+  resetKey.disabled = !keyShown && !view_.opacityApplies && !strengths;
   buttons_.push_back(resetKey);
   // Match the room (the Frame), a switch, on the same row, and while it is
-  // on Read again after it: then the own mask's hint is left to the green
-  // screen switch's tooltip, which says it too. The switch's label says
-  // when it reads or failed.
+  // on Read again after it: then there is no room for the own mask's hint
+  // (the mask's switch, on, says it). The switch's label says when it reads
+  // or failed.
   const RoomMatch room = view_.roomMatch;
   const bool ownHint = own && room == RoomMatch::Hidden;
   if (room != RoomMatch::Hidden) {
