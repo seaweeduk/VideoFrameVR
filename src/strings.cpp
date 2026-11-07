@@ -611,7 +611,6 @@ const Strings kEnglish = {
         "Update now",
         "Not now",
         "Try again",
-        "Close",
         "Update available",
     },
     {

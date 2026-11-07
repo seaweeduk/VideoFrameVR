@@ -290,11 +290,11 @@ void Menu::layoutUpdateDialog(std::vector<Button>& row) {
   const bool failed = state == State::DownloadFailed;
   if (state != State::Available && state != State::Downloading && state != State::Restarting &&
       !failed) {
-    row.push_back(textButton(t.close, Icon::None, close));
+    row.push_back(textButton(text().whatsNew.close, Icon::None, close));
     return;
   }
   const bool busy = state == State::Downloading || state == State::Restarting;
-  Button later = textButton(failed ? t.close : t.notNow, Icon::None, close);
+  Button later = textButton(failed ? text().whatsNew.close : t.notNow, Icon::None, close);
   later.disabled = busy;
   row.push_back(later);
   Button go = textButton(failed ? t.tryAgain : t.updateNow, Icon::None,

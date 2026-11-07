@@ -368,7 +368,6 @@ struct ReleaseUpdateStrings {
   const char* updateNow;
   const char* notNow;
   const char* tryAgain;
-  const char* close;
   const char* notice;       // also the dialog's title
 };
 
@@ -923,7 +922,7 @@ struct DeleteStrings {
 // opened from Settings → Help. The notes themselves stay English.
 struct WhatsNewStrings {
   const char* title;             // also Help's button
-  const char* close;
+  const char* close;             // also the update dialog's
   const char* showAfterUpdates;  // a switch: it opens by itself after an update
   const char* updatedFrom;       // printf: the version before, this one
 };
