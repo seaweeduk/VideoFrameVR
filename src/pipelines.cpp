@@ -34,13 +34,18 @@ namespace {
 constexpr int32_t kMaskFirst[] = {-1, -1, 1, 0};
 constexpr int32_t kSharpened[] = {-1, -1, -1, 1};
 constexpr int32_t kMaskFirstSharpened[] = {-1, -1, 1, 1};
+// The general pipelines for a Q08C frame (source 2; screen.frag reads the
+// source alone).
+constexpr int32_t kYcbcrGeneral[] = {-1, 2, -1, 0};
+constexpr int32_t kYcbcrMaskFirst[] = {-1, 2, 1, 0};
 
 // A common mode's source as the shader's constant (video.glsl's kSource...).
 int32_t sourceConstant(Pipelines::SurroundSource source) {
   switch (source) {
     case Pipelines::kImage: return 0;
     case Pipelines::kPlanes: return 1;
-    default: return 1;  // TP10: its own build of the shader, which ignores it
+    case Pipelines::kTp10: return 1;  // its own build of the shader, which ignores it
+    default: return 2;                // a Y'CbCr image, of any chroma siting
   }
 }
 
@@ -56,20 +61,25 @@ Pipelines::~Pipelines() {
   pipelines.insert(pipelines.end(), std::begin(foveation_), std::end(foveation_));
   pipelines.insert(pipelines.end(), std::begin(tp10_), std::end(tp10_));
   pipelines.insert(pipelines.end(), std::begin(tp10Plain_), std::end(tp10Plain_));
+  std::vector<VkPipelineLayout> layouts = {layout_, tp10Layout_};
+  for (int s = 0; s < kQ08cSitings; ++s) {
+    pipelines.insert(pipelines.end(), std::begin(q08c_[s]), std::end(q08c_[s]));
+    pipelines.insert(pipelines.end(), std::begin(q08cPlain_[s]), std::end(q08cPlain_[s]));
+    layouts.push_back(q08cLayout_[s]);
+  }
   for (const auto& pass : surround_)
     for (const auto& projection : pass)
       for (const auto& cuts : projection)
         pipelines.insert(pipelines.end(), std::begin(cuts), std::end(cuts));
   std::vector<VkSampler> samplers(std::begin(samplers_), std::end(samplers_));
-  VkPipelineLayout layout = layout_, tp10Layout = tp10Layout_;
   VkDescriptorSetLayout setLayout = setLayout_;
-  gpu_->retire([d, pipelines, samplers, layout, tp10Layout, setLayout] {
+  gpu_->retire([d, pipelines, samplers, layouts, setLayout] {
     for (VkPipeline p : pipelines)
       if (p) vkDestroyPipeline(d, p, nullptr);
     for (VkSampler s : samplers)
       if (s) vkDestroySampler(d, s, nullptr);
-    if (layout) vkDestroyPipelineLayout(d, layout, nullptr);
-    if (tp10Layout) vkDestroyPipelineLayout(d, tp10Layout, nullptr);
+    for (VkPipelineLayout l : layouts)
+      if (l) vkDestroyPipelineLayout(d, l, nullptr);
     if (setLayout) vkDestroyDescriptorSetLayout(d, setLayout, nullptr);
   });
   gpu_->retire(dummyImage_);
@@ -165,17 +175,6 @@ bool Pipelines::initGlass(VkRenderPass glassPass) {
 }
 
 bool Pipelines::initTp10(VkDescriptorSetLayout setLayout) {
-  VkPushConstantRange push{};
-  push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-  push.size = kPushConstantBytes;
-  VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-  layoutInfo.setLayoutCount = 1;
-  layoutInfo.pSetLayouts = &setLayout;
-  layoutInfo.pushConstantRangeCount = 1;
-  layoutInfo.pPushConstantRanges = &push;
-  if (!gpu_->check(vkCreatePipelineLayout(gpu_->device(), &layoutInfo, nullptr, &tp10Layout_),
-                   "TP10 pipeline layout"))
-    return false;
   const Desc descs[3] = {
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_tp10_frag,
        sizeof(kSpirv_surround_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
@@ -186,14 +185,53 @@ bool Pipelines::initTp10(VkDescriptorSetLayout setLayout) {
   };
   static const char* names[3] = {"surround (TP10)", "surround (mask first, TP10)", "screen (TP10)"};
   std::vector<Job> jobs;
-  for (int i = 0; i < 3; ++i) {
-    add(jobs, descs[i], eyePass_, names[i], &tp10_[i], tp10Layout_);
-    if (plainEyePass_ != eyePass_)
-      add(jobs, descs[i], plainEyePass_, names[i], &tp10Plain_[i], tp10Layout_);
-  }
+  if (!addDirect(jobs, setLayout, descs, names, tp10Layout_, tp10_, tp10Plain_)) return false;
   addSurround(jobs, {kTp10}, kSpirv_surround_tp10_frag, sizeof(kSpirv_surround_tp10_frag),
               tp10Layout_);
   return createAll(jobs);
+}
+
+bool Pipelines::initQ08c(const VkDescriptorSetLayout* setLayouts) {
+  const Desc descs[3] = {
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_frag,
+       sizeof(kSpirv_surround_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kYcbcrGeneral, 4},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_frag,
+       sizeof(kSpirv_surround_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kYcbcrMaskFirst, 4},
+      {kSpirv_screen_vert, sizeof(kSpirv_screen_vert), kSpirv_screen_frag,
+       sizeof(kSpirv_screen_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, false, kYcbcrGeneral, 4},
+  };
+  static const char* names[3] = {"surround (Q08C)", "surround (mask first, Q08C)", "screen (Q08C)"};
+  // All sitings in one batch.
+  std::vector<Job> jobs;
+  for (int s = 0; s < kQ08cSitings; ++s) {
+    if (!addDirect(jobs, setLayouts[s], descs, names, q08cLayout_[s], q08c_[s], q08cPlain_[s]))
+      return false;
+    addSurround(jobs, {static_cast<SurroundSource>(kYcbcr + s)}, kSpirv_surround_frag,
+                sizeof(kSpirv_surround_frag), q08cLayout_[s]);
+  }
+  return createAll(jobs);
+}
+
+bool Pipelines::addDirect(std::vector<Job>& jobs, VkDescriptorSetLayout setLayout,
+                          const Desc (&descs)[3], const char* const (&names)[3],
+                          VkPipelineLayout& layout, VkPipeline (&pipelines)[3],
+                          VkPipeline (&plain)[3]) {
+  VkPushConstantRange push{};
+  push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  push.size = kPushConstantBytes;
+  VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  layoutInfo.setLayoutCount = 1;
+  layoutInfo.pSetLayouts = &setLayout;
+  layoutInfo.pushConstantRangeCount = 1;
+  layoutInfo.pPushConstantRanges = &push;
+  if (!gpu_->check(vkCreatePipelineLayout(gpu_->device(), &layoutInfo, nullptr, &layout),
+                   "decoder frames' pipeline layout"))
+    return false;
+  for (int i = 0; i < 3; ++i) {
+    add(jobs, descs[i], eyePass_, names[i], &pipelines[i], layout);
+    if (plainEyePass_ != eyePass_) add(jobs, descs[i], plainEyePass_, names[i], &plain[i], layout);
+  }
+  return true;
 }
 
 void Pipelines::add(std::vector<Job>& jobs, const Desc& desc, VkRenderPass pass, const char* what,
@@ -455,4 +493,20 @@ void Pipelines::bindTextures(VkCommandBuffer cmd, const Texture* texture, Sample
     writes[i].pImageInfo = &images[i];
   }
   gpu_->cmdPushDescriptorSet(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 0, 2, writes);
+}
+
+void Pipelines::bindQ08c(VkCommandBuffer cmd, int siting, const Texture& frame) const {
+  const VkDescriptorImageInfo images[2] = {
+      {VK_NULL_HANDLE, frame.view, VK_IMAGE_LAYOUT_GENERAL},  // the set layout's sampler
+      {samplers_[kGlass], dummy_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+  VkWriteDescriptorSet writes[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET},
+                                    {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
+  for (uint32_t i = 0; i < 2; ++i) {
+    writes[i].dstBinding = i;
+    writes[i].descriptorCount = 1;
+    writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[i].pImageInfo = &images[i];
+  }
+  gpu_->cmdPushDescriptorSet(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, q08cLayout_[siting], 0, 2,
+                             writes);
 }

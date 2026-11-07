@@ -15,6 +15,10 @@ struct YuvColor {
   bool tvGamma = false;  // BT.1886 video shown with TV gamma (kTvGamma)
 };
 
+// The chroma sitings a Q08C frame's Y'CbCr sampler can place its chroma at
+// (DirectFrame::q08c): video_export_chroma's left, centre and top-left.
+constexpr int kQ08cSitings = 3;
+
 // An image the scene samples, by stable handle: a canvas's, a video slot's or
 // a photo's. It stays valid until every FrameScene that refers to it has
 // finished on the GPU (its owner retires it through GpuContext).
