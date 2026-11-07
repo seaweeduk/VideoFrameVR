@@ -87,10 +87,11 @@ vec3 tap(vec2 p) { return videoTap(tex, chromaTex, p, source(), pc.draw.yuv, yuv
 layout(location = 0) in vec2 vNdc;
 layout(location = 0) out vec4 fragColor;
 
-// The picture at uv (0..1 in this eye's part, kept within lo..hi) as this
-// pixel (at fragCoord) shows it, sampled with the gradients dx, dy: through
-// the mipmaps, or without them over the pixel's footprint.
-vec3 picture(vec2 uv, vec2 lo, vec2 hi, vec2 dx, vec2 dy, EyeData e, uint flags, vec2 fragCoord) {
+// The picture at uv (0..1 in this eye's part, kept within lo..hi) as it
+// came, sampled with the gradients dx, dy: through the mipmaps, or without
+// them over the pixel's footprint. A mask or key reads it so; shown()
+// finishes it.
+vec3 picture(vec2 uv, vec2 lo, vec2 hi, vec2 dx, vec2 dy, EyeData e, uint flags) {
   vec3 c;
   if (kCommon || kSource == kSourceYcbcr || baseLevel(flags)) {
     c = footprintSample(tex, chromaTex, source(), pc.draw.yuv, yuvMatrix(), uv, dx, dy, e.stereo, lo,
@@ -99,8 +100,40 @@ vec3 picture(vec2 uv, vec2 lo, vec2 hi, vec2 dx, vec2 dy, EyeData e, uint flags,
     vec2 eyeUv = e.stereo.zw + clamp(uv, lo, hi) * e.stereo.xy;
     c = textureGrad(tex, eyeUv, dx * e.stereo.xy, dy * e.stereo.xy).rgb;
   }
-  if (!kCommon) c = applyLook(adjustPicture(c, pc.draw.adjust.xyz), e, flags, fragCoord);
   return clamp(c, 0.0, 1.0);
+}
+
+// Brightness, contrast and saturation (each -1..1) as mpv applies them to a
+// video (DirectVideo::computeColor), in display values: contrast scales luma
+// and chroma, saturation chroma, brightness adds to all. k: Kr, Kb. tv: the
+// display values are BT.1886's 2.4 power (kTvGamma, as videoTap decoded
+// them), else sRGB's curve (mpv's image too).
+vec3 adjustVideo(vec3 c, vec3 adjust, vec2 k, bool tv) {
+  vec3 e = tv ? pow(c, vec3(1.0 / 2.4)) : linearToSrgb(c);
+  float y = dot(e, vec3(k.x, 1.0 - k.x - k.y, k.y));
+  e = clamp((1.0 + adjust.y) * mix(vec3(y), e, 1.0 + adjust.z) + adjust.x, 0.0, 1.0);
+  return tv ? pow(e, vec3(2.4)) : srgbToLinear(e);
+}
+
+// The picture as this pixel (at fragCoord) shows it, from picture(): in a
+// general pipeline with the picture settings (a photo's as adjustPicture
+// applies them; a video's, which C++ passes only while a mask or key reads
+// the frame, as mpv does) and the tone look. A common mode has neither.
+vec3 shown(vec3 c, EyeData e, uint flags, vec2 fragCoord) {
+  if (kCommon) return c;
+  vec3 a = pc.draw.adjust.xyz;
+  if ((flags & kPhoto) != 0u) c = adjustPicture(c, a);
+  else if (a != vec3(0.0)) c = adjustVideo(c, a, pc.draw.params.zw, (flags & kTvGamma) != 0u);
+  return clamp(applyLook(c, e, flags, fragCoord), 0.0, 1.0);
+}
+
+// shown() for the picture c and, if sharpened, its neighbours n.
+void show(inout vec3 c, inout vec3 n[4], bool sharpened, EyeData e, uint flags) {
+  c = shown(c, e, flags, gl_FragCoord.xy);
+  if (!kCommon && sharpened) {
+    vec2 pixels[4] = vec2[](vec2(-1.0, 0.0), vec2(1.0, 0.0), vec2(0.0, -1.0), vec2(0.0, 1.0));
+    for (int i = 0; i < 4; ++i) n[i] = shown(n[i], e, flags, gl_FragCoord.xy + pixels[i]);
+  }
 }
 
 // DeoVR's packed alpha at uv: each eye's mask, at alpha.xy of the frame,
@@ -204,7 +237,7 @@ void main() {
     fragColor = (flags & kAlphaOut) != 0u ? vec4(0.0) : vec4(kKeyColor, 1.0);
     return;
   }
-  vec3 c = inside ? picture(uv, lo, hi, dx, dy, e, flags, gl_FragCoord.xy) : vec3(0.0);
+  vec3 c = inside ? picture(uv, lo, hi, dx, dy, e, flags) : vec3(0.0);
 
   // Sharpening: the picture one eye pixel to each side, as those pixels
   // would sample it. Taps stay on this eye's part, a cubemap's face, or wrap
@@ -215,13 +248,12 @@ void main() {
   vec3 n[4];
   if (sharpened) {
     vec2 steps[4] = vec2[](-stepX, stepX, -stepY, stepY);
-    vec2 pixels[4] = vec2[](vec2(-1.0, 0.0), vec2(1.0, 0.0), vec2(0.0, -1.0), vec2(0.0, 1.0));
     for (int i = 0; i < 4; ++i) {
       vec2 p = uv + steps[i];
       if (projection == 1) p.x = fract(p.x);
       p = clamp(p, lo, hi);
       nUv[i] = p;
-      n[i] = picture(p, lo, hi, dx, dy, e, flags, gl_FragCoord.xy + pixels[i]);
+      n[i] = picture(p, lo, hi, dx, dy, e, flags);
     }
   }
 
@@ -232,6 +264,7 @@ void main() {
     // No packed mask or green screen: the picture where there is one, else
     // what the passthrough mode shows the room with.
     vec4 outside = alphaOut ? vec4(0.0) : keyGreen ? vec4(kKeyColor, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
+    show(c, n, sharpened, e, flags);
     if (sharpened) c = sharpen(c, n[0], n[1], n[2], n[3], strength);
     fragColor = inside ? vec4(c, 1.0) : outside;
     return;
@@ -266,6 +299,9 @@ void main() {
                              : chromaAlpha(linearToSrgb(n[i]), chroma)) < 1.0;
     sharpened = !edge;
   }
+  // The mask and the key have read the picture as it came; sharpening, the
+  // key colour's cap and spill removal act on what is shown.
+  show(c, n, sharpened, e, flags);
   if (sharpened) c = sharpen(c, n[0], n[1], n[2], n[3], strength);
   if (packed) {
     if (!kCommon && keyGreen) {
