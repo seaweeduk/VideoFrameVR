@@ -622,16 +622,16 @@ void Menu::layoutVideoSettings() {
   // with its own camera, below 100 % with passthrough off too, so shown
   // whenever it can), then with passthrough on its own mask, on or off
   // (side-by-side fisheye only), then unless its own mask is used keying a
-  // green screen video, on or off, and while on its settings, then with advanced settings on the Frame Match the
-  // room's strengths, and Reset with Match the room's switch, under
-  // the picture.
+  // green screen video, on or off, and while on its settings, then Reset
+  // with Match the room's switch (the Frame), and while that is on its
+  // strengths, under the picture.
   const double top = pictureBottom + kGap;
   x = columnX(1) + kGroupPad;
   y = firstRow(top);
   // 0..100, with − and + a step of 1 either side of the slider.
   auto slider = [&](const char* label, MenuCommand::Type type, int value, bool disabled,
-                    const char* tooltip) {
-    addValueRow(x, y, w, 230, label, std::to_string(value), value, 0, 100,
+                    const char* tooltip, const char* unit = "") {
+    addValueRow(x, y, w, 230, label, std::to_string(value) + unit, value, 0, 100,
                 command(type, std::max(0, value - 1)), command(type, std::min(100, value + 1)),
                 disabled, false, tooltip);
     y += kSettingStep;
@@ -658,21 +658,8 @@ void Menu::layoutVideoSettings() {
       for (int i = 0; i < 4; ++i) slider(names[i], types[i], values[i], false, t.tipKey[i]);
     }
   }
-  // How far Match the room goes (advanced: set once, to taste), above its
-  // switch.
-  const bool strengths = view_.advancedSettings && view_.roomMatch != RoomMatch::Hidden;
-  if (strengths) {
-    const int share[] = {view_.matchColour, view_.matchBrightness};
-    const MenuCommand::Type types[] = {MenuCommand::SetMatchColour, MenuCommand::SetMatchBrightness};
-    const char* labels[] = {cb.matchColour, cb.matchBrightness};
-    const char* tips[] = {cb.tipMatchColour, cb.tipMatchBrightness};
-    for (int i = 0; i < 2; ++i) {
-      addValueRow(x, y, w, 230, labels[i], std::to_string(share[i]) + " %", share[i], 0, 100,
-                  command(types[i], std::max(0, share[i] - 1)),
-                  command(types[i], std::min(100, share[i] + 1)), false, false, tips[i]);
-      y += kSettingStep;
-    }
-  }
+  // How far Match the room goes, under its switch while it is on.
+  const bool strengths = view_.roomMatch != RoomMatch::Hidden && view_.roomMatched;
   Button resetKey = textButton(t.reset, Icon::None, command(MenuCommand::ResetPassthrough));
   resetKey.panel = kBrowser;
   resetKey.x = x;
@@ -718,6 +705,13 @@ void Menu::layoutVideoSettings() {
     addLabel(resetKey.x + resetKey.w + 20, y, w - resetKey.w - 20, 0, t.greenScreenOwnMask,
              kHintSize, true, 2);
   y += ownHint ? hintHeight(2) + 6 : kSettingStep;
+  if (strengths) {
+    const int share[] = {view_.matchColour, view_.matchBrightness};
+    const MenuCommand::Type types[] = {MenuCommand::SetMatchColour, MenuCommand::SetMatchBrightness};
+    const char* labels[] = {cb.matchColour, cb.matchBrightness};
+    const char* tips[] = {cb.tipMatchColour, cb.tipMatchBrightness};
+    for (int i = 0; i < 2; ++i) slider(labels[i], types[i], share[i], false, tips[i], " %");
+  }
   addGroup(columnX(1), top, kColumnW, y + 10 - top, t.passthroughGroup);
 }
 

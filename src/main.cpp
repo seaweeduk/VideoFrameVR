@@ -1772,8 +1772,8 @@ int run(GLFWwindow* window, const Options& opts) {
       case MenuCommand::ResetPassthrough: {
         // What the group shows: the key's sliders only while the green
         // screen is on (passthrough on, not the video's own mask), Match the
-        // room's strengths only with advanced settings on.
-        if (roomReadable && settings.advancedSettings) {
+        // room's strengths only while it is on.
+        if (roomReadable && roomMatched) {
           const Settings defaults;
           settings.matchColour = defaults.matchColour;
           settings.matchBrightness = defaults.matchBrightness;
