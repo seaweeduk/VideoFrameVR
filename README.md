@@ -15,6 +15,12 @@
 </p>
 
 <p align="center">
+  <a href="https://seaweeduk.github.io/VideoFrameVR/discord/">
+    <img src="https://img.shields.io/badge/Join%20the%20Discord-5865F2?style=for-the-badge&amp;logo=discord&amp;logoColor=white" alt="Join the Discord">
+  </a>
+</p>
+
+<p align="center">
   <img src=".github/readme/hero.jpg" alt="An 8K 180° video of Shanghai's Bund at night playing in VideoFrameVR, with the player bar open and the controller pointing at the seek bar's preview">
 </p>
 
@@ -114,6 +120,11 @@ If the app won't start, run this in a terminal to save the zip instead:
 
 [Open a feature request](https://github.com/seaweeduk/VideoFrameVR/issues/new?template=feature_request.yml)
 and say what you'd like to do and why the app doesn't let you today.
+
+## Discord
+
+[Join the Discord](https://seaweeduk.github.io/VideoFrameVR/discord/) to get
+help, share ideas or chat about the app.
 
 ## Contributing
 
