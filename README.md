@@ -58,7 +58,7 @@ and Pango for the menus.
 <table>
   <tr>
     <td width="50%"><img src=".github/readme/stash.webp" alt="Stash scenes with official covers, and filters by performer, tag and cast down the side"></td>
-    <td width="50%"><img src=".github/readme/video-settings.webp" alt="Steam Frame video settings: the High preset at 3780 pixels per eye, 120 Hz and High foveation"></td>
+    <td width="50%"><img src=".github/readme/video-settings.webp" alt="Steam Frame video settings: the High preset at 3780 pixels per eye, 120 Hz and High foveation, with warmth, tint and exposure, and passthrough with opacity and Match the room"></td>
   </tr>
   <tr>
     <td align="center">Stash, filtered by tag, performer or cast</td>
