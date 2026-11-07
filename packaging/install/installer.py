@@ -43,6 +43,20 @@ LOG = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / (APP_ID 
 LOG_NAME = str(LOG).replace(str(HOME), "~", 1)
 
 
+def xdg(variable, default):
+    """A base folder as the app reads it: the variable only when it's an absolute path."""
+    value = os.environ.get(variable, "")
+    return Path(value) if value.startswith("/") else HOME / default
+
+
+# What the app saves: settings and saved logins, history and Stash data, its
+# logs; and its cache, which it rebuilds. Offline videos are in an "Offline
+# videos" folder at the top of a drive, listed in offline.json.
+APP_DATA = xdg("XDG_DATA_HOME", ".local/share") / APP_ID
+SAVED = [xdg("XDG_CONFIG_HOME", ".config") / APP_ID, APP_DATA, xdg("XDG_STATE_HOME", ".local/state") / APP_ID]
+CACHE = xdg("XDG_CACHE_HOME", ".cache") / APP_ID
+
+
 def find_steam():
     """Steam's folder: the one ~/.steam/root points to, else a usual place (Ubuntu's package uses its own)."""
     places = [HOME / ".steam/root", HOME / ".steam/steam", HOME / ".local/share/Steam",
@@ -416,20 +430,50 @@ def steam_job(remove):
             log("Started Steam")
 
 
-def uninstall():
+def remove_path(path):
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    elif path.exists() or path.is_symlink():
+        path.unlink()
+
+
+def uninstall(everything=False):
     if (ROOT / "current").exists() and in_use((ROOT / "current").resolve()):
         raise InstallError("Close " + APP_NAME + ", then try again.")
-    log("Uninstalling")
+    log("Uninstalling" + (" and removing everything" if everything else ""))
     with locked():
         MENU_ENTRY.unlink(missing_ok=True)
         for path in ROOT.iterdir():
-            if path.name in (".lock", HELPER.name, LAUNCHER.name):
-                continue
-            if path.is_dir() and not path.is_symlink():
-                shutil.rmtree(path)
-            else:
-                path.unlink()
+            if path.name not in (".lock", HELPER.name, LAUNCHER.name):
+                remove_path(path)
     log("Removed the app files")
+    # Unless the cache shares a folder with what's kept (odd XDG settings or symlinks).
+    cache = CACHE.resolve()
+    if everything or not any(cache == kept or kept in cache.parents or cache in kept.parents
+                             for kept in (path.resolve() for path in SAVED)):
+        remove_path(CACHE)
+        log("Removed the cache")
+    if everything:
+        for path in SAVED:
+            remove_path(path)
+        log("Removed the settings, history and logs")
+
+
+def offline_folders():
+    """The Offline videos folders: in the home folder, and on each drive downloads went to."""
+    roots = [HOME]
+    try:
+        downloads = json.loads((APP_DATA / "offline.json").read_text()).get("downloads", [])
+        roots += [Path(item["root"]) for item in downloads
+                  if isinstance(item, dict) and isinstance(item.get("root"), str) and item["root"].startswith("/")]
+    except (OSError, ValueError, AttributeError):
+        pass
+    folders = []
+    for root in roots:
+        folder = root / "Offline videos"
+        if folder not in folders and (root != HOME or folder.is_dir()):
+            folders.append(folder)
+    return folders
 
 
 # In-app updates: the newest published GitHub release that has an installer file.
@@ -597,22 +641,38 @@ def gui_uninstall():
     steam_entry = in_steam()
     by_steam = steam_entry and steam_client.available()
     kind = steam_restart() if steam_entry and not by_steam else None
-    text = "Uninstall " + APP_NAME + "?\n\nYour settings and history are kept."
+    text = ("Uninstall " + APP_NAME + "?\n\nUninstall keeps your settings and history. "
+            "Remove everything deletes them too.")
     if kind == "service":
         text += "\n\n" + restart_note(remove=True)
-    if ask(text, "Uninstall", "Cancel", default_cancel=True) != "ok":
+    choice = ask(text, "Uninstall", "Cancel", "Remove everything", default_cancel=True)
+    if choice == "cancel":
+        return
+    everything = choice == "extra"
+    offline = [str(folder).replace(str(HOME), "~", 1) for folder in offline_folders()]
+    if len(offline) == 1:
+        kept = "\n\nYour offline videos are kept, in " + offline[0] + "."
+    else:
+        kept = ("\n\nYour offline videos are kept, in:\n" + "\n".join(offline)) if offline else ""
+    if everything and ask("Remove " + APP_NAME + " and everything it saved? This can't be undone." + kept,
+                          "Remove everything", "Cancel", default_cancel=True) != "ok":
         return
     if kind == "desktop" and ask(restart_note(remove=True) + " Restart Steam now?",
                                  "Restart Steam", "Later") != "ok":
         steam_entry = False
-    uninstall()
+    uninstall(everything)
     still_listed = kind == "desktop" and not steam_entry
     if by_steam:
         still_listed = not through_steam(remove=True)
     elif steam_entry and not change_steam(remove=True):
         raise InstallError("Unable to remove " + APP_NAME + " from Steam. Details are in " + LOG_NAME + ".")
     finish_uninstall()
-    text = APP_NAME + " is uninstalled. Your settings and history are kept."
+    if everything:
+        text = APP_NAME + " and everything it saved are removed." + kept
+        if not (by_steam and still_listed):  # kept when removing it through Steam failed: it has the details
+            LOG.unlink(missing_ok=True)
+    else:
+        text = APP_NAME + " is uninstalled. Your settings and history are kept."
     if still_listed:
         text += ("\n\nIt's still listed in Steam. To remove it, right-click it in your Steam library and "
                  "choose Manage, then Remove non-Steam game from your library.")

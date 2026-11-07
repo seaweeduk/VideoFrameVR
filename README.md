@@ -100,6 +100,7 @@ When a new version is out, the app tells you. Choose **Update now**.
 
 To uninstall, right-click VideoFrameVR in the application menu, or open the
 installer again, and choose **Uninstall**. Your settings and history are kept.
+To delete them too, choose **Remove everything**. Offline videos are always kept.
 
 ## Report a problem
 
