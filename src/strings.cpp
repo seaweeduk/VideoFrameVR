@@ -113,7 +113,6 @@ const Strings kEnglish = {
     "Spill",
     "Shrink",
     "Restore the sliders' defaults.",
-    "Reset sliders",
     "Half SBS",
     "Half TB",
     "Stretch half-size eyes to their original proportions. Flat 3D only.",
@@ -1068,6 +1067,28 @@ const Strings kEnglish = {
         "Deleted",
         "Turn on Send to Stash in Settings to delete scenes played from Stash",
         "Stash isn't answering",
+    },
+    {
+        "Warmth",
+        "Tint",
+        "Exposure",
+        "Cooler (blue) or warmer (orange) light.",
+        "Greener or more magenta light.",
+        "Less or more light: dark parts change least, black stays black.",
+        "Reset brightness, contrast, saturation, zoom and viewpoint for this video, and warmth, tint "
+        "and exposure.",
+        "Match the room",
+        "Reading the room …",
+        "Couldn't read the room",
+        "Sets warmth, tint and exposure so the video looks lit like the room, as the cameras "
+        "show it. Not saved: off puts back the video's own. The first time, the picture "
+        "disappears for a moment while it looks. Grey cameras: exposure only.",
+        "Shows when the room does: with passthrough on, or Opacity below 100 %.",
+        "Read the room again, for when the light has changed",
+        "Match colour",
+        "Match brightness",
+        "How much of the room's warmth and tint Match the room applies. For all videos.",
+        "How much of the room's brightness Match the room applies. For all videos.",
     },
 };
 

@@ -865,6 +865,29 @@ struct ControllerStrings {
   const char* volumeHint;         // pointing at the volume (printf: grip's name, then the trigger's)
 };
 
+// Video settings' colour balance (colour_balance.h) in the Picture group, and
+// Match the room (room_light.h) in the Passthrough group.
+struct ColourBalanceStrings {
+  const char* warmth;
+  const char* tint;
+  const char* exposure;
+  const char* tipWarmth;
+  const char* tipTint;
+  const char* tipExposure;
+  const char* tipReset;  // the Picture group's Reset, in place of Strings::tipPictureReset
+  const char* matchRoom;  // a switch
+  const char* reading;  // its label while it reads
+  const char* failed;   // ... for a few seconds after a reading failed
+  const char* tipMatchRoom;
+  const char* tipMatchRoomHidden;  // the room isn't shown (passthrough off, Opacity at 100 %)
+  const char* readAgain;           // the button beside the switch while it is on (tooltip)
+  // Advanced, for all videos: how much of the room's light it applies.
+  const char* matchColour;
+  const char* matchBrightness;
+  const char* tipMatchColour;
+  const char* tipMatchBrightness;
+};
+
 // Deleting the playing file (docs/alpha/delete-file.md): the delete
 // dialog, and why a deletion failed.
 struct DeleteStrings {
@@ -990,7 +1013,6 @@ struct Strings {
   const char* keySpill;
   const char* keyShrink;
   const char* greenScreenResetHint;
-  const char* resetSliders;
   const char* halfSbs;  // format tile: flat 3D with half-squeezed eyes
   const char* halfTb;
   const char* halfPackedHint;
@@ -1165,6 +1187,7 @@ struct Strings {
   SetupStrings setup;
   ControllerStrings controls;
   DeleteStrings deletion;
+  ColourBalanceStrings colourBalance;
 };
 
 const Strings& strings();

@@ -15,6 +15,7 @@
 #include "hints.h"
 #include "green_screen_check.h"
 #include "removable_drives.h"
+#include "room_light.h"
 #include "gl_interop.h"
 #include "gl_util.h"
 #include "gpu_context.h"
@@ -748,6 +749,32 @@ int run(GLFWwindow* window, const Options& opts) {
   double greenCheckAt = 0;  // glfwGetTime() the check starts, a moment after the video opens
   const char* passthroughWhy = nullptr;  // the notice's first line
   double passthroughShownUntil = 0;
+  // The colour balance: the video's own (app.video.balance, saved with it),
+  // or while Match the room is on the room's, for every video until it goes
+  // off, never saved: the room's light belongs to the room, not to a video.
+  RoomLight roomLight;
+  const bool roomReadable = kStandaloneHeadset && RoomLight::available();
+  double roomFailedUntil = 0;  // glfwGetTime() Match the room stops saying it failed
+  // Match the room, a switch: on, the room's reading (the run's first, or
+  // Read again's) times the strengths, from the video's own balance (grey
+  // cameras leave its warmth and tint). Moved by hand while on, the sliders
+  // stay as moved until the match is applied again (a strength, Read again).
+  // A reading is kept when it ends, but applied only if they were not moved
+  // by hand or reset after it was asked for.
+  ColourBalance roomBalance;
+  std::optional<RoomLight::Reading> roomReading;  // this run's latest
+  bool roomMatched = false;
+  // Hand moves while on, and Picture resets; their count when last asked.
+  unsigned balanceEdits = 0, roomAsked = 0;
+  // A new reading, unless one runs (which keeps the count it was asked with).
+  auto readRoom = [&] {
+    if (roomLight.start()) roomAsked = balanceEdits;
+  };
+  auto applyRoomMatch = [&] {
+    if (roomMatched && roomReading)
+      roomBalance.match(roomReading->light, roomReading->colour, roomReading->white,
+                        settings.matchColour / 100.0f, settings.matchBrightness / 100.0f);
+  };
 
   // Frame rates and drops over the video: the setting's, or the command
   // line's for this run until the menu switches it.
@@ -1396,6 +1423,47 @@ int run(GLFWwindow* window, const Options& opts) {
         app.video.saturation = static_cast<int>(c.value);
         applyPicture(VideoSettings::kSaturation);
         break;
+      case MenuCommand::SetWarmth:  // the colour balance: applied while drawing
+      case MenuCommand::SetTint:
+      case MenuCommand::SetExposure: {
+        // The video's, saved, or while Match the room is on the room's, not.
+        ColourBalance& balance = roomMatched ? roomBalance : app.video.balance;
+        const int value = std::clamp(static_cast<int>(c.value), -100, 100);
+        // Each its own part, as brightness etc.: an edit before the video's
+        // record is found leaves the other two as saved.
+        const bool warmth = c.type == MenuCommand::SetWarmth, tint = c.type == MenuCommand::SetTint;
+        (warmth ? balance.warmth : tint ? balance.tint : balance.exposure) = value;
+        if (roomMatched) ++balanceEdits;
+        else
+          storeVideoSoon(warmth ? VideoSettings::kWarmth
+                         : tint ? VideoSettings::kTint
+                                : VideoSettings::kExposure);
+        break;
+      }
+      case MenuCommand::ToggleMatchRoom:  // off: the video's own balance again
+        roomFailedUntil = 0;
+        roomMatched = !roomMatched;
+        if (roomMatched) {
+          roomBalance = app.video.balance;
+          roomAsked = balanceEdits;  // a reading still under way is for this one
+          if (roomReading) applyRoomMatch();
+          else readRoom();
+        }
+        break;
+      case MenuCommand::ReadRoomAgain:
+        roomFailedUntil = 0;
+        if (roomMatched) readRoom();
+        break;
+      case MenuCommand::SetMatchColour:
+        settings.matchColour = std::clamp(static_cast<int>(c.value), 0, 100);
+        saveSettings(settings);
+        applyRoomMatch();
+        break;
+      case MenuCommand::SetMatchBrightness:
+        settings.matchBrightness = std::clamp(static_cast<int>(c.value), 0, 100);
+        saveSettings(settings);
+        applyRoomMatch();
+        break;
       case MenuCommand::SetOpacity:  // applied while drawing
         app.video.opacity = static_cast<int>(c.value);
         storeVideoSoon(VideoSettings::kOpacity);
@@ -1412,6 +1480,9 @@ int run(GLFWwindow* window, const Options& opts) {
         break;
       case MenuCommand::ResetPicture:
         app.video.brightness = app.video.contrast = app.video.saturation = 0;
+        app.video.balance = {};
+        roomMatched = false;
+        ++balanceEdits;
         app.video.zoom = 1.0f;
         app.video.originForward = 0;
         applyPicture(VideoSettings::kPicture | VideoSettings::kOrigin);
@@ -1704,9 +1775,19 @@ int run(GLFWwindow* window, const Options& opts) {
         break;
       }
       case MenuCommand::ResetPassthrough: {
-        // What the group shows: the key's sliders only with passthrough on.
+        // What the group shows: the key's sliders only while the green
+        // screen is on (passthrough on, not the video's own mask), Match the
+        // room's strengths only while it is on.
+        if (roomReadable && roomMatched) {
+          const Settings defaults;
+          settings.matchColour = defaults.matchColour;
+          settings.matchBrightness = defaults.matchBrightness;
+          saveSettings(settings);
+          applyRoomMatch();
+        }
         unsigned parts = VideoSettings::kOpacity;
-        if (app.video.passthrough) {
+        const bool own = packedMask(app.currentFile, app.video) && maskFormat(app.format);
+        if (app.video.passthrough && app.video.greenScreen.on && !own) {
           GreenScreen& key = app.video.greenScreen;
           const bool on = key.on;
           key = GreenScreen{};
@@ -2295,6 +2376,19 @@ int run(GLFWwindow* window, const Options& opts) {
     // Opacity below 100 blends the video over the camera too, with or
     // without passthrough (whose mask or key it doesn't bring).
     const bool blended = canBlend && (app.video.passthrough || app.video.opacity < 100);
+    // A room reading that ended: kept for the run and matched while the
+    // switch is on (unless the sliders were moved or reset since it was asked
+    // for), or a moment saying it failed (the switch going off again, nothing
+    // matched yet, if there is no earlier reading to use).
+    if (std::optional<RoomLight::Reading> reading; roomLight.take(reading)) {
+      if (reading) {
+        roomReading = reading;
+        if (roomAsked == balanceEdits) applyRoomMatch();
+      } else {
+        roomFailedUntil = glfwGetTime() + 4;
+        if (!roomReading) roomMatched = false;  // the video's own balance again
+      }
+    }
     // Saved on every change of folder, so even a killed player reopens there.
     if (!menu.directory().empty() && menu.directory() != settings.lastFolder) {
       settings.lastFolder = menu.directory();
@@ -2973,6 +3067,16 @@ int run(GLFWwindow* window, const Options& opts) {
       view.brightness = app.video.brightness;
       view.contrast = app.video.contrast;
       view.saturation = app.video.saturation;
+      view.balance = roomMatched ? roomBalance : app.video.balance;
+      view.roomMatch = !roomReadable            ? RoomMatch::Hidden
+                       : roomLight.reading()    ? RoomMatch::Reading
+                       : !blended               ? RoomMatch::Off
+                       : now < roomFailedUntil ? RoomMatch::Failed
+                                                : RoomMatch::Ready;
+      view.roomMatched = roomMatched;
+      view.roomRead = roomReading.has_value();
+      view.matchColour = settings.matchColour;
+      view.matchBrightness = settings.matchBrightness;
       view.tvGamma = settings.tvGamma;
       view.zoom = app.video.zoom;
       view.originForward = static_cast<int>(std::lround(app.video.originForward * 100));
@@ -3144,6 +3248,8 @@ int run(GLFWwindow* window, const Options& opts) {
       video.photo = photo;
       video.seeThrough = focusIn.seeThrough;
       video.opacity = app.video.opacity;
+      const std::array<float, 3> gains = (roomMatched ? roomBalance : app.video.balance).gains();
+      for (int i = 0; i < 3; ++i) video.balance[i] = gains[i] - 1.0f;
       // Brightness etc. are applied while drawing to photos, and to videos
       // while a mask or key reads the frame; else mpv (or YuvColor) does it.
       const bool readsFrame = video.readsFrame(scene.clear);
@@ -3289,6 +3395,15 @@ int run(GLFWwindow* window, const Options& opts) {
       if (menu.setupRunning() && headValid && (menu.setupIntroDue() || setupIntro.playing(now)))
         setupIntro.addCover(overlays, menu, headPos, headRot, now);
     }
+    // Match the room reads the view: nothing drawn meanwhile, so it shows the
+    // room alone.
+    const bool roomBlank = roomLight.blank();
+    if (roomBlank) {
+      scene.video.reset();
+      scene.overlays.clear();
+      scene.sky = false;
+      scene.clear = ClearMode::Transparent;
+    }
     // The GL work of this iteration is all issued: what it drew goes to Vulkan.
     interop.publish();
     timer.lap(FrameTimer::Draw);
@@ -3326,7 +3441,8 @@ int run(GLFWwindow* window, const Options& opts) {
           if (showPerformance) readout.gpuTime(gpuTimes.frame);
         }
         foveation.update();  // the density maps' offsets for the images acquired now
-        scene.showFoveation = showFoveation && foveation.active();
+        // Not over the room while Match the room reads it.
+        scene.showFoveation = !roomBlank && showFoveation && foveation.active();
         if (scene.showFoveation)
           for (int i = 0; i < xr.eyeCount(); ++i) scene.foveation[i] = foveation.debug(i);
         const EyeFrame* eyes = xr.acquireEyes();
@@ -3355,7 +3471,8 @@ int run(GLFWwindow* window, const Options& opts) {
       }
     }
     gpu.collect();
-    xr.setAlphaBlend(blended);
+    if (drawn && roomBlank) roomLight.blankSubmitted();
+    xr.setAlphaBlend(blended || roomBlank);
     xr.releaseEyes();
     xr.endFrame(drawn);
     directDepth.submit();  // after the frame's work, which it never delays

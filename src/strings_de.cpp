@@ -129,7 +129,6 @@ Strings germanStrings(const Strings& english) {
   s.keySpill = "Grünstich";
   s.keyShrink = "Verkleinern";
   s.greenScreenResetHint = "Regler auf Standardwerte zurücksetzen.";
-  s.resetSliders = "Regler zurücksetzen";
   s.halfSbs = "Halbes SBS";
   s.halfTb = "Halbes TB";
   s.halfPackedHint = "Halbierte Augenbilder auf Originalproportionen strecken. Nur flaches 3D.";
@@ -1197,5 +1196,22 @@ Strings germanStrings(const Strings& english) {
   s.deletion.deletedTitle = "Gelöscht";
   s.deletion.tipNeedsSendToStash = "„Bewertungen, Verlauf und Tags senden“ in den Einstellungen aktivieren, um aus Stash gestreamte Szenen zu löschen";
   s.deletion.tipStashDown = "Stash antwortet nicht";
+  s.colourBalance.warmth = "Wärme";
+  s.colourBalance.tint = "Tönung";
+  s.colourBalance.exposure = "Belichtung";
+  s.colourBalance.tipWarmth = "Kühleres (blau) oder wärmeres (orange) Licht.";
+  s.colourBalance.tipTint = "Grüneres oder stärker magentafarbenes Licht.";
+  s.colourBalance.tipExposure = "Weniger oder mehr Licht: Dunkles ändert sich am wenigsten, Schwarz bleibt schwarz.";
+  s.colourBalance.tipReset = "Helligkeit, Kontrast, Sättigung, Zoom und Blickpunkt dieses Videos sowie Wärme, Tönung und Belichtung zurücksetzen.";
+  s.colourBalance.matchRoom = "Raum anpassen";
+  s.colourBalance.reading = "Lese Raum …";
+  s.colourBalance.failed = "Raum nicht lesbar";
+  s.colourBalance.tipMatchRoom = "Stellt Wärme, Tönung und Belichtung so ein, dass das Video wie der Raum in den Kameras beleuchtet wirkt. Nicht gespeichert: Aus stellt die Werte des Videos wieder her. Beim ersten Mal wird das Bild beim Lesen kurz ausgeblendet. Graue Kameras: nur Belichtung.";
+  s.colourBalance.tipMatchRoomHidden = "Verfügbar, wenn der Raum sichtbar ist: mit Passthrough an oder Deckkraft unter 100 %.";
+  s.colourBalance.readAgain = "Raum erneut lesen, wenn sich das Licht geändert hat";
+  s.colourBalance.matchColour = "Farbe anpassen";
+  s.colourBalance.matchBrightness = "Helligkeit anpassen";
+  s.colourBalance.tipMatchColour = "Wie stark „Raum anpassen“ Wärme und Tönung des Raums übernimmt. Für alle Videos.";
+  s.colourBalance.tipMatchBrightness = "Wie stark „Raum anpassen“ die Helligkeit des Raums übernimmt. Für alle Videos.";
   return s;
 }

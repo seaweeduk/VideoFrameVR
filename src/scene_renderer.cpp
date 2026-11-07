@@ -395,7 +395,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
     p.size[2] = surface.distance();
     p.size[3] = surface.radius();
     for (int c = 0; c < 3; ++c) {
-      p.color[c] = kScreenColor[c];
+      p.color[c] = v.texture ? v.balance[c] : kScreenColor[c];
       p.adjust[c] = v.adjust[c];
     }
     p.color[3] = clear == ClearMode::Transparent ? v.opacity / 100.0f : 1.0f;
@@ -421,8 +421,10 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   // motion emulation, stereo_correction.h): local space into the picture's
   // axes, the transpose of its rotation.
   const Mat4 r = v.screen.rotation();
-  for (int c = 0; c < 3; ++c)
+  for (int c = 0; c < 3; ++c) {
     for (int k = 0; k < 3; ++k) p.toPicture[c][k] = r.m[k * 4 + c];
+    p.toPicture[c][3] = v.balance[c];
+  }
   float fisheyeFov = 0.0f;
   const int projection =
       surroundProjection(v.format, v.frameAspect * eye.stereo[0] / eye.stereo[1], fisheyeFov);
@@ -478,11 +480,15 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   const bool maskFirst = (flags & kPackedAlpha) && (flags & (kKeyGreen | kAlphaOut));
   // A common mode has a pipeline of its own: the full-size level with one
   // tap, no look or adjustments, no sharpening, a packed mask only with
-  // transparent output, and a green screen without shrink.
+  // transparent output, and a green screen without shrink, or with the
+  // colour balance without key green (whose cap is the general ones'). The
+  // colour balance has its own.
   const bool adjusted = v.adjust[0] != 0.0f || v.adjust[1] != 0.0f || v.adjust[2] != 0.0f;
+  const bool balance = v.balance[0] != 0.0f || v.balance[1] != 0.0f || v.balance[2] != 0.0f;
+  VkPipeline common = VK_NULL_HANDLE;
   if ((flags & kBaseLevel) && taps == 1 && !v.look && !adjusted && sharpen <= 0.0f &&
       !glassPass_ && !(maskFirst && (flags & kKeyGreen)) &&
-      !((flags & kChromaKey) && p.chroma[3] > 0.0f)) {
+      !((flags & kChromaKey) && (p.chroma[3] > 0.0f || (balance && (flags & kKeyGreen))))) {
     const auto family = projection >= 3   ? Pipelines::kCubemap
                         : projection == 2 ? Pipelines::kFisheye
                                           : Pipelines::kEquirect;
@@ -494,10 +500,9 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
     const auto cut = maskFirst            ? Pipelines::kPackedMask
                      : flags & kChromaKey ? Pipelines::kGreenScreen
                                           : Pipelines::kUncut;
-    bind(pipelines_.surround(family, source, cut, plainEye_));
-  } else {
-    bind(general(false, maskFirst));
+    common = pipelines_.surround(family, source, cut, plainEye_, balance);
   }
+  bind(common ? common : general(false, maskFirst));
   pushEye(cmd, eye);
   pushDraw(cmd, p);
   vkCmdDraw(cmd, 3, 1, 0, 0);

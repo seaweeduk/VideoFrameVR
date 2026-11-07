@@ -50,6 +50,9 @@ struct VideoDraw {
   float adjust[3] = {0, 0, 0};
   bool tvGamma = false;  // mpv's image: VideoPlayer::tvGammaImage()
   bool photo = false;
+  // The colour balance (ColourBalance::gains): red, green and blue gains on
+  // the picture's light, minus 1 (0 = unchanged).
+  float balance[3] = {0, 0, 0};
   int opacity = 100;  // percent, blended over the room (ClearMode::Transparent)
   bool mipmaps = true;          // trilinear through the mipmaps, else the full-size level
   AntiShimmer antiShimmer = AntiShimmer::Off;  // ... sampled over each pixel's footprint
@@ -151,7 +154,9 @@ enum VideoFlag : uint32_t {
 
 // shaders/surround.frag, SurroundDraw.
 struct SurroundPush {
-  float toPicture[3][4];  // columns of the rotation from local space into the picture's axes
+  // xyz: columns of the rotation from local space into the picture's axes;
+  // w: VideoDraw::balance
+  float toPicture[3][4];
   float params[4];        // x fisheye field of view (radians), y zoom; zw Kr, Kb (kYuv)
   float adjust[4];  // w: sharpening strength
   float chroma[4];
@@ -167,7 +172,7 @@ static_assert(kDrawPushOffset + sizeof(SurroundPush) <= kPushConstantBytes, "pus
 struct ScreenPush {
   float pose[3][4];  // rows of the screen's pose
   float size[4];     // width, height, distance, radius
-  float color[4];    // a: opacity
+  float color[4];    // rgb: without a picture its colour, with one VideoDraw::balance; a: opacity
   float adjust[4];  // w: sharpening strength
   uint32_t mode[4];  // y flags, z footprint taps (antiShimmerTaps)
   float yuv[4];      // kYuv: YuvColor

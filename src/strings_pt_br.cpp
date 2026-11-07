@@ -129,7 +129,6 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.keySpill = "Reflexo verde";
   s.keyShrink = "Encolher";
   s.greenScreenResetHint = "Restaurar os valores padrão dos controles.";
-  s.resetSliders = "Redefinir controles";
   s.halfSbs = "Meio SBS";
   s.halfTb = "Meio TB";
   s.halfPackedHint = "Estica as imagens de cada olho para a proporção original. Só 3D plano.";
@@ -1197,5 +1196,22 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.deletion.deletedTitle = "Excluído";
   s.deletion.tipNeedsSendToStash = "Ative \"Enviar notas, histórico e tags\" em Configurações para excluir cenas reproduzidas pelo Stash";
   s.deletion.tipStashDown = "O Stash não está respondendo";
+  s.colourBalance.warmth = "Calor";
+  s.colourBalance.tint = "Matiz";
+  s.colourBalance.exposure = "Exposição";
+  s.colourBalance.tipWarmth = "Luz mais fria (azul) ou mais quente (laranja).";
+  s.colourBalance.tipTint = "Luz mais verde ou mais magenta.";
+  s.colourBalance.tipExposure = "Menos ou mais luz: partes escuras mudam menos, o preto continua preto.";
+  s.colourBalance.tipReset = "Redefinir brilho, contraste, saturação, zoom e ponto de vista deste vídeo, e calor, matiz e exposição.";
+  s.colourBalance.matchRoom = "Igualar ambiente";
+  s.colourBalance.reading = "Lendo ambiente …";
+  s.colourBalance.failed = "Erro ao ler ambiente";
+  s.colourBalance.tipMatchRoom = "Ajusta calor, matiz e exposição para o vídeo parecer iluminado como o ambiente visto pelas câmeras. Não é salvo: desligar restaura os valores do vídeo. Na primeira vez, a imagem some por um instante durante a leitura. Câmeras em cinza: só exposição.";
+  s.colourBalance.tipMatchRoomHidden = "Aparece quando o ambiente está visível: com passthrough ligado ou Opacidade abaixo de 100 %.";
+  s.colourBalance.readAgain = "Ler o ambiente de novo quando a luz mudar";
+  s.colourBalance.matchColour = "Igualar cor";
+  s.colourBalance.matchBrightness = "Igualar brilho";
+  s.colourBalance.tipMatchColour = "Quanto do calor e do matiz do ambiente o Igualar ambiente aplica. Para todos os vídeos.";
+  s.colourBalance.tipMatchBrightness = "Quanto do brilho do ambiente o Igualar ambiente aplica. Para todos os vídeos.";
   return s;
 }

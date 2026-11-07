@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cairo_canvas.h"
+#include "colour_balance.h"
 #include "controller_guide.h"
 #include "folder_listing.h"
 #include "key_share.h"
@@ -53,6 +54,10 @@ struct MenuHints;
 
 struct Palette;
 
+// Match the room's switch (room_light.h): not offered, the room not shown,
+// ready, reading, or a reading that just failed.
+enum class RoomMatch { Hidden, Off, Ready, Reading, Failed };
+
 // Something the menu asks the app to do.
 struct MenuCommand {
   enum Type { None, TogglePause, Seek, SeekTo, ToggleMute, PreviousVideo, NextVideo,
@@ -71,6 +76,8 @@ struct MenuCommand {
               ToggleMotion, SetMotionDistance, ToggleResume, ToggleToneLook, Stop,
               ToggleTvGamma, ToggleSeekPreview, ToggleThumbnails, ToggleShowPerformance, SetScreenDistance,
               SetScreenHeight, SetScreenCurve, ResetScreen, SetOriginForward, SetOpacity,
+              SetWarmth, SetTint, SetExposure, ToggleMatchRoom, ReadRoomAgain,
+              SetMatchColour, SetMatchBrightness,
               ToggleAutoPassthrough, ToggleVibration,
               // Stash (docs/stash.md): on or off, its server, its switches,
               // Sync now, and the format the Scenes page shows.
@@ -158,6 +165,11 @@ struct MenuView {
   int slideshowSeconds = 0;  // 0 = no slideshow
   // Picture settings of the running video.
   int brightness = 0, contrast = 0, saturation = 0;
+  ColourBalance balance;  // the video's, or Match the room's while it is on
+  RoomMatch roomMatch = RoomMatch::Hidden;
+  bool roomMatched = false;  // Match the room is on
+  bool roomRead = false;     // ... and has a reading of this run to use again
+  int matchColour = 70, matchBrightness = 60;  // percent (Settings::matchColour)
   float zoom = 1.0f;
   int originForward = 0;  // surround viewpoint: percent of the sphere's radius toward the picture
   bool tvGamma = false;  // SDR video converted for a TV's gamma (darker shadows)

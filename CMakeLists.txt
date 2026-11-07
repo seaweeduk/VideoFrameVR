@@ -32,6 +32,7 @@ add_executable(videoframevr
   src/gl_util.cpp
   src/autofocus.cpp
   src/cairo_canvas.cpp
+  src/colour_balance.cpp
   src/controller_guide.cpp
   src/density_map.cpp
   src/depth_estimator.cpp
@@ -110,6 +111,7 @@ add_executable(videoframevr
   src/remote_avio.cpp
   src/remote_connection.cpp
   src/removable_drives.cpp
+  src/room_light.cpp
   src/run_log.cpp
   src/scene_renderer.cpp
   src/screen_control.cpp

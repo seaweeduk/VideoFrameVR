@@ -376,8 +376,11 @@ void Menu::layoutVideoSettings() {
     int now, lo, hi, step;
     MenuCommand::Type type;
     bool disabled;
+    const char* tooltip = "";
   };
   const int zoom = static_cast<int>(std::lround(view_.zoom * 100));
+  const ColourBalance& balance = view_.balance;
+  const ColourBalanceStrings& cb = t.colourBalance;
   const Step picture[] = {
       {t.brightness, std::to_string(view_.brightness), view_.brightness, -100, 100, kPictureStep,
        MenuCommand::SetBrightness, false},
@@ -385,13 +388,19 @@ void Menu::layoutVideoSettings() {
        MenuCommand::SetContrast, false},
       {t.saturation, std::to_string(view_.saturation), view_.saturation, -100, 100, kPictureStep,
        MenuCommand::SetSaturation, false},
+      {cb.warmth, std::to_string(balance.warmth), balance.warmth, -100, 100, kPictureStep,
+       MenuCommand::SetWarmth, false, cb.tipWarmth},
+      {cb.tint, std::to_string(balance.tint), balance.tint, -100, 100, kPictureStep,
+       MenuCommand::SetTint, false, cb.tipTint},
+      {cb.exposure, std::to_string(balance.exposure), balance.exposure, -100, 100, kPictureStep,
+       MenuCommand::SetExposure, false, cb.tipExposure},
       // Only 180°/360° video has a view to zoom.
       {t.zoom, std::to_string(zoom) + " %", zoom, 50, 250, kZoomStepPercent, MenuCommand::SetZoom,
        flat}};
   for (const Step& s : picture) {
     addValueRow(x, y, w, 230, s.label, s.value, s.now, s.lo, s.hi,
                 command(s.type, std::max(s.lo, s.now - s.step)),
-                command(s.type, std::min(s.hi, s.now + s.step)), s.disabled);
+                command(s.type, std::min(s.hi, s.now + s.step)), s.disabled, false, s.tooltip);
     y += kSettingStep;
   }
   {
@@ -408,7 +417,7 @@ void Menu::layoutVideoSettings() {
   reset.y = y;
   reset.h = kSettingRowH;
   reset.fontSize = kTextSize;
-  reset.tooltip = t.tipPictureReset;
+  reset.tooltip = cb.tipReset;
   buttons_.push_back(reset);
   addLabel(reset.x + reset.w + 20, y, w - reset.w - 20, 0, t.pictureHint, kHintSize, true, 2);
   const double pictureBottom = y + hintHeight(2) + 16;
@@ -612,17 +621,17 @@ void Menu::layoutVideoSettings() {
   // Passthrough: the video's opacity (blended only by the headset itself,
   // with its own camera, below 100 % with passthrough off too, so shown
   // whenever it can), then with passthrough on its own mask, on or off
-  // (side-by-side fisheye only), then keying a green screen video, on or
-  // off, and its settings, and Reset sliders, under the picture (the image
-  // column grows with the advanced rows). Keying is not for videos whose own
-  // mask is used.
+  // (side-by-side fisheye only), then unless its own mask is used keying a
+  // green screen video, on or off, and while on its settings, then Reset
+  // with Match the room's switch (the Frame), and while that is on its
+  // strengths, under the picture.
   const double top = pictureBottom + kGap;
   x = columnX(1) + kGroupPad;
   y = firstRow(top);
   // 0..100, with − and + a step of 1 either side of the slider.
   auto slider = [&](const char* label, MenuCommand::Type type, int value, bool disabled,
-                    const char* tooltip) {
-    addValueRow(x, y, w, 230, label, std::to_string(value), value, 0, 100,
+                    const char* tooltip, const char* unit = "") {
+    addValueRow(x, y, w, 230, label, std::to_string(value) + unit, value, 0, 100,
                 command(type, std::max(0, value - 1)), command(type, std::min(100, value + 1)),
                 disabled, false, tooltip);
     y += kSettingStep;
@@ -634,30 +643,75 @@ void Menu::layoutVideoSettings() {
                  !view_.maskFormat)
         .tooltip = view_.maskFormat ? t.packedMaskHint : t.packedMaskFormatHint;
     y += kSettingStep;
-    addToggleRow(x, y, w, t.greenScreenOn, view_.greenScreen.on && !own,
-                 command(MenuCommand::ToggleGreenScreen), own)
-        .tooltip = own ? t.greenScreenOwnMask : t.greenScreenHint;
-    y += kSettingStep;
-    const MenuCommand::Type types[] = {MenuCommand::SetKeyStrength, MenuCommand::SetKeyShrink,
-                                       MenuCommand::SetKeySoftness, MenuCommand::SetKeySpill};
-    const int values[] = {view_.greenScreen.strength, view_.greenScreen.shrink,
-                          view_.greenScreen.softness, view_.greenScreen.spill};
-    const char* names[] = {t.keyStrength, t.keyShrink, t.keySoftness, t.keySpill};
-    const bool off = !view_.greenScreen.on || own;
-    for (int i = 0; i < 4; ++i) slider(names[i], types[i], values[i], off, t.tipKey[i]);
+    if (!own) {
+      addToggleRow(x, y, w, t.greenScreenOn, view_.greenScreen.on,
+                   command(MenuCommand::ToggleGreenScreen))
+          .tooltip = t.greenScreenHint;
+      y += kSettingStep;
+    }
+    if (!own && view_.greenScreen.on) {
+      const MenuCommand::Type types[] = {MenuCommand::SetKeyStrength, MenuCommand::SetKeyShrink,
+                                         MenuCommand::SetKeySoftness, MenuCommand::SetKeySpill};
+      const int values[] = {view_.greenScreen.strength, view_.greenScreen.shrink,
+                            view_.greenScreen.softness, view_.greenScreen.spill};
+      const char* names[] = {t.keyStrength, t.keyShrink, t.keySoftness, t.keySpill};
+      for (int i = 0; i < 4; ++i) slider(names[i], types[i], values[i], false, t.tipKey[i]);
+    }
   }
-  Button resetKey = textButton(t.resetSliders, Icon::None, command(MenuCommand::ResetPassthrough));
+  // How far Match the room goes, under its switch while it is on.
+  const bool strengths = view_.roomMatch != RoomMatch::Hidden && view_.roomMatched;
+  Button resetKey = textButton(t.reset, Icon::None, command(MenuCommand::ResetPassthrough));
   resetKey.panel = kBrowser;
   resetKey.x = x;
   resetKey.y = y;
   resetKey.h = kSettingRowH;
   resetKey.fontSize = kTextSize;
   resetKey.tooltip = t.greenScreenResetHint;
-  resetKey.disabled = own && !view_.opacityApplies;
+  const bool keyShown = view_.passthrough && !own && view_.greenScreen.on;
+  resetKey.disabled = !keyShown && !view_.opacityApplies && !strengths;
   buttons_.push_back(resetKey);
-  if (own) addLabel(resetKey.x + resetKey.w + 20, y, w - resetKey.w - 20, 0, t.greenScreenOwnMask,
-                    kHintSize, true, 2);
-  y += own ? hintHeight(2) + 6 : kSettingStep;
+  // Match the room (the Frame), a switch, on the same row, and while it is
+  // on Read again after it: then there is no room for the own mask's hint
+  // (the mask's switch, on, says it). The switch's label says when it reads
+  // or failed.
+  const RoomMatch room = view_.roomMatch;
+  const bool ownHint = own && room == RoomMatch::Hidden;
+  if (room != RoomMatch::Hidden) {
+    const bool again = view_.roomMatched && (room == RoomMatch::Ready || room == RoomMatch::Off);
+    double right = x + w;
+    if (again) {
+      Button read = iconButton(Icon::Refresh, command(MenuCommand::ReadRoomAgain));
+      read.panel = kBrowser;
+      read.w = read.h = kSettingRowH;
+      read.x = right - read.w;
+      read.y = y;
+      read.disabled = room == RoomMatch::Off;
+      read.tooltip = room == RoomMatch::Off ? cb.tipMatchRoomHidden : cb.readAgain;
+      buttons_.push_back(read);
+      right = read.x - 8;
+    }
+    const char* label = room == RoomMatch::Reading  ? cb.reading
+                        : room == RoomMatch::Failed ? cb.failed
+                                                    : cb.matchRoom;
+    // Its label and pill, but never into Reset (a longer label is cut short).
+    const double left = std::max(right - (textWidth(label, kTextSize, false) + 104),
+                                 resetKey.x + resetKey.w + 12);
+    Button& match = addToggleRow(left, y, right - left, label, view_.roomMatched,
+                                 command(MenuCommand::ToggleMatchRoom),
+                                 room == RoomMatch::Off && !view_.roomMatched && !view_.roomRead);
+    match.tooltip = match.disabled ? cb.tipMatchRoomHidden : cb.tipMatchRoom;
+  }
+  if (ownHint)
+    addLabel(resetKey.x + resetKey.w + 20, y, w - resetKey.w - 20, 0, t.greenScreenOwnMask,
+             kHintSize, true, 2);
+  y += ownHint ? hintHeight(2) + 6 : kSettingStep;
+  if (strengths) {
+    const int share[] = {view_.matchColour, view_.matchBrightness};
+    const MenuCommand::Type types[] = {MenuCommand::SetMatchColour, MenuCommand::SetMatchBrightness};
+    const char* labels[] = {cb.matchColour, cb.matchBrightness};
+    const char* tips[] = {cb.tipMatchColour, cb.tipMatchBrightness};
+    for (int i = 0; i < 2; ++i) slider(labels[i], types[i], share[i], false, tips[i], " %");
+  }
   addGroup(columnX(1), top, kColumnW, y + 10 - top, t.passthroughGroup);
 }
 

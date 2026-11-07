@@ -7,7 +7,9 @@ struct ScreenDraw {
   vec4 pose1;
   vec4 pose2;
   vec4 size;   // width, height, distance, radius of the bend (0 = flat; ScreenSurface)
-  vec4 color;  // rgb linear, shown without a picture; a opacity
+  // rgb: without a picture the colour shown (linear), with one the colour
+  // balance's gains minus 1; a: opacity
+  vec4 color;
   vec4 adjust;  // brightness, contrast, saturation (-1..1), w sharpening strength (0 = off)
   uvec4 mode;  // y flags (video.glsl), z footprint taps per side at most (footprintSample)
   vec4 yuv;    // kYuv: the planes' range and matrix (videoTap)

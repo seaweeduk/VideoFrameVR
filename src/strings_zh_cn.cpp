@@ -129,7 +129,6 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.keySpill = "去绿边";
   s.keyShrink = "收缩";
   s.greenScreenResetHint = "将滑块恢复为默认值。";
-  s.resetSliders = "重置滑块";
   s.halfSbs = "半宽 SBS";
   s.halfTb = "半高 TB";
   s.halfPackedHint = "将半尺寸的单眼画面拉伸回原始比例。仅限平面 3D。";
@@ -1197,5 +1196,22 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.deletion.deletedTitle = "已删除";
   s.deletion.tipNeedsSendToStash = "在“设置”中开启“向 Stash 发送评分、播放记录和标签”后，才可删除从 Stash 播放的场景";
   s.deletion.tipStashDown = "Stash 无响应";
+  s.colourBalance.warmth = "色温";
+  s.colourBalance.tint = "色调";
+  s.colourBalance.exposure = "曝光";
+  s.colourBalance.tipWarmth = "偏冷（蓝）或偏暖（橙）的光线。";
+  s.colourBalance.tipTint = "偏绿或偏品红的光线。";
+  s.colourBalance.tipExposure = "减少或增加光线：暗部变化最小，黑色保持纯黑。";
+  s.colourBalance.tipReset = "重置此视频的亮度、对比度、饱和度、缩放和视点，以及色温、色调和曝光。";
+  s.colourBalance.matchRoom = "匹配房间";
+  s.colourBalance.reading = "正在读取房间…";
+  s.colourBalance.failed = "无法读取房间";
+  s.colourBalance.tipMatchRoom = "根据摄像头画面中的房间光线设置色温、色调和曝光，使视频照明与房间一致。不会保存：关闭后恢复此视频的值。首次读取时画面会短暂消失。黑白摄像头仅调整曝光。";
+  s.colourBalance.tipMatchRoomHidden = "房间可见时可用：开启透视，或不透明度低于 100%。";
+  s.colourBalance.readAgain = "光线变化时重新读取房间";
+  s.colourBalance.matchColour = "匹配颜色";
+  s.colourBalance.matchBrightness = "匹配亮度";
+  s.colourBalance.tipMatchColour = "“匹配房间”应用房间色温和色调的程度。适用于所有视频。";
+  s.colourBalance.tipMatchBrightness = "“匹配房间”应用房间亮度的程度。适用于所有视频。";
   return s;
 }

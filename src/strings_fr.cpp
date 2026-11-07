@@ -129,7 +129,6 @@ Strings frenchStrings(const Strings& english) {
   s.keySpill = "Reflets verts";
   s.keyShrink = "Érosion";
   s.greenScreenResetHint = "Rétablir les valeurs par défaut des curseurs.";
-  s.resetSliders = "Réinitialiser les curseurs";
   s.halfSbs = "Demi-SBS";
   s.halfTb = "Demi-TB";
   s.halfPackedHint = "Étirer les vues réduites de moitié à leurs proportions d'origine. 3D sur écran seulement.";
@@ -1197,5 +1196,22 @@ Strings frenchStrings(const Strings& english) {
   s.deletion.deletedTitle = "Supprimé";
   s.deletion.tipNeedsSendToStash = "Activez « Envoyer notes, lectures et tags à Stash » dans Réglages pour supprimer les scènes lues depuis Stash";
   s.deletion.tipStashDown = "Stash ne répond pas";
+  s.colourBalance.warmth = "Chaleur";
+  s.colourBalance.tint = "Teinte";
+  s.colourBalance.exposure = "Exposition";
+  s.colourBalance.tipWarmth = "Lumière plus froide (bleue) ou plus chaude (orange).";
+  s.colourBalance.tipTint = "Lumière plus verte ou plus magenta.";
+  s.colourBalance.tipExposure = "Moins ou plus de lumière : les zones sombres changent le moins, le noir reste noir.";
+  s.colourBalance.tipReset = "Réinitialiser luminosité, contraste, saturation, zoom et point de vue de cette vidéo, ainsi que chaleur, teinte et exposition.";
+  s.colourBalance.matchRoom = "Selon la pièce";
+  s.colourBalance.reading = "Lecture pièce …";
+  s.colourBalance.failed = "Lecture impossible";
+  s.colourBalance.tipMatchRoom = "Règle chaleur, teinte et exposition pour éclairer la vidéo comme la pièce vue par les caméras. Non enregistré : désactivé, rétablit les valeurs de la vidéo. La première fois, l'image disparaît un instant pendant la mesure. Caméras grises : exposition seulement.";
+  s.colourBalance.tipMatchRoomHidden = "Actif quand la pièce est visible : avec le passthrough activé ou l'opacité sous 100 %.";
+  s.colourBalance.readAgain = "Relire la pièce si la lumière a changé";
+  s.colourBalance.matchColour = "Adapter la couleur";
+  s.colourBalance.matchBrightness = "Adapter la luminosité";
+  s.colourBalance.tipMatchColour = "Part de la chaleur et de la teinte de la pièce appliquée par « Selon la pièce ». Pour toutes les vidéos.";
+  s.colourBalance.tipMatchBrightness = "Part de la luminosité de la pièce appliquée par « Selon la pièce ». Pour toutes les vidéos.";
   return s;
 }
