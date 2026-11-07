@@ -72,16 +72,28 @@ def write_vdf(entries):
     return bytes(output) + b"\x08"
 
 
+# Steam reads keys regardless of case, and older versions wrote some in
+# lowercase ("exe", "appname"), so these match any case and keep the file's.
 def get(entries, key, kind):
-    return next((v for k, name, v in entries if name == key and k == kind), None)
+    return next((v for k, name, v in entries if name.lower() == key.lower() and k == kind), None)
 
 
 def put(entries, key, kind, value):
     for i, (_, name, _) in enumerate(entries):
-        if name == key:
-            entries[i] = (kind, key, value)
+        if name.lower() == key.lower():
+            entries[i] = (kind, name, value)
             return
     entries.append((kind, key, value))
+
+
+def read_shortcuts(path):
+    """The file's bytes and tree, with a shortcuts object added if it has none
+    (a missing, empty or new file)."""
+    data = path.read_bytes() if path.exists() else b""
+    tree = read_vdf(data) if data else []
+    if get(tree, "shortcuts", 0) is None:
+        tree.append((0, "shortcuts", []))
+    return data, tree
 
 
 def steam_running():
@@ -154,10 +166,9 @@ def runs(entry, executable):
 def find_shortcut(steam, account, executable):
     """The account's config folder and the appid of this launcher's shortcut, or None."""
     config = user_config(Path(steam), account)
-    path = config / "shortcuts.vdf"
-    tree = read_vdf(path.read_bytes() if path.exists() else b"\x00shortcuts\x00\x08\x08")
+    _, tree = read_shortcuts(config / "shortcuts.vdf")
     executable = Path(executable).absolute()
-    for kind, _, value in get(tree, "shortcuts", 0) or []:
+    for kind, _, value in get(tree, "shortcuts", 0):
         if kind == 0 and runs(value, executable):
             appid = get(value, "appid", 2)
             return config, struct.unpack("<I", appid)[0] if appid else None
@@ -173,11 +184,8 @@ def change_shortcut(executable, artwork, name, steam, account=None, remove=False
     exe = f'"{executable}"'
     config = user_config(Path(steam), account)
     path = config / "shortcuts.vdf"
-    original = path.read_bytes() if path.exists() else b"\x00shortcuts\x00\x08\x08"
-    tree = read_vdf(original)
+    original, tree = read_shortcuts(path)
     shortcuts = get(tree, "shortcuts", 0)
-    if shortcuts is None:
-        raise ValueError("shortcuts.vdf has no shortcuts object")
     ours = [entry for entry in shortcuts if entry[0] == 0 and runs(entry[2], executable)]
     grid = config / "grid"
     images = {}
