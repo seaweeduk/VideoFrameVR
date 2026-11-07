@@ -981,6 +981,7 @@ struct Strings {
   const char* passthroughGroup;  // video settings: the group with the mask and the green screen
   const char* opacity;
   const char* opacityHint;
+  const char* opacityOverlay;  // printf format with one %d (percent), shown as a twist changes it
   const char* packedMask;
   const char* packedMaskHint;
   const char* packedMaskFormatHint;

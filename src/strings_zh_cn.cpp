@@ -119,7 +119,8 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.greenScreenOwnMask = "此视频自带遮罩。";
   s.passthroughGroup = "透视";
   s.opacity = "不透明度";
-  s.opacityHint = "视频覆盖周围环境的程度。仅适用于头显本身，不适用于从电脑串流。仅对此视频保存。";
+  s.opacityHint = "视频覆盖周围环境的程度。仅适用于头显本身，不适用于从电脑串流。观看 180° 或 360° 视频时，按住一个握持键并转动该手腕即可调节。仅对此视频保存。";
+  s.opacityOverlay = "不透明度：%d%%";
   s.packedMask = "视频自带遮罩";
   s.packedMaskHint = "用于自带遮罩的视频（DeoVR alpha）。除非在此设置，否则按文件名中的“_ALPHA”判断。仅对此视频保存。";
   s.packedMaskFormatHint = "仅适用于左右 3D 鱼眼视频。请先选择该格式。";

@@ -101,7 +101,9 @@ const Strings kEnglish = {
     "Passthrough",
     "Opacity",
     "How solid the video is over the room. Only on the headset itself, not when streaming from a "
-    "PC. Saved for this video.",
+    "PC. With 180° or 360° video, hold a grip and twist that wrist to change it. Saved for this "
+    "video.",
+    "Opacity: %d %%",
     "Mask in the video",
     "For videos that carry their own mask (DeoVR alpha). Follows “_ALPHA” in the file name unless "
     "set here. Saved for this video.",

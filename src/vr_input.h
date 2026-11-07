@@ -84,6 +84,20 @@ class ForwardStick {
   double since_ = -1;   // held forward or back from then, else -1
 };
 
+// How far a hand turned about its pointer from orientation `from` to its
+// current one, in degrees, clockwise as the user sees it positive.
+inline float wristTwist(const Quat& from, const HandState& hand) {
+  // The turn about the pointer (away from the user: positive about it is
+  // clockwise as seen from behind).
+  const Quat turn = hand.aimOrientation * conjugate(from);
+  const Vec3 pointer = aimDirection(hand);
+  const float along = turn.x * pointer.x + turn.y * pointer.y + turn.z * pointer.z;
+  float degrees = 2.0f * std::atan2(along, turn.w) * 180.0f / 3.14159265f;
+  if (degrees > 180.0f) degrees -= 360.0f;  // the short way round
+  if (degrees < -180.0f) degrees += 360.0f;
+  return degrees;
+}
+
 // The volume gesture: with one grip held, hold the trigger (pointer off the
 // menu) and twist that wrist. Both grips together disable this gesture.
 // Only the trigger hand's twist counts, so
@@ -104,16 +118,8 @@ class WristRoll {
       }
     }
     if (hand_ < 0 || !input.hands[hand_].poseValid) return 0;
-    const Quat now = input.hands[hand_].aimOrientation;
-    // The turn since the last frame, about the pointer (away from the user:
-    // positive about it is clockwise as seen from behind).
-    const Quat turn = now * conjugate(last_);
-    last_ = now;
-    const Vec3 pointer = aimDirection(input.hands[hand_]);
-    const float along = turn.x * pointer.x + turn.y * pointer.y + turn.z * pointer.z;
-    float degrees = 2.0f * std::atan2(along, turn.w) * 180.0f / 3.14159265f;
-    if (degrees > 180.0f) degrees -= 360.0f;  // the short way round
-    if (degrees < -180.0f) degrees += 360.0f;
+    const float degrees = wristTwist(last_, input.hands[hand_]);
+    last_ = input.hands[hand_].aimOrientation;
     return degrees;
   }
   int hand() const { return hand_; }  // -1 = none
@@ -124,6 +130,68 @@ class WristRoll {
   }
   int hand_ = -1;
   Quat last_;
+};
+
+// The opacity gesture: hold one grip, its pointer off the menu as it goes
+// down and no trigger held, and twist that wrist. The first kDeadZone of
+// twist from how the hand was as the grip went down counts for nothing, so
+// a hand resting on the grip or moving a little changes nothing; past it,
+// every degree counts. A trigger going down (the volume gesture takes over),
+// the other grip or letting go ends it until the grip goes down again.
+class GripTwist {
+ public:
+  static constexpr float kDeadZone = 20.0f;  // degrees
+
+  // Each frame; allowed: the gesture can apply now, else it ends. Returns
+  // how far the hand turned about its pointer since the last frame beyond
+  // the dead zone, in degrees, clockwise as the user sees it positive; 0
+  // while there is no such hand or it is still within the dead zone.
+  float update(const ControllerState& input, const bool onMenu[2], bool allowed) {
+    const bool trigger = input.hands[0].select || input.hands[1].select;
+    if (hand_ >= 0 && (!allowed || trigger || !input.hands[hand_].grip ||
+                       input.hands[1 - hand_].grip))
+      cancel();
+    for (int i = 0; i < 2 && hand_ < 0 && allowed && !trigger; ++i) {
+      const HandState& h = input.hands[i];
+      if (h.gripPressed && h.poseValid && !onMenu[i] && !input.hands[1 - i].grip) {
+        hand_ = i;
+        last_ = h.aimOrientation;
+        tracked_ = true;
+        twist_ = 0;
+        changing_ = false;
+        return 0;
+      }
+    }
+    if (hand_ < 0) return 0;
+    const HandState& h = input.hands[hand_];
+    if (!h.poseValid) {
+      tracked_ = false;
+      return 0;
+    }
+    if (!tracked_) {  // tracked again: it goes on from here, not with the jump
+      tracked_ = true;
+      last_ = h.aimOrientation;
+      return 0;
+    }
+    const float degrees = wristTwist(last_, h);
+    last_ = h.aimOrientation;
+    if (changing_) return degrees;
+    twist_ += degrees;
+    if (std::abs(twist_) <= kDeadZone) return 0;
+    changing_ = true;
+    return twist_ - std::copysign(kDeadZone, twist_);
+  }
+  int hand() const { return hand_; }  // -1 = none
+  bool changing() const { return hand_ >= 0 && changing_; }  // twisted past the dead zone
+  // Ends it (another video opened) until the grip goes down again.
+  void cancel() { hand_ = -1; }
+
+ private:
+  int hand_ = -1;
+  Quat last_;
+  bool tracked_ = false;
+  float twist_ = 0;        // degrees since the grip went down, until past the dead zone
+  bool changing_ = false;  // past it
 };
 
 // Seeking with the right stick sideways (or an arrow key): the video jumps
