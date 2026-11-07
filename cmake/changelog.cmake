@@ -1,10 +1,13 @@
 # CHANGELOG.md's format, which the app's What's new reads (src/whats_new.cpp).
 #
-# check_changelog(<file> <version>): with a version (a release build), fails
-# at the first line out of format, or when that version has no release with
-# a line. Without one (a development build), any file is accepted.
+# check_changelog(<file> <version>): with a release's version, a plain
+# "0.2.0" (a leading "v" stripped), fails at the first line out of format,
+# or when that version has no release with a line. With any other version
+# ("dev-<time>-<commit>", "local-…") or none, a development build, any file
+# is accepted.
 #
-# Also runs on its own, the version optional:
+# Also runs on its own, the version optional (the format is always checked,
+# the version's notes only for a release's):
 #   cmake -DCHANGELOG=CHANGELOG.md [-DVERSION=0.2.0] -P cmake/changelog.cmake
 
 if(CMAKE_SCRIPT_MODE_FILE)
@@ -215,11 +218,22 @@ function(_check_changelog file version strict)
   endif()
 endfunction()
 
+# A release's version: "0.2.0", or "v0.2.0".
+function(_changelog_release_version version out)
+  string(REGEX REPLACE "^v" "" version "${version}")
+  if(version MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    set(${out} "${version}" PARENT_SCOPE)
+  else()
+    set(${out} "" PARENT_SCOPE)
+  endif()
+endfunction()
+
 function(check_changelog file version)
-  if(version STREQUAL "")
+  _changelog_release_version("${version}" release)
+  if(release STREQUAL "")
     _check_changelog("${file}" "" FALSE)
   else()
-    _check_changelog("${file}" "${version}" TRUE)
+    _check_changelog("${file}" "${release}" TRUE)
   endif()
 endfunction()
 
@@ -227,7 +241,7 @@ if(CMAKE_SCRIPT_MODE_FILE STREQUAL CMAKE_CURRENT_LIST_FILE)
   if(NOT DEFINED CHANGELOG)
     message(FATAL_ERROR "usage: cmake -DCHANGELOG=CHANGELOG.md [-DVERSION=0.2.0] -P ${CMAKE_CURRENT_LIST_FILE}")
   endif()
-  string(REGEX REPLACE "^v" "" VERSION "${VERSION}")
+  _changelog_release_version("${VERSION}" VERSION)
   _check_changelog("${CHANGELOG}" "${VERSION}" TRUE)
   message(STATUS "${CHANGELOG}: well-formed")
 endif()

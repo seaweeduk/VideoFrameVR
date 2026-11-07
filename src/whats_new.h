@@ -26,7 +26,8 @@ std::vector<ReleaseNotes> parseReleaseNotes(std::string_view changelog, bool fra
 // <0, 0 or >0 as a is older, the same or newer, by number ("0.10.0" is
 // newer than "0.9.0"); a suffix such as "-dev" doesn't count.
 int compareVersions(std::string_view a, std::string_view b);
-// A development build's version ("0.1.0-dev").
+// A development build's version: any but a release's plain "0.2.0", such as
+// "0.2.0-dev", "dev-<time>-<commit>" or "local-<time>-<commit>".
 bool devVersion(std::string_view version);
 // "2026-11-09" as "9 November 2026"; anything else as it is.
 std::string releaseDate(std::string_view isoDate);

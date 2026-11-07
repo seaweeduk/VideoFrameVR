@@ -64,7 +64,9 @@ int compareVersions(std::string_view a, std::string_view b) {
   return 0;
 }
 
-bool devVersion(std::string_view version) { return version.find("-dev") != std::string_view::npos; }
+bool devVersion(std::string_view version) {
+  return !releaseVersion(version) || std::count(version.begin(), version.end(), '.') != 2;
+}
 
 std::string releaseDate(std::string_view iso) {
   static constexpr const char* kMonths[] = {"January", "February", "March",     "April",
