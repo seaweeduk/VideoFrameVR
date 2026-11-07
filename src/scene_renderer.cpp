@@ -343,6 +343,7 @@ void SceneRenderer::drawSky(VkCommandBuffer cmd, EyeData eye) {
   for (int c = 0; c < 3; ++c) p.toPicture[c][c] = 1.0f;
   p.params[1] = 1.0f;
   p.mode[0] = 1;  // 360
+  p.mode[3] = 100;  // opaque
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline(Pipelines::kSurround));
   pipelines_.bindTextures(cmd, &sky_, Pipelines::kSky);
   pushEye(cmd, eye);

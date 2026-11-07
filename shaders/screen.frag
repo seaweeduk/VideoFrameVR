@@ -65,5 +65,5 @@ void main() {
       c = sharpen(clamp(c, 0.0, 1.0), n[0], n[1], n[2], n[3], strength);
     }
   }
-  fragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+  fragColor = vec4(clamp(c, 0.0, 1.0), 1.0) * pc.draw.color.a;  // premultiplied by the opacity
 }

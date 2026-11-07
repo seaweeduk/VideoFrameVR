@@ -42,7 +42,8 @@ struct SurroundDraw {
                 // zw the chroma lookup's offset (kYuv)
   uvec4 mode;   // x projection: 0 = 180, 1 = 360, 2 = fisheye, 3 = equi-angular
                 // cubemap, 4 = cubemap turned to a 2x3 grid; y flags (video.glsl);
-                // z footprint taps per side at most (footprintSample)
+                // z footprint taps per side at most (footprintSample); w opacity
+                // percent
   vec4 yuv;     // kYuv: the planes' range (videoTap)
 };
 DECLARE_PUSH(SurroundDraw)
@@ -80,6 +81,7 @@ int source() {
 }
 #endif
 bool isYuv() { return source() != kSourceImage; }
+float opacity() { return float(pc.draw.mode.w) * 0.01; }
 vec4 yuvMatrix() { return vec4(pc.draw.params.zw, pc.draw.alpha.zw); }
 // The picture at p (texture coordinates), full-size level, linear colour.
 vec3 tap(vec2 p) { return videoTap(tex, chromaTex, p, source(), pc.draw.yuv, yuvMatrix()); }
@@ -266,7 +268,7 @@ void main() {
     vec4 outside = alphaOut ? vec4(0.0) : keyGreen ? vec4(kKeyColor, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
     show(c, n, sharpened, e, flags);
     if (sharpened) c = sharpen(c, n[0], n[1], n[2], n[3], strength);
-    fragColor = inside ? vec4(c, 1.0) : outside;
+    fragColor = inside ? vec4(c, 1.0) * opacity() : outside;
     return;
   }
   // Passthrough: how much of the picture stays here.
@@ -319,5 +321,7 @@ void main() {
   } else if (keyed) {
     c = srgbToLinear(removeSpill(linearToSrgb(c), chroma.z));
   }
+  // The Opacity setting: below 100 only with transparent output.
+  alpha *= opacity();
   fragColor = alphaOut ? vec4(c * alpha, alpha) : vec4(mix(kKeyColor, c, alpha), 1.0);
 }
