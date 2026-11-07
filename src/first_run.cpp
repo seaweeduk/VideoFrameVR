@@ -23,10 +23,14 @@ void writeMarker(const SetupChoices& choices) {
 
 }  // namespace
 
+bool newProfile() {
+  std::error_code ec;
+  return !fs::exists(configDir() / "settings.conf", ec) && !fs::exists(dataDir() / "library.db", ec);
+}
+
 bool setupDue() {
   std::error_code ec;
-  return fs::exists(markerPath(), ec) ||
-         (!fs::exists(configDir() / "settings.conf", ec) && !fs::exists(dataDir() / "library.db", ec));
+  return fs::exists(markerPath(), ec) || newProfile();
 }
 
 SetupChoices loadSetupChoices() {

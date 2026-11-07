@@ -13,8 +13,9 @@ struct SetupChoices {
   std::vector<std::string> places;  // Your videos' ticked places, pinned once it ends
 };
 
-// Setup was started and not finished, or this is a new profile (no
-// settings.conf and no library.db). Ask before anything writes them.
+// No settings.conf and no library.db. Ask before anything writes them.
+bool newProfile();
+// Setup was started and not finished, or this is a new profile.
 bool setupDue();
 SetupChoices loadSetupChoices();
 // Writes the marker at once: before the files setupDue() looks for exist.

@@ -22,6 +22,7 @@
 #include "video_format.h"
 #include "video_memory.h"
 #include "video_player.h"
+#include "whats_new.h"
 
 #include <algorithm>
 #include <array>
@@ -97,7 +98,8 @@ struct MenuCommand {
               SetupPlaces,  // ... the places ticked so far, one per line in path
               SetupStash,   // ... Stash connected: its address, then its API key, in path
               StashCard,  // the menu's "Use Stash?" card: value 1 used, 0 dismissed
-              DismissSetupBanner };  // the Library's "You're all set" after setup
+              DismissSetupBanner,  // the Library's "You're all set" after setup
+              ToggleShowWhatsNew };  // What's new opens by itself after updates
   Type type = None;
   // seconds (Seek, SeekTo), enum index, track id (0 = off), volume 0..100,
   // 1 = only the downloaded copy (DeleteFile), picture value
@@ -219,6 +221,7 @@ struct MenuView {
   bool thumbnails = true;       // file browser and library: thumbnails, else a video icon
   StashSettings stash;          // Stash's settings (its pages show only while it is on)
   bool setupBanner = false;     // the Library's "You're all set" after setup (DismissSetupBanner)
+  bool showWhatsNew = true;     // What's new opens after updates (Settings::showWhatsNew)
   int appFps = 0;               // frames the app drew in the last second (0 = not known yet)
   ReleaseUpdate::State releaseUpdate = ReleaseUpdate::State::Disabled;
   std::string releaseVersion;
@@ -378,6 +381,14 @@ class Menu {
   void showSettings() { showPage(Page::Settings); }
   // The update dialog, over the page shown (MenuView::releaseUpdate).
   void showUpdate() { openDialog(Dialog::Update, ""); }
+  // What's new (menu_whats_new.cpp): these releases' notes, newest first,
+  // over the page shown. Several came with an update from `from` to `to`;
+  // otherwise it is headed by the app's name.
+  void showWhatsNew(std::vector<ReleaseNotes> releases, const std::string& from = "",
+                    const std::string& to = "");
+  bool whatsNewOpen() const { return dialog_ == Dialog::WhatsNew; }
+  // Any dialog is open over the page (or alone, with the browser closed).
+  bool dialogOpen() const { return dialog_ != Dialog::None; }
   // Switches to the Offline place: the drives, downloads to go and those done.
   void showOffline();
   // The list the playing (or last) video was opened from, as it was left;
@@ -458,6 +469,7 @@ class Menu {
   // True on pages with a scrollable list (files, the library, Stash's), or
   // a settings page too tall for the browser.
   bool listOpen() const {
+    if (dialog_ == Dialog::WhatsNew) return whatsNew_.max > 0;  // its notes, over the page
     return page_ == Page::Files || page_ == Page::Library || page_ == Page::Network ||
            page_ == Page::Offline || stashListPage() || (groupedPage() && pageScrollMax_ > 0) ||
            (page_ == Page::StashSceneDetails && side_.w > 0 && side_.max > 0);
@@ -522,6 +534,7 @@ class Menu {
   enum class Dialog { None, ConfirmDelete, Deleting, Error, Deleted, ConfirmQuit,
                       SaveTo, NoRoom, RemoveDownload,  // offline downloads' (menu_offline.cpp)
                       Update,  // a newer release (menu_settings.cpp)
+                      WhatsNew,  // the release notes (menu_whats_new.cpp)
                       // An SFTP server's (menu_network.cpp): signed in with the
                       // password as its key was refused, its key changed, and
                       // Forget for a key login (and with the server not answering).
@@ -753,6 +766,32 @@ class Menu {
   void layoutUpdateDialog(std::vector<Button>& row);
   void drawUpdateDialog(cairo_t* cr, double textX, double boxY);
   void drawOfflineDialog(cairo_t* cr, double boxX, double boxY);
+  // What's new: the releases shown, the line under its title, and the
+  // notes laid out once (measured as they are drawn) and how far they are
+  // scrolled down (max 0: they fit, at the full width).
+  struct WhatsNewPiece {
+    enum Kind { Version, Section, Line, ReleaseRule, SectionRule } kind;
+    std::string text, date;  // a version's date
+    double y = 0, h = 0;     // from the notes' top
+  };
+  struct WhatsNewDialog {
+    std::vector<ReleaseNotes> releases;
+    std::string from, to;
+    std::vector<WhatsNewPiece> pieces;
+    double width = 0, height = 0;  // as laid out; width 0: not yet
+    double scroll = 0, max = 0;
+  } whatsNew_;
+  // Where the dialog is, as its notes were laid out: its left, top and
+  // height, and its notes' height.
+  struct WhatsNewBox {
+    double x, y, h, notesH;
+  };
+  WhatsNewBox whatsNewBox() const;
+  void layoutWhatsNewNotes(double width);
+  void layoutWhatsNew();
+  void drawWhatsNew(cairo_t* cr);
+  void scrollWhatsNew(double pixels);
+  bool overWhatsNewNotes() const;
   // The Scene tab's box (menu_stash_scene.cpp): Download, or the state.
   void addOfflineBox(const std::string& path, double x, double y, double w, double h);
   // The tab "Main menu": the browser where it was last.
@@ -1171,7 +1210,7 @@ class Menu {
   int browserColumn_ = 0;  // visible page's left edge until its replacement is ready
   MenuView browserView_;
   int browserOffset_ = 0;
-  double browserFraction_ = 0, browserSide_ = 0, browserPage_ = 0;
+  double browserFraction_ = 0, browserSide_ = 0, browserPage_ = 0, browserWhatsNew_ = 0;
   // Redraws the browser's rows [y0, y1) (all of them by default) at the next texture().
   void browserChanged(double y0 = 0, double y1 = kBrowserHeight,
                       double x0 = 0, double x1 = kBrowserWidth);

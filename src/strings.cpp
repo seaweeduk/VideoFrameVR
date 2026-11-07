@@ -611,7 +611,6 @@ const Strings kEnglish = {
         "Update now",
         "Not now",
         "Try again",
-        "Close",
         "Update available",
     },
     {
@@ -1090,6 +1089,12 @@ const Strings kEnglish = {
         "Match brightness",
         "How much of the room's warmth and tint Match the room applies. For all videos.",
         "How much of the room's brightness Match the room applies. For all videos.",
+    },
+    {
+        "What's new",
+        "Close",
+        "Show after updates",
+        "Updated from %s to %s",
     },
 };
 

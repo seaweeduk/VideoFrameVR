@@ -86,6 +86,7 @@ add_executable(videoframevr
   src/menu_setup_folders.cpp
   src/menu_stash_covers.cpp
   src/menu_widgets.cpp
+  src/menu_whats_new.cpp
   src/mirror_window.cpp
   src/menu_stash.cpp
   src/menu_stash_draw.cpp
@@ -159,6 +160,7 @@ add_executable(videoframevr
   src/video_memory.cpp
   src/video_texture.cpp
   src/vr_space.cpp
+  src/whats_new.cpp
 )
 
 # The library's schema, built in from the file the importer reads too.
@@ -248,14 +250,26 @@ add_custom_target(scene_shaders DEPENDS ${SHADER_HEADERS})
 add_dependencies(videoframevr scene_shaders)
 target_sources(videoframevr PRIVATE ${SHADER_HEADERS})
 
-# The version shown (--version, the log): a release build's tag and commit,
-# which packaging/release/release.py passes in the environment, else this
+# The version shown (--version, the log): the one packaging/release/release.py
+# passes in the environment with the commit (a release's tag, or a dev or
+# local build's "dev-<time>-<commit>"/"local-<time>-<commit>"), else this
 # version marked as a development build.
 set(VIDEOFRAMEVR_VERSION_TEXT "$ENV{VIDEOFRAMEVR_RELEASE_VERSION}")
 string(REGEX REPLACE "^v" "" VIDEOFRAMEVR_VERSION_TEXT "${VIDEOFRAMEVR_VERSION_TEXT}")
+set(VIDEOFRAMEVR_RELEASE_TEXT "${VIDEOFRAMEVR_VERSION_TEXT}")
 if(VIDEOFRAMEVR_VERSION_TEXT STREQUAL "")
   set(VIDEOFRAMEVR_VERSION_TEXT "${PROJECT_VERSION}-dev")
 endif()
+
+# The release notes, built in for What's new (src/whats_new.h). A release
+# build's (a plain "0.2.0" version) must be well-formed and have its
+# version's notes; any other build's are accepted as they are.
+include(cmake/changelog.cmake)
+set(CHANGELOG_FILE ${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CHANGELOG_FILE})
+check_changelog(${CHANGELOG_FILE} "${VIDEOFRAMEVR_RELEASE_TEXT}")
+file(READ ${CHANGELOG_FILE} CHANGELOG)
+configure_file(src/changelog.h.in generated/changelog.h @ONLY)
 target_compile_definitions(videoframevr PRIVATE GL_GLEXT_PROTOTYPES
                                                 VIDEOFRAMEVR_VERSION="${VIDEOFRAMEVR_VERSION_TEXT}"
                                                 VIDEOFRAMEVR_COMMIT="$ENV{VIDEOFRAMEVR_RELEASE_COMMIT}")

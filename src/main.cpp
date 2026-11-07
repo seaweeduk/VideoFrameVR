@@ -55,6 +55,7 @@
 #include "video_player.h"
 #include "vr_input.h"
 #include "vr_space.h"
+#include "whats_new.h"
 #include "xmath.h"
 #include "xr_context.h"
 
@@ -583,6 +584,7 @@ int run(GLFWwindow* window, const Options& opts) {
   // the files it looks for. A video to play puts it off to the next start;
   // --first-run shows it on any profile, which it leaves alone until it ends.
   const bool setupForced = opts.firstRun;
+  const bool freshProfile = newProfile();  // for What's new below
   SetupChoices setupChoices;
   bool showSetup = setupForced;
   if (!setupForced && setupDue()) {
@@ -631,6 +633,14 @@ int run(GLFWwindow* window, const Options& opts) {
                 settings.refreshRate);
   else if (kStandaloneHeadset)
     std::printf("Refresh rate: not started from Steam, left to SteamVR\n");
+  // What's new (whats_new.h): the notes since the version last seen, shown
+  // as the menu first opens; closing them counts this version as seen
+  // (markVersionSeen, then saveSettings). With none to show, it counts now.
+  WhatsNewLaunch whatsNew = whatsNewAtLaunch(freshProfile, settings.versionSeen, settings.showWhatsNew);
+  if (whatsNew.seenNow && markVersionSeen(settings.versionSeen)) saveSettings(settings);
+  if (!whatsNew.releases.empty())
+    std::printf("What's new: %zu release(s) to show, newest %s\n", whatsNew.releases.size(),
+                whatsNew.releases.front().version.c_str());
   auto chosenResolution = [&] {
     return resolutionStops.empty() ? settings.videoResolution : settings.videoResolutionPixels;
   };
@@ -711,6 +721,7 @@ int run(GLFWwindow* window, const Options& opts) {
   if (showSetup && !menu.startSetup(setupForced, setupChoices.places)) return 1;
   ReleaseUpdate releaseUpdate;  // inert unless the GitHub install launcher opts in
   bool updateOffered = false, menuWasOpen = false;  // its dialog, once a run as the menu opens
+  bool whatsNewWasOpen = false;
   DiagnosticsExport diagnostics;
   SubtitleOverlay subtitles;
   if (!subtitles.init(uploader)) return 1;
@@ -1750,6 +1761,10 @@ int run(GLFWwindow* window, const Options& opts) {
         break;
       case MenuCommand::ToggleVibration:
         settings.vibration = !settings.vibration;
+        saveSettings(settings);
+        break;
+      case MenuCommand::ToggleShowWhatsNew:
+        settings.showWhatsNew = !settings.showWhatsNew;
         saveSettings(settings);
         break;
       case MenuCommand::TogglePassthrough:
@@ -3022,6 +3037,17 @@ int run(GLFWwindow* window, const Options& opts) {
         menu.showUpdate();
       }
       menuWasOpen = panel.open;
+      // What's new, the first time the menu shows: not during setup, nor
+      // over another dialog (the update's comes first). Closed, however that
+      // happens, this version counts as seen.
+      if (!whatsNew.releases.empty() && panel.open && !menu.setupRunning() && !menu.dialogOpen()) {
+        menu.showWhatsNew(std::move(whatsNew.releases), settings.versionSeen, VIDEOFRAMEVR_VERSION);
+        whatsNew.releases.clear();
+      }
+      const bool whatsNewOpen = menu.whatsNewOpen();
+      if (whatsNewWasOpen && !whatsNewOpen && markVersionSeen(settings.versionSeen))
+        saveSettings(settings);
+      whatsNewWasOpen = whatsNewOpen;
       if (panel.open && releaseUpdate.state() == ReleaseUpdate::State::Restarting && !app.quit) {
         std::printf("Update: restarting into %s\n", releaseUpdate.version().c_str());
         menu.showUpdate();
@@ -3152,6 +3178,7 @@ int run(GLFWwindow* window, const Options& opts) {
       view.thumbnails = settings.thumbnails;
       view.showPerformance = showPerformance;
       view.vibration = settings.vibration;
+      view.showWhatsNew = settings.showWhatsNew;
       view.stash = settings.stash;
       view.setupBanner = setupBanner;
       view.appFps = appFps;

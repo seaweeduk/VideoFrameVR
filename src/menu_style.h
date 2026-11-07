@@ -345,6 +345,64 @@ inline void groupFrame(cairo_t* cr, double x, double y, double w, double h, cons
   cairo_fill(cr);
 }
 
+// The app's icon (packaging/videoframevr.svg): a tile, the two eyes' circles,
+// their overlap lit, a play button in it. The intro draws its parts apart.
+enum BrandPart {
+  kBrandTile = 1, kBrandBlue = 2, kBrandGreen = 4, kBrandLens = 8, kBrandPlay = 16, kBrandWhole = 31
+};
+
+inline void drawBrand(cairo_t* cr, double x, double y, double size, int parts = kBrandWhole) {
+  cairo_save(cr);
+  cairo_translate(cr, x, y);
+  cairo_scale(cr, size / 256, size / 256);
+  if (parts & kBrandTile) {
+    roundedRect(cr, 8, 8, 240, 240, 56);
+    cairo_pattern_t* sky = cairo_pattern_create_linear(0, 8, 0, 248);
+    cairo_pattern_add_color_stop_rgb(sky, 0, 0x0e / 255.0, 0x1a / 255.0, 0x36 / 255.0);
+    cairo_pattern_add_color_stop_rgb(sky, 1, 0x1b / 255.0, 0x36 / 255.0, 0x56 / 255.0);
+    cairo_set_source(cr, sky);
+    cairo_fill_preserve(cr);
+    cairo_pattern_destroy(sky);
+    cairo_pattern_t* sheen = cairo_pattern_create_linear(0, 8, 0, 248);
+    cairo_pattern_add_color_stop_rgba(sheen, 0, 1, 1, 1, 0.08);
+    cairo_pattern_add_color_stop_rgba(sheen, 0.5, 1, 1, 1, 0);
+    cairo_set_source(cr, sheen);
+    cairo_fill(cr);
+    cairo_pattern_destroy(sheen);
+  }
+  if (parts & kBrandBlue) {
+    cairo_arc(cr, 106, 128, 72, 0, 2 * M_PI);
+    cairo_set_source_rgb(cr, 0x3d / 255.0, 0x7f / 255.0, 0xe0 / 255.0);
+    cairo_fill(cr);
+  }
+  if (parts & kBrandGreen) {
+    cairo_arc(cr, 150, 128, 72, 0, 2 * M_PI);
+    cairo_set_source_rgb(cr, 0x2f / 255.0, 0xc4 / 255.0, 0x8c / 255.0);
+    cairo_fill(cr);
+  }
+  if (parts & kBrandLens) {
+    cairo_save(cr);
+    cairo_arc(cr, 106, 128, 72, 0, 2 * M_PI);
+    cairo_clip(cr);
+    cairo_arc(cr, 150, 128, 72, 0, 2 * M_PI);
+    cairo_set_source_rgb(cr, 0xc9 / 255.0, 0xfb / 255.0, 0xe9 / 255.0);
+    cairo_fill(cr);
+    cairo_restore(cr);
+  }
+  if (parts & kBrandPlay) {
+    cairo_move_to(cr, 118, 108);
+    cairo_line_to(cr, 118, 148);
+    cairo_line_to(cr, 150, 128);
+    cairo_close_path(cr);
+    cairo_set_source_rgb(cr, 0x12 / 255.0, 0x24 / 255.0, 0x4a / 255.0);
+    cairo_set_line_width(cr, 10);
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+    cairo_fill_preserve(cr);
+    cairo_stroke(cr);
+  }
+  cairo_restore(cr);
+}
+
 constexpr double kSliderInset = 28;    // a slider's track starts this far into it
 constexpr double kSliderValueW = 110;  // the value right of it, with room for the knob at 100
 constexpr double kDialogW = 1160, kDialogH = 400;

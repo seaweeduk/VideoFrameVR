@@ -168,7 +168,7 @@ void Menu::update(const MenuView& view) {
       view.crashedLastRun != view_.crashedLastRun || view.downloadsTo != view_.downloadsTo ||
       view.softwareDecoding != view_.softwareDecoding || view.stash.card != view_.stash.card ||
       view.deletable != view_.deletable ||
-      view.setupBanner != view_.setupBanner ||
+      view.setupBanner != view_.setupBanner || view.showWhatsNew != view_.showWhatsNew ||
       a.chapters.size() != b.chapters.size() || a.chapter != b.chapter;
   // These values change only their slider rows, not the strip or the page's layout.
   if (view.brightness != view_.brightness) sliderChanged(MenuCommand::SetBrightness);
@@ -487,9 +487,10 @@ MenuCommand Menu::click() {
   listDrag_ = ListDrag{};
   if (setup_ && SetupPages::press(*this)) return {};
   if (dialog_ != Dialog::None) {
-    // Modal: only the dialog's own buttons react, a click next to it does nothing.
+    // Modal: only the dialog's own buttons (and notes that scroll) react, a
+    // click next to it does nothing.
     const int index = buttonAt(pointerPanel_, pointerX_, pointerY_);
-    if (index < 0 || !buttons_[index].popup) return {};
+    if ((index < 0 || !buttons_[index].popup) && !onListContent(index)) return {};
   }
   if (dropdown_ != Dropdown::None) {
     // An open dropdown takes the click: an entry is chosen, anything else
@@ -602,7 +603,7 @@ MenuCommand Menu::drag(bool held) {
   if (draggingScroll_) {
     if (pointerPanel_ == kBrowser)
       for (const Button& b : buttons_)
-        if (b.scrollbar) scrollToPointer(b);
+        if (b.scrollbar && b.popup == (dialog_ != Dialog::None)) scrollToPointer(b);
     return {};
   }
   if (!held) {
@@ -673,11 +674,15 @@ void Menu::scroll(double rows) {
 }
 
 void Menu::scrollPixels(double pixels) {
-  scrollRows(pixels / (groupedPage() ? kSettingStep : rowHeight_));
+  scrollRows(pixels / (groupedPage() || dialog_ == Dialog::WhatsNew ? kSettingStep : rowHeight_));
 }
 
 void Menu::scrollRows(double rows) {
   if (!listOpen() || rows == 0) return;
+  if (dialog_ == Dialog::WhatsNew) {  // its notes, as fast as settings rows
+    scrollWhatsNew(rows * kSettingStep);
+    return;
+  }
   if (groupedPage()) {  // as fast as a list of settings rows
     const double position = std::clamp(pageScroll_ + rows * kSettingStep, 0.0, pageScrollMax_);
     if (std::abs(position - pageScroll_) > 0.01) {
@@ -715,6 +720,7 @@ void Menu::setListPosition(double position) {
 // their buttons, and the space between them; not its scroll bar, which is
 // a button of its own.
 bool Menu::onListContent(int index) const {
+  if (dialog_ == Dialog::WhatsNew) return listOpen() && index < 0 && overWhatsNewNotes();
   if (!listOpen() || pointerPanel_ != kBrowser || dialog_ != Dialog::None) return false;
   if (index >= 0) return buttons_[index].scrolls || buttons_[index].side;
   if (overSide()) return true;
@@ -903,6 +909,10 @@ void Menu::layoutDialog() {
     return MenuCommand{};
   };
 
+  if (dialog_ == Dialog::WhatsNew) {  // its own size and buttons
+    layoutWhatsNew();
+    return;
+  }
   std::vector<Button> row;
   if (dialog_ == Dialog::SaveTo || dialog_ == Dialog::NoRoom || dialog_ == Dialog::RemoveDownload) {
     layoutOfflineDialog(boxY, row);
@@ -950,6 +960,11 @@ void Menu::drawDialog(cairo_t* cr) {
     cairo_rectangle(cr, 0, 0, kBrowserWidth, kBrowserHeight);
     cairo_set_source_rgba(cr, 0, 0, 0, 0.55);
     cairo_fill(cr);
+  }
+  if (dialog_ == Dialog::WhatsNew) {
+    drawWhatsNew(cr);
+    drawButtons(cr, kBrowser, true);
+    return;
   }
   roundedRect(cr, boxX, boxY, kDialogW, boxH, 30);
   cairo_set_source_rgba(cr, 0.1, 0.1, 0.13, 1);
@@ -1568,6 +1583,7 @@ void Menu::redraw() {
     browserFraction_ = scrollFraction_;
     browserSide_ = side_.position;
     browserPage_ = pageScroll_;
+    browserWhatsNew_ = whatsNew_.scroll;
     browserRow_ = 0;
     return;
   }
@@ -1658,8 +1674,9 @@ bool Menu::shiftSide() {
 }
 
 bool Menu::overSide() const {
-  return side_.w > 0 && pointerPanel_ == kBrowser && pointerX_ >= side_.x &&
-         pointerX_ <= side_.x + side_.w && pointerY_ >= side_.y && pointerY_ <= side_.y + side_.h;
+  return side_.w > 0 && dialog_ != Dialog::WhatsNew && pointerPanel_ == kBrowser &&
+         pointerX_ >= side_.x && pointerX_ <= side_.x + side_.w && pointerY_ >= side_.y &&
+         pointerY_ <= side_.y + side_.h;
 }
 
 // By whole texture pixels (the rest is kept for the next time), as scrollRows().
@@ -1696,7 +1713,9 @@ const Texture* Menu::texture(PanelId panel) {
       std::swap(scrollFraction_, browserFraction_);
       std::swap(side_.position, browserSide_);
       std::swap(pageScroll_, browserPage_);
+      std::swap(whatsNew_.scroll, browserWhatsNew_);
       drawBrowserPart(browserRow_, end, 0, kBrowserWidth);
+      std::swap(whatsNew_.scroll, browserWhatsNew_);
       std::swap(pageScroll_, browserPage_);
       std::swap(side_.position, browserSide_);
       std::swap(scrollFraction_, browserFraction_);
