@@ -664,9 +664,28 @@ void Menu::layoutVideoSettings() {
   resetKey.tooltip = t.greenScreenResetHint;
   resetKey.disabled = own && !view_.opacityApplies;
   buttons_.push_back(resetKey);
-  if (own) addLabel(resetKey.x + resetKey.w + 20, y, w - resetKey.w - 20, 0, t.greenScreenOwnMask,
-                    kHintSize, true, 2);
-  y += own ? hintHeight(2) + 6 : kSettingStep;
+  // Match the room (the Frame) on the same row: then the own mask's hint is
+  // left to the green screen switch's tooltip, which says it too.
+  const RoomMatch room = view_.roomMatch;
+  const bool ownHint = own && room == RoomMatch::Hidden;
+  if (room != RoomMatch::Hidden) {
+    Button match = textButton(room == RoomMatch::Reading  ? cb.reading
+                              : room == RoomMatch::Failed ? cb.failed
+                                                          : cb.matchRoom,
+                              Icon::None, command(MenuCommand::MatchRoom));
+    match.panel = kBrowser;
+    match.x = x + w - match.w;
+    match.y = y;
+    match.h = kSettingRowH;
+    match.fontSize = kTextSize;
+    match.disabled = room == RoomMatch::Off || room == RoomMatch::Reading;
+    match.tooltip = room == RoomMatch::Off ? cb.tipMatchRoomHidden : cb.tipMatchRoom;
+    buttons_.push_back(match);
+  }
+  if (ownHint)
+    addLabel(resetKey.x + resetKey.w + 20, y, w - resetKey.w - 20, 0, t.greenScreenOwnMask,
+             kHintSize, true, 2);
+  y += ownHint ? hintHeight(2) + 6 : kSettingStep;
   addGroup(columnX(1), top, kColumnW, y + 10 - top, t.passthroughGroup);
 }
 

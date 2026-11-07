@@ -865,7 +865,8 @@ struct ControllerStrings {
   const char* volumeHint;         // pointing at the volume (printf: grip's name, then the trigger's)
 };
 
-// Video settings' colour balance (colour_balance.h) in the Picture group.
+// Video settings' colour balance (colour_balance.h) in the Picture group, and
+// Match the room (room_light.h) in the Passthrough group.
 struct ColourBalanceStrings {
   const char* warmth;
   const char* tint;
@@ -875,6 +876,11 @@ struct ColourBalanceStrings {
   const char* tipExposure;
   const char* pictureHint;  // beside the Picture group's Reset, in place of Strings::pictureHint
   const char* tipReset;     // ... in place of Strings::tipPictureReset
+  const char* matchRoom;
+  const char* reading;  // the button while it reads
+  const char* failed;   // ... for a few seconds after a reading failed
+  const char* tipMatchRoom;
+  const char* tipMatchRoomHidden;  // the room isn't shown (passthrough off, Opacity at 100 %)
 };
 
 // Deleting the playing file (docs/alpha/delete-file.md): the delete

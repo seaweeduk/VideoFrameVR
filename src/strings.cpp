@@ -1081,6 +1081,13 @@ const Strings kEnglish = {
         "closes.",
         "Reset brightness, contrast, saturation, zoom and viewpoint for this video, and warmth, tint "
         "and exposure.",
+        "Match the room",
+        "Reading the room …",
+        "Couldn't read the room",
+        "Set warmth, tint and exposure so the video looks lit like the room around it, as the "
+        "cameras show it. The picture disappears for a moment while it looks. Grey cameras: "
+        "exposure only.",
+        "Shows when the room does: with passthrough on, or Opacity below 100 %.",
     },
 };
 

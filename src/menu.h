@@ -54,6 +54,10 @@ struct MenuHints;
 
 struct Palette;
 
+// Match the room's button (room_light.h): not offered, the room not shown,
+// ready, reading, or a reading that just failed.
+enum class RoomMatch { Hidden, Off, Ready, Reading, Failed };
+
 // Something the menu asks the app to do.
 struct MenuCommand {
   enum Type { None, TogglePause, Seek, SeekTo, ToggleMute, PreviousVideo, NextVideo,
@@ -72,7 +76,7 @@ struct MenuCommand {
               ToggleMotion, SetMotionDistance, ToggleResume, ToggleToneLook, Stop,
               ToggleTvGamma, ToggleSeekPreview, ToggleThumbnails, ToggleShowPerformance, SetScreenDistance,
               SetScreenHeight, SetScreenCurve, ResetScreen, SetOriginForward, SetOpacity,
-              SetWarmth, SetTint, SetExposure,
+              SetWarmth, SetTint, SetExposure, MatchRoom,
               ToggleAutoPassthrough, ToggleVibration,
               // Stash (docs/stash.md): on or off, its server, its switches,
               // Sync now, and the format the Scenes page shows.
@@ -161,6 +165,7 @@ struct MenuView {
   // Picture settings of the running video.
   int brightness = 0, contrast = 0, saturation = 0;
   ColourBalance balance;  // for all videos, this run
+  RoomMatch roomMatch = RoomMatch::Hidden;
   float zoom = 1.0f;
   int originForward = 0;  // surround viewpoint: percent of the sphere's radius toward the picture
   bool tvGamma = false;  // SDR video converted for a TV's gamma (darker shadows)

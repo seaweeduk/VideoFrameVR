@@ -156,6 +156,7 @@ void Menu::update(const MenuView& view) {
       view.background != view_.background || view.autoPassthrough != view_.autoPassthrough ||
       view.passthrough != view_.passthrough || view.packedAlpha != view_.packedAlpha ||
       view.maskFormat != view_.maskFormat || view.opacityApplies != view_.opacityApplies ||
+      view.roomMatch != view_.roomMatch ||
       view.greenScreen.on != view_.greenScreen.on ||
       view.resume != view_.resume ||
       view.seekPreview != view_.seekPreview || view.thumbnails != view_.thumbnails ||

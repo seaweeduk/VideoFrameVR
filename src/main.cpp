@@ -15,6 +15,7 @@
 #include "hints.h"
 #include "green_screen_check.h"
 #include "removable_drives.h"
+#include "room_light.h"
 #include "gl_interop.h"
 #include "gl_util.h"
 #include "gpu_context.h"
@@ -748,8 +749,12 @@ int run(GLFWwindow* window, const Options& opts) {
   double greenCheckAt = 0;  // glfwGetTime() the check starts, a moment after the video opens
   const char* passthroughWhy = nullptr;  // the notice's first line
   double passthroughShownUntil = 0;
-  // The colour balance holds for every video until the player closes.
+  // The colour balance holds for every video until the player closes: the
+  // room's light (Match the room) belongs to the room, not to a video.
   ColourBalance colourBalance;
+  RoomLight roomLight;
+  const bool roomReadable = kStandaloneHeadset && RoomLight::available();
+  double roomFailedUntil = 0;  // glfwGetTime() Match the room stops saying it failed
 
   // Frame rates and drops over the video: the setting's, or the command
   // line's for this run until the menu switches it.
@@ -1406,6 +1411,10 @@ int run(GLFWwindow* window, const Options& opts) {
         break;
       case MenuCommand::SetExposure:
         colourBalance.exposure = static_cast<int>(c.value);
+        break;
+      case MenuCommand::MatchRoom:
+        roomFailedUntil = 0;
+        roomLight.start();
         break;
       case MenuCommand::SetOpacity:  // applied while drawing
         app.video.opacity = static_cast<int>(c.value);
@@ -2307,6 +2316,12 @@ int run(GLFWwindow* window, const Options& opts) {
     // Opacity below 100 blends the video over the camera too, with or
     // without passthrough (whose mask or key it doesn't bring).
     const bool blended = canBlend && (app.video.passthrough || app.video.opacity < 100);
+    // A room reading that ended: the room's light in the colour balance, or
+    // a moment saying it failed.
+    if (std::optional<RoomLight::Reading> reading; roomLight.take(reading)) {
+      if (reading) colourBalance.match(reading->light, reading->colour, reading->white);
+      else roomFailedUntil = glfwGetTime() + 4;
+    }
     // Saved on every change of folder, so even a killed player reopens there.
     if (!menu.directory().empty() && menu.directory() != settings.lastFolder) {
       settings.lastFolder = menu.directory();
@@ -2986,6 +3001,11 @@ int run(GLFWwindow* window, const Options& opts) {
       view.contrast = app.video.contrast;
       view.saturation = app.video.saturation;
       view.balance = colourBalance;
+      view.roomMatch = !roomReadable            ? RoomMatch::Hidden
+                       : roomLight.reading()    ? RoomMatch::Reading
+                       : !blended               ? RoomMatch::Off
+                       : now < roomFailedUntil ? RoomMatch::Failed
+                                                : RoomMatch::Ready;
       view.tvGamma = settings.tvGamma;
       view.zoom = app.video.zoom;
       view.originForward = static_cast<int>(std::lround(app.video.originForward * 100));
@@ -3304,6 +3324,15 @@ int run(GLFWwindow* window, const Options& opts) {
       if (menu.setupRunning() && headValid && (menu.setupIntroDue() || setupIntro.playing(now)))
         setupIntro.addCover(overlays, menu, headPos, headRot, now);
     }
+    // Match the room reads the view: nothing drawn meanwhile, so it shows the
+    // room alone.
+    const bool roomBlank = roomLight.blank();
+    if (roomBlank) {
+      scene.video.reset();
+      scene.overlays.clear();
+      scene.sky = false;
+      scene.clear = ClearMode::Transparent;
+    }
     // The GL work of this iteration is all issued: what it drew goes to Vulkan.
     interop.publish();
     timer.lap(FrameTimer::Draw);
@@ -3341,7 +3370,8 @@ int run(GLFWwindow* window, const Options& opts) {
           if (showPerformance) readout.gpuTime(gpuTimes.frame);
         }
         foveation.update();  // the density maps' offsets for the images acquired now
-        scene.showFoveation = showFoveation && foveation.active();
+        // Not over the room while Match the room reads it.
+        scene.showFoveation = !roomBlank && showFoveation && foveation.active();
         if (scene.showFoveation)
           for (int i = 0; i < xr.eyeCount(); ++i) scene.foveation[i] = foveation.debug(i);
         const EyeFrame* eyes = xr.acquireEyes();
@@ -3370,7 +3400,8 @@ int run(GLFWwindow* window, const Options& opts) {
       }
     }
     gpu.collect();
-    xr.setAlphaBlend(blended);
+    if (drawn && roomBlank) roomLight.blankSubmitted();
+    xr.setAlphaBlend(blended || roomBlank);
     xr.releaseEyes();
     xr.endFrame(drawn);
     directDepth.submit();  // after the frame's work, which it never delays

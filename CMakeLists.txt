@@ -111,6 +111,7 @@ add_executable(videoframevr
   src/remote_avio.cpp
   src/remote_connection.cpp
   src/removable_drives.cpp
+  src/room_light.cpp
   src/run_log.cpp
   src/scene_renderer.cpp
   src/screen_control.cpp
