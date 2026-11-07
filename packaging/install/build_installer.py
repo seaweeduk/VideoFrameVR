@@ -61,6 +61,7 @@ def main():
         package.writestr("__main__.py", "import installer\ninstaller.main()\n")
         package.write(HERE / "installer.py", "installer.py")
         package.write(HERE / "config.json", "config.json")
+        package.write(HERE / "steam_client.py", "steam_client.py")
         package.write(HERE.parents[1] / "tools/install_steam_shortcut.py", "install_steam_shortcut.py")
     helper = helper.getvalue()
     archive = args.archive.read_bytes()

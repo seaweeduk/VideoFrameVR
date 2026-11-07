@@ -23,6 +23,15 @@ and needs only Python 3 and zenity, which SteamOS includes. It installs to:
 ~/.local/share/applications/videoframevr.desktop
 ```
 
-Steam rewrites its shortcuts file when it exits, so the installer can only add
-a shortcut while Steam is stopped. That's why adding to Steam restarts it.
+The Steam shortcut is added through the running Steam client when it offers its
+debugging interface on `127.0.0.1:8080`, as Steam on the Steam Frame always does
+(`steam_client.py`). Steam then adds it to the signed-in account, with its
+artwork and the VR flag, without restarting. A shortcut added some other way
+(such as Desktop Mode's **Add to Steam**) is found by its launcher path and
+completed: VR flag, icon, missing artwork, and the app's name if it still has
+the file's.
+
+Otherwise the installer edits `shortcuts.vdf` for the account that signed in
+last. Steam rewrites that file when it exits, so the installer can only change
+it while Steam is stopped; that's why adding to Steam then restarts it.
 Problems go to `~/.local/state/videoframevr-installer.log`.
