@@ -619,21 +619,12 @@ void Menu::layoutVideoSettings() {
   const double top = pictureBottom + kGap;
   x = columnX(1) + kGroupPad;
   y = firstRow(top);
+  // 0..100, with − and + a step of 1 either side of the slider.
   auto slider = [&](const char* label, MenuCommand::Type type, int value, bool disabled,
                     const char* tooltip) {
-    addLabel(x + 12, y, 218, kSettingRowH, label).disabled = disabled;
-    Button b;
-    b.panel = kBrowser;
-    b.x = x + 230;
-    b.y = y;
-    b.w = w - 230;
-    b.h = kSettingRowH;
-    b.slider = type;
-    b.sliderValue = value;
-    b.action = [] { return MenuCommand{}; };  // clickable; click() reads the slider
-    b.disabled = disabled;
-    b.tooltip = tooltip;
-    buttons_.push_back(b);
+    addValueRow(x, y, w, 230, label, std::to_string(value), value, 0, 100,
+                command(type, std::max(0, value - 1)), command(type, std::min(100, value + 1)),
+                disabled, false, tooltip);
     y += kSettingStep;
   };
   slider(t.opacity, MenuCommand::SetOpacity, view_.opacity, !view_.opacityApplies, t.opacityHint);
