@@ -955,6 +955,20 @@ bool XrContext::createVulkanDevice(const GpuRequirements& gpu) {
     descriptorBuffer.pNext = &deviceAddress;
     timeline.pNext = &descriptorBuffer;
   }
+  // Q08C decoder frames sampled as the NV12 images they are, through a
+  // Y'CbCr conversion that only places the chroma.
+  VkPhysicalDeviceSamplerYcbcrConversionFeatures ycbcr{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES};
+  if (caps.directVideo) {
+    VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    query.pNext = &ycbcr;
+    vkGetPhysicalDeviceFeatures2(gpu_.physical, &query);
+    caps.q08c = ycbcr.samplerYcbcrConversion;
+  }
+  if (caps.q08c) {
+    ycbcr.pNext = timeline.pNext;
+    timeline.pNext = &ycbcr;
+  }
   // The mirror waits for its presentations before replacing its swapchain.
   if (maintenance && presentFences.swapchainMaintenance1) {
     caps.presentFences = true;

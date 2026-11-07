@@ -15,8 +15,8 @@ class DirectVideo;
 
 // A decoded frame mpv handed out instead of drawing it (Frame,
 // docs/vulkan-renderer.md 11): the converter's linear buffer or the
-// decoder's own, sampled as two planes. texture() is its luma, with yuv
-// pointing back here.
+// decoder's own, sampled as two planes (a Q08C one as one image). texture()
+// is its luma, with yuv pointing back here.
 class DirectFrame {
  public:
   const Texture& texture() const { return luma_; }
@@ -26,6 +26,10 @@ class DirectFrame {
   // A Q10C decoder buffer: sampled through its TP10 descriptors
   // (DirectVideo::bindTp10) by the pipelines for it, not as texture().
   bool tp10() const { return tp10_; }
+  // A Q08C decoder buffer: texture() is the whole NV12 image, sampled through
+  // the Y'CbCr conversion of chroma siting q08c() (DirectVideo::q08cSetLayouts)
+  // by the pipelines for it; -1 for other frames.
+  int q08c() const { return q08c_; }
 
  private:
   friend class DirectVideo;
@@ -36,6 +40,7 @@ class DirectFrame {
   Texture luma_, chroma_;
   YuvColor color_;
   bool tp10_ = false;
+  int q08c_ = -1;
   bool held_ = false;     // the player's shown or next frame
   int pinned_ = 0;        // pin(): kept until unpinned
   bool inFrame_ = false;  // used by the frame being recorded
@@ -83,12 +88,24 @@ class DirectVideo {
   void enableTp10(VkSampler sampler);
   // Whether mpv can hand out Q10C frames as the decoder wrote them.
   bool acceptsQ10c() const { return tp10Sampler_ != VK_NULL_HANDLE; }
+  // Q08C decoder buffers sampled as NV12 (GpuCapabilities::q08c): the push
+  // set layouts of each chroma siting's Y'CbCr sampler (immutable in it;
+  // nullptr unless all were made), for the pipelines for them; then
+  // enableQ08c() once those exist.
+  const VkDescriptorSetLayout* q08cSetLayouts() const { return q08cLayouts_ ? q08cSetLayout_ : nullptr; }
+  void enableQ08c();
+  // Whether mpv can hand out Q08C frames as the decoder wrote them.
+  bool acceptsQ08c() const { return q08c_; }
   // Binds a tp10() frame's descriptors as set 0 of layout (Pipelines::tp10Layout).
   void bindTp10(VkCommandBuffer cmd, VkPipelineLayout layout, const DirectFrame& frame) const;
   // Work outside the frames sampling a frame (DirectDepth): it is kept from
   // pin() until unpin() with the submission's frame timeline value, which
-  // takes its planes over and back as recordAcquires() and recordReleases().
+  // takes its planes over and back as recordAcquires() and recordReleases(),
+  // after useWait(): the last submission sampling it, which gave them back.
   void pin(DirectFrame& frame) { ++frame.pinned_; }
+  SemaphoreWait useWait(const DirectFrame& frame) const {
+    return {gpu_->frameTimeline(), frame.lastUse_, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+  }
   void unpin(DirectFrame& frame, uint64_t lastUse);
   void recordBarriers(VkCommandBuffer cmd, DirectFrame& frame, bool acquire);
   // Whether this frame's colour is one the shaders reproduce as mpv would
@@ -119,8 +136,8 @@ class DirectVideo {
   // session may need the room of (Iris maps them in a 3.5 GiB window), and
   // the old session's decoder instance closes (an 8K Main 10 one's left open
   // makes the next one fail to start). A Q10C frame is drawn into 16-bit
-  // planes (still.frag). nullptr if it cannot be (a copy still waiting, no
-  // pipelines for Q10C ones): the frame stays.
+  // planes (still.frag), a Q08C one's planes copied. nullptr if it cannot
+  // be (a copy still waiting, no pipelines for Q10C ones): the frame stays.
   DirectFrame* still(DirectFrame& frame);
   // Frees the still's images (stop, another file), unless something samples it.
   void dropStill();
@@ -145,8 +162,12 @@ class DirectVideo {
   bool initStill();
   void retireStillFramebuffers();
   bool importTp10(DirectBuffer& b, int fd);
+  bool initQ08c();
+  bool q08cSupported();
+  bool importQ08c(DirectBuffer& b, int fd);
   void destroyBuffer(std::unique_ptr<DirectBuffer>& b);
   void computeColor(DirectFrame& f) const;
+  static void placeChroma(DirectFrame& f);
   void recordStillCopy(VkCommandBuffer cmd);
   void recordStillDraw(VkCommandBuffer cmd);
   void barriers(VkCommandBuffer cmd, bool acquire);
@@ -173,6 +194,13 @@ class DirectVideo {
   PFN_vkGetDescriptorEXT getDescriptor_ = nullptr;
   PFN_vkCmdBindDescriptorBuffersEXT bindDescriptorBuffers_ = nullptr;
   PFN_vkCmdSetDescriptorBufferOffsetsEXT setDescriptorBufferOffsets_ = nullptr;
+  // Q08C frames: a Y'CbCr conversion for each chroma siting, with its sampler.
+  VkSamplerYcbcrConversion q08cConversion_[kQ08cSitings] = {};
+  VkSampler q08cSampler_[kQ08cSitings] = {};
+  VkDescriptorSetLayout q08cSetLayout_[kQ08cSitings] = {};
+  VkExtent3D q08cMaxExtent_{};  // the largest image importQ08c() can make
+  bool q08cLayouts_ = false;    // initQ08c() made them all
+  bool q08c_ = false;           // enableQ08c()
 
   int brightness_ = 0, contrast_ = 0, saturation_ = 0;
   bool tvGamma_ = false;

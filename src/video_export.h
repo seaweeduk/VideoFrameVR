@@ -38,6 +38,9 @@ struct video_export {
      * decoder buffers itself: they are handed out as the decoder wrote them,
      * without a conversion. */
     int32_t accept_q10c;
+    /* 1: the same for Q08C (NV12 with DRM_FORMAT_MOD_QCOM_COMPRESSED), which
+     * the decoder writes when mpv's hwdec-v4l2-q08c is on as it opens. */
+    int32_t accept_q08c;
 
     /* Out, set by mpv on every call. */
     int32_t exported;  /* 0: drawn as usual, -1: not handed out, 1: a new frame, 2: frame id again */
@@ -45,7 +48,7 @@ struct video_export {
     uint64_t id;       /* unique for this render backend's lifetime, across converter replacements */
     int32_t fd;        /* the buffer's DMA-BUF, mpv's (dup it to keep it) */
     uint32_t drm_format; /* DRM_FORMAT_P010 or DRM_FORMAT_NV12 */
-    uint64_t modifier;   /* DRM_FORMAT_MOD_LINEAR, or QCOM_COMPRESSED (Q10C, accept_q10c) */
+    uint64_t modifier;   /* DRM_FORMAT_MOD_LINEAR, or QCOM_COMPRESSED (accept_q10c, accept_q08c) */
     uint64_t buffer_size;
     uint32_t offset[2], pitch[2]; /* luma, interleaved chroma */
     int32_t width, height;
@@ -55,7 +58,7 @@ struct video_export {
     int32_t bt709_primaries; /* 1: BT.709 (as mpv's target), 0: other */
     int32_t sdr;          /* 1: an SDR transfer, not linear */
 
-    /* Once mpv has handed out a decoder's own buffers (linear NV12, Q10C), its
+    /* Once mpv has handed out a decoder's own buffers (linear NV12, Q10C, Q08C), its
      * decoder thread adds 1 to session whenever a decoder closes, then waits
      * (at most 100 ms) until the app, having given back every frame it does
      * not show (release, also accepted with MPV_RENDER_PARAM_SKIP_RENDERING)

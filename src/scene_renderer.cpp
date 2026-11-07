@@ -222,6 +222,8 @@ void SceneRenderer::setDirectVideo(DirectVideo* direct) {
   direct_ = direct;
   if (direct && direct->tp10SetLayout() && pipelines_.initTp10(direct->tp10SetLayout()))
     direct->enableTp10(pipelines_.sampler(Pipelines::kVideoBase));
+  if (direct && direct->q08cSetLayouts() && pipelines_.initQ08c(direct->q08cSetLayouts()))
+    direct->enableQ08c();
 }
 
 void SceneRenderer::timestamp(GpuContext::FrameSlot& slot, Timestamp t,
@@ -362,18 +364,22 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   const Pipelines::SamplerId sampler =
       v.mipmaps && !yuv ? Pipelines::kVideoTrilinear : Pipelines::kVideoBase;
   const Texture* chroma = yuv ? &yuv->chroma() : nullptr;
-  // A Q10C frame: its TP10 descriptors, for the pipelines for them (no
-  // sharpening: VideoPlayer::setSharpened has mpv convert frames then).
+  // A Q10C frame: its TP10 descriptors, for the pipelines for them; a Q08C
+  // one: its image, for those of its chroma siting (no sharpening: with it
+  // on, VideoPlayer::setSharpened has mpv convert frames).
   const bool tp10 = yuv && yuv->tp10() && direct_;
+  const int q08c = yuv && direct_ ? yuv->q08c() : -1;
   auto bind = [&](VkPipeline pipeline) {
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     if (tp10) direct_->bindTp10(cmd, pipelines_.tp10Layout(), *yuv);
+    else if (q08c >= 0) pipelines_.bindQ08c(cmd, q08c, *v.texture);
     else pipelines_.bindTextures(cmd, v.texture, sampler, chroma);
   };
   // The general pipelines.
   auto general = [&](bool screen, bool maskFirst) {
-    return tp10 ? pipelines_.tp10(screen, maskFirst, plainEye_)
-                : pipeline(Pipelines::videoPipeline(screen, maskFirst, sharpen > 0.0f));
+    if (tp10) return pipelines_.tp10(screen, maskFirst, plainEye_);
+    if (q08c >= 0) return pipelines_.q08c(q08c, screen, maskFirst, plainEye_);
+    return pipeline(Pipelines::videoPipeline(screen, maskFirst, sharpen > 0.0f));
   };
 
   if (v.format.projection == Projection::Flat) {
@@ -469,7 +475,11 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
     const auto family = projection >= 3   ? Pipelines::kCubemap
                         : projection == 2 ? Pipelines::kFisheye
                                           : Pipelines::kEquirect;
-    const auto source = tp10 ? Pipelines::kTp10 : yuv ? Pipelines::kPlanes : Pipelines::kImage;
+    const auto source =
+        tp10        ? Pipelines::kTp10
+        : q08c >= 0 ? static_cast<Pipelines::SurroundSource>(Pipelines::kYcbcr + q08c)
+        : yuv       ? Pipelines::kPlanes
+                    : Pipelines::kImage;
     const auto cut = maskFirst            ? Pipelines::kPackedMask
                      : flags & kChromaKey ? Pipelines::kGreenScreen
                                           : Pipelines::kUncut;

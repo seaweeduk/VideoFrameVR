@@ -20,16 +20,20 @@ namespace {
 
 constexpr uint32_t kFourccP010 = 0x30313050;  // DRM_FORMAT_P010
 constexpr uint32_t kFourccNv12 = 0x3231564e;  // DRM_FORMAT_NV12
-constexpr uint64_t kModifierQcomCompressed = 0x0500000000000001ull;  // Q10C with P010
+constexpr uint64_t kModifierQcomCompressed = 0x0500000000000001ull;  // Q10C with P010, Q08C with NV12
 // Q10C frames: TP10 descriptors read wrongly past 2^24 samples. Read the
 // planes in bands of rows, at most this many for luma (video.glsl's tp10Bands).
 constexpr unsigned kTp10MaxSamples = 1u << 24;
 constexpr unsigned kTp10Bands = 8;
 constexpr VkFormat kTp10Carrier = VK_FORMAT_A2B10G10R10_UNORM_PACK32;  // 4 bytes, 3 samples
+// A Q08C buffer's image: sampled, and copied from by still().
+constexpr VkFormat kQ08cFormat = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+constexpr VkImageUsageFlags kQ08cUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 // Imports kept for buffers no frame uses, for when mpv hands them out again
 // (a closed decoder session's go at once).
 constexpr double kKeepUnused = 5.0;  // seconds
 constexpr size_t kMaxBuffers = 32;  // a decoder's own buffers: H.264 has 20
+static_assert(kQ08cSitings == VIDEO_EXPORT_CHROMA_OTHER, "a Y'CbCr conversion per siting named");
 // still.frag's push constants.
 struct StillPush {
   float size[2];
@@ -91,14 +95,15 @@ bool tp10Band(uint32_t* d, unsigned texels, unsigned rows, bool chroma, unsigned
 }  // namespace
 
 // A converter or decoder buffer, imported once: its two planes as images,
-// or a Q10C one's as TP10 carriers with their descriptors in slot of the
-// descriptor buffer.
+// a Q10C one's as TP10 carriers with their descriptors in slot of the
+// descriptor buffer, or a Q08C one as one image (image[0], view[0]).
 struct DirectBuffer {
   dev_t dev = 0;
   ino_t ino = 0;
   uint32_t format = 0;
   uint64_t modifier = 0;
   bool tp10 = false;
+  int q08c = -1;  // a Q08C buffer: the chroma siting its view's Y'CbCr conversion is for
   int slot = -1;
   int width = 0, height = 0;
   uint32_t offset[2] = {}, pitch[2] = {};
@@ -196,20 +201,29 @@ DirectVideo::~DirectVideo() {
   VkDevice d = gpu_->device();
   std::vector<VkSemaphore> semaphores;
   for (const Semaphore& s : semaphores_) semaphores.push_back(s.semaphore);
-  VkDescriptorSetLayout layout = tp10SetLayout_;
+  std::vector<VkDescriptorSetLayout> layouts(std::begin(q08cSetLayout_), std::end(q08cSetLayout_));
+  layouts.push_back(tp10SetLayout_);
+  std::vector<VkSampler> samplers(std::begin(q08cSampler_), std::end(q08cSampler_));
+  std::vector<VkSamplerYcbcrConversion> conversions(std::begin(q08cConversion_), std::end(q08cConversion_));
   VkBuffer buffer = tp10Buffer_;
   VkDeviceMemory memory = tp10Memory_;
   VkPipelineLayout stillLayout = stillLayout_;
   std::vector<VkPipeline> pipelines(std::begin(stillPipeline_), std::end(stillPipeline_));
   std::vector<VkRenderPass> passes(std::begin(stillPass_), std::end(stillPass_));
-  gpu_->retire([d, semaphores, layout, buffer, memory, stillLayout, pipelines, passes] {
+  gpu_->retire([d, semaphores, layouts, samplers, conversions, buffer, memory, stillLayout, pipelines,
+                passes] {
     for (VkPipeline p : pipelines)
       if (p) vkDestroyPipeline(d, p, nullptr);
     for (VkRenderPass p : passes)
       if (p) vkDestroyRenderPass(d, p, nullptr);
     if (stillLayout) vkDestroyPipelineLayout(d, stillLayout, nullptr);
     for (VkSemaphore s : semaphores) vkDestroySemaphore(d, s, nullptr);
-    if (layout) vkDestroyDescriptorSetLayout(d, layout, nullptr);
+    for (VkDescriptorSetLayout l : layouts)
+      if (l) vkDestroyDescriptorSetLayout(d, l, nullptr);
+    for (VkSampler s : samplers)
+      if (s) vkDestroySampler(d, s, nullptr);
+    for (VkSamplerYcbcrConversion c : conversions)
+      if (c) vkDestroySamplerYcbcrConversion(d, c, nullptr);
     if (buffer) vkDestroyBuffer(d, buffer, nullptr);
     if (memory) vkFreeMemory(d, memory, nullptr);
   });
@@ -235,6 +249,8 @@ bool DirectVideo::init(GpuContext& gpu) {
   gpu_ = &gpu;
   if (gpu.caps().tp10 && !initTp10())
     std::printf("Video: Main 10 frames cannot be sampled as the decoder writes them\n");
+  if (gpu.caps().q08c && !initQ08c())
+    std::printf("Video: 8-bit frames cannot be sampled as the decoder writes them\n");
   std::printf("Video: decoded frames go straight to the eyes where they can (%s)\n",
               semaphoreImport_ ? "GPU waits" : "CPU waits");
   return true;
@@ -315,6 +331,108 @@ void DirectVideo::enableTp10(VkSampler sampler) {
   tp10Sampler_ = sampler;
   std::printf("Video: Main 10 frames go to the eyes as the decoder wrote them (TP10)\n");
   if (!initStill()) std::printf("Video: a Main 10 frame cannot be copied; seeks keep it until the next\n");
+}
+
+// Q08C frames, each one NV12 image in the decoder's compressed layout, as
+// the converter imports them (dmabuf_ubwc.c). A Y'CbCr conversion only
+// places the chroma (identity model, full range: the colour stays the
+// shaders'), where the frame's siting has it: one for each siting, with its
+// immutable sampler (bilinear, one level) and push set layout. Only if the
+// GPU can import that image and sample it so; else mpv converts them.
+bool DirectVideo::initQ08c() {
+  if (!q08cSupported()) return false;
+  VkDevice d = gpu_->device();
+  for (int i = 0; i < kQ08cSitings; ++i) {
+    VkSamplerYcbcrConversionCreateInfo conversion{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO};
+    conversion.format = kQ08cFormat;
+    conversion.ycbcrModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_RGB_IDENTITY;
+    conversion.ycbcrRange = VK_SAMPLER_YCBCR_RANGE_ITU_FULL;
+    conversion.xChromaOffset =
+        i == VIDEO_EXPORT_CHROMA_CENTER ? VK_CHROMA_LOCATION_MIDPOINT : VK_CHROMA_LOCATION_COSITED_EVEN;
+    conversion.yChromaOffset =
+        i == VIDEO_EXPORT_CHROMA_TOP_LEFT ? VK_CHROMA_LOCATION_COSITED_EVEN : VK_CHROMA_LOCATION_MIDPOINT;
+    conversion.chromaFilter = VK_FILTER_LINEAR;
+    if (!gpu_->check(vkCreateSamplerYcbcrConversion(d, &conversion, nullptr, &q08cConversion_[i]),
+                     "Q08C conversion"))
+      return false;
+    VkSamplerYcbcrConversionInfo use{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO};
+    use.conversion = q08cConversion_[i];
+    VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    sampler.pNext = &use;
+    sampler.magFilter = sampler.minFilter = VK_FILTER_LINEAR;
+    sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    if (!gpu_->check(vkCreateSampler(d, &sampler, nullptr, &q08cSampler_[i]), "Q08C sampler")) return false;
+    // Binding 1: the scene layout's second texture, which the video shaders
+    // declare but don't read for these frames (Pipelines::bindQ08c).
+    VkDescriptorSetLayoutBinding bindings[2] = {};
+    for (uint32_t b = 0; b < 2; ++b) {
+      bindings[b].binding = b;
+      bindings[b].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      bindings[b].descriptorCount = 1;
+      bindings[b].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    }
+    bindings[0].pImmutableSamplers = &q08cSampler_[i];
+    VkDescriptorSetLayoutCreateInfo setInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    setInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+    setInfo.bindingCount = 2;
+    setInfo.pBindings = bindings;
+    if (!gpu_->check(vkCreateDescriptorSetLayout(d, &setInfo, nullptr, &q08cSetLayout_[i]),
+                     "Q08C set layout"))
+      return false;
+  }
+  q08cLayouts_ = true;
+  return true;
+}
+
+// The format's features for the decoder's modifier (both chroma placements,
+// the sampler's and the conversion's linear filters, the still's copy), and the import of
+// such an image as importQ08c() makes it, up to the largest size it allows.
+bool DirectVideo::q08cSupported() {
+  VkPhysicalDevice physical = gpu_->physicalDevice();
+  VkDrmFormatModifierPropertiesListEXT list{VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT};
+  VkFormatProperties2 format{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
+  format.pNext = &list;
+  vkGetPhysicalDeviceFormatProperties2(physical, kQ08cFormat, &format);
+  std::vector<VkDrmFormatModifierPropertiesEXT> modifiers(list.drmFormatModifierCount);
+  list.pDrmFormatModifierProperties = modifiers.data();
+  vkGetPhysicalDeviceFormatProperties2(physical, kQ08cFormat, &format);
+  const VkFormatFeatureFlags need =
+      VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+      VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+      VK_FORMAT_FEATURE_MIDPOINT_CHROMA_SAMPLES_BIT | VK_FORMAT_FEATURE_COSITED_CHROMA_SAMPLES_BIT |
+      VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT;
+  if (std::none_of(modifiers.begin(), modifiers.begin() + list.drmFormatModifierCount, [&](const auto& m) {
+        return m.drmFormatModifier == kModifierQcomCompressed && m.drmFormatModifierPlaneCount == 2 &&
+               (m.drmFormatModifierTilingFeatures & need) == need;
+      }))
+    return false;
+  VkPhysicalDeviceImageDrmFormatModifierInfoEXT modifier{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT};
+  modifier.drmFormatModifier = kModifierQcomCompressed;
+  modifier.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  VkPhysicalDeviceExternalImageFormatInfo external{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO};
+  external.pNext = &modifier;
+  external.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+  VkPhysicalDeviceImageFormatInfo2 info{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2};
+  info.pNext = &external;
+  info.format = kQ08cFormat;
+  info.type = VK_IMAGE_TYPE_2D;
+  info.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
+  info.usage = kQ08cUsage;
+  VkExternalImageFormatProperties importable{VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES};
+  VkImageFormatProperties2 image{VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2};
+  image.pNext = &importable;
+  if (vkGetPhysicalDeviceImageFormatProperties2(physical, &info, &image) != VK_SUCCESS ||
+      !(importable.externalMemoryProperties.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT))
+    return false;
+  q08cMaxExtent_ = image.imageFormatProperties.maxExtent;
+  return true;
+}
+
+void DirectVideo::enableQ08c() {
+  q08c_ = true;
+  std::printf("Video: 8-bit frames go to the eyes as the decoder wrote them (Q08C)\n");
 }
 
 // still()'s draw of a Q10C frame's planes: one pass for each, each leaving
@@ -411,8 +529,7 @@ void DirectVideo::setTvGamma(bool tvGamma) {
 bool DirectVideo::supported(const video_export& e) {
   return e.bt709_primaries && e.sdr && e.matrix != VIDEO_EXPORT_MATRIX_OTHER &&
          (e.drm_format == kFourccP010 || e.drm_format == kFourccNv12) && e.width > 0 &&
-         e.height > 0 &&
-         (e.modifier == 0 || (e.modifier == kModifierQcomCompressed && e.drm_format == kFourccP010));
+         e.height > 0 && (e.modifier == 0 || e.modifier == kModifierQcomCompressed);
 }
 
 // mpv's conversion (csputils.c) for these frames: limited or full range in
@@ -445,20 +562,31 @@ void DirectVideo::computeColor(DirectFrame& f) const {
   c.matrix[0] = kr;
   c.matrix[1] = kb;
   c.tvGamma = tvGamma_;
-  // The chroma plane's texel centres sit between each two luma ones (what
-  // plain sampling assumes) or on the left (and top) one.
+  placeChroma(f);
+}
+
+// The chroma plane's texel centres sit between each two luma ones (what
+// plain sampling assumes) or on the left (and top) one; a Q08C frame's
+// Y'CbCr sampler places them itself.
+void DirectVideo::placeChroma(DirectFrame& f) {
   const bool left = f.siting_ == VIDEO_EXPORT_CHROMA_LEFT || f.siting_ == VIDEO_EXPORT_CHROMA_TOP_LEFT;
   const bool top = f.siting_ == VIDEO_EXPORT_CHROMA_TOP_LEFT;
-  c.matrix[2] = left ? 0.25f / f.chroma_.width : 0.0f;
-  c.matrix[3] = top ? 0.25f / f.chroma_.height : 0.0f;
+  f.color_.matrix[2] = left && f.q08c_ < 0 ? 0.25f / f.chroma_.width : 0.0f;
+  f.color_.matrix[3] = top && f.q08c_ < 0 ? 0.25f / f.chroma_.height : 0.0f;
 }
 
 DirectBuffer* DirectVideo::findBuffer(const video_export& e) {
   struct stat st;
   if (fstat(e.fd, &st) != 0) return nullptr;
+  // A Q08C frame's siting: its Y'CbCr conversion (others are centred, as plain sampling has them).
+  const bool q08c = e.modifier == kModifierQcomCompressed && e.drm_format == kFourccNv12;
+  const int siting = !q08c ? -1
+                     : e.chroma == VIDEO_EXPORT_CHROMA_LEFT || e.chroma == VIDEO_EXPORT_CHROMA_TOP_LEFT
+                         ? e.chroma
+                         : VIDEO_EXPORT_CHROMA_CENTER;
   for (auto& b : buffers_)
     if (b->dev == st.st_dev && b->ino == st.st_ino && b->format == e.drm_format &&
-        b->modifier == e.modifier &&
+        b->modifier == e.modifier && b->q08c == siting &&
         b->width == e.width && b->height == e.height && b->size == e.buffer_size &&
         std::equal(b->offset, b->offset + 2, e.offset) && std::equal(b->pitch, b->pitch + 2, e.pitch))
       return b.get();
@@ -477,14 +605,17 @@ DirectBuffer* DirectVideo::findBuffer(const video_export& e) {
   b->ino = st.st_ino;
   b->format = e.drm_format;
   b->modifier = e.modifier;
-  b->tp10 = e.modifier == kModifierQcomCompressed;
+  b->tp10 = e.modifier == kModifierQcomCompressed && !q08c;
+  b->q08c = siting;
   b->width = e.width;
   b->height = e.height;
   b->size = e.buffer_size;
   std::copy(e.offset, e.offset + 2, b->offset);
   std::copy(e.pitch, e.pitch + 2, b->pitch);
   b->session = __atomic_load_n(&e.session, __ATOMIC_ACQUIRE);
-  bool ok = b->tp10 ? importTp10(*b, e.fd) : importPlane(*b, 0, e.fd) && importPlane(*b, 1, e.fd);
+  bool ok = b->tp10   ? importTp10(*b, e.fd)
+            : q08c     ? importQ08c(*b, e.fd)
+                       : importPlane(*b, 0, e.fd) && importPlane(*b, 1, e.fd);
   if (!ok) {
     destroyBuffer(b);
     return nullptr;
@@ -688,6 +819,78 @@ bool DirectVideo::importTp10(DirectBuffer& b, int fd) {
   return true;
 }
 
+// A Q08C buffer as one NV12 image in the compressed layout, its planes (each
+// with its compression metadata first) where the decoder put them, viewed
+// through the Y'CbCr conversion of its siting.
+bool DirectVideo::importQ08c(DirectBuffer& b, int fd) {
+  if (!q08c_ || b.width > static_cast<int>(q08cMaxExtent_.width) ||
+      b.height > static_cast<int>(q08cMaxExtent_.height))
+    return false;
+  VkDevice d = gpu_->device();
+  VkSubresourceLayout layouts[2] = {};
+  for (int i = 0; i < 2; ++i) {
+    layouts[i].offset = b.offset[i];
+    layouts[i].rowPitch = b.pitch[i];
+  }
+  VkImageDrmFormatModifierExplicitCreateInfoEXT modifier{
+      VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT};
+  modifier.drmFormatModifier = kModifierQcomCompressed;
+  modifier.drmFormatModifierPlaneCount = 2;
+  modifier.pPlaneLayouts = layouts;
+  VkExternalMemoryImageCreateInfo external{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
+  external.pNext = &modifier;
+  external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+  VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+  info.pNext = &external;
+  info.imageType = VK_IMAGE_TYPE_2D;
+  info.format = kQ08cFormat;
+  info.extent = {static_cast<uint32_t>(b.width), static_cast<uint32_t>(b.height), 1};
+  info.mipLevels = 1;
+  info.arrayLayers = 1;
+  info.samples = VK_SAMPLE_COUNT_1_BIT;
+  info.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
+  info.usage = kQ08cUsage;
+  if (!gpu_->check(vkCreateImage(d, &info, nullptr, &b.image[0]), "creating an 8-bit frame's image"))
+    return false;
+  VkMemoryRequirements req;
+  vkGetImageMemoryRequirements(d, b.image[0], &req);
+  VkMemoryFdPropertiesKHR fdProps{VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR};
+  if (req.size > b.size ||
+      getFdProperties_(d, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, fd, &fdProps) != VK_SUCCESS) {
+    std::fprintf(stderr, "Video: cannot import an 8-bit frame (%llu of %llu bytes)\n",
+                 static_cast<unsigned long long>(req.size), static_cast<unsigned long long>(b.size));
+    return false;
+  }
+  const uint32_t type = gpu_->memoryType(req.memoryTypeBits & fdProps.memoryTypeBits, 0);
+  const int own = type == UINT32_MAX ? -1 : dup(fd);
+  if (own < 0) return false;
+  VkImportMemoryFdInfoKHR import{VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR};
+  import.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+  import.fd = own;
+  VkMemoryDedicatedAllocateInfo dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
+  dedicated.image = b.image[0];
+  import.pNext = &dedicated;
+  VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+  alloc.pNext = &import;
+  alloc.allocationSize = b.size;
+  alloc.memoryTypeIndex = type;
+  if (!gpu_->check(vkAllocateMemory(d, &alloc, nullptr, &b.memory[0]), "importing an 8-bit frame")) {
+    close(own);
+    return false;
+  }
+  if (!gpu_->check(vkBindImageMemory(d, b.image[0], b.memory[0], 0), "binding an 8-bit frame's memory"))
+    return false;
+  VkSamplerYcbcrConversionInfo use{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO};
+  use.conversion = q08cConversion_[b.q08c];
+  VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+  view.pNext = &use;
+  view.image = b.image[0];
+  view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  view.format = kQ08cFormat;
+  view.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+  return gpu_->check(vkCreateImageView(d, &view, nullptr, &b.view[0]), "creating an 8-bit frame's view");
+}
+
 void DirectVideo::destroyBuffer(std::unique_ptr<DirectBuffer>& b) {
   if (!b) return;
   if (b->slot >= 0) tp10Slots_[static_cast<size_t>(b->slot)] = false;
@@ -726,10 +929,11 @@ DirectFrame* DirectVideo::accept(video_export& e) {
   f->fullRange_ = e.full_range;
   f->siting_ = e.chroma;
   f->tp10_ = b->tp10;
+  f->q08c_ = b->q08c;
   for (int i = 0; i < 2; ++i) {
     Texture& t = i == 0 ? f->luma_ : f->chroma_;
-    t.image = b->image[i];
-    t.view = b->view[i];
+    t.image = b->image[b->q08c >= 0 ? 0 : i];
+    t.view = b->view[b->q08c >= 0 ? 0 : i];
     t.width = i == 0 ? b->width : (b->width + 1) / 2;
     t.height = i == 0 ? b->height : (b->height + 1) / 2;
     t.yuv = f.get();
@@ -861,6 +1065,7 @@ DirectFrame* DirectVideo::still(DirectFrame& frame) {
     t.height = static_cast<int>(stillPlanes_[i].height);
     t.yuv = &s;
   }
+  placeChroma(s);  // two planes, whatever the source
   stillSource_ = &frame;
   pin(frame);
   return &s;
@@ -896,45 +1101,50 @@ void DirectVideo::recordStillDraw(VkCommandBuffer cmd) {
 }
 
 // After the acquires: the source's planes into the still's, both left as the
-// eye passes and the release barriers expect them.
+// eye passes and the release barriers expect them. A Q08C source is one
+// image, copied from plane by plane in the general layout it stays in.
 void DirectVideo::recordStillCopy(VkCommandBuffer cmd) {
   if (!stillSource_ || !stillSource_->inFrame_) return;
   if (stillSource_->tp10_) return recordStillDraw(cmd);
   DirectBuffer& b = *stillSource_->buffer_;
-  VkImageMemoryBarrier before[4] = {};
-  VkImageMemoryBarrier after[4] = {};
-  for (int i = 0; i < 2; ++i) {
-    for (VkImageMemoryBarrier* m : {&before[i], &before[2 + i], &after[i], &after[2 + i]}) {
-      m->sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-      m->srcQueueFamilyIndex = m->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      m->subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    }
-    before[i].image = after[i].image = b.image[i];
-    before[i].oldLayout = after[i].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    before[i].newLayout = after[i].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    before[i].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    after[i].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    after[i].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    before[2 + i].image = after[2 + i].image = stillPlanes_[i].image;
-    before[2 + i].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    before[2 + i].newLayout = after[2 + i].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    before[2 + i].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    after[2 + i].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    after[2 + i].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    after[2 + i].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-  }
+  const bool q08c = b.q08c >= 0;
+  std::vector<VkImageMemoryBarrier> before, after;
+  // image from layout `from` to `copy` for the copy's `access`, then to `to`.
+  auto add = [&](VkImage image, VkImageLayout from, VkImageLayout copy, VkImageLayout to,
+                 VkAccessFlags access) {
+    VkImageMemoryBarrier m{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    m.srcQueueFamilyIndex = m.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    m.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    m.image = image;
+    m.oldLayout = from;
+    m.newLayout = copy;
+    m.dstAccessMask = access;
+    before.push_back(m);
+    m.oldLayout = copy;
+    m.newLayout = to;
+    m.srcAccessMask = access;
+    m.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    after.push_back(m);
+  };
+  const VkImageLayout shown = q08c ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  const VkImageLayout read = q08c ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+  for (int i = 0; i < (q08c ? 1 : 2); ++i) add(b.image[i], shown, read, shown, VK_ACCESS_TRANSFER_READ_BIT);
+  for (const GpuImage& plane : stillPlanes_)
+    add(plane.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT);
   // Earlier submissions may still sample the still's last contents.
   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
-                       nullptr, 0, nullptr, 4, before);
+                       nullptr, 0, nullptr, static_cast<uint32_t>(before.size()), before.data());
   for (int i = 0; i < 2; ++i) {
     VkImageCopy region{};
     region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    if (q08c) region.srcSubresource.aspectMask = i == 0 ? VK_IMAGE_ASPECT_PLANE_0_BIT : VK_IMAGE_ASPECT_PLANE_1_BIT;
     region.extent = {stillPlanes_[i].width, stillPlanes_[i].height, 1};
-    vkCmdCopyImage(cmd, b.image[i], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stillPlanes_[i].image,
+    vkCmdCopyImage(cmd, b.image[q08c ? 0 : i], read, stillPlanes_[i].image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
   }
   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
-                       nullptr, 0, nullptr, 4, after);
+                       nullptr, 0, nullptr, static_cast<uint32_t>(after.size()), after.data());
 }
 
 void DirectVideo::useInFrame(const DirectFrame& frame) {
@@ -948,18 +1158,20 @@ void DirectVideo::useInFrame(const DirectFrame& frame) {
 // Each submission takes the planes from the converter's side and gives them
 // back, as GL's shared images are handed over per frame. Linear images have
 // no compression state, so these barriers cost nothing; the decoder's
-// compressed ones stay in the general layout, as the converter reads them.
+// compressed ones stay in the general layout, as the converter reads them
+// (a Q08C buffer is one image).
 void DirectVideo::addBarriers(std::vector<VkImageMemoryBarrier>& list, DirectFrame& f, bool acquire) {
   if (!f.buffer_) return;  // a still: the app's own images, always ready to sample
-  for (int i = 0; i < 2; ++i) {
-    DirectBuffer& b = *f.buffer_;
+  DirectBuffer& b = *f.buffer_;
+  const bool compressed = b.tp10 || b.q08c >= 0;
+  for (int i = 0; i < (b.q08c >= 0 ? 1 : 2); ++i) {
     VkImageMemoryBarrier m{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     m.image = b.image[i];
     m.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     m.oldLayout = m.newLayout =
-        b.tp10 ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        compressed ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     if (acquire) {
-      if (!b.laidOut[i] && !b.tp10) m.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+      if (!b.laidOut[i] && !compressed) m.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
       b.laidOut[i] = true;
       m.srcQueueFamilyIndex = foreign_;
       m.dstQueueFamilyIndex = gpu_->queueFamily();

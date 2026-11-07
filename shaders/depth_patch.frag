@@ -4,8 +4,8 @@
 
 // DepthEstimator's patch (depth_estimator.cpp, kFragment) from a decoded
 // frame mpv handed out, which stays out of GL (DirectDepth): the same
-// lookups and results, from its two planes, or (TP10) a Q10C frame's TP10
-// descriptors (video.glsl).
+// lookups and results, from its two planes, (TP10) a Q10C frame's TP10
+// descriptors, or (YCBCR) a Q08C frame's one image (video.glsl).
 
 #include "video.glsl"
 
@@ -16,10 +16,19 @@ uint drawFlags() { return 0u; }
 #define pictureSize() videoSize(tp10Bands[0], chromaTex)
 #else
 layout(set = 0, binding = 0) uniform sampler2D lumaTex;
-#define lumaAt(p) textureLod(lumaTex, p, 0.0).r
 #define pictureSize() vec2(textureSize(lumaTex, 0))
 #endif
+#ifdef YCBCR
+// Both planes through the Y'CbCr sampler (video.glsl's videoTap): g = Y, b = Cb, r = Cr.
+#define lumaAt(p) textureLod(lumaTex, p, 0.0).g
+#define chromaAt(p) textureLod(lumaTex, p, 0.0).br
+#else
 layout(set = 0, binding = 1) uniform sampler2D chromaTex;
+#ifndef TP10
+#define lumaAt(p) textureLod(lumaTex, p, 0.0).r
+#endif
+#define chromaAt(p) textureLod(chromaTex, p + u.yuvMatrix.zw, 0.0).rg
+#endif
 
 // DirectDepth::Push.
 layout(push_constant) uniform Push {
@@ -46,7 +55,7 @@ const int kMaxTaps = 8;
 
 vec3 yuvTexel(vec2 p) {
   float y = lumaAt(p) * u.yuvRange.x + u.yuvRange.y;
-  vec2 c = textureLod(chromaTex, p + u.yuvMatrix.zw, 0.0).rg * u.yuvRange.z + u.yuvRange.w;
+  vec2 c = chromaAt(p) * u.yuvRange.z + u.yuvRange.w;
   float kr = u.yuvMatrix.x, kb = u.yuvMatrix.y, kg = 1.0 - kr - kb;
   vec3 e = clamp(vec3(y + 2.0 * (1.0 - kr) * c.y,
                       y - (2.0 * kb * (1.0 - kb) * c.x + 2.0 * kr * (1.0 - kr) * c.y) / kg,

@@ -169,6 +169,7 @@ bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, bool timing
   }
   mpv_set_option_string(mpv_, "vo", "libmpv");
   mpv_set_option_string(mpv_, "hwdec", hwdec.c_str());
+  v4l2_ = hwdec == "v4l2m2m";
   if (hwdec == "v4l2m2m-copy" || hwdec == "v4l2m2m") {
     if (kStandaloneHeadset && decoderQueue) {
       // V4L2 calls can block mpv's playback core past a frame's deadline.
@@ -362,7 +363,7 @@ void VideoPlayer::load(const std::string& path, double start) {
   loading_ = true;
   failed_ = false;
   playback_.title.clear();  // "Loading …" until this file's title, not the last one's
-  exportRefused_ = q10cRefused_ = false;
+  exportRefused_ = compressedRefused_ = false;
   fileLoaded_ = false;
   newVideoSized_ = false;
   loadRestarted_ = false;
@@ -1137,6 +1138,7 @@ bool VideoPlayer::updateVideoSize(const mpv_node& params, bool preparing) {
 void VideoPlayer::setMipmaps(bool enabled) {
   if (enabled == mipmaps_) return;
   mipmaps_ = enabled;
+  updateCapture();
   std::printf("Video sampling: %s\n",
               mipmaps_ ? "trilinear mipmaps" : "full-size level, over each pixel's footprint");
   // Paused, no new frame would make them; the scene samples them from now on.
@@ -1201,6 +1203,27 @@ void VideoPlayer::returnFrames() {
   };
   mpv_render_context_render(render_, params);
   export_.release_count = 0;
+}
+
+void VideoPlayer::setDirectVideo(DirectVideo* direct) {
+  direct_ = direct;
+  updateCapture();
+}
+
+void VideoPlayer::setSharpened(bool sharpened) {
+  sharpened_ = sharpened;
+  updateCapture();
+}
+
+// Q08C frames only pay where the eyes sample them: those mpv draws (mipmaps,
+// sharpening) each go through the converter first. A change applies from the
+// next decoder (another file, a seek that reopens it); until then the video
+// keeps its capture, and frames the eyes cannot sample take the converter.
+void VideoPlayer::updateCapture() {
+  const bool q08c = v4l2_ && direct_ && direct_->acceptsQ08c() && !mipmaps_ && !sharpened_;
+  if (q08c == q08cCapture_ || !mpv_) return;
+  q08cCapture_ = q08c;
+  setProperty(mpv_, "hwdec-v4l2-q08c", q08c ? "yes" : "no");
 }
 
 void VideoPlayer::dropDirect() {
@@ -1333,7 +1356,8 @@ void VideoPlayer::render() {
     // mpv hands the frame out, else (exported -1) draws nothing: it is drawn
     // below, from mpv's current frame. It only checks the target's size.
     export_.request = 1;
-    export_.accept_q10c = direct_->acceptsQ10c() && !sharpened_ && !q10cRefused_;
+    export_.accept_q10c = direct_->acceptsQ10c() && !sharpened_ && !compressedRefused_;
+    export_.accept_q08c = direct_->acceptsQ08c() && !sharpened_ && !compressedRefused_;
     export_.exported = 0;
     mpv_opengl_fbo fbo{static_cast<int>(video_.backFramebuffer()), width_, height_, GL_SRGB8_ALPHA8};
     mpv_render_param params[] = {{MPV_RENDER_PARAM_OPENGL_FBO, &fbo},
@@ -1353,8 +1377,8 @@ void VideoPlayer::render() {
         if (videoSleep_ == VideoSleep::Seeking && resumeFrameSeen_) resumePictureShown_ = true;
         return;
       }
-      // A decoder's Q10C buffer: converted by mpv from the next frame on.
-      if (export_.modifier != 0) q10cRefused_ = true;
+      // A decoder's Q10C or Q08C buffer: converted by mpv from the next frame on.
+      if (export_.modifier != 0) compressedRefused_ = true;
       else exportRefused_ = true;
     } else if (rendered >= 0 && export_.exported == 2 &&
                ((directCurrent_ && directCurrent_->id() == export_.id) ||

@@ -51,7 +51,9 @@ class Pipelines {
   // surround.frag's common modes (its pipeline constants): a pipeline each,
   // whose per-pixel path has only that mode's code.
   enum SurroundProjection { kEquirect, kFisheye, kCubemap, kProjectionCount };  // 180 or 360; both grids
-  enum SurroundSource { kImage, kPlanes, kTp10, kSourceCount };  // RGBA, YUV planes, a Q10C frame
+  // RGBA, YUV planes, a Q10C frame, a Q08C one (kYcbcr + its chroma siting:
+  // each siting's sampler is in its own set layout).
+  enum SurroundSource { kImage, kPlanes, kTp10, kYcbcr, kSourceCount = kYcbcr + kQ08cSitings };
   // No packed mask or green screen; the packed mask, with transparent output
   // only; a green screen without shrink.
   enum SurroundCut { kUncut, kPackedMask, kGreenScreen, kCutCount };
@@ -91,6 +93,16 @@ class Pipelines {
     return plain && tp10Plain_[i] ? tp10Plain_[i] : tp10_[i];
   }
   VkPipelineLayout tp10Layout() const { return tp10Layout_; }
+  // The same for Q08C decoder frames (DirectVideo), sampled through a Y'CbCr
+  // sampler: a set for each chroma siting, whose immutable sampler is in its
+  // set layout (setLayouts, kQ08cSitings push sets'; binding 1 unused).
+  bool initQ08c(const VkDescriptorSetLayout* setLayouts);
+  VkPipeline q08c(int siting, bool screen, bool maskFirst, bool plain) const {
+    const int i = screen ? 2 : maskFirst ? 1 : 0;
+    return plain && q08cPlain_[siting][i] ? q08cPlain_[siting][i] : q08c_[siting][i];
+  }
+  // Pushes a Q08C frame's image for the pipelines of its siting.
+  void bindQ08c(VkCommandBuffer cmd, int siting, const Texture& frame) const;
   VkPipeline surround(SurroundProjection projection, SurroundSource source, SurroundCut cut,
                       bool plain) const {
     const VkPipeline p = surround_[1][projection][source][cut];
@@ -142,6 +154,12 @@ class Pipelines {
   // failed (those made are kept, for the destructor).
   bool createAll(const std::vector<Job>& jobs);
   bool createDummy();
+  // Makes decoder frames' own layout (setLayout and the same push constants)
+  // and adds their general pipelines: the surround, its mask-first version
+  // and the screen.
+  bool addDirect(std::vector<Job>& jobs, VkDescriptorSetLayout setLayout, const Desc (&descs)[3],
+                 const char* const (&names)[3], VkPipelineLayout& layout,
+                 VkPipeline (&pipelines)[3], VkPipeline (&plain)[3]);
 
   GpuContext* gpu_ = nullptr;
   VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
@@ -155,6 +173,8 @@ class Pipelines {
   VkRenderPass eyePass_ = VK_NULL_HANDLE, plainEyePass_ = VK_NULL_HANDLE;
   VkPipelineLayout tp10Layout_ = VK_NULL_HANDLE;
   VkPipeline tp10_[3] = {}, tp10Plain_[3] = {};
+  VkPipelineLayout q08cLayout_[kQ08cSitings] = {};
+  VkPipeline q08c_[kQ08cSitings][3] = {}, q08cPlain_[kQ08cSitings][3] = {};
   VkPipeline surround_[2][kProjectionCount][kSourceCount][kCutCount] = {};  // eye pass, plain one
   VkSampler samplers_[kSamplerCount] = {};
   GpuImage dummyImage_;

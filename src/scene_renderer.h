@@ -247,7 +247,7 @@ class SceneRenderer {
   // passes, when it has an image for the frame.
   void setMirror(MirrorWindow* mirror) { mirror_ = mirror; }
   // Frame: decoded frames sampled from their planes (Texture::yuv), Q10C
-  // ones by the pipelines for them, made here.
+  // and Q08C ones by the pipelines for them, made here.
   void setDirectVideo(DirectVideo* direct);
 
   // Records the frame; `matrices`: the eyes' (XrContext::eye), `time`:

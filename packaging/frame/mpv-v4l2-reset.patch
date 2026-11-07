@@ -12,7 +12,25 @@
  #include "options/m_option.h"
  
  static void init_avctx(struct mp_filter *vd);
-@@ -210,6 +214,11 @@
+@@ -140,6 +144,7 @@
+     char *hwdec_codecs;
+     int hwdec_image_format;
+     int hwdec_extra_frames;
++    bool v4l2_q08c;
+ };
+ 
+ const struct m_sub_options hwdec_conf = {
+@@ -157,6 +162,9 @@
+             {"no", INT_MAX}, {"yes", 1}), M_RANGE(1, INT_MAX),
+             .flags = UPDATE_HWDEC},
+         {"vd-lavc-software-fallback", OPT_REPLACED("hwdec-software-fallback")},
++        // Frame: 8-bit HEVC in the decoder's compressed layout (Q08C), for an
++        // app that samples it. Read as each decoder opens: no reinit.
++        {"hwdec-v4l2-q08c", OPT_BOOL(v4l2_q08c)},
+         {0}
+     },
+     .size = sizeof(struct hwdec_opts),
+@@ -210,6 +218,11 @@
      bool hwdec_failed;
      bool hwdec_notified;
      bool force_eof;
@@ -24,7 +42,7 @@
  
      bool intra_only;
      int framedrop_flags;
-@@ -663,10 +672,23 @@
+@@ -663,10 +676,23 @@
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
  
@@ -51,7 +69,7 @@
      select_and_set_hwdec(vd);
      init_avctx(vd);
  }
-@@ -676,6 +698,8 @@
+@@ -676,6 +702,8 @@
      vd_ffmpeg_ctx *ctx = vd->priv;
  
      uninit_avctx(vd);
@@ -60,7 +78,7 @@
  
      /*
       * Reset attempted hwdecs so that if the hwdec list is reconfigured
-@@ -703,6 +727,8 @@
+@@ -703,6 +731,8 @@
      vd_ffmpeg_ctx *ctx = vd->priv;
      struct vd_lavc_params *lavc_param = ctx->opts;
      struct mp_codec_params *c = ctx->codec;
@@ -69,13 +87,14 @@
  
      m_config_cache_update(ctx->opts_cache);
  
-@@ -718,6 +744,29 @@
+@@ -718,6 +748,33 @@
      if (!lavc_codec)
          return;
  
 +    // 10-bit HEVC requires the private Q10C DRM path, never linear NV12, even
 +    // for CPU copy-back. Main 10 streams with 8-bit pictures decode as 8-bit.
 +    const char *wrapper = lavc_codec->wrapper_name;
++    bool q08c = false;
 +    if (wrapper && strcmp(wrapper, "v4l2m2m") == 0 && c->lav_codecpar) {
 +        const AVPixFmtDescriptor *source = av_pix_fmt_desc_get(c->lav_codecpar->format);
 +        bool high_depth = source && source->comp[0].depth > 8;
@@ -94,12 +113,15 @@
 +        }
 +        if (direct_main10)
 +            ctx->prefer_v4l2_ubwc = true;
++        q08c = ctx->hwdec_opts->v4l2_q08c && lavc_codec->id == AV_CODEC_ID_HEVC &&
++               source && source->comp[0].depth == 8 && !ctx->hwdec.copying &&
++               ctx->hwdec.pix_fmt == AV_PIX_FMT_DRM_PRIME;
 +    }
 +
      const AVCodecDescriptor *desc = avcodec_descriptor_get(lavc_codec->id);
      ctx->intra_only = desc && (desc->props & AV_CODEC_PROP_INTRA_ONLY);
  
-@@ -733,6 +782,26 @@
+@@ -733,6 +790,26 @@
      avctx->codec_id = lavc_codec->id;
      avctx->pkt_timebase = ctx->codec_timebase;
  
@@ -120,13 +142,13 @@
 +            spare += 3;
 +        av_opt_set_int(avctx->priv_data, "capture_spare", spare, 0);
 +    }
-+    if (wrapper && strcmp(wrapper, "v4l2m2m") == 0 && ctx->prefer_v4l2_ubwc)
++    if (wrapper && strcmp(wrapper, "v4l2m2m") == 0 && (ctx->prefer_v4l2_ubwc || q08c))
 +        av_opt_set_int(avctx->priv_data, "capture_ubwc", 1, 0);
 +
      ctx->pic = av_frame_alloc();
      if (!ctx->pic)
          goto error;
-@@ -860,8 +929,18 @@
+@@ -860,8 +937,18 @@
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
  
@@ -147,7 +169,7 @@
      ctx->flushing = false;
      ctx->hwdec_request_reinit = false;
  }
-@@ -894,7 +973,13 @@
+@@ -894,7 +981,13 @@
      mp_free_av_packet(&ctx->avpkt);
      av_buffer_unref(&ctx->cached_hw_frames_ctx);
  
@@ -161,7 +183,7 @@
  
      av_buffer_unref(&ctx->hwdec_dev);
  
-@@ -1132,7 +1217,7 @@
+@@ -1132,7 +1225,7 @@
          reset_avctx(vd);
  }
  
@@ -170,7 +192,7 @@
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
      struct hwdec_opts *hwdec_opts = ctx->hwdec_opts;
-@@ -1141,6 +1226,15 @@
+@@ -1141,6 +1234,15 @@
              ctx->use_hwdec ? " (hardware decoding)" : "");
  
      if (ctx->use_hwdec) {
@@ -186,7 +208,7 @@
          ctx->hwdec_fail_count += 1;
          if (ctx->hwdec_fail_count >= hwdec_opts->software_fallback)
              ctx->hwdec_failed = true;
-@@ -1150,6 +1244,22 @@
+@@ -1150,6 +1252,22 @@
  static int send_packet(struct mp_filter *vd, struct demux_packet *pkt)
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
@@ -209,7 +231,7 @@
      AVCodecContext *avctx = ctx->avctx;
  
      if (ctx->num_requeue_packets && ctx->requeue_packets[0] != pkt)
-@@ -1180,7 +1290,7 @@
+@@ -1180,7 +1298,7 @@
      }
  
      if (ret < 0)
@@ -218,7 +240,7 @@
      return ret;
  }
  
-@@ -1204,6 +1314,8 @@
+@@ -1204,6 +1322,8 @@
  
      if (!avctx || ctx->force_eof)
          return AVERROR_EOF;
@@ -227,7 +249,7 @@
  
      prepare_decoding(vd);
  
-@@ -1211,9 +1323,20 @@
+@@ -1211,9 +1331,20 @@
      if (ctx->num_requeue_packets)
          send_queued_packet(vd);
  
@@ -248,7 +270,7 @@
              // If flushing was initialized earlier and has ended now, make it
              // start over in case we get new packets at some point in the future.
              // This must take the delay queue into account, so avctx returns EOF
-@@ -1223,11 +1346,23 @@
+@@ -1223,11 +1354,23 @@
          } else if (ret == AVERROR(EAGAIN)) {
              // just retry after caller writes a packet
          } else {
@@ -273,7 +295,7 @@
      mp_codec_info_from_av(avctx, ctx->codec);
  
      // If something was decoded successfully, it must return a frame with valid
-@@ -1243,7 +1378,7 @@
+@@ -1243,7 +1386,7 @@
      if (mpi->imgfmt == IMGFMT_CUDA && !mpi->planes[0]) {
          MP_ERR(vd, "CUDA frame without data. This is a FFmpeg bug.\n");
          talloc_free(mpi);
@@ -282,7 +304,7 @@
          return AVERROR_BUG;
      }
  
-@@ -1255,6 +1390,20 @@
+@@ -1255,6 +1398,20 @@
  
      av_frame_unref(ctx->pic);
  
@@ -303,7 +325,7 @@
      MP_TARRAY_APPEND(ctx, ctx->delay_queue, ctx->num_delay_queue, mpi);
      return ret;
  }
-@@ -1315,7 +1464,7 @@
+@@ -1315,7 +1472,7 @@
          if (!res) {
              MP_ERR(vd, "Could not copy back hardware decoded frame.\n");
              ctx->hwdec_fail_count = INT_MAX - 1; // force fallback
@@ -312,7 +334,7 @@
              return AVERROR_UNKNOWN;
          }
      }
-@@ -1391,6 +1540,10 @@
+@@ -1391,6 +1548,10 @@
  
      flush_all(vd);
  
@@ -475,8 +497,8 @@
 +    uint64_t exported_frame;  // vo_frame.frame_id of the last export
 +    uint64_t exported_id;     // and its converter id, until released
 +    uint64_t export_ids;      // never reset when the converter is replaced
-+    // Decoder frames handed out as they are (linear NV12, Q10C), each referenced until
-+    // the app releases its id.
++    // Decoder frames handed out as they are (linear NV12, Q10C, Q08C), each
++    // referenced until the app releases its id.
 +    struct linear_export {
 +        uint64_t id;
 +        struct mp_image *mpi;
@@ -506,7 +528,7 @@
  };
  
  struct native_resource_entry {
-@@ -168,11 +220,452 @@
+@@ -168,11 +220,453 @@
      return 0;
  }
  
@@ -557,8 +579,8 @@
 +// Hands the frame to the app rather than drawing it, if it asked: true then,
 +// nothing drawn; exported -1 if the frame is not one the app can sample (the
 +// app draws it with another call, without request). Compressed frames go
-+// through the Frame's converter, linear NV12 ones (and Q10C ones if the app
-+// samples them, accept_q10c) as the decoder wrote them.
++// through the Frame's converter, linear NV12 ones (and Q10C or Q08C ones if
++// the app samples them, accept_q10c, accept_q08c) as the decoder wrote them.
 +static bool export_frame(struct render_backend *ctx, struct video_export *e,
 +                         struct vo_frame *frame)
 +{
@@ -585,8 +607,9 @@
 +                  src->layers[0].nb_planes == 2;
 +    if (!linear && modifier != DRM_FORMAT_MOD_QCOM_COMPRESSED)
 +        return true;
-+    bool held = linear || (e->accept_q10c && src->layers[0].format == DRM_FORMAT_P010 &&
-+                           src->layers[0].nb_planes == 2);
++    bool held = linear || (src->layers[0].nb_planes == 2 &&
++                           (src->layers[0].format == DRM_FORMAT_P010 ? e->accept_q10c
++                                                                     : e->accept_q08c));
 +    if (p->exported_id && frame->frame_id == p->exported_frame) {
 +        e->exported = 2;  // the app still holds it
 +        e->id = p->exported_id;
@@ -959,7 +982,7 @@
      // Mapping the surface is cheap, better than adding new backend entrypoints.
      struct ra_tex *tex;
      int err = p->context->fns->wrap_fbo(p->context, params, &tex);
-@@ -188,6 +681,9 @@
+@@ -188,6 +682,9 @@
  
      struct ra_fbo target = {.tex = tex, .flip = flip};
      gl_video_render_frame(p->renderer, frame, &target, RENDER_FRAME_DEF);
@@ -969,7 +992,7 @@
      p->context->fns->done_frame(p->context, frame->display_synced);
  
      return 0;
-@@ -221,6 +717,17 @@
+@@ -221,6 +718,17 @@
  {
      struct priv *p = ctx->priv;
  
@@ -987,7 +1010,7 @@
      if (p->renderer)
          gl_video_uninit(p->renderer);
  
-@@ -243,6 +750,10 @@
+@@ -243,6 +751,10 @@
      .resize = resize,
      .get_target_size = get_target_size,
      .render = render,

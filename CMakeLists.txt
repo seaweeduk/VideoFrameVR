@@ -211,14 +211,16 @@ foreach(shader IN ITEMS
   list(APPEND SHADER_HEADERS ${header})
 endforeach()
 # The video shaders again as variants (name:shader:defines, defines joined
-# by +): the screen with sharpening, and for Q10C decoder frames (Pipelines,
-# DirectDepth, DirectVideo's stills). surround.frag's other variants are
-# specialization constants (Pipelines).
+# by +): the screen with sharpening, for Q10C decoder frames (Pipelines,
+# DirectDepth, DirectVideo's stills) and Q08C ones' depth patch (DirectDepth).
+# The other variants of surround.frag and screen.frag are specialization
+# constants (Pipelines).
 foreach(variant
     screen_sharpen:screen.frag:SHARPEN
     surround_tp10:surround.frag:TP10
     screen_tp10:screen.frag:TP10
     depth_patch_tp10:depth_patch.frag:TP10
+    depth_patch_ycbcr:depth_patch.frag:YCBCR
     still_tp10:still.frag:TP10)
   string(REPLACE ":" ";" parts ${variant})
   list(GET parts 0 name)
