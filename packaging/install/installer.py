@@ -298,9 +298,13 @@ def require_steam():
 
 
 def in_steam():
-    try:
-        if steam_client.available():
+    if steam_client.available():
+        try:
             return steam_client.find(LAUNCHER) is not None
+        except Exception as error:
+            # Steam saves shortcuts.vdf when a shortcut changes, so it's the next best answer.
+            log("Steam shortcut lookup through Steam failed: " + str(error))
+    try:
         return steam.find_shortcut(STEAM, None, LAUNCHER)[1] is not None
     except Exception as error:
         log("Steam shortcut lookup failed: " + str(error))
