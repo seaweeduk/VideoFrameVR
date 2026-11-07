@@ -55,6 +55,7 @@
 #include "video_player.h"
 #include "vr_input.h"
 #include "vr_space.h"
+#include "whats_new.h"
 #include "xmath.h"
 #include "xr_context.h"
 
@@ -583,6 +584,7 @@ int run(GLFWwindow* window, const Options& opts) {
   // the files it looks for. A video to play puts it off to the next start;
   // --first-run shows it on any profile, which it leaves alone until it ends.
   const bool setupForced = opts.firstRun;
+  const bool freshProfile = newProfile();  // for What's new below
   SetupChoices setupChoices;
   bool showSetup = setupForced;
   if (!setupForced && setupDue()) {
@@ -631,6 +633,14 @@ int run(GLFWwindow* window, const Options& opts) {
                 settings.refreshRate);
   else if (kStandaloneHeadset)
     std::printf("Refresh rate: not started from Steam, left to SteamVR\n");
+  // What's new (whats_new.h): the notes since the version last seen, shown
+  // as the menu first opens; closing them counts this version as seen
+  // (markVersionSeen, then saveSettings). With none to show, it counts now.
+  WhatsNewLaunch whatsNew = whatsNewAtLaunch(freshProfile, settings.versionSeen, settings.showWhatsNew);
+  if (whatsNew.seenNow && markVersionSeen(settings.versionSeen)) saveSettings(settings);
+  if (!whatsNew.releases.empty())
+    std::printf("What's new: %zu release(s) to show, newest %s\n", whatsNew.releases.size(),
+                whatsNew.releases.front().version.c_str());
   auto chosenResolution = [&] {
     return resolutionStops.empty() ? settings.videoResolution : settings.videoResolutionPixels;
   };

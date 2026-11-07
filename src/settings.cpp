@@ -102,6 +102,8 @@ std::string allLines(const Settings& s) {
   out << "auto_passthrough=" << (s.autoPassthrough ? 1 : 0) << "\n";
   out << "passthrough_notice_seen=" << (s.passthroughNoticeSeen ? 1 : 0) << "\n";
   out << "setup_banner=" << (s.setupBanner ? 1 : 0) << "\n";
+  out << "show_whats_new=" << (s.showWhatsNew ? 1 : 0) << "\n";
+  out << "version_seen=" << s.versionSeen << "\n";
   out << "hints=" << s.hints << "\n";
   out << "thumbnails=" << (s.thumbnails ? 1 : 0) << "\n";
   out << "show_performance=" << (s.showPerformance ? 1 : 0) << "\n";
@@ -272,6 +274,8 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "auto_passthrough") s.autoPassthrough = value != "0";
     else if (key == "passthrough_notice_seen") s.passthroughNoticeSeen = value == "1";
     else if (key == "setup_banner") s.setupBanner = value == "1";
+    else if (key == "show_whats_new") s.showWhatsNew = value != "0";
+    else if (key == "version_seen") s.versionSeen = value;
     else if (key == "hints") s.hints = value;
     else if (key == "thumbnails") s.thumbnails = value != "0";
     else if (key == "show_performance") s.showPerformance = value == "1";

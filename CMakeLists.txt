@@ -159,6 +159,7 @@ add_executable(videoframevr
   src/video_memory.cpp
   src/video_texture.cpp
   src/vr_space.cpp
+  src/whats_new.cpp
 )
 
 # The library's schema, built in from the file the importer reads too.

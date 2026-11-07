@@ -84,6 +84,10 @@ struct Settings {
   bool autoPassthrough = false;
   bool passthroughNoticeSeen = false;  // its notice is shown the first time only
   bool setupBanner = false;  // the Library's "You're all set" after setup, until dismissed or a video starts
+  // What's new (whats_new.h): it opens after an update, and the highest
+  // version seen (empty: none saved, as by 0.1.x).
+  bool showWhatsNew = true;
+  std::string versionSeen;
   // The hints after setup still to show, each with the times shown (hints.h);
   // empty: none (a profile from before setup has none).
   std::string hints;
