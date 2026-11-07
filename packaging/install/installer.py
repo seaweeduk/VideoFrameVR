@@ -1,7 +1,8 @@
 """Install, update and uninstall VideoFrameVR for one user. Python standard library only.
 
-build_installer.py packs this file, install_steam_shortcut.py and config.json into
-helper.pyz and embeds it, with one release archive, in a single .desktop file.
+build_installer.py packs this file, steam_client.py, install_steam_shortcut.py and
+config.json into helper.pyz and embeds it, with one release archive, in a single
+.desktop file.
 """
 
 import argparse
@@ -28,6 +29,7 @@ import urllib.request
 import uuid
 
 import install_steam_shortcut as steam
+import steam_client
 
 CONFIG = json.loads(pkgutil.get_data(__name__, "config.json"))
 APP_ID = CONFIG["app_id"]
@@ -56,6 +58,7 @@ STEAM = find_steam()
 FLATPAK_STEAM = HOME / ".var/app/com.valvesoftware.Steam/.local/share/Steam"
 LAUNCHER = ROOT / (APP_ID + ".sh")
 HELPER = ROOT / "helper.pyz"
+ARTWORK = ROOT / "current/share" / APP_ID / "steam"
 # Steam Linux Runtime 4.0, which launch.sh enters.
 RUNTIME_APPS = {"aarch64": "4185400", "x86_64": "4183110"}
 UID = os.getuid()
@@ -273,12 +276,16 @@ def runtime_installed():
     return any((library / "steamapps" / f"appmanifest_{app}.acf").exists() for library in libraries)
 
 
-# Steam shortcut. Steam keeps shortcuts in memory and rewrites shortcuts.vdf when
-# it exits, so the file is changed only while Steam is stopped. On SteamOS the
-# desktop runs inside Steam's service, so a separate systemd job stops Steam,
-# changes the file and starts Steam again; the desktop closes meanwhile. On other
-# desktops Steam is an ordinary program: it is asked to quit and started again,
-# only when the person has agreed to that.
+# Steam shortcut. When the running Steam offers its client interface (always on
+# the Steam Frame), Steam itself adds or removes the shortcut, for the account
+# that is signed in, without a restart (steam_client.py).
+#
+# Otherwise shortcuts.vdf is edited. Steam keeps shortcuts in memory and rewrites
+# that file when it exits, so the file is changed only while Steam is stopped. On
+# SteamOS the desktop runs inside Steam's service, so a separate systemd job stops
+# Steam, changes the file and starts Steam again; the desktop closes meanwhile. On
+# other desktops Steam is an ordinary program: it is asked to quit and started
+# again, only when the person has agreed to that.
 
 def require_steam():
     if (STEAM / "userdata").is_dir():
@@ -291,9 +298,34 @@ def require_steam():
 
 
 def in_steam():
+    if steam_client.available():
+        try:
+            return steam_client.find(LAUNCHER) is not None
+        except Exception as error:
+            # Steam saves shortcuts.vdf when a shortcut changes, so it's the next best answer.
+            log("Steam shortcut lookup through Steam failed: " + str(error))
     try:
         return steam.find_shortcut(STEAM, None, LAUNCHER)[1] is not None
-    except (OSError, ValueError):
+    except Exception as error:
+        log("Steam shortcut lookup failed: " + str(error))
+        return False
+
+
+def through_steam(remove=False):
+    """Add (or complete) or remove the shortcut through the running Steam. False
+    when Steam doesn't offer that or it failed; the file is changed instead then."""
+    if not steam_client.available():
+        return False
+    try:
+        if remove:
+            steam_client.remove(LAUNCHER)
+            log("Removed the Steam shortcut through Steam")
+        else:
+            appid, added = steam_client.add(LAUNCHER, APP_NAME, ARTWORK, STEAM)
+            log(("Added" if added else "Completed") + " the Steam shortcut through Steam: appid " + str(appid))
+        return True
+    except Exception:
+        log("Changing the Steam shortcut through Steam failed:", *traceback.format_exc().splitlines())
         return False
 
 
@@ -328,12 +360,12 @@ def change_steam(remove):
     """Check everything that can fail before Steam is stopped, then run the job."""
     require_steam()
     try:
-        steam.change_shortcut(LAUNCHER, ROOT / "current/share" / APP_ID / "steam", APP_NAME,
-                              STEAM, remove=remove, dry_run=True)
+        steam.change_shortcut(LAUNCHER, ARTWORK, APP_NAME, STEAM, remove=remove, dry_run=True)
     except (OSError, ValueError) as error:
         log("Steam shortcut check failed: " + str(error))
-        raise InstallError(("Unable to remove " if remove else "Unable to add ") + APP_NAME + " to Steam. "
-                           "Details are in " + LOG_NAME + ".") from None
+        if not remove:
+            raise InstallError("Unable to add " + APP_NAME + " to Steam. Details are in " + LOG_NAME + ".") from None
+        raise InstallError("Unable to remove " + APP_NAME + " from Steam. Details are in " + LOG_NAME + ".") from None
     command = [sys.executable, str(HELPER), "steam-job", "remove" if remove else "add"]
     kind = steam_restart()
     if kind is None:
@@ -368,8 +400,7 @@ def steam_job(remove):
             time.sleep(0.5)
         if running and steam.steam_running():
             raise RuntimeError("Steam did not quit within 60 seconds")
-        config, appid = steam.change_shortcut(LAUNCHER, ROOT / "current/share" / APP_ID / "steam",
-                                              APP_NAME, STEAM, remove=remove)
+        config, appid = steam.change_shortcut(LAUNCHER, ARTWORK, APP_NAME, STEAM, remove=remove)
         log(action + " done: account " + config.parent.name + ", appid " + str(appid))
     except Exception:
         log(action + " failed:", *traceback.format_exc().splitlines())
@@ -512,7 +543,11 @@ def add_to_steam():
 
 
 def ask_add_to_steam(text, later):
-    """Asks first only when Steam has to restart; with Steam closed it is added straight away."""
+    """Added straight away through the running Steam, or with Steam closed. Asks
+    first only when Steam has to restart for it."""
+    require_steam()
+    if through_steam():
+        return message("Done. " + APP_NAME + " is in your Steam library.")
     note = restart_note()
     if note and ask(text + "\n\n" + note, "Restart Steam" if steam_restart() == "desktop" else "Add to Steam",
                     "Later") != "ok":
@@ -544,6 +579,8 @@ def gui_install(path):
     with progress("Installing " + APP_NAME + "…") as report:
         version = install(path, report)
     if in_steam():
+        # Completes a shortcut added some other way: VR flag, icon and artwork.
+        through_steam()
         return message("Done. " + APP_NAME + " " + version + " is in your Steam library.")
     ask_add_to_steam(APP_NAME + " " + version + " is installed. Add it to your Steam library?",
                      "Done. Open " + APP_NAME + " from the application menu.\n\n" + ADD_LATER)
@@ -551,13 +588,15 @@ def gui_install(path):
 
 def gui_add_to_steam():
     if in_steam():
+        through_steam()
         return message(APP_NAME + " is already in your Steam library.")
     ask_add_to_steam("Add " + APP_NAME + " to your Steam library?", ADD_LATER)
 
 
 def gui_uninstall():
     steam_entry = in_steam()
-    kind = steam_restart() if steam_entry else None
+    by_steam = steam_entry and steam_client.available()
+    kind = steam_restart() if steam_entry and not by_steam else None
     text = "Uninstall " + APP_NAME + "?\n\nYour settings and history are kept."
     if kind == "service":
         text += "\n\n" + restart_note(remove=True)
@@ -567,11 +606,14 @@ def gui_uninstall():
                                  "Restart Steam", "Later") != "ok":
         steam_entry = False
     uninstall()
-    if steam_entry and not change_steam(remove=True):
+    still_listed = kind == "desktop" and not steam_entry
+    if by_steam:
+        still_listed = not through_steam(remove=True)
+    elif steam_entry and not change_steam(remove=True):
         raise InstallError("Unable to remove " + APP_NAME + " from Steam. Details are in " + LOG_NAME + ".")
     finish_uninstall()
     text = APP_NAME + " is uninstalled. Your settings and history are kept."
-    if kind == "desktop" and not steam_entry:
+    if still_listed:
         text += ("\n\nIt's still listed in Steam. To remove it, right-click it in your Steam library and "
                  "choose Manage, then Remove non-Steam game from your library.")
     message(text)

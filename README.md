@@ -80,8 +80,7 @@ There's one file for each device:
 
 1. Switch to Desktop Mode and download the installer.
 2. Open it from your Downloads folder. If asked, choose **Launch**, then **Continue**.
-3. Choose **Install**.
-4. Choose **Add to Steam**. Steam restarts, and VideoFrameVR is in your library.
+3. Choose **Install**. VideoFrameVR is added to your Steam library.
 
 ### Desktop PC
 

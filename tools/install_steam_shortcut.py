@@ -102,25 +102,31 @@ def user_config(steam, account):
         if not config.is_dir():
             raise ValueError("That Steam account has no config directory")
         return config
-    configs = list((steam / "userdata").glob("[0-9]*/config"))
+    configs = [config for config in (steam / "userdata").glob("[0-9]*/config") if config.is_dir()]
+    if not configs:
+        raise ValueError("No Steam account has signed in here yet")
     if len(configs) == 1:
         return configs[0]
+    # Several accounts have signed in here: use the one that signed in last.
+    # Steam no longer writes MostRecent, but still writes each sign-in's time.
     # loginusers.vdf contains flat per-account records. Do not print its contents.
     loginusers = steam / "config/loginusers.vdf"
+    ranked = []
     if loginusers.exists():
-        records = re.findall(r'"(\d{17})"\s*\{([^{}]*)\}', loginusers.read_text())
-        for flag in ("MostRecent", "AutoLogin"):
-            matches = []
-            for steam_id, body in records:
-                if not re.search(rf'"{flag}"\s*"1"', body, re.IGNORECASE):
-                    continue
-                account_id = int(steam_id) - 76561197960265728
-                config = steam / "userdata" / str(account_id) / "config"
-                if config in configs:
-                    matches.append(config)
-            if len(matches) == 1:
-                return matches[0]
-    raise ValueError("Choose a Steam account with --steam-user ACCOUNT_ID")
+        for steam_id, body in re.findall(r'"(\d{17})"\s*\{([^{}]*)\}', loginusers.read_text(errors="replace")):
+            config = steam / "userdata" / str(int(steam_id) - 76561197960265728) / "config"
+            if config in configs:
+                most_recent = re.search(r'"MostRecent"\s*"1"', body, re.IGNORECASE) is not None
+                stamp = re.search(r'"Timestamp"\s*"(\d+)"', body, re.IGNORECASE)
+                ranked.append((most_recent, int(stamp.group(1)) if stamp else 0, str(config)))
+    if any(most_recent or stamp for most_recent, stamp, _ in ranked):
+        return Path(max(ranked)[2])
+
+    # Without sign-in times: the account whose settings Steam saved last.
+    def saved(config):
+        settings = config / "localconfig.vdf"
+        return (settings if settings.exists() else config).stat().st_mtime
+    return max(configs, key=saved)
 
 
 def atomic_write(path, content):
@@ -139,14 +145,20 @@ ARTWORK = {"p": "cover.png", "": "wide.png", "_hero": "hero.png",
            "_logo": "logo.png", "_icon": "icon-256.png"}
 
 
+def runs(entry, executable):
+    """Whether a shortcut runs executable. Steam quotes the path; other tools may not."""
+    exe = get(entry, "Exe", 1) or ""
+    return (exe[1:-1] if len(exe) > 1 and exe[0] == exe[-1] == '"' else exe) == str(executable)
+
+
 def find_shortcut(steam, account, executable):
     """The account's config folder and the appid of this launcher's shortcut, or None."""
     config = user_config(Path(steam), account)
     path = config / "shortcuts.vdf"
     tree = read_vdf(path.read_bytes() if path.exists() else b"\x00shortcuts\x00\x08\x08")
-    exe = f'"{Path(executable).absolute()}"'
+    executable = Path(executable).absolute()
     for kind, _, value in get(tree, "shortcuts", 0) or []:
-        if kind == 0 and get(value, "Exe", 1) == exe:
+        if kind == 0 and runs(value, executable):
             appid = get(value, "appid", 2)
             return config, struct.unpack("<I", appid)[0] if appid else None
     return config, None
@@ -166,7 +178,7 @@ def change_shortcut(executable, artwork, name, steam, account=None, remove=False
     shortcuts = get(tree, "shortcuts", 0)
     if shortcuts is None:
         raise ValueError("shortcuts.vdf has no shortcuts object")
-    ours = [entry for entry in shortcuts if entry[0] == 0 and get(entry[2], "Exe", 1) == exe]
+    ours = [entry for entry in shortcuts if entry[0] == 0 and runs(entry[2], executable)]
     grid = config / "grid"
     images = {}
     if remove:
