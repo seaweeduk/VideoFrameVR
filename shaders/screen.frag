@@ -12,6 +12,13 @@
 layout(set = 0, binding = 0) uniform sampler2D tex;
 #endif
 layout(set = 0, binding = 1) uniform sampler2D chromaTex;  // kYuv
+// What tex holds (video.glsl's kSource...); -1: an image or planes, from the
+// draw. A Y'CbCr image (2) is sampled from its only level.
+layout(constant_id = 1) const int kSource = -1;
+int source() {
+  if (kSource >= 0) return kSource;
+  return (pc.draw.mode.y & kYuv) != 0u ? kSourcePlanes : kSourceImage;
+}
 
 layout(location = 0) in vec2 vUV;
 layout(location = 0) out vec4 fragColor;
@@ -20,9 +27,9 @@ layout(location = 0) out vec4 fragColor;
 // with the gradients dx, dy: through the mipmaps, or without them over the
 // pixel's footprint.
 vec3 picture(vec2 uv, vec2 m, vec2 dx, vec2 dy, EyeData e, uint flags) {
-  if (baseLevel(flags))
-    return footprintSample(tex, chromaTex, (flags & kYuv) != 0u ? kSourcePlanes : kSourceImage, pc.draw.yuv, pc.draw.yuvMatrix, uv, dx,
-                           dy, e.stereo, m, 1.0 - m, int(pc.draw.mode.z));
+  if (kSource == kSourceYcbcr || baseLevel(flags))
+    return footprintSample(tex, chromaTex, source(), pc.draw.yuv, pc.draw.yuvMatrix, uv, dx, dy,
+                           e.stereo, m, 1.0 - m, int(pc.draw.mode.z));
   vec2 eyeUv = e.stereo.zw + clamp(uv, m, 1.0 - m) * e.stereo.xy;
   return textureGrad(tex, eyeUv, dx * e.stereo.xy, dy * e.stereo.xy).rgb;
 }

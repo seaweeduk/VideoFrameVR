@@ -92,7 +92,7 @@ layout(location = 0) out vec4 fragColor;
 // the mipmaps, or without them over the pixel's footprint.
 vec3 picture(vec2 uv, vec2 lo, vec2 hi, vec2 dx, vec2 dy, EyeData e, uint flags, vec2 fragCoord) {
   vec3 c;
-  if (kCommon || baseLevel(flags)) {
+  if (kCommon || kSource == kSourceYcbcr || baseLevel(flags)) {
     c = footprintSample(tex, chromaTex, source(), pc.draw.yuv, yuvMatrix(), uv, dx, dy, e.stereo, lo,
                         hi, kCommon ? 1 : int(pc.draw.mode.z));
   } else {
