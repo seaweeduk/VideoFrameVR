@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <vector>
 
 // The scene's pipelines, made once at startup against the eye render pass,
 // whatever the settings (docs/vulkan-renderer.md, 2.5), with their one
@@ -54,6 +55,7 @@ class Pipelines {
   // No packed mask or green screen; the packed mask, with transparent output
   // only; a green screen without shrink.
   enum SurroundCut { kUncut, kPackedMask, kGreenScreen, kCutCount };
+  static constexpr uint32_t kMaxConstants = 4;
   // A pipeline's shaders (embedded SPIR-V) and fixed state.
   struct Desc {
     const uint32_t* vertex;
@@ -62,7 +64,8 @@ class Pipelines {
     size_t fragmentBytes;
     VkPrimitiveTopology topology;
     bool blend;  // premultiplied alpha, colour and alpha alike
-    const int32_t* constants = nullptr;  // the fragment shader's specialization constants 0..3
+    const int32_t* constants = nullptr;  // the fragment shader's specialization constants 0.., at
+                                         // most kMaxConstants
     uint32_t constantCount = 0;
   };
 
@@ -119,10 +122,25 @@ class Pipelines {
   // create() with these modules for desc's code (which it doesn't read).
   VkPipeline create(const Desc& desc, VkShaderModule vertex, VkShaderModule fragment,
                     VkRenderPass pass, const char* what, VkPipelineLayout layout);
-  // The common modes' surround pipelines of these sources (all of one shader
-  // and layout) for the eye passes, compiled on several threads at once.
-  bool createSurround(std::initializer_list<SurroundSource> sources, const uint32_t* fragment,
-                      size_t fragmentBytes, VkPipelineLayout layout);
+  // One pipeline of a batch (createAll), with its own copy of desc's
+  // constants; layout VK_NULL_HANDLE for the scene's.
+  struct Job {
+    Desc desc;
+    int32_t constants[kMaxConstants];
+    VkRenderPass pass;
+    VkPipelineLayout layout;
+    const char* what;
+    VkPipeline* pipeline;
+  };
+  static void add(std::vector<Job>& jobs, const Desc& desc, VkRenderPass pass, const char* what,
+                  VkPipeline* pipeline, VkPipelineLayout layout = VK_NULL_HANDLE);
+  // Adds the common modes' surround pipelines of these sources (all of one
+  // shader and layout) for the eye passes.
+  void addSurround(std::vector<Job>& jobs, std::initializer_list<SurroundSource> sources,
+                   const uint32_t* fragment, size_t fragmentBytes, VkPipelineLayout layout);
+  // Creates the jobs' pipelines on several threads at once; false if any
+  // failed (those made are kept, for the destructor).
+  bool createAll(const std::vector<Job>& jobs);
   bool createDummy();
 
   GpuContext* gpu_ = nullptr;

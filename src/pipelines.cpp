@@ -127,37 +127,32 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
                                       "surround (sharpened)",
                                       "surround (mask first, sharpened)",
                                       "screen (sharpened)"};
+  std::vector<Job> jobs;
   for (int i = 0; i < kCount; ++i) {
     descs_[i] = descs[i];
-    pipelines_[i] = create(descs[i], eyePass, names[i]);
-    if (!pipelines_[i]) return false;
+    add(jobs, descs[i], eyePass, names[i], &pipelines_[i]);
     // A pass with a density map is not compatible with one without.
-    if (plainEyePass == eyePass) continue;
-    plain_[i] = create(descs[i], plainEyePass, names[i]);
-    if (!plain_[i]) return false;
+    if (plainEyePass != eyePass) add(jobs, descs[i], plainEyePass, names[i], &plain_[i]);
   }
-  if (!createSurround({kImage, kPlanes}, kSpirv_surround_frag, sizeof(kSpirv_surround_frag),
-                      layout_))
-    return false;
+  addSurround(jobs, {kImage, kPlanes}, kSpirv_surround_frag, sizeof(kSpirv_surround_frag), layout_);
   if (gpu.caps().foveation) {
     const Desc debug{kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_foveation_frag,
                      sizeof(kSpirv_foveation_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, true};
-    foveation_[0] = create(debug, eyePass, "foveation view");
-    foveation_[1] = create(debug, plainEyePass, "foveation view (off)");
-    if (!foveation_[0] || !foveation_[1]) return false;
+    add(jobs, debug, eyePass, "foveation view", &foveation_[0]);
+    add(jobs, debug, plainEyePass, "foveation view (off)", &foveation_[1]);
   }
-  return true;
+  return createAll(jobs);
 }
 
 bool Pipelines::initGlass(VkRenderPass glassPass) {
-  for (int i = 0; i < kCount; ++i) {
-    glass_[i] = create(descs_[i], glassPass, "glass backdrop pipeline");
-    if (!glass_[i]) return false;
-  }
-  blur_ = create({kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_blur_frag,
-                  sizeof(kSpirv_blur_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
-                 glassPass, "glass blur pipeline");
-  return blur_ != VK_NULL_HANDLE;
+  std::vector<Job> jobs;
+  for (int i = 0; i < kCount; ++i)
+    add(jobs, descs_[i], glassPass, "glass backdrop pipeline", &glass_[i]);
+  add(jobs,
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_blur_frag,
+       sizeof(kSpirv_blur_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
+      glassPass, "glass blur pipeline", &blur_);
+  return createAll(jobs);
 }
 
 bool Pipelines::initTp10(VkDescriptorSetLayout setLayout) {
@@ -181,64 +176,96 @@ bool Pipelines::initTp10(VkDescriptorSetLayout setLayout) {
        sizeof(kSpirv_screen_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, false},
   };
   static const char* names[3] = {"surround (TP10)", "surround (mask first, TP10)", "screen (TP10)"};
+  std::vector<Job> jobs;
   for (int i = 0; i < 3; ++i) {
-    tp10_[i] = create(descs[i], eyePass_, names[i], tp10Layout_);
-    if (!tp10_[i]) return false;
-    if (plainEyePass_ == eyePass_) continue;
-    tp10Plain_[i] = create(descs[i], plainEyePass_, names[i], tp10Layout_);
-    if (!tp10Plain_[i]) return false;
+    add(jobs, descs[i], eyePass_, names[i], &tp10_[i], tp10Layout_);
+    if (plainEyePass_ != eyePass_)
+      add(jobs, descs[i], plainEyePass_, names[i], &tp10Plain_[i], tp10Layout_);
   }
-  return createSurround({kTp10}, kSpirv_surround_tp10_frag, sizeof(kSpirv_surround_tp10_frag),
-                        tp10Layout_);
+  addSurround(jobs, {kTp10}, kSpirv_surround_tp10_frag, sizeof(kSpirv_surround_tp10_frag),
+              tp10Layout_);
+  return createAll(jobs);
 }
 
-// One after another these take about a second on the Frame when nothing is
-// cached yet (after an update); four threads take a quarter of that.
-bool Pipelines::createSurround(std::initializer_list<SurroundSource> sources,
-                               const uint32_t* fragment, size_t fragmentBytes,
-                               VkPipelineLayout layout) {
-  struct Job {
-    int32_t constants[4];
-    VkRenderPass pass;
-    VkPipeline* pipeline;
-  };
-  std::vector<Job> jobs;
+void Pipelines::add(std::vector<Job>& jobs, const Desc& desc, VkRenderPass pass, const char* what,
+                    VkPipeline* pipeline, VkPipelineLayout layout) {
+  Job job{desc, {}, pass, layout, what, pipeline};
+  for (uint32_t i = 0; i < desc.constantCount; ++i) job.constants[i] = desc.constants[i];
+  job.desc.constants = nullptr;  // createAll() points it at job.constants
+  jobs.push_back(job);
+}
+
+void Pipelines::addSurround(std::vector<Job>& jobs, std::initializer_list<SurroundSource> sources,
+                            const uint32_t* fragment, size_t fragmentBytes,
+                            VkPipelineLayout layout) {
   for (SurroundSource source : sources)
     for (int p = 0; p < kProjectionCount; ++p)
       for (int c = 0; c < kCutCount; ++c)
-        for (int plain = 0; plain < (plainEyePass_ == eyePass_ ? 1 : 2); ++plain)
-          jobs.push_back({{p, source == kImage ? 0 : 1, c, 0}, plain ? plainEyePass_ : eyePass_,
-                          &surround_[plain][p][source][c]});
-  const char* what = "surround (common mode)";
-  const VkShaderModule vertexModule =
-      module(kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), what);
-  const VkShaderModule fragmentModule =
-      vertexModule ? module(fragment, fragmentBytes, what) : VK_NULL_HANDLE;
-  std::atomic<size_t> next{0};
-  auto work = [&] {
-    for (size_t i; (i = next++) < jobs.size();) {
-      const Desc desc{nullptr, 0, nullptr, 0, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false,
-                      jobs[i].constants, 4};
-      *jobs[i].pipeline = create(desc, vertexModule, fragmentModule, jobs[i].pass, what, layout);
-    }
+        for (int plain = 0; plain < (plainEyePass_ == eyePass_ ? 1 : 2); ++plain) {
+          const int32_t constants[] = {p, source == kImage ? 0 : 1, c, 0};
+          add(jobs,
+              {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment, fragmentBytes,
+               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, 4},
+              plain ? plainEyePass_ : eyePass_, "surround (common mode)",
+              &surround_[plain][p][source][c], layout);
+        }
+}
+
+// With nothing cached yet (after an update) a batch's compiles add up to
+// seconds on the Frame. Its threads: one per core but one, which stays with
+// the runtime (SteamVR shows its loading view meanwhile), at most 8: past that
+// the longest single compiles (the general surround pipelines) set a batch's
+// length, and each thread holds a compiler's memory.
+bool Pipelines::createAll(const std::vector<Job>& jobs) {
+  // Each shader's module, made once for the batch: most jobs share theirs.
+  // Modules are only read while pipelines are made, on any thread.
+  std::vector<std::pair<const uint32_t*, VkShaderModule>> modules;
+  auto moduleFor = [&](const uint32_t* code, size_t bytes, const char* what) {
+    for (const auto& m : modules)
+      if (m.first == code) return m.second;
+    modules.emplace_back(code, module(code, bytes, what));
+    return modules.back().second;
   };
-  if (fragmentModule) {
+  std::vector<std::pair<VkShaderModule, VkShaderModule>> stages;  // vertex, fragment per job
+  bool ok = true;
+  for (const Job& job : jobs) {
+    stages.emplace_back(moduleFor(job.desc.vertex, job.desc.vertexBytes, job.what),
+                        VK_NULL_HANDLE);
+    if (stages.back().first)
+      stages.back().second = moduleFor(job.desc.fragment, job.desc.fragmentBytes, job.what);
+    if (!stages.back().second) {
+      ok = false;
+      break;
+    }
+  }
+  if (ok) {
+    // Each job writes only its own pipeline; the pipeline cache synchronizes
+    // itself (GpuContext makes it without EXTERNALLY_SYNCHRONIZED).
+    std::atomic<size_t> next{0};
+    auto work = [&] {
+      for (size_t i; (i = next++) < jobs.size();) {
+        Desc desc = jobs[i].desc;
+        desc.constants = jobs[i].constants;
+        *jobs[i].pipeline = create(desc, stages[i].first, stages[i].second, jobs[i].pass,
+                                   jobs[i].what, jobs[i].layout);
+      }
+    };
     // This thread works the queue too; a worker that can't start leaves its
     // share to the others.
-    std::vector<std::thread> threads;
-    const size_t workers =
-        std::min<size_t>(std::clamp(std::thread::hardware_concurrency(), 1u, 4u), jobs.size()) - 1;
-    threads.reserve(workers);
+    const unsigned cores = std::thread::hardware_concurrency();  // 0: unknown
+    const size_t threads =
+        std::min<size_t>(cores ? std::clamp(cores, 2u, 9u) - 1 : 4, jobs.size());
+    std::vector<std::thread> workers;
+    workers.reserve(threads ? threads - 1 : 0);
     try {
-      while (threads.size() < workers) threads.emplace_back(work);
+      while (workers.size() + 1 < threads) workers.emplace_back(work);
     } catch (const std::system_error&) {
     }
     work();
-    for (std::thread& t : threads) t.join();
+    for (std::thread& t : workers) t.join();
   }
-  VkDevice d = gpu_->device();
-  vkDestroyShaderModule(d, vertexModule, nullptr);
-  vkDestroyShaderModule(d, fragmentModule, nullptr);
+  for (const auto& m : modules) vkDestroyShaderModule(gpu_->device(), m.second, nullptr);
+  if (!ok) return false;
   for (const Job& job : jobs)
     if (!*job.pipeline) return false;
   return true;
@@ -275,7 +302,7 @@ VkPipeline Pipelines::create(const Desc& desc, VkShaderModule vertex, VkShaderMo
   stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
   stages[1].module = fragment;
   stages[1].pName = "main";
-  VkSpecializationMapEntry entries[4] = {};
+  VkSpecializationMapEntry entries[kMaxConstants] = {};
   for (uint32_t i = 0; i < desc.constantCount; ++i)
     entries[i] = {i, i * static_cast<uint32_t>(sizeof(int32_t)), sizeof(int32_t)};
   const VkSpecializationInfo specialization{desc.constantCount, entries,
