@@ -1197,5 +1197,23 @@ Strings spanishStrings(const Strings& english) {
   s.deletion.deletedTitle = "Eliminado";
   s.deletion.tipNeedsSendToStash = "Activa «Enviar valoraciones, historial y etiquetas» en Ajustes para eliminar escenas reproducidas desde Stash";
   s.deletion.tipStashDown = "Stash no responde";
+  s.colourBalance.warmth = "Calidez";
+  s.colourBalance.tint = "Matiz";
+  s.colourBalance.exposure = "Exposición";
+  s.colourBalance.tipWarmth = "Luz más fría (azul) o más cálida (naranja). Para todos los vídeos hasta cerrar el reproductor.";
+  s.colourBalance.tipTint = "Luz más verde o más magenta. Para todos los vídeos hasta cerrar el reproductor.";
+  s.colourBalance.tipExposure = "Menos o más luz: las zonas oscuras cambian menos y el negro sigue negro. Para todos los vídeos hasta cerrar el reproductor.";
+  s.colourBalance.pictureHint = "Solo para este vídeo; calidez, matiz y exposición, para todos hasta cerrar.";
+  s.colourBalance.tipReset = "Restablecer brillo, contraste, saturación, zoom y punto de vista de este vídeo, y calidez, matiz y exposición.";
+  s.colourBalance.matchRoom = "Igualar sala";
+  s.colourBalance.reading = "Leyendo sala …";
+  s.colourBalance.failed = "Error al leer sala";
+  s.colourBalance.tipMatchRoom = "Ajusta calidez, matiz y exposición para que el vídeo parezca iluminado como la sala según las cámaras; al desactivarlo vuelven a su valor. La primera vez, la imagen desaparece un momento mientras lee. Cámaras en gris: solo exposición.";
+  s.colourBalance.tipMatchRoomHidden = "Disponible cuando se ve la sala: con passthrough activo o la opacidad por debajo del 100 %.";
+  s.colourBalance.readAgain = "Leer la sala de nuevo si ha cambiado la luz";
+  s.colourBalance.matchColour = "Igualar color";
+  s.colourBalance.matchBrightness = "Igualar brillo";
+  s.colourBalance.tipMatchColour = "Cuánta calidez y matiz de la sala aplica «Igualar sala». Para todos los vídeos.";
+  s.colourBalance.tipMatchBrightness = "Cuánto brillo de la sala aplica «Igualar sala». Para todos los vídeos.";
   return s;
 }

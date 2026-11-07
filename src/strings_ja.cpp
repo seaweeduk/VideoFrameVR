@@ -1197,5 +1197,23 @@ Strings japaneseStrings(const Strings& english) {
   s.deletion.deletedTitle = "削除完了";
   s.deletion.tipNeedsSendToStash = "Stashから再生中のシーンを削除するには、設定で「評価・再生履歴・タグをStashに送信」をオンにしてください";
   s.deletion.tipStashDown = "Stashが応答していません";
+  s.colourBalance.warmth = "暖かみ";
+  s.colourBalance.tint = "色合い";
+  s.colourBalance.exposure = "露出";
+  s.colourBalance.tipWarmth = "光を寒色（青）または暖色（オレンジ）に調整。終了まで全動画に適用。";
+  s.colourBalance.tipTint = "光を緑寄りまたはマゼンタ寄りに調整。終了まで全動画に適用。";
+  s.colourBalance.tipExposure = "光の量を増減。暗部はあまり変わらず、黒は黒のまま保たれます。終了まで全動画に適用。";
+  s.colourBalance.pictureHint = "この動画にのみ保存。暖かみ・色合い・露出は終了まで全動画に適用。";
+  s.colourBalance.tipReset = "この動画の明るさ・コントラスト・彩度・ズーム・視点と、暖かみ・色合い・露出をリセット。";
+  s.colourBalance.matchRoom = "部屋に合わせる";
+  s.colourBalance.reading = "部屋を測定中…";
+  s.colourBalance.failed = "読み取り失敗";
+  s.colourBalance.tipMatchRoom = "カメラに映る部屋の明かりに合うよう暖かみ・色合い・露出を設定し、オフで元に戻します。初回は読み取り中に映像が一瞬消えます。白黒カメラでは露出のみ。";
+  s.colourBalance.tipMatchRoomHidden = "パススルーがオン、または不透明度が100%未満で部屋が見えているときに使えます。";
+  s.colourBalance.readAgain = "明かりが変わったときに部屋をもう一度読み取る";
+  s.colourBalance.matchColour = "色を合わせる";
+  s.colourBalance.matchBrightness = "明るさを合わせる";
+  s.colourBalance.tipMatchColour = "「部屋に合わせる」で部屋の暖かみと色合いを反映する割合。全動画共通。";
+  s.colourBalance.tipMatchBrightness = "「部屋に合わせる」で部屋の明るさを反映する割合。全動画共通。";
   return s;
 }
