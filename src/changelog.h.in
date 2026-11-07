@@ -1,0 +1,4 @@
+// Made by CMake from CHANGELOG.md, the release notes (whats_new.h).
+#pragma once
+
+static const char kChangelog[] = R"md(@CHANGELOG@)md";

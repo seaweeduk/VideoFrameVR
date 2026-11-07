@@ -253,9 +253,19 @@ target_sources(videoframevr PRIVATE ${SHADER_HEADERS})
 # version marked as a development build.
 set(VIDEOFRAMEVR_VERSION_TEXT "$ENV{VIDEOFRAMEVR_RELEASE_VERSION}")
 string(REGEX REPLACE "^v" "" VIDEOFRAMEVR_VERSION_TEXT "${VIDEOFRAMEVR_VERSION_TEXT}")
+set(VIDEOFRAMEVR_RELEASE_TEXT "${VIDEOFRAMEVR_VERSION_TEXT}")
 if(VIDEOFRAMEVR_VERSION_TEXT STREQUAL "")
   set(VIDEOFRAMEVR_VERSION_TEXT "${PROJECT_VERSION}-dev")
 endif()
+
+# The release notes, built in for What's new (src/whats_new.h). A release
+# build's must be well-formed and have its version's notes.
+include(cmake/changelog.cmake)
+set(CHANGELOG_FILE ${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CHANGELOG_FILE})
+check_changelog(${CHANGELOG_FILE} "${VIDEOFRAMEVR_RELEASE_TEXT}")
+file(READ ${CHANGELOG_FILE} CHANGELOG)
+configure_file(src/changelog.h.in generated/changelog.h @ONLY)
 target_compile_definitions(videoframevr PRIVATE GL_GLEXT_PROTOTYPES
                                                 VIDEOFRAMEVR_VERSION="${VIDEOFRAMEVR_VERSION_TEXT}"
                                                 VIDEOFRAMEVR_COMMIT="$ENV{VIDEOFRAMEVR_RELEASE_COMMIT}")
