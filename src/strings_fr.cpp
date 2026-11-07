@@ -118,6 +118,8 @@ Strings frenchStrings(const Strings& english) {
   s.greenScreenHint = "Retirer le vert avec les curseurs ci-dessous.";
   s.greenScreenOwnMask = "Cette vidéo possède son propre masque.";
   s.passthroughGroup = "Passthrough";
+  s.opacity = "Opacité";
+  s.opacityHint = "À quel point la vidéo couvre la pièce. Uniquement sur le casque lui-même, pas en streaming depuis un PC. Enregistré pour cette vidéo.";
   s.packedMask = "Masque dans la vidéo";
   s.packedMaskHint = "Pour les vidéos qui ont leur propre masque (alpha DeoVR). Suit « _ALPHA » dans le nom du fichier, sauf réglage ici. Enregistré pour cette vidéo.";
   s.packedMaskFormatHint = "Uniquement pour les vidéos fisheye 3D côte à côte. Choisissez d'abord ce format.";

@@ -118,6 +118,8 @@ Strings spanishStrings(const Strings& english) {
   s.greenScreenHint = "Eliminar el verde con los controles de abajo.";
   s.greenScreenOwnMask = "Este vídeo tiene su propia máscara.";
   s.passthroughGroup = "Passthrough";
+  s.opacity = "Opacidad";
+  s.opacityHint = "Cuánto tapa el vídeo la habitación. Solo en el propio visor, no al transmitir desde un PC. Se guarda para este vídeo.";
   s.packedMask = "Máscara en el vídeo";
   s.packedMaskHint = "Para vídeos con su propia máscara (alfa de DeoVR). Sigue \"_ALPHA\" en el nombre del archivo salvo que se cambie aquí. Se guarda para este vídeo.";
   s.packedMaskFormatHint = "Solo para vídeo fisheye 3D lado a lado. Elige primero ese formato.";

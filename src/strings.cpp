@@ -99,6 +99,9 @@ const Strings kEnglish = {
     "Remove green using the sliders below.",
     "This video has its own mask.",
     "Passthrough",
+    "Opacity",
+    "How solid the video is over the room. Only on the headset itself, not when streaming from a "
+    "PC. Saved for this video.",
     "Mask in the video",
     "For videos that carry their own mask (DeoVR alpha). Follows “_ALPHA” in the file name unless "
     "set here. Saved for this video.",

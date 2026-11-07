@@ -397,6 +397,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
       p.color[c] = kScreenColor[c];
       p.adjust[c] = v.adjust[c];
     }
+    p.color[3] = clear == ClearMode::Transparent ? v.opacity / 100.0f : 1.0f;
     p.adjust[3] = sharpen;
     if (v.texture) flags |= kTexture;
     p.mode[1] = flags;
@@ -457,6 +458,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   p.mode[1] = flags;
   const int taps = antiShimmerTaps(v.antiShimmer);
   p.mode[2] = static_cast<uint32_t>(taps);
+  p.mode[3] = clear == ClearMode::Transparent ? static_cast<uint32_t>(v.opacity) : 100;
   // A mask or key reads the frame as it came (VideoDraw::readsFrame); the
   // picture settings are applied to what is shown (a general pipeline, as
   // they aren't neutral then), a video's as mpv does (its Kr, Kb).

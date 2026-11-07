@@ -50,6 +50,7 @@ struct VideoDraw {
   float adjust[3] = {0, 0, 0};
   bool tvGamma = false;  // mpv's image: VideoPlayer::tvGammaImage()
   bool photo = false;
+  int opacity = 100;  // percent, blended over the room (ClearMode::Transparent)
   bool mipmaps = true;          // trilinear through the mipmaps, else the full-size level
   AntiShimmer antiShimmer = AntiShimmer::Off;  // ... sampled over each pixel's footprint
   bool look = false;            // tone curve and vignette
@@ -155,7 +156,7 @@ struct SurroundPush {
   float adjust[4];  // w: sharpening strength
   float chroma[4];
   float alpha[4];    // zw: kYuv, the chroma lookup's offset
-  uint32_t mode[4];  // x projection, y flags, z footprint taps (antiShimmerTaps)
+  uint32_t mode[4];  // x projection, y flags, z footprint taps (antiShimmerTaps), w opacity percent
   float yuv[4];      // kYuv: YuvColor::range, neutralRange while a mask or key is read
 };
 static_assert(sizeof(SurroundPush) == 144 && offsetof(SurroundPush, mode) == 112,
@@ -166,7 +167,7 @@ static_assert(kDrawPushOffset + sizeof(SurroundPush) <= kPushConstantBytes, "pus
 struct ScreenPush {
   float pose[3][4];  // rows of the screen's pose
   float size[4];     // width, height, distance, radius
-  float color[4];
+  float color[4];    // a: opacity
   float adjust[4];  // w: sharpening strength
   uint32_t mode[4];  // y flags, z footprint taps (antiShimmerTaps)
   float yuv[4];      // kYuv: YuvColor
