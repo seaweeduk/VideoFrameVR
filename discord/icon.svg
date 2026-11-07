@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e1a36"/>
+      <stop offset="1" stop-color="#1b3656"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#sky)"/>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#sheen)"/>
+  <!-- left and right eye; their overlap is the 3D view -->
+  <circle cx="106" cy="128" r="72" fill="#3d7fe0"/>
+  <circle cx="150" cy="128" r="72" fill="#2fc48c"/>
+  <path d="M128 59.44 A72 72 0 0 1 128 196.56 A72 72 0 0 1 128 59.44 Z"
+        fill="#c9fbe9"/>
+  <path d="M118 108 L118 148 L150 128 Z" fill="#12244a"
+        stroke="#12244a" stroke-width="10" stroke-linejoin="round"/>
+</svg>
