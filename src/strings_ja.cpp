@@ -119,7 +119,8 @@ Strings japaneseStrings(const Strings& english) {
   s.greenScreenOwnMask = "この動画には専用マスクがあります。";
   s.passthroughGroup = "パススルー";
   s.opacity = "不透明度";
-  s.opacityHint = "周囲に重なる動画の不透明さ。ヘッドセット本体のみで、PC からのストリーミングでは使えません。この動画に保存されます。";
+  s.opacityHint = "周囲に重なる動画の不透明さ。ヘッドセット本体のみで、PC からのストリーミングでは使えません。180° や 360° の動画では、グリップを押さえたままその手首をひねっても変えられます。この動画に保存されます。";
+  s.opacityOverlay = "不透明度：%d%%";
   s.packedMask = "動画内のマスク";
   s.packedMaskHint = "独自のマスクを持つ動画用（DeoVR アルファ）。ここで設定しない限り、ファイル名の「_ALPHA」に従います。この動画に保存されます。";
   s.packedMaskFormatHint = "魚眼 3D 左右分割の動画専用です。先にその形式を選んでください。";

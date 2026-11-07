@@ -119,7 +119,8 @@ Strings spanishStrings(const Strings& english) {
   s.greenScreenOwnMask = "Este vídeo tiene su propia máscara.";
   s.passthroughGroup = "Passthrough";
   s.opacity = "Opacidad";
-  s.opacityHint = "Cuánto tapa el vídeo la habitación. Solo en el propio visor, no al transmitir desde un PC. Se guarda para este vídeo.";
+  s.opacityHint = "Cuánto tapa el vídeo la habitación. Solo en el propio visor, no al transmitir desde un PC. Con vídeo de 180° o 360°, mantén pulsado un agarre y gira esa muñeca para cambiarla. Se guarda para este vídeo.";
+  s.opacityOverlay = "Opacidad: %d %%";
   s.packedMask = "Máscara en el vídeo";
   s.packedMaskHint = "Para vídeos con su propia máscara (alfa de DeoVR). Sigue \"_ALPHA\" en el nombre del archivo salvo que se cambie aquí. Se guarda para este vídeo.";
   s.packedMaskFormatHint = "Solo para vídeo fisheye 3D lado a lado. Elige primero ese formato.";

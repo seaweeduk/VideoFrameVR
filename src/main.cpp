@@ -90,8 +90,8 @@ constexpr float kSurroundSubtitleDistance = 2.5f;
 constexpr float kSurroundSubtitleWidth = 2.0f;
 constexpr float kSurroundSubtitleDrop = 0.55f;
 constexpr float kTurnStep = kPi / 6;  // 30 degrees per stick flick
-// The viewpoint's overlay stays this long after the stick lets go of it.
-constexpr double kViewpointShown = 1.5;
+// The viewpoint's and opacity's overlay stays this long after its gesture lets go.
+constexpr double kValueShown = 1.5;
 // ... and the seek bar a held seek shows with the menu closed.
 constexpr double kSeekBarLinger = 0.6;
 // The stick's seeks stop this far before the end: a seek into it would end
@@ -113,6 +113,12 @@ constexpr float kDragResponse = 4.0f;
 constexpr double kDragMaxStep = 0.1;  // seconds
 // The volume gesture changes one of mpv's 0..100 per degree of wrist twist.
 constexpr double kVolumePerDegree = 1.0;
+// The opacity gesture: past its dead zone, a quarter turn takes it from 100 % to 50 %.
+constexpr double kOpacityPerDegree = 50.0 / 90.0;
+// Reaching 100 % (unblended) or 0 %, it stays there until the wrist turns
+// back as far as the dead zone again, so the hand relaxing as it lets go
+// doesn't take it off.
+constexpr double kOpacityHold = GripTwist::kDeadZone * kOpacityPerDegree;
 
 struct App {
   VideoPlayer* player = nullptr;
@@ -223,7 +229,8 @@ void printControls() {
       "  Left stick     left/right: turn the view by 30 degrees\n"
       "  Stick up/down  scroll lists; flat screen: distance (with a grip held: height);\n"
       "                 180°/360°: move toward or away from the picture (also while dragging)\n"
-      "  Grip           hold to move the screen or the menu; on a screen corner: resize it\n"
+      "  Grip           hold to move the screen or the menu; on a screen corner: resize it;\n"
+      "                 180°/360° on the Frame: hold one and twist that wrist: opacity\n"
       "  Grip + trigger hold both and twist the wrist: volume\n"
       "\nKeyboard (the desktop window must have focus):\n"
       "  Tab          open or close menu\n"
@@ -717,10 +724,12 @@ int run(GLFWwindow* window, const Options& opts) {
       !seekPreview.init(interop, opts.hwdec == "no" ? "no" : opts.previewHwdec, uploader))
     return 1;
   GazeNotice countdownNotice(0);  // "Recentering in 2 …"
-  GazeNotice viewpointNotice(1);  // "Viewpoint: 15 % closer", while the stick moves it
+  // "Viewpoint: 15 % closer" while the stick moves it, or "Opacity: 70 %"
+  // while a twist changes it, whichever changed last.
+  GazeNotice valueNotice(1);
   GazeNotice passthroughNotice(2);  // "Passthrough on: green screen video"
   GazeNotice driveNotice(3);        // "microSD card: HOLIDAY", "Now in the file explorer"
-  if (!countdownNotice.init(uploader) || !viewpointNotice.init(uploader) ||
+  if (!countdownNotice.init(uploader) || !valueNotice.init(uploader) ||
       !passthroughNotice.init(uploader) || !driveNotice.init(uploader))
     return 1;
   // microSD cards and USB drives; on the Frame the app mounts those SteamOS
@@ -730,6 +739,7 @@ int run(GLFWwindow* window, const Options& opts) {
   std::string driveText;
   double driveShownUntil = 0;
   double viewpointShownUntil = 0;  // glfwGetTime() it goes away
+  double opacityShownUntil = 0;    // ... and the opacity's
   double softwareSince = -1;       // the video has played in software decoding since
   // Passthrough switching itself on for videos made for it (see_through.h):
   // once per video, when its size and settings are known.
@@ -862,6 +872,10 @@ int run(GLFWwindow* window, const Options& opts) {
   ScreenControl screenControl;
   WristRoll volumeRoll;
   double rolledVolume = -1;  // the volume the wrist has set so far, -1 = not rolling
+  GripTwist opacityTwist;
+  // The opacity the wrist has set so far, beyond 0..100 by up to
+  // kOpacityHold at a limit; none while not twisting.
+  std::optional<double> twistedOpacity;
   // Holding the trigger away from the menu turns the picture with the hand
   // (sideways, up/down and roll), for fine centring.
   struct TurnDrag {
@@ -1101,6 +1115,8 @@ int run(GLFWwindow* window, const Options& opts) {
     passthroughSettled = false;
     greenCheckAt = 0;
     passthroughShownUntil = 0;
+    opacityTwist.cancel();  // a twist under way was the last video's
+    opacityShownUntil = 0;
     applyVideoSettings();
     knownWidth = knownHeight = 0;  // re-detect the format once the size is known
     if (isPhotoFile(path)) {
@@ -1147,6 +1163,8 @@ int run(GLFWwindow* window, const Options& opts) {
     app.streamOshash.clear();
     app.video.passthrough = false;
     app.video.opacity = 100;  // the empty scene isn't blended; the video keeps its saved value
+    opacityTwist.cancel();
+    opacityShownUntil = 0;
     neighbor = {};
     nextPhoto = {};
     neighborStep = 0;
@@ -2400,7 +2418,7 @@ int run(GLFWwindow* window, const Options& opts) {
       if ((initialRecenter || (app.recenter && !menu.setupRunning())) && headValid) {
         if (app.recenter) {
           if (app.video.originForward != 0)
-            viewpointShownUntil = now + kViewpointShown;  // "Centered": it did go back
+            viewpointShownUntil = now + kValueShown;  // "Centered": it did go back
           app.video.originForward = 0;
           // Also mark a provisional zero: a late identity restore must not
           // bring back a remembered origin after an explicit recenter.
@@ -2594,6 +2612,42 @@ int run(GLFWwindow* window, const Options& opts) {
         rolledVolume = next;
       }
 
+      // 180°/360° video the headset blends over the room: a grip held
+      // without the trigger, off the menu, and a twist of that wrist past
+      // its dead zone sets the video's opacity (on the flat screen the grip
+      // moves the screen).
+      const float twisted =
+          opacityTwist.update(input, onMenu,
+                              canBlend && app.format.projection != Projection::Flat &&
+                                  videoImage && menuGrab.hand < 0);
+      if (!opacityTwist.changing()) {
+        twistedOpacity.reset();
+      } else {
+        const auto shown = [](double opacity) {
+          return std::clamp(std::lround(opacity), 0L, 100L);
+        };
+        if (!twistedOpacity) buzz(opacityTwist.hand(), 0.25f, 0.012);
+        // It goes on from the video's opacity, with its fraction and hold
+        // while that still shows it (a late library restore can change it
+        // mid-twist).
+        if (!twistedOpacity || shown(*twistedOpacity) != app.video.opacity)
+          twistedOpacity = app.video.opacity;
+        const double was = *twistedOpacity;
+        double next = was + twisted * kOpacityPerDegree;
+        if (next >= 100) next = was > 100 ? std::min(next, 100 + kOpacityHold) : 100 + kOpacityHold;
+        if (next <= 0) next = was < 0 ? std::max(next, -kOpacityHold) : -kOpacityHold;
+        const long from = shown(was), to = shown(next);
+        if (to != from) {
+          app.video.opacity = static_cast<int>(to);
+          storeVideoSoon(VideoSettings::kOpacity);
+          // A detent at each multiple of 10 it reaches.
+          if (to > from ? to / 10 > from / 10 : (to + 9) / 10 < (from + 9) / 10)
+            buzz(opacityTwist.hand(), 0.1f, 0.006);
+        }
+        twistedOpacity = next;
+        opacityShownUntil = now + kValueShown;
+      }
+
       // Trigger away from the menu: drag the picture around you.
       // Releasing stops it where it is shown; what the smoothing had not caught up is dropped.
       const bool screenHeld = screenControl.holding();
@@ -2769,7 +2823,7 @@ int run(GLFWwindow* window, const Options& opts) {
             app.video.originForward =
                 std::clamp(app.video.originForward + direction * 0.05f * dt, -kMax, kMax);
             storeVideoSoon(VideoSettings::kOrigin);
-            viewpointShownUntil = now + kViewpointShown;
+            viewpointShownUntil = now + kValueShown;
           }
         }
       }
@@ -3204,19 +3258,25 @@ int run(GLFWwindow* window, const Options& opts) {
       }
       // Messages in front of the eyes, last, over everything: the recenter
       // countdown, and the viewpoint as the stick moves it (or Recenter puts
-      // it back), redrawn only as its percent changes, a few times a second.
+      // it back) or the opacity as a twist changes it, redrawn only as its
+      // percent changes, a few times a second.
       if (app.recenterAt > 0 && headValid) {
         char text[64];
         std::snprintf(text, sizeof(text), strings().recenterIn,
                       static_cast<int>(std::ceil(app.recenterAt - now)));
         countdownNotice.addTo(overlays, text, headPos, headRot);
       }
-      if (now < viewpointShownUntil && app.format.projection != Projection::Flat && headValid) {
-        const int percent = static_cast<int>(std::lround(app.video.originForward * 100));
+      if (now < std::max(viewpointShownUntil, opacityShownUntil) &&
+          app.format.projection != Projection::Flat && headValid) {
         char text[160];
-        std::snprintf(text, sizeof(text), strings().viewpoint.overlay,
-                      viewpointText(percent).c_str());
-        viewpointNotice.addTo(overlays, text, headPos, headRot);
+        if (opacityShownUntil > viewpointShownUntil) {
+          std::snprintf(text, sizeof(text), strings().opacityOverlay, app.video.opacity);
+        } else {
+          const int percent = static_cast<int>(std::lround(app.video.originForward * 100));
+          std::snprintf(text, sizeof(text), strings().viewpoint.overlay,
+                        viewpointText(percent).c_str());
+        }
+        valueNotice.addTo(overlays, text, headPos, headRot);
       }
       if (now < passthroughShownUntil && passthroughWhy && app.video.passthrough && headValid)
         passthroughNotice.addTo(

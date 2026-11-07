@@ -119,7 +119,8 @@ Strings germanStrings(const Strings& english) {
   s.greenScreenOwnMask = "Dieses Video hat eine eigene Maske.";
   s.passthroughGroup = "Passthrough";
   s.opacity = "Deckkraft";
-  s.opacityHint = "Wie deckend das Video über dem Raum ist. Nur auf dem Headset selbst, nicht beim Streamen vom PC. Für dieses Video gespeichert.";
+  s.opacityHint = "Wie deckend das Video über dem Raum ist. Nur auf dem Headset selbst, nicht beim Streamen vom PC. Bei 180°- oder 360°-Video eine Grifftaste halten und das Handgelenk drehen, um sie zu ändern. Für dieses Video gespeichert.";
+  s.opacityOverlay = "Deckkraft: %d %%";
   s.packedMask = "Maske im Video";
   s.packedMaskHint = "Für Videos mit eigener Maske (DeoVR-Alpha). Folgt „_ALPHA“ im Dateinamen, außer hier eingestellt. Für dieses Video gespeichert.";
   s.packedMaskFormatHint = "Nur für Fisheye-Videos 3D nebeneinander. Wähle zuerst dieses Format.";
