@@ -8,7 +8,7 @@ namespace {
 // Stops at each end of the sliders: warmth turns red up and blue down by
 // this much each, tint green by this much against the red/blue average
 // (magenta above 0), exposure all three.
-constexpr float kWarmthStops = 1.0f, kTintStops = 1.0f, kExposureStops = 2.0f;
+constexpr float kWarmthStops = 1.0f, kTintStops = 1.0f, kExposureStops = 3.0f;
 
 int toSlider(float stops, float range) {
   return static_cast<int>(std::lround(std::clamp(stops / range, -1.0f, 1.0f) * 100.0f));
@@ -34,5 +34,7 @@ void ColourBalance::match(const float light[3], bool colour, float white, float 
     warmth = toSlider((l[0] - l[2]) / 2 * colourShare, kWarmthStops);
     tint = toSlider(((l[0] + l[2]) / 2 - l[1]) * colourShare, kTintStops);
   }
-  exposure = toSlider(std::log2(std::max(white, 1e-6f)) * brightnessShare, kExposureStops);
+  // Darker only: a room brighter than the video leaves it as it is.
+  exposure = toSlider(std::min(std::log2(std::max(white, 1e-6f)), 0.0f) * brightnessShare,
+                      kExposureStops);
 }

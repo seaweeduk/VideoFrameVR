@@ -31,13 +31,19 @@ constexpr auto kBlankTimeout = std::chrono::milliseconds(800);
 constexpr double kColourSpread = 0.015;
 // An auto-exposed camera puts the room's average near 18 % of its white.
 constexpr double kMiddleGrey = 0.18;
+// Lit: at least this luminance. A view with less than kMinLit of its pixels
+// lit shows no room (the cameras black after the headset moved: under 1 %;
+// a dim room: over 90 %), and gives no reading.
+constexpr float kLit = 0.01f;
+constexpr double kMinLit = 0.10;
 
 struct Sums {
   double log = 0;  // of the luminance
   long n = 0;
   double light[3] = {0, 0, 0};  // the lit pixels' channels
   double chroma[2] = {0, 0}, chroma2[2] = {0, 0};  // r and b of r+g+b, and their squares
-  long lit = 0;
+  long lit = 0;    // ... lit and not clipped
+  long shown = 0;  // lit, clipped or not
 };
 
 }  // namespace
@@ -171,10 +177,11 @@ std::optional<RoomLight::Reading> RoomLight::read() {
         ++into.n;
         sum += l;
         ++count;
+        into.shown += l >= kLit;
         // The light's colour: the average of what is lit and not clipped
         // (grey world). Weighting bright pixels more (shades of grey) let a
         // few white things, a lamp or a screen, say the light is white.
-        if (std::max({r8, p[1], b8}) >= 250 || l < 0.01f) continue;
+        if (std::max({r8, p[1], b8}) >= 250 || l < kLit) continue;
         const float c[3] = {r, g, b};
         for (int k = 0; k < 3; ++k) into.light[k] += c[k];
         const double s = double(r) + g + b;
@@ -214,6 +221,11 @@ std::optional<RoomLight::Reading> RoomLight::read() {
     trace += step;
   }
 
+  if (sums.shown < kMinLit * sums.n) {
+    std::printf("Room light: frames %s; too dark to read (%.1f %% lit)\n", trace.c_str(),
+                100.0 * sums.shown / std::max(sums.n, 1L));
+    return {};
+  }
   Reading reading;
   reading.white = static_cast<float>(std::exp(sums.log / sums.n) / kMiddleGrey);
   double spread = 0;
