@@ -41,8 +41,6 @@ const std::vector<ReleaseNotes>& builtInReleaseNotes();
 // Settings → Help's What's new: every release up to this build's version (a
 // development build: all). Empty: no notes for this device.
 std::vector<ReleaseNotes> allReleaseNotes();
-// Those newer than `after`, up to this build's version.
-std::vector<ReleaseNotes> releaseNotesSince(std::string_view after);
 
 // Decided at launch, from settings.conf's version_seen and show_whats_new.
 struct WhatsNewLaunch {

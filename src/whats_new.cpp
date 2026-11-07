@@ -166,10 +166,6 @@ std::vector<ReleaseNotes> allReleaseNotes() {
   return releasesBetween(builtInReleaseNotes(), {}, devVersion(thisVersion()) ? std::string_view() : thisVersion());
 }
 
-std::vector<ReleaseNotes> releaseNotesSince(std::string_view after) {
-  return releasesBetween(builtInReleaseNotes(), after, thisVersion());
-}
-
 WhatsNewLaunch whatsNewAtLaunch(const std::vector<ReleaseNotes>& releases, std::string_view version,
                                 bool newProfile, std::string_view seen, bool showAfterUpdates) {
   WhatsNewLaunch out;
