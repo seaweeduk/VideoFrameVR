@@ -2812,8 +2812,11 @@ int run(GLFWwindow* window, const Options& opts) {
         focusIn.motion = focusIn.motion +
                          transformDir(focusIn.picture, {0, 0, -app.video.originForward});
       focusIn.zoom = app.screen.zoom;
-      focusIn.seeThrough = seeThrough(app.video.passthrough, packedMask(app.currentFile, app.video),
-                                      app.format, app.video.greenScreen);
+      // Only passthrough the eye images show: without alpha blending the
+      // Frame draws the video whole.
+      focusIn.seeThrough = seeThrough(alphaPassthrough || keyPassthrough,
+                                      packedMask(app.currentFile, app.video), app.format,
+                                      app.video.greenScreen);
       focusIn.now = now;
       focusIn.target = focusTargets.update(settings.focusPrefs.eyeTracking, xr.gaze(), headRot,
                                            now, settings.focusPrefs.gazeCorrect);
@@ -3068,7 +3071,13 @@ int run(GLFWwindow* window, const Options& opts) {
       video.frameAspect = frameAspect;
       video.flip = app.flipVideo;
       video.screen = app.screen;
-      if (photo) {  // brightness etc. are applied while drawing (mpv does it for videos)
+      video.photo = photo;
+      video.seeThrough = focusIn.seeThrough;
+      // Brightness etc. are applied while drawing to photos, and to videos
+      // while a mask or key reads the frame; else mpv (or YuvColor) does it.
+      const bool readsFrame = video.readsFrame(scene.clear);
+      player.setPlainPicture(readsFrame);
+      if (photo || readsFrame) {
         video.adjust[0] = app.video.brightness / 100.0f;
         video.adjust[1] = app.video.contrast / 100.0f;
         video.adjust[2] = app.video.saturation / 100.0f;
@@ -3077,7 +3086,6 @@ int run(GLFWwindow* window, const Options& opts) {
       video.antiShimmer = antiShimmer;
       video.look = settings.toneLook;
       video.sharpen = settings.sharpen / 100.0f;
-      video.seeThrough = focusIn.seeThrough;
       video.key = app.video.greenScreen;
       video.correction = focusOut.correction;
       if (videoImage && xr.eyeCount() > 0) {
