@@ -38,9 +38,16 @@ const char* packingName(Packing p);
 Projection nextProjection(Projection p);
 StereoLayout nextStereo(StereoLayout s);
 
+// A two-view video (H.264 MVC: 3D Blu-ray discs and their MKV rips) as mpv
+// decodes it: both views side by side in one frame, each at full size, or
+// its base view alone (2D) where the views can't be decoded together.
+enum class TwoViews { No, Both, BaseOnly };
+
 // Guesses the format from common tags in the file name (e.g. "_180_SBS",
 // "_360_TB", "FISHEYE180", "MKX200"), falling back to typical VR frame sizes.
-VideoFormat guessVideoFormat(const std::string& path, int width, int height);
+// Two-view video is flat: full side by side, or 2D.
+VideoFormat guessVideoFormat(const std::string& path, int width, int height,
+                             TwoViews views = TwoViews::No);
 
 // Whether a video is VR (or 360°) rather than flat 2D, without opening it,
 // for lists that tell them apart (docs/stash.md). By its frame: 2:1 (aspect

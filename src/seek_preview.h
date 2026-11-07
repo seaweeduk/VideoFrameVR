@@ -26,6 +26,7 @@ class SeekPreview {
     std::string location;
     double duration = 0;  // seconds
     VideoFormat format;
+    TwoViews views = TwoViews::No;  // as playback decodes them
     bool flip = false;
   };
 

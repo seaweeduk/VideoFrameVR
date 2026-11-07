@@ -1,0 +1,1354 @@
+# Two-view H.264 MVC (3D Blu-ray, Stereo High) in both views: see
+# video/decode/vd_mvc.h. Apply to the pinned 0.40.0 source with
+# packaging/mpv/mvc/ copied to video/decode/mvc/, before the Frame patches.
+# Also: no decoder error for Blu-ray DTS-HD audio after seeks (demux_lavf).
+--- a/demux/demux_lavf.c
++++ b/demux/demux_lavf.c
+@@ -32,6 +32,7 @@
+ #include <libavutil/avutil.h>
+ #include <libavutil/avstring.h>
+ #include <libavutil/display.h>
++#include <libavutil/intreadwrite.h>
+ #include <libavutil/dovi_meta.h>
+ #include <libavutil/mathematics.h>
+ #include <libavutil/opt.h>
+@@ -221,6 +222,7 @@
+     double last_key_pts;
+     double highest_pts;
+     double ts_offset;
++    bool seeked;    // no packet read since the last seek
+ };
+ 
+ typedef struct lavf_priv {
+@@ -251,6 +253,16 @@
+ 
+     AVDictionary *av_opts;
+ 
++    // H.264 MVC in a Blu-ray transport stream (3D): the dependent view's
++    // stream (PID 0x1012, no track of its own) and the base view's, whose
++    // packets get the dependent view's packet of the same DTS appended.
++    bool mvc_ts;
++    int mvc_dep, mvc_base;
++    AVPacket **mvc_dep_q, **mvc_base_q;
++    int num_mvc_dep_q, num_mvc_base_q;
++    int64_t mvc_dep_pos;    // the last dependent view packet's
++    bool mvc_eof;
++
+     // Proxying nested streams.
+     struct nested_stream *nested;
+     int num_nested;
+@@ -589,6 +601,38 @@
+     talloc_free(tmp);
+ }
+ 
++#define MVC_BASE_PID 0x1011
++#define MVC_DEPENDENT_PID 0x1012
++// Packets of one view kept waiting for the other's (about 10 s).
++#define MVC_MAX_WAITING 256
++// Seconds from one IDR access unit to the next, at most (Blu-ray: 1).
++#define MVC_SEEK_BACK 1.0
++
++static bool is_mvc_ts_stream(lavf_priv_t *priv, AVStream *st, int pid)
++{
++    return st->id == pid && st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
++           matches_avinputformat_name(priv, "mpegts");
++}
++
++// Whether a stream is a Blu-ray's MVC dependent view: never a track.
++static bool is_mvc_dependent(lavf_priv_t *priv, AVStream *st)
++{
++    if (!is_mvc_ts_stream(priv, st, MVC_DEPENDENT_PID))
++        return false;
++    if (priv->mvc_ts && st->codecpar->codec_id == AV_CODEC_ID_NONE)
++        return true;
++    // Found too late to be joined; its packets aren't usable alone.
++    if (st->codecpar->codec_id != AV_CODEC_ID_H264)
++        return false;
++    for (int n = 0; n < priv->avfc->nb_streams; n++) {
++        AVStream *base = priv->avfc->streams[n];
++        if (is_mvc_ts_stream(priv, base, MVC_BASE_PID) &&
++            base->codecpar->codec_id == AV_CODEC_ID_H264)
++            return true;
++    }
++    return false;
++}
++
+ static void select_tracks(struct demuxer *demuxer, int start)
+ {
+     lavf_priv_t *priv = demuxer->priv;
+@@ -599,6 +643,13 @@
+                         !stream->attached_picture;
+         st->discard = selected ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
+     }
++    // The dependent view goes with the base view.
++    if (priv->mvc_dep >= 0 && priv->mvc_dep < priv->num_streams) {
++        AVStream *base = priv->mvc_base >= 0 && priv->mvc_base < priv->num_streams
++                       ? priv->avfc->streams[priv->mvc_base] : NULL;
++        priv->avfc->streams[priv->mvc_dep]->discard =
++            base ? base->discard : AVDISCARD_ALL;
++    }
+ }
+ 
+ static inline const uint8_t *mp_av_stream_get_side_data(const AVStream *st,
+@@ -719,6 +770,12 @@
+         break;
+     }
+     case AVMEDIA_TYPE_VIDEO: {
++        if (is_mvc_dependent(priv, st)) {
++            if (priv->mvc_ts && priv->mvc_dep < 0)
++                priv->mvc_dep = i;
++            break;
++        }
++
+         sh = demux_alloc_sh_stream(STREAM_VIDEO);
+ 
+         if ((st->disposition & AV_DISPOSITION_ATTACHED_PIC) &&
+@@ -774,6 +831,14 @@
+         // This also applies to vfw-muxed mkv, but we can't detect these easily.
+         sh->codec->avi_dts = matches_avinputformat_name(priv, "avi");
+ 
++        if (priv->mvc_ts && priv->mvc_base < 0 &&
++            is_mvc_ts_stream(priv, st, MVC_BASE_PID) &&
++            codec->codec_id == AV_CODEC_ID_H264)
++        {
++            priv->mvc_base = i;
++            sh->codec->mvc = true;
++        }
++
+         break;
+     }
+     case AVMEDIA_TYPE_SUBTITLE: {
+@@ -975,6 +1040,8 @@
+ 
+     demuxer->priv = priv;
+     priv->stream = demuxer->stream;
++    priv->mvc_dep = priv->mvc_base = -1;
++    priv->mvc_dep_pos = -1;
+ 
+     priv->opts = mp_get_config_group(priv, demuxer->global, &demux_lavf_conf);
+     struct demux_lavf_opts *lavfdopts = priv->opts;
+@@ -1101,6 +1168,21 @@
+ 
+     priv->avfc = avfc;
+ 
++    // A 3D Blu-ray's dependent view (stream type 0x20) holds no picture
++    // FFmpeg's H.264 parser recognizes, so it would join all of it into one
++    // packet: take its PES packets as they are instead (no codec, no
++    // parser). The base view's packets are what the parser makes them.
++    for (int n = 0; n < avfc->nb_streams; n++) {
++        AVStream *st = avfc->streams[n];
++        if (is_mvc_ts_stream(priv, st, MVC_DEPENDENT_PID) &&
++            st->codecpar->codec_id == AV_CODEC_ID_H264)
++        {
++            MP_VERBOSE(demuxer, "3D (MVC) transport stream.\n");
++            st->codecpar->codec_id = AV_CODEC_ID_NONE;
++            priv->mvc_ts = true;
++        }
++    }
++
+     bool probeinfo = lavfdopts->probeinfo != 0;
+     switch (lavfdopts->probeinfo) {
+     case -2: probeinfo = priv->avfc->nb_streams == 0; break;
+@@ -1209,13 +1291,140 @@
+     return -1;
+ }
+ 
++static void set_seeked(lavf_priv_t *priv)
++{
++    for (int n = 0; n < priv->num_streams; n++)
++        priv->streams[n]->seeked = true;
++}
++
++static void mvc_clear(lavf_priv_t *priv)
++{
++    for (int n = 0; n < priv->num_mvc_dep_q; n++)
++        av_packet_free(&priv->mvc_dep_q[n]);
++    for (int n = 0; n < priv->num_mvc_base_q; n++)
++        av_packet_free(&priv->mvc_base_q[n]);
++    priv->num_mvc_dep_q = priv->num_mvc_base_q = 0;
++    priv->mvc_dep_pos = -1;
++    priv->mvc_eof = false;
++}
++
++// Whether a base view's packet starts an IDR picture.
++static bool mvc_is_idr(const uint8_t *d, int size)
++{
++    for (int i = 3; i < size; i++) {
++        if (d[i - 1] == 1 && !d[i - 2] && !d[i - 3]) {
++            int type = d[i] & 0x1f;
++            if (type == 5)
++                return true;
++            if (type == 1)
++                return false;
++        }
++    }
++    return false;
++}
++
++// The next base view's packet, joined with the dependent view's of the same
++// DTS (or alone, which the decoder treats as damage).
++static bool mvc_join(lavf_priv_t *priv, AVPacket *pkt)
++{
++    while (priv->num_mvc_base_q) {
++        AVPacket *base = priv->mvc_base_q[0];
++        AVPacket *dep = priv->num_mvc_dep_q ? priv->mvc_dep_q[0] : NULL;
++        if (dep && dep->dts == base->dts) {
++            // It may go on in the next packet (read_frame()): whole once
++            // another one starts.
++            if (priv->num_mvc_dep_q < 2 && !priv->mvc_eof &&
++                priv->num_mvc_base_q < MVC_MAX_WAITING)
++                return false;
++            int size = base->size;
++            if (av_grow_packet(base, dep->size) >= 0)
++                memcpy(base->data + size, dep->data, dep->size);
++            av_packet_free(&priv->mvc_dep_q[0]);
++            MP_TARRAY_REMOVE_AT(priv->mvc_dep_q, priv->num_mvc_dep_q, 0);
++        } else if (dep && dep->dts < base->dts) {
++            av_packet_free(&priv->mvc_dep_q[0]);
++            MP_TARRAY_REMOVE_AT(priv->mvc_dep_q, priv->num_mvc_dep_q, 0);
++            continue;
++        } else if (!dep && !priv->mvc_eof &&
++                   priv->num_mvc_base_q < MVC_MAX_WAITING) {
++            return false;
++        }
++        av_packet_move_ref(pkt, base);
++        av_packet_free(&priv->mvc_base_q[0]);
++        MP_TARRAY_REMOVE_AT(priv->mvc_base_q, priv->num_mvc_base_q, 0);
++        if (mvc_is_idr(pkt->data, pkt->size))
++            pkt->flags |= AV_PKT_FLAG_KEY;
++        return true;
++    }
++    return false;
++}
++
++// av_read_frame(), with MVC's two views joined.
++static int read_frame(struct demuxer *demux, AVPacket *pkt)
++{
++    lavf_priv_t *priv = demux->priv;
++
++    if (priv->mvc_dep < 0 || priv->mvc_base < 0)
++        return av_read_frame(priv->avfc, pkt);
++
++    while (!mvc_join(priv, pkt)) {
++        if (priv->mvc_eof)
++            return AVERROR_EOF;
++        int r = av_read_frame(priv->avfc, pkt);
++        if (r == AVERROR_EOF) {
++            priv->mvc_eof = true;
++            continue;
++        }
++        if (r < 0)
++            return r;
++        AVPacket ***q = NULL;
++        int *num = NULL;
++        if (pkt->stream_index == priv->mvc_dep) {
++            q = &priv->mvc_dep_q;
++            num = &priv->num_mvc_dep_q;
++        } else if (pkt->stream_index == priv->mvc_base) {
++            q = &priv->mvc_base_q;
++            num = &priv->num_mvc_base_q;
++        } else {
++            return 0;
++        }
++        // FFmpeg's TS demuxer hands out a PES packet over max_packet_size
++        // (200 KiB) in pieces, from the same position, the later ones with
++        // made-up timestamps. The base view's parser joins its own; the
++        // dependent view has none (a big picture's).
++        if (q == &priv->mvc_dep_q && pkt->pos >= 0 && pkt->pos == priv->mvc_dep_pos) {
++            AVPacket *last = *num ? (*q)[*num - 1] : NULL;
++            if (last && last->pos == pkt->pos) {
++                int size = last->size;
++                if (av_grow_packet(last, pkt->size) >= 0)
++                    memcpy(last->data + size, pkt->data, pkt->size);
++            }
++            av_packet_unref(pkt);
++            continue;
++        }
++        if (q == &priv->mvc_dep_q)
++            priv->mvc_dep_pos = pkt->pos;
++        if ((q == &priv->mvc_dep_q && pkt->dts == AV_NOPTS_VALUE) ||
++            *num >= MVC_MAX_WAITING)
++        {
++            av_packet_unref(pkt);
++            continue;
++        }
++        AVPacket *queued = av_packet_alloc();
++        MP_HANDLE_OOM(queued);
++        av_packet_move_ref(queued, pkt);
++        MP_TARRAY_APPEND(priv, *q, *num, queued);
++    }
++    return 0;
++}
++
+ static bool demux_lavf_read_packet(struct demuxer *demux,
+                                    struct demux_packet **mp_pkt)
+ {
+     lavf_priv_t *priv = demux->priv;
+ 
+     AVPacket *pkt = &(AVPacket){0};
+-    int r = av_read_frame(priv->avfc, pkt);
++    int r = read_frame(demux, pkt);
+     update_read_stats(demux);
+     if (r < 0) {
+         av_packet_unref(pkt);
+@@ -1244,6 +1453,20 @@
+         return true; // don't signal EOF if skipping a packet
+     }
+ 
++    // Blu-ray's DTS-HD audio has each frame's core and extension in PES
++    // packets of their own: after a seek the first can be the extension
++    // alone, which the decoder rejects. (DTS Express never has a core.)
++    if (info->seeked) {
++        info->seeked = false;
++        if (st->codecpar->codec_id == AV_CODEC_ID_DTS &&
++            st->codecpar->profile != AV_PROFILE_DTS_EXPRESS &&
++            pkt->size >= 4 && AV_RB32(pkt->data) == 0x64582025)
++        {
++            av_packet_unref(pkt);
++            return true;
++        }
++    }
++
+     // Never send additional frames for streams that are a single frame.
+     if (stream->image && priv->format_hack.first_frame_only && pkt->pos != 0) {
+         av_packet_unref(pkt);
+@@ -1311,6 +1534,8 @@
+ {
+     lavf_priv_t *priv = demuxer->priv;
+     av_seek_frame(priv->avfc, -1, 0, 1);
++    mvc_clear(priv);
++    set_seeked(priv);
+     demux_flush(demuxer);
+     stream_drop_buffers(priv->stream);
+     avio_flush(priv->avfc->pb);
+@@ -1384,6 +1609,22 @@
+         }
+     }
+ 
++    // Seek by the dependent view: in a 3D Blu-ray's interleaved file it comes
++    // before the base view of the same time. The views decode from an IDR
++    // access unit on, at most a second apart on a Blu-ray: go back one.
++    mvc_clear(priv);
++    set_seeked(priv);
++    if (priv->mvc_dep >= 0 && priv->mvc_base >= 0 && seek_stream < 0 &&
++        !(avsflags & AVSEEK_FLAG_BYTE))
++    {
++        AVStream *st = priv->avfc->streams[priv->mvc_dep];
++        seek_stream = priv->mvc_dep;
++        if (avsflags & AVSEEK_FLAG_BACKWARD)
++            seek_pts_av -= MVC_SEEK_BACK * AV_TIME_BASE;
++        seek_pts_av = av_rescale(seek_pts_av, st->time_base.den,
++                                 AV_TIME_BASE * (int64_t)st->time_base.num);
++    }
++
+     int r = av_seek_frame(priv->avfc, seek_stream, seek_pts_av, avsflags);
+     if (r < 0 && (avsflags & AVSEEK_FLAG_BACKWARD)) {
+         // When seeking before the beginning of the file, and seeking fails,
+@@ -1411,6 +1652,7 @@
+ {
+     lavf_priv_t *priv = demuxer->priv;
+     if (priv) {
++        mvc_clear(priv);
+         // This will be a dangling pointer; but see below.
+         AVIOContext *leaking = priv->avfc ? priv->avfc->pb : NULL;
+         avformat_close_input(&priv->avfc);
+--- a/demux/stheader.h
++++ b/demux/stheader.h
+@@ -113,6 +113,7 @@
+ 
+     // STREAM_VIDEO
+     bool avi_dts;         // use DTS timing; first frame and DTS is 0
++    bool mvc;             // H.264 MVC: each packet holds both views
+     double fps;           // frames per second (set only if constant fps)
+     bool reliable_fps;    // the fps field is definitely not broken
+     int par_w, par_h;     // pixel aspect ratio (0 if unknown/square)
+--- a/filters/f_decoder_wrapper.c
++++ b/filters/f_decoder_wrapper.c
+@@ -609,7 +609,9 @@
+     if (m.p_w <= 0 || m.p_h <= 0)
+         m.p_w = m.p_h = 1;
+ 
+-    m.stereo3d = p->codec->stereo_mode;
++    // A decoder that joins views says so (vd_mvc.h).
++    if (m.stereo3d == MP_STEREO3D_MONO)
++        m.stereo3d = p->codec->stereo_mode;
+ 
+     if (!mp_rect_equals(&p->codec->crop, &(struct mp_rect){0})) {
+         struct mp_rect crop = p->codec->crop;
+--- a/filters/f_decoder_wrapper.h
++++ b/filters/f_decoder_wrapper.h
+@@ -75,6 +75,9 @@
+     // framedrop mode: 0=none, 1=standard, 2=hrseek
+     VDCTRL_SET_FRAMEDROP,
+     VDCTRL_CHECK_FORCED_EOF,
++    // two-view MVC: "stereo" (both views), "2d" (base view only); false if
++    // the video isn't MVC
++    VDCTRL_GET_MVC,
+ };
+ 
+ int mp_decoder_wrapper_control(struct mp_decoder_wrapper *d,
+--- a/meson.build
++++ b/meson.build
+@@ -209,6 +209,9 @@
+     ## Video
+     'video/csputils.c',
+     'video/decode/vd_lavc.c',
++    'video/decode/vd_mvc.c',
++    'video/decode/mvc/mvc_rewrite.c',
++    'video/decode/mvc/mvc_syntax.c',
+     'video/filter/refqueue.c',
+     'video/filter/vf_format.c',
+     'video/filter/vf_sub.c',
+--- a/player/command.c
++++ b/player/command.c
+@@ -2309,6 +2309,21 @@
+     return m_property_strdup_ro(action, arg, current);
+ }
+ 
++// Two-view H.264 MVC (3D Blu-ray): "stereo" while both views are decoded
++// (the frames hold them side by side), "2d" when the base view plays alone.
++static int mp_property_video_mvc(void *ctx, struct m_property *prop,
++                                 int action, void *arg)
++{
++    MPContext *mpctx = ctx;
++    struct track *track = mpctx->current_track[0][STREAM_VIDEO];
++    struct mp_decoder_wrapper *dec = track ? track->dec : NULL;
++    const char *mode = NULL;
++
++    if (!dec || mp_decoder_wrapper_control(dec, VDCTRL_GET_MVC, &mode) != CONTROL_TRUE)
++        return M_PROPERTY_UNAVAILABLE;
++    return m_property_strdup_ro(action, arg, mode);
++}
++
+ static int mp_property_hwdec_interop(void *ctx, struct m_property *prop,
+                                      int action, void *arg)
+ {
+@@ -4365,6 +4380,7 @@
+     {"video-aspect-override", mp_property_video_aspect_override},
+     {"vid", mp_property_switch_track, .priv = (void *)(const int[]){0, STREAM_VIDEO}},
+     {"hwdec-current", mp_property_hwdec_current},
++    {"video-mvc", mp_property_video_mvc},
+     {"hwdec-interop", mp_property_hwdec_interop},
+ 
+     {"estimated-frame-count", mp_property_frame_count},
+@@ -4496,7 +4512,7 @@
+       "video-format", "video-codec", "video-bitrate", "dwidth", "dheight",
+       "width", "height", "container-fps", "aspect", "aspect-name", "vo-configured", "current-vo",
+       "video-dec-params", "osd-dimensions", "hwdec", "hwdec-current", "hwdec-interop",
+-      "window-id", "track-list", "current-tracks"),
++      "video-mvc", "window-id", "track-list", "current-tracks"),
+     E(MPV_EVENT_AUDIO_RECONFIG, "audio-format", "audio-codec", "audio-bitrate",
+       "samplerate", "channels", "audio", "volume", "volume-gain", "mute",
+       "current-ao", "audio-codec-name", "audio-params", "track-list", "current-tracks",
+--- a/video/decode/vd_lavc.c
++++ b/video/decode/vd_lavc.c
+@@ -53,6 +53,7 @@
+ #include "video/csputils.h"
+ #include "video/sws_utils.h"
+ #include "video/out/vo.h"
++#include "vd_mvc.h"
+ 
+ #include "options/m_option.h"
+ 
+@@ -84,6 +85,8 @@
+     bool check_hw_profile;
+     char **avopts;
+     int dr;
++    int mvc;
++    int mvc_base_view;
+ };
+ 
+ static const struct m_opt_choice_alternatives discard_names[] = {
+@@ -115,6 +118,9 @@
+         {"vd-lavc-dr", OPT_CHOICE(dr,
+             {"auto", -1}, {"no", 0}, {"yes", 1})},
+         {"vd-apply-cropping", OPT_BOOL(apply_cropping)},
++        {"vd-lavc-mvc", OPT_CHOICE(mvc, {"auto", 0}, {"no", 1})},
++        {"vd-lavc-mvc-base-view", OPT_CHOICE(mvc_base_view,
++            {"left", 0}, {"right", 1})},
+         {0}
+     },
+     .change_flags = UPDATE_VD,
+@@ -214,6 +220,14 @@
+     bool intra_only;
+     int framedrop_flags;
+ 
++    // Two-view H.264 MVC (vd_mvc.h): set while both views are decoded.
++    struct vd_mvc *mvc;
++    bool mvc_2d;        // an MVC stream played as its base view
++    bool mvc_2d_wait;   // ...from its next keyframe (after a seek, or once
++                        // 3D gave up)
++    bool mvc_probed;    // the first packet was checked for MVC
++    struct vd_mvc_sps_ids mvc_sps_ids;
++
+     bool hw_probing;
+     struct demux_packet **sent_packets;
+     int num_sent_packets;
+@@ -489,6 +503,15 @@
+     return NULL;
+ }
+ 
++// Whether hwdec is the copy-back variant of the one opt names.
++static bool is_copy_variant(bstr opt, struct hwdec_info *hwdec)
++{
++    bstr method = bstr0(hwdec->method_name), name = bstr0(hwdec->name);
++    return hwdec->copying &&
++           ((bstr_eatend0(&method, "-copy") && bstr_equals(method, opt)) ||
++            (bstr_eatend0(&name, "-copy") && bstr_equals(name, opt)));
++}
++
+ // Select if and which hwdec to use. Also makes sure to get the decode device.
+ static void select_and_set_hwdec(struct mp_filter *vd)
+ {
+@@ -530,8 +553,17 @@
+             for (int n = 0; n < num_hwdecs; n++) {
+                 struct hwdec_info *hwdec = &hwdecs[n];
+ 
+-                if (!hwdec_auto && !(bstr_equals0(opt, hwdec->method_name) ||
+-                                    bstr_equals0(opt, hwdec->name)))
++                bool named = bstr_equals0(opt, hwdec->method_name) ||
++                             bstr_equals0(opt, hwdec->name);
++                // MVC's views are joined in memory (vd_mvc.h): decode to
++                // software frames, through the copy-back variant of the
++                // hwdec asked for.
++                if (ctx->mvc) {
++                    if (!hwdec->copying)
++                        continue;
++                    named = named || is_copy_variant(opt, hwdec);
++                }
++                if (!hwdec_auto && !named)
+                     continue;
+                 hwdec_name_supported = true;
+ 
+@@ -781,7 +813,8 @@
+         mp_set_avcodec_threads(vd->log, avctx, lavc_param->threads);
+     }
+ 
+-    if (!ctx->use_hwdec && ctx->vo && lavc_param->dr) {
++    // MVC reads the decoded views back to join them: not from video memory.
++    if (!ctx->use_hwdec && ctx->vo && lavc_param->dr && !ctx->mvc) {
+         avctx->opaque = vd;
+         avctx->get_buffer2 = get_buffer2_direct;
+     }
+@@ -833,6 +866,12 @@
+         goto error;
+     }
+ 
++    // The rewritten MVC pictures carry their own parameter sets, in Annex B.
++    if (ctx->mvc) {
++        av_freep(&avctx->extradata);
++        avctx->extradata_size = 0;
++    }
++
+     /* open it */
+     if (avcodec_open2(avctx, lavc_codec, NULL) < 0)
+         goto error;
+@@ -841,7 +880,7 @@
+     // decoding of the rest of the stream. The only currently known case is the
+     // x264 build number (encoded in a SEI element), needed to enable a
+     // workaround for broken 4:4:4 streams produced by older x264 versions.
+-    if (lavc_codec->id == AV_CODEC_ID_H264 && c->first_packet) {
++    if (lavc_codec->id == AV_CODEC_ID_H264 && c->first_packet && !ctx->mvc) {
+         mp_set_av_packet(ctx->avpkt, c->first_packet, &ctx->codec_timebase);
+         avcodec_send_packet(avctx, ctx->avpkt);
+         avcodec_receive_frame(avctx, ctx->pic);
+@@ -870,6 +909,12 @@
+ {
+     vd_ffmpeg_ctx *ctx = vd->priv;
+ 
++    if (ctx->mvc)
++        vd_mvc_reset(ctx->mvc);
++    // Seeks into a 3D Blu-ray go by its dependent view, whose base view
++    // may start between keyframes.
++    ctx->mvc_2d_wait = ctx->mvc_2d;
++
+     for (int n = 0; n < ctx->num_delay_queue; n++)
+         talloc_free(ctx->delay_queue[n]);
+     ctx->num_delay_queue = 0;
+@@ -1116,7 +1161,8 @@
+     if (!avctx)
+         return;
+ 
+-    int drop = ctx->framedrop_flags;
++    // Every rewritten MVC picture may be a reference: never drop any.
++    int drop = ctx->mvc ? 0 : ctx->framedrop_flags;
+     if (drop == 1) {
+         avctx->skip_frame = opts->framedrop;    // normal framedrop
+     } else if (drop == 2) {
+@@ -1125,7 +1171,7 @@
+         if (ctx->intra_only)
+             avctx->skip_frame = AVDISCARD_ALL;
+     } else {
+-        avctx->skip_frame = ctx->skip_frame;    // normal playback
++        avctx->skip_frame = ctx->mvc ? AVDISCARD_DEFAULT : ctx->skip_frame;
+     }
+ 
+     if (ctx->hwdec_request_reinit)
+@@ -1147,10 +1193,58 @@
+     }
+ }
+ 
++// Decodes both views of an MVC stream from here on, or (to_2d) its base view
++// only. Reopens the decoder: extradata and the hwdec depend on it.
++static void mvc_start(struct mp_filter *vd, bool to_2d)
++{
++    vd_ffmpeg_ctx *ctx = vd->priv;
++
++    TA_FREEP(&ctx->mvc);
++    if (!to_2d && ctx->opts->mvc == 0) {
++        ctx->mvc = vd_mvc_create(ctx, vd->log, ctx->codec,
++                                 ctx->opts->mvc_base_view == 1);
++    }
++    ctx->mvc_2d = !ctx->mvc;
++    MP_VERBOSE(vd, "3D (MVC) video: decoding %s.\n",
++               ctx->mvc ? "both views" : "the base view (2D)");
++}
++
++// reinit() from send_packet(), which may be sending a packet of
++// requeue_packets: those stay.
++static void mvc_reinit(struct mp_filter *vd)
++{
++    vd_ffmpeg_ctx *ctx = vd->priv;
++
++    struct demux_packet **pkts = ctx->requeue_packets;
++    int num_pkts = ctx->num_requeue_packets;
++    ctx->requeue_packets = NULL;
++    ctx->num_requeue_packets = 0;
++    reinit(vd);
++    ctx->requeue_packets = pkts;
++    ctx->num_requeue_packets = num_pkts;
++}
++
++// Feeds the decoder the rewritten MVC pictures. Returns whether some are
++// still waiting for it.
++static bool send_mvc_queue(struct mp_filter *vd)
++{
++    vd_ffmpeg_ctx *ctx = vd->priv;
++    AVPacket *pkt;
++
++    while (vd_mvc_next(ctx->mvc, &pkt)) {
++        int ret = avcodec_send_packet(ctx->avctx, pkt);
++        if (ret == AVERROR(EAGAIN))
++            return true;
++        if (ret < 0 && ret != AVERROR_EOF)
++            handle_err(vd);
++        vd_mvc_pop(ctx->mvc);
++    }
++    return false;
++}
++
+ static int send_packet(struct mp_filter *vd, struct demux_packet *pkt)
+ {
+     vd_ffmpeg_ctx *ctx = vd->priv;
+-    AVCodecContext *avctx = ctx->avctx;
+ 
+     if (ctx->num_requeue_packets && ctx->requeue_packets[0] != pkt)
+         return AVERROR(EAGAIN); // cannot consume the packet
+@@ -1161,16 +1255,53 @@
+     if (!ctx->avctx)
+         return AVERROR_EOF;
+ 
++    // MVC without an mvcC box: its first packet shows it.
++    if (pkt && !ctx->mvc_probed) {
++        ctx->mvc_probed = true;
++        if (!ctx->mvc && !ctx->mvc_2d && vd_mvc_in_packet(ctx->codec, pkt)) {
++            mvc_start(vd, false);
++            mvc_reinit(vd);
++            if (!ctx->avctx)
++                return AVERROR_EOF;
++        }
++    }
++
++    AVCodecContext *avctx = ctx->avctx;
++
+     prepare_decoding(vd);
+ 
+     if (avctx->skip_frame == AVDISCARD_ALL)
+         return 0;
+ 
+-    mp_set_av_packet(ctx->avpkt, pkt, &ctx->codec_timebase);
+-
+-    int ret = avcodec_send_packet(avctx, pkt ? ctx->avpkt : NULL);
+-    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+-        return ret;
++    int ret;
++    if (ctx->mvc) {
++        if (!vd_mvc_send(ctx->mvc, pkt)) {
++            // The rewrite can't take this stream: carry on in 2D, from a
++            // keyframe (the new decoder has none of the last pictures).
++            mvc_start(vd, true);
++            mvc_reinit(vd);
++            ctx->mvc_2d_wait = true;
++            return send_packet(vd, pkt);
++        }
++        send_mvc_queue(vd);
++        ret = 0;
++    } else {
++        if (pkt && ctx->mvc_2d_wait) {
++            if (!pkt->keyframe)
++                return 0;
++            ctx->mvc_2d_wait = false;
++        }
++        mp_set_av_packet(ctx->avpkt, pkt, &ctx->codec_timebase);
++        // 2D MVC: the base view alone (not every decoder ignores the other).
++        AVPacket *base = pkt && ctx->mvc_2d ?
++            vd_mvc_strip(ctx->avpkt, vd_mvc_length_size(ctx->codec),
++                         &ctx->mvc_sps_ids) : NULL;
++
++        ret = avcodec_send_packet(avctx, pkt ? (base ? base : ctx->avpkt) : NULL);
++        av_packet_free(&base);
++        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
++            return ret;
++    }
+ 
+     if (ctx->hw_probing && ctx->num_sent_packets < 32 &&
+         ctx->hwdec_opts->software_fallback <= 32)
+@@ -1211,6 +1342,9 @@
+     if (ctx->num_requeue_packets)
+         send_queued_packet(vd);
+ 
++    if (ctx->mvc)
++        send_mvc_queue(vd);
++
+     int ret = avcodec_receive_frame(avctx, ctx->pic);
+     if (ret < 0) {
+         if (ret == AVERROR_EOF) {
+@@ -1252,9 +1386,29 @@
+     mpi->pts = mp_pts_from_av(ctx->pic->pts, &ctx->codec_timebase);
+     mpi->dts = mp_pts_from_av(ctx->pic->pkt_dts, &ctx->codec_timebase);
+     mpi->pkt_duration = mp_pts_from_av(ctx->pic->duration, &ctx->codec_timebase);
++    int64_t mvc_tag = ctx->pic->pts;
+ 
+     av_frame_unref(ctx->pic);
+ 
++    if (ctx->mvc) {
++        // Join the views in memory: copy hardware frames back now.
++        if (ctx->use_hwdec && ctx->hwdec.copying && mpi->hwctx) {
++            struct mp_image *sw = mp_image_hw_download(mpi, ctx->hwdec_swpool);
++            talloc_free(mpi);
++            if (!sw) {
++                MP_ERR(vd, "Could not copy back hardware decoded frame.\n");
++                ctx->hwdec_fail_count = INT_MAX - 1; // force fallback
++                handle_err(vd);
++                return AVERROR_UNKNOWN;
++            }
++            mpi = sw;
++        }
++        // NULL until the access unit's other view is here.
++        mpi = vd_mvc_frame(ctx->mvc, mpi, mvc_tag);
++        if (!mpi)
++            return ret;
++    }
++
+     MP_TARRAY_APPEND(ctx, ctx->delay_queue, ctx->num_delay_queue, mpi);
+     return ret;
+ }
+@@ -1295,6 +1449,10 @@
+     if (ret == AVERROR(EAGAIN) && ctx->num_requeue_packets)
+         return 0; // force retry, so send_queued_packet() gets called
+ 
++    AVPacket *mvc_pkt;
++    if (ret == AVERROR(EAGAIN) && ctx->mvc && vd_mvc_next(ctx->mvc, &mvc_pkt))
++        return 0; // force retry, so send_mvc_queue() gets called
++
+     if (ctx->num_delay_queue <= ctx->max_delay_queue && ret != AVERROR_EOF)
+         return ret;
+ 
+@@ -1374,6 +1532,11 @@
+     case VDCTRL_REINIT:
+         reinit(vd);
+         return CONTROL_TRUE;
++    case VDCTRL_GET_MVC:
++        if (!ctx->mvc && !ctx->mvc_2d)
++            return CONTROL_FALSE;
++        *(const char **)arg = ctx->mvc ? "stereo" : "2d";
++        return CONTROL_TRUE;
+     }
+     return CONTROL_UNKNOWN;
+ }
+@@ -1448,6 +1611,9 @@
+         ctx->vo = info->dr_vo;
+     }
+ 
++    if (vd_mvc_by_params(codec))
++        mvc_start(vd, false);
++
+     reinit(vd);
+ 
+     if (!ctx->avctx) {
+--- /dev/null
++++ b/video/decode/vd_mvc.c
+@@ -0,0 +1,484 @@
++/*
++ * Two-view H.264 MVC decoded as a stereo pair: see vd_mvc.h.
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or modify it under the
++ * terms of the GNU General Public License as published by the Free Software
++ * Foundation; either version 3 of the License, or (at your option) any later
++ * version.
++ *
++ * mpv is distributed in the hope that it will be useful, but WITHOUT ANY
++ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
++ * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
++ * details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include <string.h>
++
++#include <libavcodec/avcodec.h>
++#include <libavutil/error.h>
++
++#include "mpv_talloc.h"
++#include "common/common.h"
++#include "common/msg.h"
++#include "demux/packet.h"
++#include "demux/stheader.h"
++#include "video/csputils.h"
++#include "video/mp_image.h"
++#include "video/mp_image_pool.h"
++#include "video/decode/mvc/mvc_internal.h"
++#include "video/decode/mvc/mvc_rewrite.h"
++#include "vd_mvc.h"
++
++// Access units whose timestamps are kept until their pictures are decoded:
++// the rewrite holds up to 16, the decoder's reorder delay and pipeline some
++// more.
++#define AU_RING 256
++
++// Access units dropped in a row (no dependent view, or damage that no IDR
++// recovers from) before playing the base view in 2D: a few seconds, well
++// beyond the wait for an IDR after a seek.
++#define GIVE_UP_DROPS 150
++
++struct au_time {
++    int64_t seq;
++    double pts, dts, duration;
++};
++
++struct vd_mvc {
++    struct mp_log *log;
++    struct mvc_rewriter *rw;
++    bool base_right;
++    struct au_time ring[AU_RING];
++    int64_t seq;             // the last access unit's
++    struct AVPacket **queue; // rewritten pictures waiting for the decoder
++    int num_queue, queue_head;
++    bool queue_eof;          // a flush follows the queue
++    int drops;               // access units dropped since the last good one
++    struct mp_image *held;   // a base view waiting for its dependent view
++    int64_t held_seq;
++    struct mp_image_pool *pool;
++};
++
++// Packet pts as passed through the decoder: the access unit, and the slot.
++static int64_t make_tag(int64_t seq, enum mvc_slot slot)
++{
++    return seq * 4 + slot;
++}
++
++// Calls fn for each NAL unit: its type, and the bytes from its start code or
++// length field to the next one. Stops when fn returns false.
++static void for_each_nal(const uint8_t *d, size_t n, int length_size,
++                         bool (*fn)(void *ctx, int type, size_t start, size_t end),
++                         void *ctx)
++{
++    if (length_size) {
++        size_t pos = 0;
++        while (pos + length_size < n) {
++            size_t len = 0;
++            for (int i = 0; i < length_size; i++)
++                len = (len << 8) | d[pos + i];
++            size_t end = pos + length_size + len;
++            if (!len || end > n)
++                return;
++            if (!fn(ctx, d[pos + length_size] & 0x1f, pos, end))
++                return;
++            pos = end;
++        }
++        return;
++    }
++    // Annex B: a unit starts at its start code's first zero byte.
++    size_t start = SIZE_MAX, header = 0;
++    size_t pos = 2;
++    while (pos < n) {
++        const uint8_t *one = memchr(d + pos, 1, n - pos);
++        if (!one)
++            break;
++        size_t at = one - d;
++        pos = at + 1;
++        if (d[at - 1] || d[at - 2])
++            continue;
++        size_t code = at >= 3 && !d[at - 3] ? at - 3 : at - 2;
++        if (start != SIZE_MAX && !fn(ctx, d[header] & 0x1f, start, code))
++            return;
++        start = code;
++        header = at + 1;
++        if (header >= n)
++            return;
++        pos = header;
++    }
++    if (start != SIZE_MAX && header < n)
++        fn(ctx, d[header] & 0x1f, start, n);
++}
++
++// The codec private data (libavformat's demuxers keep it in lav_codecpar).
++static int get_extradata(struct mp_codec_params *c, const uint8_t **data)
++{
++    if (c->lav_codecpar) {
++        *data = c->lav_codecpar->extradata;
++        return c->lav_codecpar->extradata_size;
++    }
++    *data = c->extradata;
++    return c->extradata_size;
++}
++
++int vd_mvc_length_size(struct mp_codec_params *c)
++{
++    const uint8_t *d;
++    int size = get_extradata(c, &d);
++    if (size >= 7 && d[0] == 1)
++        return (d[4] & 3) + 1;
++    return 0;
++}
++
++bool vd_mvc_by_params(struct mp_codec_params *c)
++{
++    if (!c->codec || strcmp(c->codec, "h264") != 0)
++        return false;
++    if (c->mvc)
++        return true;
++    const uint8_t *d;
++    int size = get_extradata(c, &d);
++    if (size < 7 || d[0] != 1)
++        return false;
++    // avcC is followed by its own box; mvcC's type sits after its size.
++    for (int i = 7; i + 4 <= size; i++) {
++        if (!memcmp(d + i, "mvcC", 4))
++            return true;
++    }
++    return false;
++}
++
++static bool find_slice_ext(void *ctx, int type, size_t start, size_t end)
++{
++    if (type == 20 || type == 15) {
++        *(bool *)ctx = true;
++        return false;
++    }
++    return true;
++}
++
++bool vd_mvc_in_packet(struct mp_codec_params *c, struct demux_packet *pkt)
++{
++    if (!pkt || !pkt->len || !c->codec || strcmp(c->codec, "h264") != 0)
++        return false;
++    bool found = false;
++    for_each_nal(pkt->buffer, pkt->len, vd_mvc_length_size(c), find_slice_ext,
++                 &found);
++    return found;
++}
++
++static void clear_queue(struct vd_mvc *m)
++{
++    for (int i = m->queue_head; i < m->num_queue; i++)
++        av_packet_free(&m->queue[i]);
++    m->num_queue = m->queue_head = 0;
++    m->queue_eof = false;
++}
++
++static void destroy(void *p)
++{
++    struct vd_mvc *m = p;
++    clear_queue(m);
++    talloc_free(m->held);
++    mvc_rewriter_destroy(m->rw);
++}
++
++struct vd_mvc *vd_mvc_create(void *talloc_ctx, struct mp_log *log,
++                             struct mp_codec_params *c, bool base_right)
++{
++    const uint8_t *extradata;
++    int size = get_extradata(c, &extradata);
++    struct mvc_rewriter *rw = mvc_rewriter_create(extradata, MPMAX(size, 0));
++    if (!rw)
++        return NULL;
++    struct vd_mvc *m = talloc_zero(talloc_ctx, struct vd_mvc);
++    talloc_set_destructor(m, destroy);
++    m->log = log;
++    m->rw = rw;
++    m->base_right = base_right;
++    m->pool = mp_image_pool_new(m);
++    return m;
++}
++
++static bool queue_pictures(struct vd_mvc *m, const struct mvc_picture *pics,
++                           int count)
++{
++    for (int i = 0; i < count; i++) {
++        AVPacket *pkt = av_packet_alloc();
++        if (!pkt || av_new_packet(pkt, pics[i].size) < 0) {
++            av_packet_free(&pkt);
++            return false;
++        }
++        memcpy(pkt->data, pics[i].data, pics[i].size);
++        pkt->pts = make_tag(pics[i].tag, pics[i].slot);
++        if (pics[i].idr)
++            pkt->flags |= AV_PKT_FLAG_KEY;
++        if (m->queue_head && m->queue_head == m->num_queue)
++            m->num_queue = m->queue_head = 0;
++        MP_TARRAY_APPEND(m, m->queue, m->num_queue, pkt);
++    }
++    return true;
++}
++
++bool vd_mvc_send(struct vd_mvc *m, struct demux_packet *pkt)
++{
++    const struct mvc_picture *pics = NULL;
++    int count = 0;
++    if (!pkt) {
++        mvc_rewriter_flush(m->rw, &pics, &count);
++        queue_pictures(m, pics, count);
++        m->queue_eof = true;
++        return true;
++    }
++    int64_t seq = ++m->seq;
++    m->ring[seq % AU_RING] = (struct au_time){
++        .seq = seq,
++        .pts = pkt->pts,
++        .dts = pkt->dts,
++        .duration = pkt->duration,
++    };
++    enum mvc_status st = mvc_rewrite(m->rw, pkt->buffer, pkt->len, seq,
++                                     &pics, &count);
++    if (st == MVC_UNSUPPORTED) {
++        MP_WARN(m, "Can't decode this 3D (MVC) video in 3D (%s); "
++                   "playing it in 2D.\n", mvc_rewriter_reason(m->rw));
++        return false;
++    }
++    if (!queue_pictures(m, pics, count))
++        st = MVC_NO_MEMORY;
++    if (st == MVC_OK) {
++        if (m->drops)
++            MP_VERBOSE(m, "Dropped %d access units.\n", m->drops);
++        m->drops = 0;
++        return true;
++    }
++    if (!m->drops++)
++        MP_VERBOSE(m, "Dropping access units: %s\n", mvc_rewriter_reason(m->rw));
++    if (m->drops >= GIVE_UP_DROPS) {
++        MP_WARN(m, "No 3D (MVC) picture in %d access units (%s); "
++                   "playing the video in 2D.\n", m->drops,
++                mvc_rewriter_reason(m->rw));
++        return false;
++    }
++    return true;
++}
++
++bool vd_mvc_next(struct vd_mvc *m, struct AVPacket **pkt)
++{
++    *pkt = m->queue_head < m->num_queue ? m->queue[m->queue_head] : NULL;
++    return *pkt || m->queue_eof;
++}
++
++void vd_mvc_pop(struct vd_mvc *m)
++{
++    if (m->queue_head < m->num_queue) {
++        av_packet_free(&m->queue[m->queue_head]);
++        if (++m->queue_head == m->num_queue)
++            m->num_queue = m->queue_head = 0;
++    } else {
++        m->queue_eof = false;
++    }
++}
++
++void vd_mvc_reset(struct vd_mvc *m)
++{
++    clear_queue(m);
++    TA_FREEP(&m->held);
++    mvc_rewriter_reset(m->rw);
++    m->drops = 0;
++}
++
++static struct mp_image *crop_view(struct mp_image *img)
++{
++    if (mp_image_crop_valid(&img->params))
++        mp_image_crop_rc(img, img->params.crop);
++    return img;
++}
++
++// Both views of an access unit as one frame, the left eye's on the left.
++static struct mp_image *compose(struct vd_mvc *m, struct mp_image *base,
++                                struct mp_image *dep)
++{
++    // Hardware frames are not composed: vd_lavc decodes MVC to software
++    // frames only (copy-back).
++    if (base->hwctx || dep->hwctx || base->imgfmt != dep->imgfmt) {
++        MP_ERR(m, "Can't join views of format %s and %s.\n",
++               mp_imgfmt_to_name(base->imgfmt), mp_imgfmt_to_name(dep->imgfmt));
++        return NULL;
++    }
++    struct mp_image views[2] = {*base, *dep};
++    crop_view(&views[0]);
++    crop_view(&views[1]);
++    int w = views[0].w, h = views[0].h;
++    if (views[1].w != w || views[1].h != h || (w & (base->fmt.align_x - 1))) {
++        MP_ERR(m, "Views differ in size: %dx%d and %dx%d.\n", w, h,
++               views[1].w, views[1].h);
++        return NULL;
++    }
++    struct mp_image *out = mp_image_pool_get(m->pool, base->imgfmt, 2 * w, h);
++    if (!out)
++        return NULL;
++    mp_image_copy_attributes(out, base);
++    out->params.crop = (struct mp_rect){0, 0, 2 * w, h};
++    out->params.stereo3d = MP_STEREO3D_SBS2L;
++    for (int eye = 0; eye < 2; eye++) {
++        struct mp_image half = *out;
++        mp_image_crop(&half, eye * w, 0, (eye + 1) * w, h);
++        mp_image_copy(&half, &views[eye ^ m->base_right]);
++    }
++    return out;
++}
++
++struct mp_image *vd_mvc_frame(struct vd_mvc *m, struct mp_image *img,
++                              int64_t tag)
++{
++    if (tag == AV_NOPTS_VALUE || tag < 0) {
++        talloc_free(img);
++        return NULL;
++    }
++    int64_t seq = tag / 4;
++    int slot = tag % 4;
++    if (slot == MVC_SLOT_BASE) {
++        if (m->held)
++            MP_VERBOSE(m, "Dropping a view without its pair.\n");
++        talloc_free(m->held);
++        m->held = img;
++        m->held_seq = seq;
++        return NULL;
++    }
++    if (slot != MVC_SLOT_DEPENDENT) {
++        talloc_free(img);
++        return NULL;
++    }
++    struct mp_image *base = m->held;
++    m->held = NULL;
++    if (!base || m->held_seq != seq) {
++        MP_VERBOSE(m, "Dropping a view without its pair.\n");
++        talloc_free(base);
++        talloc_free(img);
++        return NULL;
++    }
++    struct mp_image *out = compose(m, base, img);
++    talloc_free(base);
++    talloc_free(img);
++    if (!out)
++        return NULL;
++    struct au_time *t = &m->ring[seq % AU_RING];
++    bool known = t->seq == seq;
++    out->pts = known ? t->pts : MP_NOPTS_VALUE;
++    out->dts = known ? t->dts : MP_NOPTS_VALUE;
++    out->pkt_duration = known ? t->duration : -1;
++    return out;
++}
++
++struct strip_ctx {
++    const uint8_t *src;
++    uint8_t *dst;
++    size_t size;
++    int length_size;
++    bool any;
++    bool base_slice;    // a base view slice came before
++    struct vd_mvc_sps_ids *ids;
++};
++
++// The first Exp-Golomb values of a NAL unit's payload from byte skip on, or
++// false if they aren't in its first bytes.
++static bool read_ids(const uint8_t *p, size_t n, size_t skip, uint32_t *v,
++                     int count)
++{
++    uint8_t rbsp[16];
++    size_t size = 0;
++    int zeros = 0;
++    for (size_t i = 0; i < n && size < sizeof(rbsp); i++) {
++        if (zeros >= 2 && p[i] == 3) {
++            zeros = 0;
++            continue;
++        }
++        zeros = p[i] ? 0 : zeros + 1;
++        rbsp[size++] = p[i];
++    }
++    if (size <= skip)
++        return false;
++    struct bitreader br;
++    br_init(&br, rbsp + skip, size - skip);
++    for (int i = 0; i < count; i++)
++        v[i] = br_ue(&br);
++    return !br.overrun;
++}
++
++// Which view a NAL unit belongs to: the subset SPS, the dependent view's
++// slices, prefixes and delimiter, the PPSs of a subset SPS that is no base
++// view SPS too, and SEI after the base view's slices (it can't follow its
++// own picture's slices) are the dependent view's.
++static bool dependent_nal(struct strip_ctx *s, int type, const uint8_t *p,
++                          size_t n)
++{
++    uint32_t id[2];
++    switch (type) {
++    case 1:
++    case 5:
++        s->base_slice = true;
++        return false;
++    case 7:
++    case 15:
++        // profile_idc, constraint flags and level_idc, then the id
++        if (read_ids(p, n, 3, id, 1) && id[0] < 32)
++            *(type == 7 ? &s->ids->base : &s->ids->subset) |= 1u << id[0];
++        return type == 15;
++    case 8:
++        return read_ids(p, n, 0, id, 2) && id[1] < 32 &&
++               (s->ids->subset & (1u << id[1])) && !(s->ids->base & (1u << id[1]));
++    case 6:
++        return s->base_slice;
++    case 14:
++    case 20:
++    case 24:
++        return true;
++    }
++    return false;
++}
++
++static bool strip_nal(void *ctx, int type, size_t start, size_t end)
++{
++    struct strip_ctx *s = ctx;
++    // The header byte: after the length field, or the start code.
++    size_t h = start + s->length_size;
++    if (!s->length_size) {
++        while (h < end && !s->src[h])
++            h++;
++        h++;
++    }
++    if (h < end && dependent_nal(s, type, s->src + h + 1, end - h - 1)) {
++        s->any = true;
++    } else {
++        memcpy(s->dst + s->size, s->src + start, end - start);
++        s->size += end - start;
++    }
++    return true;
++}
++
++struct AVPacket *vd_mvc_strip(const struct AVPacket *pkt, int length_size,
++                              struct vd_mvc_sps_ids *ids)
++{
++    AVPacket *out = av_packet_alloc();
++    if (!out || av_new_packet(out, pkt->size) < 0 ||
++        av_packet_copy_props(out, pkt) < 0)
++    {
++        av_packet_free(&out);
++        return NULL;
++    }
++    struct strip_ctx s = {.src = pkt->data, .dst = out->data,
++                          .length_size = length_size, .ids = ids};
++    for_each_nal(pkt->data, pkt->size, length_size, strip_nal, &s);
++    if (!s.any) {
++        av_packet_free(&out);
++        return NULL;
++    }
++    av_shrink_packet(out, s.size);
++    return out;
++}
+--- /dev/null
++++ b/video/decode/vd_mvc.h
+@@ -0,0 +1,86 @@
++/*
++ * Two-view H.264 MVC (3D Blu-ray, Stereo High) decoded as a stereo pair.
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or modify it under the
++ * terms of the GNU General Public License as published by the Free Software
++ * Foundation; either version 3 of the License, or (at your option) any later
++ * version.
++ *
++ * mpv is distributed in the hope that it will be useful, but WITHOUT ANY
++ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
++ * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
++ * details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#pragma once
++
++#include <stdbool.h>
++#include <stdint.h>
++
++// Each packet holds both views of one access unit (a Matroska block, or a
++// transport stream's two views joined by demux_lavf). video/decode/mvc/
++// rewrites it as plain H.264 pictures, each sent to the decoder as a packet
++// of its own and tagged through its pts. The decoder's output is paired
++// again by tag (base + dependent view, hidden pictures dropped) into one
++// frame with the access unit's timestamps: both views side by side, the left
++// eye's first, each at full size.
++//
++// The decoder must not drop frames (every picture may be a reference) and is
++// opened without extradata (the rewritten pictures carry their parameter
++// sets). Streams the rewrite can't handle play the base view in 2D.
++
++struct AVPacket;
++struct demux_packet;
++struct mp_codec_params;
++struct mp_image;
++struct mp_log;
++struct vd_mvc;
++
++// Whether the stream's parameters say it is two-view MVC: views joined by the
++// demuxer, or an mvcC box after the avcC record (Matroska CodecPrivate).
++bool vd_mvc_by_params(struct mp_codec_params *c);
++// Whether a packet holds a dependent view's NAL units (MVC without mvcC).
++bool vd_mvc_in_packet(struct mp_codec_params *c, struct demux_packet *pkt);
++
++// base_right: the base view is the right eye's. NULL when out of memory.
++// Free with talloc_free().
++struct vd_mvc *vd_mvc_create(void *talloc_ctx, struct mp_log *log,
++                             struct mp_codec_params *c, bool base_right);
++
++// Rewrites a packet (NULL: end of stream) into decoder packets. False: the
++// stream can't be rewritten, or no access unit could be for a few seconds;
++// play the base view (vd_mvc_strip) from here on.
++bool vd_mvc_send(struct vd_mvc *m, struct demux_packet *pkt);
++// The next packet to send to the decoder: true while there is one. *pkt is
++// NULL for the end of the stream (send a flush). It stays until vd_mvc_pop().
++bool vd_mvc_next(struct vd_mvc *m, struct AVPacket **pkt);
++void vd_mvc_pop(struct vd_mvc *m);
++
++// A decoded picture whose AVFrame.pts is `tag`. Takes it; returns the access
++// unit's frame once both views are there, otherwise NULL.
++struct mp_image *vd_mvc_frame(struct vd_mvc *m, struct mp_image *img,
++                              int64_t tag);
++
++// Seek or flush: forgets queued packets and half pairs, and waits for the
++// next IDR access unit.
++void vd_mvc_reset(struct vd_mvc *m);
++
++// The SPS ids a stream's packets showed so far, a bit per id: the base
++// view's SPSs and subset SPSs (vd_mvc_strip() tells PPSs apart by them).
++struct vd_mvc_sps_ids {
++    uint32_t base, subset;
++};
++
++// The packet without the dependent view's NAL units, so that a plain H.264
++// decoder sees the base view only; NULL if it has none (or out of memory).
++// length_size: NAL length field size of length-prefixed input, 0 for Annex B.
++// ids: the stream's, kept from packet to packet. Free with av_packet_free().
++struct AVPacket *vd_mvc_strip(const struct AVPacket *pkt, int length_size,
++                              struct vd_mvc_sps_ids *ids);
++// The NAL length size of a stream's packets (0: Annex B).
++int vd_mvc_length_size(struct mp_codec_params *c);

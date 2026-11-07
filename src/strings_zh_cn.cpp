@@ -5,6 +5,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.noVideo = "尚未播放视频，请选择文件";
   s.loading = "正在加载…";
   s.playbackFailed = "无法播放此视频，请尝试其他文件。";
+  s.discEncrypted = "此光盘映像已加密，无法播放。";
   s.format = "格式";
   s.projections[0] = "屏幕";
   s.projections[1] = "180°";

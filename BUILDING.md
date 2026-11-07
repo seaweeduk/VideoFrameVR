@@ -10,7 +10,7 @@ every dependency itself.
 sudo apt install build-essential cmake pkg-config curl libopenxr-dev libmpv-dev libglfw3-dev libgl-dev \
   libvulkan-dev libpango1.0-dev libcairo2-dev libcurl4-openssl-dev libgdk-pixbuf-2.0-dev \
   nlohmann-json3-dev libglib2.0-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
-  libsqlite3-dev librsvg2-dev glslang-tools fonts-noto-extra libssl-dev
+  libsqlite3-dev librsvg2-dev glslang-tools libudfread-dev libbluray-dev fonts-noto-extra libssl-dev
 ```
 
 The app also needs **libsmb2 6.3 or newer** and **libssh 0.12 or newer**.
@@ -38,6 +38,21 @@ cmake --build libssh-build -j2
 sudo cmake --install libssh-build
 sudo ldconfig
 pkg-config --modversion libssh
+```
+
+Blu-ray disc images need **libudfread 1.2 or newer** and **libbluray 1.4 or
+newer** (Ubuntu 26.04 has 1.2.0 and 1.4.1). On distributions without a
+libudfread package, build it the same way:
+
+```sh
+curl -fLO https://download.videolan.org/pub/videolan/libudfread/libudfread-1.2.0.tar.xz
+echo 'bb477cbd4cfbfc7787d9d05b71ee5e70430f5cfebf1297497f7e83547958050f  libudfread-1.2.0.tar.xz' | sha256sum -c -
+tar -xf libudfread-1.2.0.tar.xz
+meson setup libudfread-build libudfread-1.2.0 --buildtype=release
+ninja -C libudfread-build
+sudo meson install -C libudfread-build
+sudo ldconfig
+pkg-config --modversion libudfread
 ```
 
 If you install them somewhere else, point `PKG_CONFIG_PATH` at their

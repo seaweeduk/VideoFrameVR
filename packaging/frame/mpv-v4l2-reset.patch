@@ -1,9 +1,10 @@
-# Private mpv Frame integration. Apply to the pinned 0.40.0 source.
+# Private mpv Frame integration. Apply to the pinned 0.40.0 source after
+# packaging/mpv/mpv-mvc.patch.
 --- a/video/decode/vd_lavc.c
 +++ b/video/decode/vd_lavc.c
-@@ -54,6 +54,10 @@
- #include "video/sws_utils.h"
+@@ -55,6 +55,10 @@
  #include "video/out/vo.h"
+ #include "vd_mvc.h"
  
 +// Frame converter (video/out/hwdec/dmabuf_ubwc.c): lets go of a closed
 +// V4L2 session's buffers.
@@ -12,7 +13,7 @@
  #include "options/m_option.h"
  
  static void init_avctx(struct mp_filter *vd);
-@@ -140,6 +144,7 @@
+@@ -146,6 +150,7 @@
      char *hwdec_codecs;
      int hwdec_image_format;
      int hwdec_extra_frames;
@@ -20,7 +21,7 @@
  };
  
  const struct m_sub_options hwdec_conf = {
-@@ -157,6 +162,9 @@
+@@ -163,6 +168,9 @@
              {"no", INT_MAX}, {"yes", 1}), M_RANGE(1, INT_MAX),
              .flags = UPDATE_HWDEC},
          {"vd-lavc-software-fallback", OPT_REPLACED("hwdec-software-fallback")},
@@ -30,11 +31,12 @@
          {0}
      },
      .size = sizeof(struct hwdec_opts),
-@@ -210,6 +218,11 @@
+@@ -216,6 +224,12 @@
      bool hwdec_failed;
      bool hwdec_notified;
      bool force_eof;
 +    bool reopen_v4l2;
++    bool v4l2_fed;      // packets were sent since the session opened
 +    bool retry_v4l2_allocation;
 +    bool retried_v4l2_allocation;
 +    bool prefer_v4l2_ubwc;
@@ -42,7 +44,7 @@
  
      bool intra_only;
      int framedrop_flags;
-@@ -663,10 +676,23 @@
+@@ -695,10 +709,23 @@
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
  
@@ -69,7 +71,7 @@
      select_and_set_hwdec(vd);
      init_avctx(vd);
  }
-@@ -676,6 +702,8 @@
+@@ -708,6 +735,8 @@
      vd_ffmpeg_ctx *ctx = vd->priv;
  
      uninit_avctx(vd);
@@ -78,16 +80,17 @@
  
      /*
       * Reset attempted hwdecs so that if the hwdec list is reconfigured
-@@ -703,6 +731,8 @@
+@@ -735,6 +764,9 @@
      vd_ffmpeg_ctx *ctx = vd->priv;
      struct vd_lavc_params *lavc_param = ctx->opts;
      struct mp_codec_params *c = ctx->codec;
 +    ctx->reopen_v4l2 = false;
 +    ctx->v4l2_eof = false;
++    ctx->v4l2_fed = false;
  
      m_config_cache_update(ctx->opts_cache);
  
-@@ -718,6 +748,33 @@
+@@ -750,6 +782,33 @@
      if (!lavc_codec)
          return;
  
@@ -121,7 +124,7 @@
      const AVCodecDescriptor *desc = avcodec_descriptor_get(lavc_codec->id);
      ctx->intra_only = desc && (desc->props & AV_CODEC_PROP_INTRA_ONLY);
  
-@@ -733,6 +790,26 @@
+@@ -765,6 +824,26 @@
      avctx->codec_id = lavc_codec->id;
      avctx->pkt_timebase = ctx->codec_timebase;
  
@@ -148,7 +151,7 @@
      ctx->pic = av_frame_alloc();
      if (!ctx->pic)
          goto error;
-@@ -860,8 +937,18 @@
+@@ -899,8 +978,20 @@
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
  
@@ -161,7 +164,9 @@
 +            // frames. Iris's drain seek keeps its admitted session; an
 +            // incomplete drain or an unsupported backend still reopens.
 +            // Do not poll a drained device while returning delayed pictures.
-+            ctx->reopen_v4l2 = true;
++            // A session nothing was sent to yet (a file's start seeks to
++            // its start) has nothing to flush.
++            ctx->reopen_v4l2 = ctx->v4l2_fed;
 +        } else {
 +            avcodec_flush_buffers(ctx->avctx);
 +        }
@@ -169,7 +174,7 @@
      ctx->flushing = false;
      ctx->hwdec_request_reinit = false;
  }
-@@ -894,7 +981,13 @@
+@@ -939,7 +1030,13 @@
      mp_free_av_packet(&ctx->avpkt);
      av_buffer_unref(&ctx->cached_hw_frames_ctx);
  
@@ -183,7 +188,7 @@
  
      av_buffer_unref(&ctx->hwdec_dev);
  
-@@ -1132,7 +1225,7 @@
+@@ -1178,7 +1275,7 @@
          reset_avctx(vd);
  }
  
@@ -192,7 +197,7 @@
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
      struct hwdec_opts *hwdec_opts = ctx->hwdec_opts;
-@@ -1141,6 +1234,15 @@
+@@ -1187,6 +1284,15 @@
              ctx->use_hwdec ? " (hardware decoding)" : "");
  
      if (ctx->use_hwdec) {
@@ -208,7 +213,16 @@
          ctx->hwdec_fail_count += 1;
          if (ctx->hwdec_fail_count >= hwdec_opts->software_fallback)
              ctx->hwdec_failed = true;
-@@ -1150,6 +1252,22 @@
+@@ -1236,7 +1342,7 @@
+         if (ret == AVERROR(EAGAIN))
+             return true;
+         if (ret < 0 && ret != AVERROR_EOF)
+-            handle_err(vd);
++            handle_err(vd, ret);
+         vd_mvc_pop(ctx->mvc);
+     }
+     return false;
+@@ -1245,6 +1351,29 @@
  static int send_packet(struct mp_filter *vd, struct demux_packet *pkt)
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
@@ -225,13 +239,28 @@
 +            ctx->reopen_v4l2 = false;
 +            ctx->v4l2_eof = false;
 +        } else {
++            // A seek's new session of the same decoder is no news.
++            bool notified = ctx->hwdec_notified, hw = ctx->use_hwdec;
++            char method[64];
++            snprintf(method, sizeof(method), "%s", hw ? ctx->hwdec.method_name : "");
 +            reinit(vd);
++            if (notified && ctx->use_hwdec == hw &&
++                (!hw || strcmp(method, ctx->hwdec.method_name) == 0))
++                ctx->hwdec_notified = true;
 +        }
 +    }
-     AVCodecContext *avctx = ctx->avctx;
  
      if (ctx->num_requeue_packets && ctx->requeue_packets[0] != pkt)
-@@ -1180,7 +1298,7 @@
+         return AVERROR(EAGAIN); // cannot consume the packet
+@@ -1274,6 +1403,7 @@
+         return 0;
+ 
+     int ret;
++    ctx->v4l2_fed = true;
+     if (ctx->mvc) {
+         if (!vd_mvc_send(ctx->mvc, pkt)) {
+             // The rewrite can't take this stream: carry on in 2D, from a
+@@ -1311,7 +1441,7 @@
      }
  
      if (ret < 0)
@@ -240,7 +269,7 @@
      return ret;
  }
  
-@@ -1204,6 +1322,8 @@
+@@ -1335,6 +1465,8 @@
  
      if (!avctx || ctx->force_eof)
          return AVERROR_EOF;
@@ -249,9 +278,9 @@
  
      prepare_decoding(vd);
  
-@@ -1211,9 +1331,20 @@
-     if (ctx->num_requeue_packets)
-         send_queued_packet(vd);
+@@ -1345,9 +1477,20 @@
+     if (ctx->mvc)
+         send_mvc_queue(vd);
  
 +    if (ctx->hwdec_failed)
 +        return AVERROR(EAGAIN);
@@ -270,7 +299,7 @@
              // If flushing was initialized earlier and has ended now, make it
              // start over in case we get new packets at some point in the future.
              // This must take the delay queue into account, so avctx returns EOF
-@@ -1223,11 +1354,23 @@
+@@ -1357,11 +1500,23 @@
          } else if (ret == AVERROR(EAGAIN)) {
              // just retry after caller writes a packet
          } else {
@@ -295,7 +324,7 @@
      mp_codec_info_from_av(avctx, ctx->codec);
  
      // If something was decoded successfully, it must return a frame with valid
-@@ -1243,7 +1386,7 @@
+@@ -1377,7 +1532,7 @@
      if (mpi->imgfmt == IMGFMT_CUDA && !mpi->planes[0]) {
          MP_ERR(vd, "CUDA frame without data. This is a FFmpeg bug.\n");
          talloc_free(mpi);
@@ -304,16 +333,26 @@
          return AVERROR_BUG;
      }
  
-@@ -1255,6 +1398,20 @@
- 
-     av_frame_unref(ctx->pic);
+@@ -1398,7 +1553,7 @@
+             if (!sw) {
+                 MP_ERR(vd, "Could not copy back hardware decoded frame.\n");
+                 ctx->hwdec_fail_count = INT_MAX - 1; // force fallback
+-                handle_err(vd);
++                handle_err(vd, AVERROR_UNKNOWN);
+                 return AVERROR_UNKNOWN;
+             }
+             mpi = sw;
+@@ -1409,6 +1564,21 @@
+             return ret;
+     }
  
 +    // V4L2's CPU frames still own capture buffers. Detach so an old displayed
 +    // frame cannot retain the decoder across a seek. Reuse the software pool:
 +    // allocating and first-touching a fresh 8K buffer every frame is too slow.
 +    // DRM PRIME frames have independently exported DMA-BUFs: the private
 +    // FFmpeg fork closes the decoder without waiting for those GPU references.
-+    if (wrapper && strcmp(wrapper, "v4l2m2m") == 0 &&
++    // MVC's joined frame is already a copy.
++    if (wrapper && strcmp(wrapper, "v4l2m2m") == 0 && !ctx->mvc &&
 +        mpi->imgfmt != IMGFMT_DRMPRIME) {
 +        struct mp_image *owned = mp_image_pool_new_copy(ctx->hwdec_swpool, mpi);
 +        talloc_free(mpi);
@@ -325,7 +364,7 @@
      MP_TARRAY_APPEND(ctx, ctx->delay_queue, ctx->num_delay_queue, mpi);
      return ret;
  }
-@@ -1315,7 +1472,7 @@
+@@ -1473,7 +1643,7 @@
          if (!res) {
              MP_ERR(vd, "Could not copy back hardware decoded frame.\n");
              ctx->hwdec_fail_count = INT_MAX - 1; // force fallback
@@ -334,7 +373,7 @@
              return AVERROR_UNKNOWN;
          }
      }
-@@ -1391,6 +1548,10 @@
+@@ -1554,6 +1724,10 @@
  
      flush_all(vd);
  
@@ -347,7 +386,7 @@
  }
 --- a/meson.build
 +++ b/meson.build
-@@ -1457,6 +1457,8 @@
+@@ -1460,6 +1460,8 @@
  
  features += {'dmabuf-interop-gl': features['egl'] and features['drm']}
  if features['dmabuf-interop-gl']

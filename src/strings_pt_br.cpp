@@ -5,6 +5,7 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.noVideo = "Nenhum vídeo. Escolha um arquivo";
   s.loading = "Carregando …";
   s.playbackFailed = "Não foi possível reproduzir este vídeo. Tente outro arquivo.";
+  s.discEncrypted = "Esta imagem de disco está criptografada e não pode ser reproduzida.";
   s.format = "Formato";
   s.projections[0] = "Tela";
   s.projections[1] = "180°";

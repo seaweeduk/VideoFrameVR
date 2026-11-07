@@ -1,5 +1,6 @@
 #include "seek_preview.h"
 
+#include "bluray.h"
 #include "menu.h"
 #include "strings.h"
 
@@ -61,6 +62,12 @@ void SeekPreview::show(double fraction, const Playing& playing, const CurvedPane
     target_ = target;
   }
   format_ = playing.format;
+  // A 3D disc's previews decode its base view alone (FrameGrabber::open()):
+  // one picture, where playback shows both views side by side.
+  if (playing.views == TwoViews::Both && bdmv::isDiscImage(playing.location)) {
+    format_.stereo = StereoLayout::Mono;
+    format_.packing = Packing::Auto;
+  }
   flip_ = playing.flip;
   // Until the first frame arrives, a placeholder says it is loading.
   time_.setText(grabber_.hasFrame() ? clockTime(target)
@@ -68,7 +75,7 @@ void SeekPreview::show(double fraction, const Playing& playing, const CurvedPane
 
   float aspect = 16.0f / 9.0f;
   if (grabber_.hasFrame()) {
-    const VideoFormat& shown = playing.format;
+    const VideoFormat& shown = format_;
     if (shown.projection == Projection::Flat) {
       aspect = eyeDisplayAspect(shown, static_cast<float>(grabber_.width()) / grabber_.height());
     }

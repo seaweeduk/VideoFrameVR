@@ -19,6 +19,7 @@ const Strings kEnglish = {
     "No video – choose a file",
     "Loading …",
     "Can't play this video. Try another file.",
+    "This disc image is encrypted and can't be played.",
     "Format",
     {"Screen", "180°", "360°", "Fisheye 190°", "Fisheye 200°", "360° cubemap (EAC)",
      "Fisheye 180°"},

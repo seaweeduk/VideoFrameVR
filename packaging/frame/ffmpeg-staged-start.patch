@@ -1,4 +1,6 @@
 # Retry refused Iris HEVC startup with full-size compressed capture and a genuine primer.
+# Iris refusing commands with nothing to do (a decoder start after STREAMON, a
+# STREAMOFF of a queue that never streamed) logs no error.
 --- a/libavcodec/v4l2_m2m.h
 +++ b/libavcodec/v4l2_m2m.h
 @@ -71,6 +71,16 @@
@@ -98,7 +100,7 @@
  #include "libavcodec/avcodec.h"
  #include "codec_internal.h"
  #include "libavcodec/decode.h"
-@@ -290,6 +291,9 @@
+@@ -290,11 +291,16 @@
          return ret;
      }
  
@@ -108,7 +110,15 @@
      // STREAMON should do implicit START so this just for those that don't.
      // It is optional so don't worry if it fails
      if (ioctl(s->fd, VIDIOC_DECODER_CMD, &cmd) < 0) {
-@@ -468,6 +472,14 @@
+         ret = AVERROR(errno);
+-        av_log(avctx, AV_LOG_WARNING, "VIDIOC_DECODER_CMD start error: %s\n", av_err2str(ret));
++        // Iris refuses it (EBUSY) unless a drain or a resolution change waits.
++        av_log(avctx, ret == AVERROR(EBUSY) ? AV_LOG_DEBUG : AV_LOG_WARNING,
++               "VIDIOC_DECODER_CMD start error: %s\n", av_err2str(ret));
+     }
+     else {
+         av_log(avctx, AV_LOG_TRACE, "VIDIOC_DECODER_CMD start OK\n");
+@@ -468,6 +474,14 @@
  {
      int ret;
  
@@ -123,7 +133,7 @@
      // If we don't already have a coded packet - get a new one
      // We will already have a coded pkt if the output Q was full last time we
      // tried to Q it
-@@ -559,6 +571,29 @@
+@@ -559,6 +573,29 @@
      if ((ret = check_output_streamon(avctx, s)) != 0)
          return ret;
  
@@ -153,7 +163,7 @@
      if (s->extdata_sent)
          ret = ff_v4l2_context_enqueue_packet(&s->output, &s->buf_pkt, NULL, 0);
      else
-@@ -576,6 +611,10 @@
+@@ -576,6 +613,10 @@
          if (ret) {
              av_log(avctx, AV_LOG_ERROR, "Packet enqueue failure: err=%d\n", ret);
              return ret;
@@ -164,7 +174,7 @@
          }
      }
  
-@@ -594,12 +633,31 @@
+@@ -594,12 +635,31 @@
  static int qbuf_wait(AVCodecContext * const avctx, V4L2Context * const ctx)
  {
      int rv = 0;
@@ -198,7 +208,7 @@
              av_log(avctx, AV_LOG_ERROR, "Cond wait failure: %s\n", av_err2str(rv));
              break;
          }
-@@ -651,7 +709,7 @@
+@@ -651,7 +711,7 @@
              // hint that we want a frame but not good enough to require it in
              // all cases; however if it has got > 31 that exceeds its margin of
              // error so require a frame to prevent ridiculous levels of latency
@@ -207,7 +217,7 @@
                  src_rv == NQ_Q_FULL ? -1 :
                  src_rv == NQ_DRAINING ? 300 :
                  prefer_dq ? (s->running && pending > 31 ? 100 : 5) : 0;
-@@ -672,6 +730,8 @@
+@@ -672,6 +732,8 @@
              }
  
              if (dst_rv == 0) {
@@ -216,7 +226,7 @@
                  set_best_effort_pts(avctx, &s->pts_stat, frame);
                  if (!s->running) {
                      s->running = 1;
-@@ -679,7 +739,8 @@
+@@ -679,7 +741,8 @@
                  }
              }
  
@@ -226,7 +236,7 @@
                  av_log(avctx, AV_LOG_WARNING, "Timeout in drain - assume EOF");
                  dst_rv = AVERROR_EOF;
                  s->capture.done = 1;
-@@ -692,8 +753,12 @@
+@@ -692,8 +755,12 @@
                         s->draining, s->capture.done, dst_rv);
              // Preserve a failed capture allocation instead of consuming more
              // packets and replacing ENOMEM with the stopped queue's EOF.
@@ -240,7 +250,7 @@
                  return dst_rv;
              }
          }
-@@ -1004,6 +1069,7 @@
+@@ -1004,6 +1071,7 @@
  parse_extradata(AVCodecContext * const avctx, V4L2m2mContext * const s)
  {
      s->reorder_size = 0;
@@ -248,7 +258,7 @@
  
      if (!avctx->extradata || !avctx->extradata_size)
          return;
-@@ -1070,6 +1136,28 @@
+@@ -1070,6 +1138,28 @@
                      ((V4L2m2mPriv *)avctx->priv_data)->source_pix_fmt = sps->pix_fmt;
                      avctx->level   = sps->ptl.general_ptl.level_idc;
                      s->reorder_size = sps->temporal_layer[sps->max_sub_layers - 1].max_dec_pic_buffering;
@@ -277,7 +287,7 @@
                  }
              }
              ff_hevc_ps_uninit(&ps);
-@@ -1167,6 +1255,23 @@
+@@ -1167,6 +1257,23 @@
      // Get format converts capture.av_pix_fmt back into a V4L2 format in the context
      if ((rv = ff_v4l2_context_get_format(&s->capture, 0)) != 0)
          goto error;
@@ -301,7 +311,7 @@
      rv = ff_v4l2_context_set_format(&s->capture);
  
  error:
-@@ -1321,14 +1426,28 @@
+@@ -1321,14 +1428,28 @@
      int ret = 0;
  
      av_packet_unref(&s->buf_pkt);
@@ -330,7 +340,7 @@
              if (errno != EINTR) {
                  ret = AVERROR(errno);
                  goto done;
-@@ -1343,7 +1462,7 @@
+@@ -1343,7 +1464,7 @@
              ret != AVERROR_INVALIDDATA && ret != AVERROR(ENOSPC))
              goto done;
      }
@@ -339,7 +349,7 @@
          ret = AVERROR(ETIMEDOUT);
          goto done;
      }
-@@ -1360,20 +1479,27 @@
+@@ -1360,20 +1481,27 @@
      }
      cmd.cmd = V4L2_DEC_CMD_START;
      while (ioctl(s->fd, VIDIOC_DECODER_CMD, &cmd) < 0) {
@@ -573,7 +583,18 @@
      av_log(avctx, AV_LOG_DEBUG, "%s set status ON OK\n", ctx->name);
      return ret;
  }
-@@ -1073,10 +1163,11 @@
+@@ -979,6 +1069,10 @@
+     // Avoid doing anything if there is nothing we can do
+     if (!has_bufs && !ctx->streamon)
+         return 0;
++    // Nor for a queue that never streamed and holds no buffer (a decoder
++    // closed before its first packet): Iris refuses that with EBUSY.
++    if (!ctx->streamon && !atomic_load(&ctx->q_count))
++        return 0;
+ 
+     if (has_bufs)
+         ff_mutex_lock(&ctx->lock);
+@@ -1073,10 +1167,11 @@
      track_ts = xlat_pts_pkt_in(avctx, &s->xlat, pkt);
  
      ret = ff_v4l2_buffer_avpkt_to_buf_ext(pkt, avbuf, extdata, extlen, track_ts);
@@ -587,7 +608,7 @@
          return ret;
  
      return ff_v4l2_buffer_enqueue(avbuf);
-@@ -1094,7 +1185,10 @@
+@@ -1094,7 +1189,10 @@
              return rv;
          if ((rv = ff_v4l2_buffer_buf_to_avframe(frame, avbuf)) != 0)
              return rv;
@@ -599,7 +620,7 @@
  
     return 0;
  }
-@@ -1248,11 +1342,16 @@
+@@ -1248,11 +1346,16 @@
      // With capture_spare, a decoder's capture pool is the driver's minimum
      // (what it raises a request of one to) plus the caller's spare: frames
      // the stream keeps back for reordering and frames held until shown. The
@@ -619,7 +640,7 @@
  
      memset(&req, 0, sizeof(req));
      req.count = spare >= 0 ? 1 : req_buffers;
-@@ -1270,7 +1369,8 @@
+@@ -1270,7 +1373,8 @@
          // Requested again at the full size: Iris raises VIDIOC_CREATE_BUFS
          // counts to its minimum too, and its stream then fails.
          const unsigned int needed = req.count;
@@ -629,7 +650,7 @@
          while ((ret = ioctl(s->fd, VIDIOC_REQBUFS, &req)) == -1) {
              if (errno != EINTR) {
                  ret = AVERROR(errno);
-@@ -1278,14 +1378,19 @@
+@@ -1278,14 +1382,19 @@
                  return ret;
              }
          }
@@ -650,7 +671,7 @@
          goto fail_release;
      }
  
-@@ -1300,6 +1405,14 @@
+@@ -1300,6 +1409,14 @@
          if (ret) {
              av_log(logger(ctx), AV_LOG_ERROR, "%s buffer[%d] initialization (%s)\n", ctx->name, i, av_err2str(ret));
              goto fail_release;
@@ -665,7 +686,7 @@
          }
      }
  
-@@ -1380,6 +1493,19 @@
+@@ -1380,6 +1497,19 @@
          goto fail_unlock;
      }
  
@@ -685,7 +706,7 @@
      memset(&qctrl, 0, sizeof(qctrl));
      qctrl.id = V4L2_CID_MIN_BUFFERS_FOR_OUTPUT;
      if (ioctl(s->fd, VIDIOC_QUERYCTRL, &qctrl) != 0) {
-@@ -1406,5 +1532,6 @@
+@@ -1406,5 +1536,6 @@
  
  fail_unlock:
      ff_mutex_destroy(&ctx->lock);
