@@ -1210,7 +1210,7 @@ class Menu {
   int browserColumn_ = 0;  // visible page's left edge until its replacement is ready
   MenuView browserView_;
   int browserOffset_ = 0;
-  double browserFraction_ = 0, browserSide_ = 0, browserPage_ = 0;
+  double browserFraction_ = 0, browserSide_ = 0, browserPage_ = 0, browserWhatsNew_ = 0;
   // Redraws the browser's rows [y0, y1) (all of them by default) at the next texture().
   void browserChanged(double y0 = 0, double y1 = kBrowserHeight,
                       double x0 = 0, double x1 = kBrowserWidth);

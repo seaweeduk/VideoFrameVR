@@ -1583,6 +1583,7 @@ void Menu::redraw() {
     browserFraction_ = scrollFraction_;
     browserSide_ = side_.position;
     browserPage_ = pageScroll_;
+    browserWhatsNew_ = whatsNew_.scroll;
     browserRow_ = 0;
     return;
   }
@@ -1712,7 +1713,9 @@ const Texture* Menu::texture(PanelId panel) {
       std::swap(scrollFraction_, browserFraction_);
       std::swap(side_.position, browserSide_);
       std::swap(pageScroll_, browserPage_);
+      std::swap(whatsNew_.scroll, browserWhatsNew_);
       drawBrowserPart(browserRow_, end, 0, kBrowserWidth);
+      std::swap(whatsNew_.scroll, browserWhatsNew_);
       std::swap(pageScroll_, browserPage_);
       std::swap(side_.position, browserSide_);
       std::swap(scrollFraction_, browserFraction_);
