@@ -31,6 +31,7 @@ struct VideoSettings {
   int brightness = 0, contrast = 0, saturation = 0;  // mpv's -100..100
   float zoom = 1.0f;  // 180°/360° video: magnification
   float originForward = 0;  // surround viewpoint, in sphere radii toward the picture
+  int opacity = 100;  // percent, over the room (blended by the headset itself)
   // Persisted control range. The combined origin and head motion are eased
   // inside the sphere by stereo_correction.cpp, not clamped at this value.
   static constexpr float kMaxOriginForward = 0.8f;
@@ -64,14 +65,14 @@ struct VideoSettings {
   bool isDefault() const {
     return !hasFormat && pictureIsDefault() && volume < 0 && greenScreen.isDefault() &&
            !hasFocus && !hasScreen && !passthrough && !passthroughChosen && originForward == 0 &&
-           greenCheckVersion == 0 && !packedMask;
+           greenCheckVersion == 0 && !packedMask && opacity == 100;
   }
 
   // The parts the user changes one at a time.
   enum Part : unsigned { kFormat = 1, kBrightness = 2, kContrast = 4, kSaturation = 8, kZoom = 16,
                          kVolume = 32, kGreenScreen = 64, kFocus = 128, kPassthrough = 256,
                          kScreen = 512, kOrigin = 1024, kGreenCheck = 2048, kPackedMask = 4096,
-                         kAll = 8191,
+                         kOpacity = 8192, kAll = 16383,
                          kPicture = kBrightness | kContrast | kSaturation | kZoom };
   // Takes these parts from `other`.
   void take(const VideoSettings& other, unsigned parts) {
@@ -93,6 +94,7 @@ struct VideoSettings {
       greenScreenFound = other.greenScreenFound;
     }
     if (parts & kPackedMask) packedMask = other.packedMask;
+    if (parts & kOpacity) opacity = other.opacity;
     if (parts & kVolume) volume = other.volume;
     if (parts & kGreenScreen) greenScreen = other.greenScreen;
     if (parts & kFocus) {
@@ -115,7 +117,8 @@ struct VideoSettings {
            hasFocus == o.hasFocus && focus == o.focus && hasScreen == o.hasScreen &&
            screen == o.screen && originForward == o.originForward &&
            passthroughChosen == o.passthroughChosen && greenCheckVersion == o.greenCheckVersion &&
-           greenScreenFound == o.greenScreenFound && packedMask == o.packedMask;
+           greenScreenFound == o.greenScreenFound && packedMask == o.packedMask &&
+           opacity == o.opacity;
   }
   bool operator!=(const VideoSettings& o) const { return !(*this == o); }
 };

@@ -64,13 +64,13 @@ struct MenuCommand {
               SetAccent, SetAccentHue, SetAccentBrightness, SetAccentSaturation,
               SetSlideshow, ToggleBackground, SetSubtitleSize,
               SetSubtitleRaise, SetSubtitleDistance, TogglePassthrough, ToggleGreenScreen,
-              SetKeyStrength, SetKeySoftness, SetKeySpill, SetKeyShrink, ResetGreenScreen,
+              SetKeyStrength, SetKeySoftness, SetKeySpill, SetKeyShrink, ResetPassthrough,
               SetPacking, ToggleVideoMipmaps, SetAntiShimmer, SetSharpen, SetVideoResolution,
               SetFoveation, ToggleShowFoveation, SetSharpBins, ToggleFoveationRing,
               SetFoveationOutside, ToggleAdvancedSettings, SetRefreshRate, SetFocus,
               ToggleMotion, SetMotionDistance, ToggleResume, ToggleToneLook, Stop,
               ToggleTvGamma, ToggleSeekPreview, ToggleThumbnails, ToggleShowPerformance, SetScreenDistance,
-              SetScreenHeight, SetScreenCurve, ResetScreen, SetOriginForward,
+              SetScreenHeight, SetScreenCurve, ResetScreen, SetOriginForward, SetOpacity,
               ToggleAutoPassthrough, ToggleVibration,
               // Stash (docs/stash.md): on or off, its server, its switches,
               // Sync now, and the format the Scenes page shows.
@@ -142,6 +142,8 @@ struct MenuView {
   GreenScreen greenScreen;   // of the running video
   bool packedAlpha = false;  // the running video brings its own mask (no keying needed)
   bool maskFormat = false;   // its format is the one a packed mask comes in (maskFormat())
+  int opacity = 100;            // of the running video, percent
+  bool opacityApplies = false;  // the headset blends the video over the room (its own camera)
   std::string currentFile;
   bool playbackFailed = false;  // the current video couldn't be played
   Theme theme = Theme::Glass;

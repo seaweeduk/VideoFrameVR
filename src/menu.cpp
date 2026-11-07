@@ -155,7 +155,7 @@ void Menu::update(const MenuView& view) {
       view.photo != view_.photo || view.slideshowSeconds != view_.slideshowSeconds ||
       view.background != view_.background || view.autoPassthrough != view_.autoPassthrough ||
       view.passthrough != view_.passthrough || view.packedAlpha != view_.packedAlpha ||
-      view.maskFormat != view_.maskFormat ||
+      view.maskFormat != view_.maskFormat || view.opacityApplies != view_.opacityApplies ||
       view.greenScreen.on != view_.greenScreen.on ||
       view.resume != view_.resume ||
       view.seekPreview != view_.seekPreview || view.thumbnails != view_.thumbnails ||
@@ -173,6 +173,7 @@ void Menu::update(const MenuView& view) {
   if (view.saturation != view_.saturation) sliderChanged(MenuCommand::SetSaturation);
   if (view.zoom != view_.zoom) sliderChanged(MenuCommand::SetZoom);
   if (view.originForward != view_.originForward) sliderChanged(MenuCommand::SetOriginForward);
+  if (view.opacity != view_.opacity) sliderChanged(MenuCommand::SetOpacity);
   if (view.sharpen != view_.sharpen) sliderChanged(MenuCommand::SetSharpen);
   if (view.screen.distanceCm != view_.screen.distanceCm) sliderChanged(MenuCommand::SetScreenDistance);
   if (view.screen.heightCm != view_.screen.heightCm) sliderChanged(MenuCommand::SetScreenHeight);

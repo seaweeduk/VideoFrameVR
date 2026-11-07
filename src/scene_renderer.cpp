@@ -343,6 +343,7 @@ void SceneRenderer::drawSky(VkCommandBuffer cmd, EyeData eye) {
   for (int c = 0; c < 3; ++c) p.toPicture[c][c] = 1.0f;
   p.params[1] = 1.0f;
   p.mode[0] = 1;  // 360
+  p.mode[3] = 100;  // opaque
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline(Pipelines::kSurround));
   pipelines_.bindTextures(cmd, &sky_, Pipelines::kSky);
   pushEye(cmd, eye);
@@ -397,6 +398,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
       p.color[c] = kScreenColor[c];
       p.adjust[c] = v.adjust[c];
     }
+    p.color[3] = clear == ClearMode::Transparent ? v.opacity / 100.0f : 1.0f;
     p.adjust[3] = sharpen;
     if (v.texture) flags |= kTexture;
     p.mode[1] = flags;
@@ -457,6 +459,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   p.mode[1] = flags;
   const int taps = antiShimmerTaps(v.antiShimmer);
   p.mode[2] = static_cast<uint32_t>(taps);
+  p.mode[3] = clear == ClearMode::Transparent ? static_cast<uint32_t>(v.opacity) : 100;
   // A mask or key reads the frame as it came (VideoDraw::readsFrame); the
   // picture settings are applied to what is shown (a general pipeline, as
   // they aren't neutral then), a video's as mpv does (its Kr, Kb).

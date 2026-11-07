@@ -95,6 +95,7 @@ std::string settingsJson(const VideoSettings& s) {
   if (s.greenCheckVersion > 0)
     j["green_check"] = {{"version", s.greenCheckVersion}, {"found", s.greenScreenFound}};
   if (s.packedMask.has_value()) j["packed_mask"] = *s.packedMask;
+  if (s.opacity != 100) j["opacity"] = s.opacity;
   if (s.legacyTvGamma.has_value()) j["tv_gamma"] = *s.legacyTvGamma;
   if (s.volume >= 0) j["volume"] = s.volume;
   if (!s.greenScreen.isDefault()) {
@@ -157,6 +158,7 @@ bool parseSettings(const std::string& text, VideoSettings& s) {
   }
   if (const auto mask = j.find("packed_mask"); mask != j.end() && mask->is_boolean())
     s.packedMask = mask->get<bool>();
+  s.opacity = std::clamp(field(j, "opacity", 100), 0, 100);
   if (const auto tv = j.find("tv_gamma"); tv != j.end() && tv->is_boolean())
     s.legacyTvGamma = tv->get<bool>();
   s.volume = field(j, "volume", -1);

@@ -607,54 +607,53 @@ void Menu::layoutVideoSettings() {
   const double imageBottom = y;
   addGroup(columnX(2), pageTop, kColumnW, imageBottom - pageTop, t.imageAllVideos);
 
-  if (!view_.passthrough) return;
+  if (!view_.passthrough && !view_.opacityApplies) return;
 
-  // Passthrough: the video's own mask, on or off (side-by-side fisheye
-  // only), then keying a green screen video, on or off, and its settings,
-  // under the picture (the image column grows with the advanced rows).
-  // Keying is not for videos whose own mask is used.
+  // Passthrough: the video's opacity (blended only by the headset itself,
+  // with its own camera, below 100 % with passthrough off too, so shown
+  // whenever it can), then with passthrough on its own mask, on or off
+  // (side-by-side fisheye only), then keying a green screen video, on or
+  // off, and its settings, and Reset sliders, under the picture (the image
+  // column grows with the advanced rows). Keying is not for videos whose own
+  // mask is used.
   const double top = pictureBottom + kGap;
   x = columnX(1) + kGroupPad;
   y = firstRow(top);
-  addToggleRow(x, y, w, t.packedMask, view_.packedAlpha, command(MenuCommand::TogglePackedMask),
-               !view_.maskFormat)
-      .tooltip = view_.maskFormat ? t.packedMaskHint : t.packedMaskFormatHint;
-  y += kSettingStep;
-  const bool own = view_.packedAlpha && view_.maskFormat;
-  addToggleRow(x, y, w, t.greenScreenOn, view_.greenScreen.on && !own,
-               command(MenuCommand::ToggleGreenScreen), own)
-      .tooltip = own ? t.greenScreenOwnMask : t.greenScreenHint;
-  y += kSettingStep;
-  const MenuCommand::Type types[] = {MenuCommand::SetKeyStrength, MenuCommand::SetKeyShrink,
-                                     MenuCommand::SetKeySoftness, MenuCommand::SetKeySpill};
-  const int values[] = {view_.greenScreen.strength, view_.greenScreen.shrink,
-                        view_.greenScreen.softness, view_.greenScreen.spill};
-  const char* names[] = {t.keyStrength, t.keyShrink, t.keySoftness, t.keySpill};
-  const bool off = !view_.greenScreen.on || own;
-  for (int i = 0; i < 4; ++i) {
-    addLabel(x + 12, y, 218, kSettingRowH, names[i]).disabled = off;
-    Button slider;
-    slider.panel = kBrowser;
-    slider.x = x + 230;
-    slider.y = y;
-    slider.w = w - 230;
-    slider.h = kSettingRowH;
-    slider.slider = types[i];
-    slider.sliderValue = values[i];
-    slider.action = [] { return MenuCommand{}; };  // clickable; click() reads the slider
-    slider.disabled = off;
-    slider.tooltip = t.tipKey[i];
-    buttons_.push_back(slider);
+  // 0..100, with − and + a step of 1 either side of the slider.
+  auto slider = [&](const char* label, MenuCommand::Type type, int value, bool disabled,
+                    const char* tooltip) {
+    addValueRow(x, y, w, 230, label, std::to_string(value), value, 0, 100,
+                command(type, std::max(0, value - 1)), command(type, std::min(100, value + 1)),
+                disabled, false, tooltip);
     y += kSettingStep;
+  };
+  slider(t.opacity, MenuCommand::SetOpacity, view_.opacity, !view_.opacityApplies, t.opacityHint);
+  const bool own = view_.passthrough && view_.packedAlpha && view_.maskFormat;
+  if (view_.passthrough) {
+    addToggleRow(x, y, w, t.packedMask, view_.packedAlpha, command(MenuCommand::TogglePackedMask),
+                 !view_.maskFormat)
+        .tooltip = view_.maskFormat ? t.packedMaskHint : t.packedMaskFormatHint;
+    y += kSettingStep;
+    addToggleRow(x, y, w, t.greenScreenOn, view_.greenScreen.on && !own,
+                 command(MenuCommand::ToggleGreenScreen), own)
+        .tooltip = own ? t.greenScreenOwnMask : t.greenScreenHint;
+    y += kSettingStep;
+    const MenuCommand::Type types[] = {MenuCommand::SetKeyStrength, MenuCommand::SetKeyShrink,
+                                       MenuCommand::SetKeySoftness, MenuCommand::SetKeySpill};
+    const int values[] = {view_.greenScreen.strength, view_.greenScreen.shrink,
+                          view_.greenScreen.softness, view_.greenScreen.spill};
+    const char* names[] = {t.keyStrength, t.keyShrink, t.keySoftness, t.keySpill};
+    const bool off = !view_.greenScreen.on || own;
+    for (int i = 0; i < 4; ++i) slider(names[i], types[i], values[i], off, t.tipKey[i]);
   }
-  Button resetKey = textButton(t.resetSliders, Icon::None, command(MenuCommand::ResetGreenScreen));
+  Button resetKey = textButton(t.resetSliders, Icon::None, command(MenuCommand::ResetPassthrough));
   resetKey.panel = kBrowser;
   resetKey.x = x;
   resetKey.y = y;
   resetKey.h = kSettingRowH;
   resetKey.fontSize = kTextSize;
   resetKey.tooltip = t.greenScreenResetHint;
-  resetKey.disabled = own;
+  resetKey.disabled = own && !view_.opacityApplies;
   buttons_.push_back(resetKey);
   if (own) addLabel(resetKey.x + resetKey.w + 20, y, w - resetKey.w - 20, 0, t.greenScreenOwnMask,
                     kHintSize, true, 2);

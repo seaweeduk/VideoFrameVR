@@ -979,6 +979,8 @@ struct Strings {
   const char* greenScreenHint;
   const char* greenScreenOwnMask;
   const char* passthroughGroup;  // video settings: the group with the mask and the green screen
+  const char* opacity;
+  const char* opacityHint;
   const char* packedMask;
   const char* packedMaskHint;
   const char* packedMaskFormatHint;

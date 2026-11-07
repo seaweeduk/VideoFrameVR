@@ -1146,6 +1146,7 @@ int run(GLFWwindow* window, const Options& opts) {
     app.currentFile.clear();
     app.streamOshash.clear();
     app.video.passthrough = false;
+    app.video.opacity = 100;  // the empty scene isn't blended; the video keeps its saved value
     neighbor = {};
     nextPhoto = {};
     neighborStep = 0;
@@ -1376,6 +1377,10 @@ int run(GLFWwindow* window, const Options& opts) {
       case MenuCommand::SetSaturation:
         app.video.saturation = static_cast<int>(c.value);
         applyPicture(VideoSettings::kSaturation);
+        break;
+      case MenuCommand::SetOpacity:  // applied while drawing
+        app.video.opacity = static_cast<int>(c.value);
+        storeVideoSoon(VideoSettings::kOpacity);
         break;
       case MenuCommand::SetZoom:
         app.video.zoom = static_cast<float>(c.value / 100.0);
@@ -1680,12 +1685,18 @@ int run(GLFWwindow* window, const Options& opts) {
         storeVideoSoon(VideoSettings::kGreenScreen);
         break;
       }
-      case MenuCommand::ResetGreenScreen: {
-        GreenScreen& key = app.video.greenScreen;
-        const bool on = key.on;
-        key = GreenScreen{};
-        key.on = on;
-        storeVideoSoon(VideoSettings::kGreenScreen);
+      case MenuCommand::ResetPassthrough: {
+        // What the group shows: the key's sliders only with passthrough on.
+        unsigned parts = VideoSettings::kOpacity;
+        if (app.video.passthrough) {
+          GreenScreen& key = app.video.greenScreen;
+          const bool on = key.on;
+          key = GreenScreen{};
+          key.on = on;
+          parts |= VideoSettings::kGreenScreen;
+        }
+        app.video.opacity = 100;
+        storeVideoSoon(parts);
         break;
       }
       case MenuCommand::SetSubtitleSize:
@@ -2260,9 +2271,12 @@ int run(GLFWwindow* window, const Options& opts) {
     }
     // Passthrough on the Frame itself: the eye images are blended over the
     // camera by their alpha; on a PC (streaming) the Frame keys out green.
-    const bool alphaPassthrough =
-        app.video.passthrough && kStandaloneHeadset && xr.alphaBlendSupported();
+    const bool canBlend = kStandaloneHeadset && xr.alphaBlendSupported();
+    const bool alphaPassthrough = app.video.passthrough && canBlend;
     const bool keyPassthrough = app.video.passthrough && !kStandaloneHeadset;
+    // Opacity below 100 blends the video over the camera too, with or
+    // without passthrough (whose mask or key it doesn't bring).
+    const bool blended = canBlend && (app.video.passthrough || app.video.opacity < 100);
     // Saved on every change of folder, so even a killed player reopens there.
     if (!menu.directory().empty() && menu.directory() != settings.lastFolder) {
       settings.lastFolder = menu.directory();
@@ -2889,6 +2903,8 @@ int run(GLFWwindow* window, const Options& opts) {
       view.greenScreen = app.video.greenScreen;
       view.packedAlpha = packedMask(app.currentFile, app.video);
       view.maskFormat = maskFormat(app.format);
+      view.opacity = app.video.opacity;
+      view.opacityApplies = canBlend;
       view.subtitleSize = settings.subtitleSize;
       view.subtitleRaise = settings.subtitleRaise;
       view.subtitleDistance = settings.subtitleDistance;
@@ -3059,7 +3075,7 @@ int run(GLFWwindow* window, const Options& opts) {
       } else {
         seekPreview.hide();
       }
-      scene.clear = alphaPassthrough ? ClearMode::Transparent
+      scene.clear = blended ? ClearMode::Transparent
                     : keyPassthrough ? ClearMode::KeyGreen
                                      : ClearMode::Dark;
       // The night sky around the flat screen (with passthrough: the room).
@@ -3073,6 +3089,7 @@ int run(GLFWwindow* window, const Options& opts) {
       video.screen = app.screen;
       video.photo = photo;
       video.seeThrough = focusIn.seeThrough;
+      video.opacity = app.video.opacity;
       // Brightness etc. are applied while drawing to photos, and to videos
       // while a mask or key reads the frame; else mpv (or YuvColor) does it.
       const bool readsFrame = video.readsFrame(scene.clear);
@@ -3278,7 +3295,7 @@ int run(GLFWwindow* window, const Options& opts) {
       }
     }
     gpu.collect();
-    xr.setAlphaBlend(alphaPassthrough);
+    xr.setAlphaBlend(blended);
     xr.releaseEyes();
     xr.endFrame(drawn);
     directDepth.submit();  // after the frame's work, which it never delays
