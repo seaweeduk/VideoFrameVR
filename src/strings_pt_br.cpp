@@ -1214,5 +1214,9 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.colourBalance.matchBrightness = "Igualar brilho";
   s.colourBalance.tipMatchColour = "Quanto do calor e do matiz do ambiente o Igualar ambiente aplica. Para todos os vídeos.";
   s.colourBalance.tipMatchBrightness = "Quanto do brilho do ambiente o Igualar ambiente aplica. Para todos os vídeos.";
+  s.whatsNew.title = "Novidades";
+  s.whatsNew.close = "Fechar";
+  s.whatsNew.showAfterUpdates = "Mostrar após atualizações";
+  s.whatsNew.updatedFrom = "Atualizado de %s para %s";
   return s;
 }

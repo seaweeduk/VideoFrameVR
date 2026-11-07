@@ -1214,5 +1214,9 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.colourBalance.matchBrightness = "匹配亮度";
   s.colourBalance.tipMatchColour = "“匹配房间”应用房间色温和色调的程度。适用于所有视频。";
   s.colourBalance.tipMatchBrightness = "“匹配房间”应用房间亮度的程度。适用于所有视频。";
+  s.whatsNew.title = "新功能";
+  s.whatsNew.close = "关闭";
+  s.whatsNew.showAfterUpdates = "更新后显示";
+  s.whatsNew.updatedFrom = "已从 %s 更新到 %s";
   return s;
 }

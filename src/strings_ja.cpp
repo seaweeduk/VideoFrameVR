@@ -1214,5 +1214,9 @@ Strings japaneseStrings(const Strings& english) {
   s.colourBalance.matchBrightness = "明るさを合わせる";
   s.colourBalance.tipMatchColour = "「部屋に合わせる」で部屋の暖かみと色合いを反映する割合。全動画共通。";
   s.colourBalance.tipMatchBrightness = "「部屋に合わせる」で部屋の明るさを反映する割合。全動画共通。";
+  s.whatsNew.title = "新機能";
+  s.whatsNew.close = "閉じる";
+  s.whatsNew.showAfterUpdates = "アップデート後に表示";
+  s.whatsNew.updatedFrom = "%s から %s にアップデートしました";
   return s;
 }

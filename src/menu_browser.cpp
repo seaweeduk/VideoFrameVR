@@ -520,6 +520,10 @@ void Menu::addScrollbar() {
 }
 
 Menu::ScrollExtent Menu::scrollExtent() const {
+  if (dialog_ == Dialog::WhatsNew) {
+    const double shown = whatsNew_.height - whatsNew_.max;
+    return {whatsNew_.scroll, shown, whatsNew_.height};
+  }
   if (groupedPage()) {
     const double shown = listBottom_ - listTop_;
     return {pageScroll_, shown, shown + pageScrollMax_};
@@ -533,6 +537,10 @@ void Menu::scrollToPointer(const Button& bar) {
   const double thumb = std::max(40.0, bar.h * e.shown / std::max(1.0, e.total));
   const double fraction = std::clamp((pointerY_ - bar.y - thumb / 2) / (bar.h - thumb), 0.0, 1.0);
   const double position = fraction * std::max(0.0, e.total - e.shown);
+  if (dialog_ == Dialog::WhatsNew) {
+    scrollWhatsNew(position - whatsNew_.scroll);
+    return;
+  }
   if (groupedPage()) {
     if (std::abs(position - pageScroll_) > 0.01) {
       pageScroll_ = position;

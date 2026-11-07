@@ -86,6 +86,7 @@ add_executable(videoframevr
   src/menu_setup_folders.cpp
   src/menu_stash_covers.cpp
   src/menu_widgets.cpp
+  src/menu_whats_new.cpp
   src/mirror_window.cpp
   src/menu_stash.cpp
   src/menu_stash_draw.cpp

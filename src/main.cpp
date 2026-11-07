@@ -721,6 +721,7 @@ int run(GLFWwindow* window, const Options& opts) {
   if (showSetup && !menu.startSetup(setupForced, setupChoices.places)) return 1;
   ReleaseUpdate releaseUpdate;  // inert unless the GitHub install launcher opts in
   bool updateOffered = false, menuWasOpen = false;  // its dialog, once a run as the menu opens
+  bool whatsNewWasOpen = false;
   DiagnosticsExport diagnostics;
   SubtitleOverlay subtitles;
   if (!subtitles.init(uploader)) return 1;
@@ -1760,6 +1761,10 @@ int run(GLFWwindow* window, const Options& opts) {
         break;
       case MenuCommand::ToggleVibration:
         settings.vibration = !settings.vibration;
+        saveSettings(settings);
+        break;
+      case MenuCommand::ToggleShowWhatsNew:
+        settings.showWhatsNew = !settings.showWhatsNew;
         saveSettings(settings);
         break;
       case MenuCommand::TogglePassthrough:
@@ -3032,6 +3037,17 @@ int run(GLFWwindow* window, const Options& opts) {
         menu.showUpdate();
       }
       menuWasOpen = panel.open;
+      // What's new, the first time the menu shows: not during setup, nor
+      // over another dialog (the update's comes first). Closed, however that
+      // happens, this version counts as seen.
+      if (!whatsNew.releases.empty() && panel.open && !menu.setupRunning() && !menu.dialogOpen()) {
+        menu.showWhatsNew(std::move(whatsNew.releases), settings.versionSeen, VIDEOFRAMEVR_VERSION);
+        whatsNew.releases.clear();
+      }
+      const bool whatsNewOpen = menu.whatsNewOpen();
+      if (whatsNewWasOpen && !whatsNewOpen && markVersionSeen(settings.versionSeen))
+        saveSettings(settings);
+      whatsNewWasOpen = whatsNewOpen;
       if (panel.open && releaseUpdate.state() == ReleaseUpdate::State::Restarting && !app.quit) {
         std::printf("Update: restarting into %s\n", releaseUpdate.version().c_str());
         menu.showUpdate();
@@ -3162,6 +3178,7 @@ int run(GLFWwindow* window, const Options& opts) {
       view.thumbnails = settings.thumbnails;
       view.showPerformance = showPerformance;
       view.vibration = settings.vibration;
+      view.showWhatsNew = settings.showWhatsNew;
       view.stash = settings.stash;
       view.setupBanner = setupBanner;
       view.appFps = appFps;

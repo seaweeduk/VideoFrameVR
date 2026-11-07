@@ -1214,5 +1214,9 @@ Strings germanStrings(const Strings& english) {
   s.colourBalance.matchBrightness = "Helligkeit anpassen";
   s.colourBalance.tipMatchColour = "Wie stark „Raum anpassen“ Wärme und Tönung des Raums übernimmt. Für alle Videos.";
   s.colourBalance.tipMatchBrightness = "Wie stark „Raum anpassen“ die Helligkeit des Raums übernimmt. Für alle Videos.";
+  s.whatsNew.title = "Neuigkeiten";
+  s.whatsNew.close = "Schließen";
+  s.whatsNew.showAfterUpdates = "Nach Updates anzeigen";
+  s.whatsNew.updatedFrom = "Aktualisiert von %s auf %s";
   return s;
 }

@@ -1091,6 +1091,12 @@ const Strings kEnglish = {
         "How much of the room's warmth and tint Match the room applies. For all videos.",
         "How much of the room's brightness Match the room applies. For all videos.",
     },
+    {
+        "What's new",
+        "Close",
+        "Show after updates",
+        "Updated from %s to %s",
+    },
 };
 
 const Strings kGerman = germanStrings(kEnglish);

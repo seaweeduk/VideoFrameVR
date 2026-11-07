@@ -90,6 +90,7 @@ const Texture* Menu::drawHint(Hint hint, int& width, int& height) {
 bool Menu::pointingAtLongList(int& page) const {
   page = static_cast<int>(page_);
   if (setup_ || !listOpen() || !onListContent(hovered_)) return false;
+  if (dialog_ == Dialog::WhatsNew) return true;
   if (groupedPage()) return pageScrollMax_ > 0;
   if (overSide()) return side_.max > 0;
   return listCount_ > visibleRows_;

@@ -1214,5 +1214,9 @@ Strings spanishStrings(const Strings& english) {
   s.colourBalance.matchBrightness = "Igualar brillo";
   s.colourBalance.tipMatchColour = "Cuánta calidez y matiz de la sala aplica «Igualar sala». Para todos los vídeos.";
   s.colourBalance.tipMatchBrightness = "Cuánto brillo de la sala aplica «Igualar sala». Para todos los vídeos.";
+  s.whatsNew.title = "Novedades";
+  s.whatsNew.close = "Cerrar";
+  s.whatsNew.showAfterUpdates = "Mostrar tras actualizar";
+  s.whatsNew.updatedFrom = "Actualizado de %s a %s";
   return s;
 }

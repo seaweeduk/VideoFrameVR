@@ -1214,5 +1214,9 @@ Strings frenchStrings(const Strings& english) {
   s.colourBalance.matchBrightness = "Adapter la luminosité";
   s.colourBalance.tipMatchColour = "Part de la chaleur et de la teinte de la pièce appliquée par « Selon la pièce ». Pour toutes les vidéos.";
   s.colourBalance.tipMatchBrightness = "Part de la luminosité de la pièce appliquée par « Selon la pièce ». Pour toutes les vidéos.";
+  s.whatsNew.title = "Nouveautés";
+  s.whatsNew.close = "Fermer";
+  s.whatsNew.showAfterUpdates = "Afficher après les mises à jour";
+  s.whatsNew.updatedFrom = "Mis à jour de %s vers %s";
   return s;
 }

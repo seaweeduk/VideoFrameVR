@@ -221,17 +221,33 @@ void Menu::layoutSettings() {
   addGroup(columnX(1), top, kColumnW, y - top, t.groupPlayback);
 }
 
-// Help: the logs and settings saved for a bug report, and how that went.
+// Help: What's new (if this build has notes for this device), and the logs
+// and settings saved for a bug report, and how that went.
 void Menu::layoutDiagnostics(double top, int column) {
   using State = DiagnosticsExport::State;
   const DiagnosticsStrings& t = text().diagnostics;
   const State state = view_.diagnostics;
   const double x = columnX(column) + kGroupPad, w = kColumnW - 2 * kGroupPad;
   double y = firstRow(top);
+  static const bool notes = !allReleaseNotes().empty();
+  double saveX = x;
+  if (notes) {
+    Button whatsNew = textButton(text().whatsNew.title, Icon::None, [this] {
+      showWhatsNew(allReleaseNotes());
+      return MenuCommand{};
+    });
+    whatsNew.panel = kBrowser;
+    whatsNew.x = x;
+    whatsNew.y = y;
+    whatsNew.h = kSettingRowH;
+    whatsNew.fontSize = kTextSize;
+    buttons_.push_back(whatsNew);
+    saveX = x + whatsNew.w + kGap;
+  }
   Button save = textButton(state == State::Saving ? t.saving : t.save, Icon::None,
                            command(MenuCommand::SaveDiagnostics));
   save.panel = kBrowser;
-  save.x = x;
+  save.x = saveX;
   save.y = y;
   save.h = kSettingRowH;
   save.fontSize = kTextSize;
