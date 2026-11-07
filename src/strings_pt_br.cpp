@@ -129,7 +129,6 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.keySpill = "Reflexo verde";
   s.keyShrink = "Encolher";
   s.greenScreenResetHint = "Restaurar os valores padrão dos controles.";
-  s.resetSliders = "Redefinir controles";
   s.halfSbs = "Meio SBS";
   s.halfTb = "Meio TB";
   s.halfPackedHint = "Estica as imagens de cada olho para a proporção original. Só 3D plano.";

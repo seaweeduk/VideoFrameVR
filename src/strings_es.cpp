@@ -129,7 +129,6 @@ Strings spanishStrings(const Strings& english) {
   s.keySpill = "Reflejo verde";
   s.keyShrink = "Contraer";
   s.greenScreenResetHint = "Restablecer los valores de los controles.";
-  s.resetSliders = "Restablecer controles";
   s.halfSbs = "Medio SBS";
   s.halfTb = "Medio TB";
   s.halfPackedHint = "Estirar imágenes de tamaño medio a su proporción original. Solo 3D plano.";

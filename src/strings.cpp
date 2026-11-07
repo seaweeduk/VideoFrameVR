@@ -113,7 +113,6 @@ const Strings kEnglish = {
     "Spill",
     "Shrink",
     "Restore the sliders' defaults.",
-    "Reset sliders",
     "Half SBS",
     "Half TB",
     "Stretch half-size eyes to their original proportions. Flat 3D only.",

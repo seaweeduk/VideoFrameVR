@@ -129,7 +129,6 @@ Strings japaneseStrings(const Strings& english) {
   s.keySpill = "色かぶり";
   s.keyShrink = "縮小";
   s.greenScreenResetHint = "スライダーを初期値に戻します。";
-  s.resetSliders = "スライダーをリセット";
   s.halfSbs = "ハーフSBS";
   s.halfTb = "ハーフTB";
   s.halfPackedHint = "半分に圧縮された左右の映像を元の比率に復元。平面3D専用。";

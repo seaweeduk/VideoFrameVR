@@ -129,7 +129,6 @@ Strings germanStrings(const Strings& english) {
   s.keySpill = "Grünstich";
   s.keyShrink = "Verkleinern";
   s.greenScreenResetHint = "Regler auf Standardwerte zurücksetzen.";
-  s.resetSliders = "Regler zurücksetzen";
   s.halfSbs = "Halbes SBS";
   s.halfTb = "Halbes TB";
   s.halfPackedHint = "Halbierte Augenbilder auf Originalproportionen strecken. Nur flaches 3D.";

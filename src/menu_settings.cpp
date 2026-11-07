@@ -623,7 +623,7 @@ void Menu::layoutVideoSettings() {
   // whenever it can), then with passthrough on its own mask, on or off
   // (side-by-side fisheye only), then unless its own mask is used keying a
   // green screen video, on or off, and while on its settings, then with advanced settings on the Frame Match the
-  // room's strengths, and Reset sliders with Match the room's switch, under
+  // room's strengths, and Reset with Match the room's switch, under
   // the picture.
   const double top = pictureBottom + kGap;
   x = columnX(1) + kGroupPad;
@@ -673,7 +673,7 @@ void Menu::layoutVideoSettings() {
       y += kSettingStep;
     }
   }
-  Button resetKey = textButton(t.resetSliders, Icon::None, command(MenuCommand::ResetPassthrough));
+  Button resetKey = textButton(t.reset, Icon::None, command(MenuCommand::ResetPassthrough));
   resetKey.panel = kBrowser;
   resetKey.x = x;
   resetKey.y = y;
@@ -706,8 +706,10 @@ void Menu::layoutVideoSettings() {
     const char* label = room == RoomMatch::Reading  ? cb.reading
                         : room == RoomMatch::Failed ? cb.failed
                                                     : cb.matchRoom;
-    const double switchW = textWidth(label, kTextSize, false) + 104;  // its label and pill
-    Button& match = addToggleRow(right - switchW, y, switchW, label, view_.roomMatched,
+    // Its label and pill, but never into Reset (a longer label is cut short).
+    const double left = std::max(right - (textWidth(label, kTextSize, false) + 104),
+                                 resetKey.x + resetKey.w + 12);
+    Button& match = addToggleRow(left, y, right - left, label, view_.roomMatched,
                                  command(MenuCommand::ToggleMatchRoom),
                                  room == RoomMatch::Off && !view_.roomMatched && !view_.roomRead);
     match.tooltip = match.disabled ? cb.tipMatchRoomHidden : cb.tipMatchRoom;

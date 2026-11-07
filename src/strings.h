@@ -1014,7 +1014,6 @@ struct Strings {
   const char* keySpill;
   const char* keyShrink;
   const char* greenScreenResetHint;
-  const char* resetSliders;
   const char* halfSbs;  // format tile: flat 3D with half-squeezed eyes
   const char* halfTb;
   const char* halfPackedHint;

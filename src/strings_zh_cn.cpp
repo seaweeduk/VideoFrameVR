@@ -129,7 +129,6 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.keySpill = "去绿边";
   s.keyShrink = "收缩";
   s.greenScreenResetHint = "将滑块恢复为默认值。";
-  s.resetSliders = "重置滑块";
   s.halfSbs = "半宽 SBS";
   s.halfTb = "半高 TB";
   s.halfPackedHint = "将半尺寸的单眼画面拉伸回原始比例。仅限平面 3D。";

@@ -129,7 +129,6 @@ Strings frenchStrings(const Strings& english) {
   s.keySpill = "Reflets verts";
   s.keyShrink = "Érosion";
   s.greenScreenResetHint = "Rétablir les valeurs par défaut des curseurs.";
-  s.resetSliders = "Réinitialiser les curseurs";
   s.halfSbs = "Demi-SBS";
   s.halfTb = "Demi-TB";
   s.halfPackedHint = "Étirer les vues réduites de moitié à leurs proportions d'origine. 3D sur écran seulement.";
