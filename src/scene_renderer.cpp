@@ -357,10 +357,11 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   if (v.flip) flags |= kFlip;
   if (!v.mipmaps) flags |= kBaseLevel;
   if (v.look) flags |= kLook;
+  if (v.photo) flags |= kPhoto;
   // A decoded frame: its planes, from their only level.
   const DirectFrame* yuv = v.texture ? v.texture->yuv : nullptr;
   if (yuv) flags |= kYuv | kBaseLevel;
-  if (yuv && yuv->color().tvGamma) flags |= kTvGamma;
+  if (yuv ? yuv->color().tvGamma : v.tvGamma) flags |= kTvGamma;
   const Pipelines::SamplerId sampler =
       v.mipmaps && !yuv ? Pipelines::kVideoTrilinear : Pipelines::kVideoBase;
   const Texture* chroma = yuv ? &yuv->chroma() : nullptr;
@@ -456,13 +457,20 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   p.mode[1] = flags;
   const int taps = antiShimmerTaps(v.antiShimmer);
   p.mode[2] = static_cast<uint32_t>(taps);
+  // A mask or key reads the frame as it came (VideoDraw::readsFrame); the
+  // picture settings are applied to what is shown (a general pipeline, as
+  // they aren't neutral then), a video's as mpv does (its Kr, Kb).
+  const bool readsFrame = flags & (kPackedAlpha | kChromaKey);
   if (yuv) {
     const YuvColor& c = yuv->color();
-    for (int i = 0; i < 4; ++i) p.yuv[i] = c.range[i];
+    for (int i = 0; i < 4; ++i) p.yuv[i] = readsFrame ? c.neutralRange[i] : c.range[i];
     p.params[2] = c.matrix[0];
     p.params[3] = c.matrix[1];
     p.alpha[2] = c.matrix[2];
     p.alpha[3] = c.matrix[3];
+  } else if (readsFrame) {
+    p.params[2] = 0.2126f;  // mpv's image: BT.709
+    p.params[3] = 0.0722f;
   }
   const bool maskFirst = (flags & kPackedAlpha) && (flags & (kKeyGreen | kAlphaOut));
   // A common mode has a pipeline of its own: the full-size level with one

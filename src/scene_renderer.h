@@ -45,7 +45,11 @@ struct VideoDraw {
   float frameAspect = 16.0f / 9.0f;  // the whole frame's width / height (both eyes, if stereo)
   bool flip = false;
   ScreenPlacement screen;
-  float adjust[3] = {0, 0, 0};  // brightness, contrast, saturation -1..1 (photos; mpv adjusts video)
+  // Brightness, contrast, saturation -1..1: photos, and videos while
+  // readsFrame(); else mpv or the decoded frame's YuvColor adjusts video.
+  float adjust[3] = {0, 0, 0};
+  bool tvGamma = false;  // mpv's image: VideoPlayer::tvGammaImage()
+  bool photo = false;
   bool mipmaps = true;          // trilinear through the mipmaps, else the full-size level
   AntiShimmer antiShimmer = AntiShimmer::Off;  // ... sampled over each pixel's footprint
   bool look = false;            // tone curve and vignette
@@ -53,6 +57,14 @@ struct VideoDraw {
   SeeThrough seeThrough;        // with passthrough on: the packed mask or a keyed green screen
   GreenScreen key;              // ... its softness, spill and shrink
   StereoCorrection correction;
+
+  // A packed mask or a key is read from the frame (the surround, with
+  // passthrough shown): it reads the frame as it came, and the picture
+  // settings are applied to what is shown.
+  bool readsFrame(ClearMode clear) const {
+    return clear != ClearMode::Dark && format.projection != Projection::Flat &&
+           (seeThrough.packedAlpha || seeThrough.greenKey > 0);
+  }
 };
 
 // The menu button under the pointer, highlighted by the panel shader.
@@ -133,6 +145,7 @@ enum VideoFlag : uint32_t {
   kTexture = 256,
   kYuv = 512,
   kTvGamma = 1024,
+  kPhoto = 2048,
 };
 
 // shaders/surround.frag, SurroundDraw.
@@ -143,7 +156,7 @@ struct SurroundPush {
   float chroma[4];
   float alpha[4];    // zw: kYuv, the chroma lookup's offset
   uint32_t mode[4];  // x projection, y flags, z footprint taps (antiShimmerTaps)
-  float yuv[4];      // kYuv: YuvColor::range
+  float yuv[4];      // kYuv: YuvColor::range, neutralRange while a mask or key is read
 };
 static_assert(sizeof(SurroundPush) == 144 && offsetof(SurroundPush, mode) == 112,
               "SurroundPush must match shaders/surround.frag");

@@ -94,10 +94,16 @@ class VideoPlayer {
   void setSubtitleStyle(double scale, int raise);
   // Picture adjustments, -100..100 each (0 = unchanged).
   void setPicture(int brightness, int contrast, int saturation);
+  // mpv draws its image without those while a mask or key is read from it,
+  // which they must not change; the eye shaders apply them then
+  // (VideoDraw::readsFrame).
+  void setPlainPicture(bool plain);
   // SDR video keeps its own values (as VR players show it) unless tvGamma:
   // then mpv converts it from a TV's gamma (BT.1886) to sRGB, darkening the
   // shadows. HDR is tone-mapped to sRGB either way.
   void setTvGamma(bool tvGamma);
+  // Whether mpv's image is BT.1886 video converted to sRGB for TV gamma.
+  bool tvGammaImage() const;
   // The scene samples the video through mipmaps (trilinear, the default) or
   // from its full-size level only (bilinear); they are
   // made for each new frame only while on.
@@ -171,6 +177,7 @@ class VideoPlayer {
   void logPixelPath(int64_t displayW, int64_t displayH, int maxSize, int levels);
   void updateMipmaps(SharedImage* image);
   void applyTargetTrc();
+  void sendPicture();  // to mpv: picture_, or none with plainPicture_
   void releaseTarget();
   bool wantExport() const;
   // Whether the decoder opened next writes 8-bit HEVC compressed (Q08C) for
@@ -252,6 +259,8 @@ class VideoPlayer {
   bool mipmaps_ = true;
   bool sharpened_ = false;
   bool tvGamma_ = false;
+  int picture_[3] = {0, 0, 0};  // brightness, contrast, saturation
+  bool plainPicture_ = false;
   std::string sourceTrc_;            // the video's transfer, as mpv names it
   std::string targetTrc_ = "srgb";   // what mpv converts it to
   bool shutdown_ = false;

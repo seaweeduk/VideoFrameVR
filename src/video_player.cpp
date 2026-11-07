@@ -718,10 +718,22 @@ void VideoPlayer::setSubtitleStyle(double scale, int raise) {
 }
 
 void VideoPlayer::setPicture(int brightness, int contrast, int saturation) {
-  setProperty(mpv_, "brightness", std::to_string(brightness));
-  setProperty(mpv_, "contrast", std::to_string(contrast));
-  setProperty(mpv_, "saturation", std::to_string(saturation));
+  picture_[0] = brightness;
+  picture_[1] = contrast;
+  picture_[2] = saturation;
+  if (!plainPicture_) sendPicture();
   if (direct_) direct_->setPicture(brightness, contrast, saturation);
+}
+
+void VideoPlayer::setPlainPicture(bool plain) {
+  if (plain == plainPicture_) return;
+  plainPicture_ = plain;
+  sendPicture();
+}
+
+void VideoPlayer::sendPicture() {
+  const char* names[3] = {"brightness", "contrast", "saturation"};
+  for (int i = 0; i < 3; ++i) setProperty(mpv_, names[i], std::to_string(plainPicture_ ? 0 : picture_[i]));
 }
 
 void VideoPlayer::setTvGamma(bool tvGamma) {
@@ -732,6 +744,8 @@ void VideoPlayer::setTvGamma(bool tvGamma) {
 // mpv converts the video's transfer to target-trc. VR players show SDR video
 // with its own values, so the target is the source's transfer (no change);
 // HDR (and linear) video still goes to sRGB through mpv's tone mapping.
+bool VideoPlayer::tvGammaImage() const { return tvGamma_ && sourceTrc_ == kBt1886; }
+
 void VideoPlayer::applyTargetTrc() {
   static const char* const kToSrgb[] = {"pq", "hlg", "v-log", "s-log1", "s-log2", "st428",
                                         "linear"};

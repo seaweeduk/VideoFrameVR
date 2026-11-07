@@ -273,7 +273,7 @@ void DirectDepth::submit() {
   // rows 0.. left, then right, then the thumbnail of the left eye.
   Push p{};
   for (int i = 0; i < 4; ++i) {
-    p.yuvRange[i] = frame.color().range[i];
+    p.yuvRange[i] = frame.color().neutralRange[i];
     p.yuvMatrix[i] = frame.color().matrix[i];
   }
   p.start[0] = patch_.start[0];
