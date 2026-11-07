@@ -613,19 +613,6 @@ void Menu::layoutVideoSettings() {
                  command(MenuCommand::ToggleShowFoveation)).tooltip = t.showFoveationHint;
     y += kSettingStep;
   }
-  // How far Match the room goes (advanced: set once, to taste).
-  if (view_.advancedSettings && view_.roomMatch != RoomMatch::Hidden) {
-    const int share[] = {view_.matchColour, view_.matchBrightness};
-    const MenuCommand::Type types[] = {MenuCommand::SetMatchColour, MenuCommand::SetMatchBrightness};
-    const char* labels[] = {cb.matchColour, cb.matchBrightness};
-    const char* tips[] = {cb.tipMatchColour, cb.tipMatchBrightness};
-    for (int i = 0; i < 2; ++i) {
-      addValueRow(x, y, w, 230, labels[i], std::to_string(share[i]) + " %", share[i], 0, 100,
-                  command(types[i], std::max(0, share[i] - 10)),
-                  command(types[i], std::min(100, share[i] + 10)), false, false, tips[i]);
-      y += kSettingStep;
-    }
-  }
   const double imageBottom = y;
   addGroup(columnX(2), pageTop, kColumnW, imageBottom - pageTop, t.imageAllVideos);
 
@@ -635,9 +622,9 @@ void Menu::layoutVideoSettings() {
   // with its own camera, below 100 % with passthrough off too, so shown
   // whenever it can), then with passthrough on its own mask, on or off
   // (side-by-side fisheye only), then keying a green screen video, on or
-  // off, and its settings, and Reset sliders, under the picture (the image
-  // column grows with the advanced rows). Keying is not for videos whose own
-  // mask is used.
+  // off, and its settings, then with advanced settings on the Frame Match the
+  // room's strengths, and Reset sliders with Match the room's switch, under
+  // the picture. Keying is not for videos whose own mask is used.
   const double top = pictureBottom + kGap;
   x = columnX(1) + kGroupPad;
   y = firstRow(top);
@@ -668,6 +655,21 @@ void Menu::layoutVideoSettings() {
     const bool off = !view_.greenScreen.on || own;
     for (int i = 0; i < 4; ++i) slider(names[i], types[i], values[i], off, t.tipKey[i]);
   }
+  // How far Match the room goes (advanced: set once, to taste), above its
+  // switch.
+  const bool strengths = view_.advancedSettings && view_.roomMatch != RoomMatch::Hidden;
+  if (strengths) {
+    const int share[] = {view_.matchColour, view_.matchBrightness};
+    const MenuCommand::Type types[] = {MenuCommand::SetMatchColour, MenuCommand::SetMatchBrightness};
+    const char* labels[] = {cb.matchColour, cb.matchBrightness};
+    const char* tips[] = {cb.tipMatchColour, cb.tipMatchBrightness};
+    for (int i = 0; i < 2; ++i) {
+      addValueRow(x, y, w, 230, labels[i], std::to_string(share[i]) + " %", share[i], 0, 100,
+                  command(types[i], std::max(0, share[i] - 1)),
+                  command(types[i], std::min(100, share[i] + 1)), false, false, tips[i]);
+      y += kSettingStep;
+    }
+  }
   Button resetKey = textButton(t.resetSliders, Icon::None, command(MenuCommand::ResetPassthrough));
   resetKey.panel = kBrowser;
   resetKey.x = x;
@@ -675,7 +677,7 @@ void Menu::layoutVideoSettings() {
   resetKey.h = kSettingRowH;
   resetKey.fontSize = kTextSize;
   resetKey.tooltip = t.greenScreenResetHint;
-  resetKey.disabled = own && !view_.opacityApplies;
+  resetKey.disabled = own && !view_.opacityApplies && !strengths;
   buttons_.push_back(resetKey);
   // Match the room (the Frame), a switch, on the same row, and while it is
   // on Read again after it: then the own mask's hint is left to the green

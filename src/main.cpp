@@ -1770,7 +1770,15 @@ int run(GLFWwindow* window, const Options& opts) {
         break;
       }
       case MenuCommand::ResetPassthrough: {
-        // What the group shows: the key's sliders only with passthrough on.
+        // What the group shows: the key's sliders only with passthrough on,
+        // Match the room's strengths only with advanced settings on.
+        if (roomReadable && settings.advancedSettings) {
+          const Settings defaults;
+          settings.matchColour = defaults.matchColour;
+          settings.matchBrightness = defaults.matchBrightness;
+          saveSettings(settings);
+          applyRoomMatch();
+        }
         unsigned parts = VideoSettings::kOpacity;
         if (app.video.passthrough) {
           GreenScreen& key = app.video.greenScreen;
