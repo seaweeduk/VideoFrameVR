@@ -376,8 +376,11 @@ void Menu::layoutVideoSettings() {
     int now, lo, hi, step;
     MenuCommand::Type type;
     bool disabled;
+    const char* tooltip = "";
   };
   const int zoom = static_cast<int>(std::lround(view_.zoom * 100));
+  const ColourBalance& balance = view_.balance;
+  const ColourBalanceStrings& cb = t.colourBalance;
   const Step picture[] = {
       {t.brightness, std::to_string(view_.brightness), view_.brightness, -100, 100, kPictureStep,
        MenuCommand::SetBrightness, false},
@@ -385,13 +388,19 @@ void Menu::layoutVideoSettings() {
        MenuCommand::SetContrast, false},
       {t.saturation, std::to_string(view_.saturation), view_.saturation, -100, 100, kPictureStep,
        MenuCommand::SetSaturation, false},
+      {cb.warmth, std::to_string(balance.warmth), balance.warmth, -100, 100, kPictureStep,
+       MenuCommand::SetWarmth, false, cb.tipWarmth},
+      {cb.tint, std::to_string(balance.tint), balance.tint, -100, 100, kPictureStep,
+       MenuCommand::SetTint, false, cb.tipTint},
+      {cb.exposure, std::to_string(balance.exposure), balance.exposure, -100, 100, kPictureStep,
+       MenuCommand::SetExposure, false, cb.tipExposure},
       // Only 180°/360° video has a view to zoom.
       {t.zoom, std::to_string(zoom) + " %", zoom, 50, 250, kZoomStepPercent, MenuCommand::SetZoom,
        flat}};
   for (const Step& s : picture) {
     addValueRow(x, y, w, 230, s.label, s.value, s.now, s.lo, s.hi,
                 command(s.type, std::max(s.lo, s.now - s.step)),
-                command(s.type, std::min(s.hi, s.now + s.step)), s.disabled);
+                command(s.type, std::min(s.hi, s.now + s.step)), s.disabled, false, s.tooltip);
     y += kSettingStep;
   }
   {
@@ -408,9 +417,9 @@ void Menu::layoutVideoSettings() {
   reset.y = y;
   reset.h = kSettingRowH;
   reset.fontSize = kTextSize;
-  reset.tooltip = t.tipPictureReset;
+  reset.tooltip = cb.tipReset;
   buttons_.push_back(reset);
-  addLabel(reset.x + reset.w + 20, y, w - reset.w - 20, 0, t.pictureHint, kHintSize, true, 2);
+  addLabel(reset.x + reset.w + 20, y, w - reset.w - 20, 0, cb.pictureHint, kHintSize, true, 2);
   const double pictureBottom = y + hintHeight(2) + 16;
   addGroup(columnX(1), pageTop, kColumnW, pictureBottom - pageTop, t.picture);
 

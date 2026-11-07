@@ -748,6 +748,8 @@ int run(GLFWwindow* window, const Options& opts) {
   double greenCheckAt = 0;  // glfwGetTime() the check starts, a moment after the video opens
   const char* passthroughWhy = nullptr;  // the notice's first line
   double passthroughShownUntil = 0;
+  // The colour balance holds for every video until the player closes.
+  ColourBalance colourBalance;
 
   // Frame rates and drops over the video: the setting's, or the command
   // line's for this run until the menu switches it.
@@ -1396,6 +1398,15 @@ int run(GLFWwindow* window, const Options& opts) {
         app.video.saturation = static_cast<int>(c.value);
         applyPicture(VideoSettings::kSaturation);
         break;
+      case MenuCommand::SetWarmth:  // the colour balance: applied while drawing
+        colourBalance.warmth = static_cast<int>(c.value);
+        break;
+      case MenuCommand::SetTint:
+        colourBalance.tint = static_cast<int>(c.value);
+        break;
+      case MenuCommand::SetExposure:
+        colourBalance.exposure = static_cast<int>(c.value);
+        break;
       case MenuCommand::SetOpacity:  // applied while drawing
         app.video.opacity = static_cast<int>(c.value);
         storeVideoSoon(VideoSettings::kOpacity);
@@ -1412,6 +1423,7 @@ int run(GLFWwindow* window, const Options& opts) {
         break;
       case MenuCommand::ResetPicture:
         app.video.brightness = app.video.contrast = app.video.saturation = 0;
+        colourBalance = {};
         app.video.zoom = 1.0f;
         app.video.originForward = 0;
         applyPicture(VideoSettings::kPicture | VideoSettings::kOrigin);
@@ -2973,6 +2985,7 @@ int run(GLFWwindow* window, const Options& opts) {
       view.brightness = app.video.brightness;
       view.contrast = app.video.contrast;
       view.saturation = app.video.saturation;
+      view.balance = colourBalance;
       view.tvGamma = settings.tvGamma;
       view.zoom = app.video.zoom;
       view.originForward = static_cast<int>(std::lround(app.video.originForward * 100));
@@ -3144,6 +3157,8 @@ int run(GLFWwindow* window, const Options& opts) {
       video.photo = photo;
       video.seeThrough = focusIn.seeThrough;
       video.opacity = app.video.opacity;
+      const std::array<float, 3> gains = colourBalance.gains();
+      for (int i = 0; i < 3; ++i) video.balance[i] = gains[i] - 1.0f;
       // Brightness etc. are applied while drawing to photos, and to videos
       // while a mask or key reads the frame; else mpv (or YuvColor) does it.
       const bool readsFrame = video.readsFrame(scene.clear);

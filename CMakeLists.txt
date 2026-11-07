@@ -32,6 +32,7 @@ add_executable(videoframevr
   src/gl_util.cpp
   src/autofocus.cpp
   src/cairo_canvas.cpp
+  src/colour_balance.cpp
   src/controller_guide.cpp
   src/density_map.cpp
   src/depth_estimator.cpp

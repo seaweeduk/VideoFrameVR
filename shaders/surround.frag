@@ -29,7 +29,9 @@
 #include "projection.glsl"
 
 struct SurroundDraw {
-  vec4 toPicture0;  // columns of the rotation from local space into the picture's axes
+  // xyz: columns of the rotation from local space into the picture's axes;
+  // w: the colour balance's red, green and blue gains minus 1 (balanced()).
+  vec4 toPicture0;
   vec4 toPicture1;
   vec4 toPicture2;
   vec4 params;  // x fisheye field of view (radians), y zoom (> 1 magnifies); zw Kr, Kb (kYuv)
@@ -62,6 +64,8 @@ layout(constant_id = 1) const int kSource = -1;
 // shrink (common modes only).
 layout(constant_id = 2) const int kSeeThrough = -1;
 layout(constant_id = 3) const bool kSharpen = false;  // general pipelines: sharpening, for a strength above 0
+// Common modes: the colour balance (general pipelines always apply it).
+layout(constant_id = 4) const bool kBalance = false;
 const bool kCommon = kProjection >= 0;
 const bool kMaskFirst = kSeeThrough == 1;
 
@@ -127,6 +131,17 @@ vec3 shown(vec3 c, EyeData e, uint flags, vec2 fragCoord) {
   if ((flags & kPhoto) != 0u) c = adjustPicture(c, a);
   else if (a != vec3(0.0)) c = adjustVideo(c, a, pc.draw.params.zw, (flags & kTvGamma) != 0u);
   return clamp(applyLook(c, e, flags, fragCoord), 0.0, 1.0);
+}
+
+// The colour balance (warmth, tint and exposure as gains on the light), the
+// last of the picture settings, after sharpening and spill removal; before
+// the key colour's cap, which must come last. Gains of 1 (pushed as 0) leave
+// the picture as it is, so a general pipeline always applies it; a common
+// mode only in its pipeline for it (kBalanced).
+const bool kBalanced = !kCommon || kBalance;
+vec3 balanced(vec3 c) {
+  vec3 g = vec3(pc.draw.toPicture0.w, pc.draw.toPicture1.w, pc.draw.toPicture2.w);
+  return clamp(c + c * g, 0.0, 1.0);
 }
 
 // shown() for the picture c and, if sharpened, its neighbours n.
@@ -268,6 +283,7 @@ void main() {
     vec4 outside = alphaOut ? vec4(0.0) : keyGreen ? vec4(kKeyColor, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
     show(c, n, sharpened, e, flags);
     if (sharpened) c = sharpen(c, n[0], n[1], n[2], n[3], strength);
+    if (kBalanced) c = balanced(c);
     fragColor = inside ? vec4(c, 1.0) * opacity() : outside;
     return;
   }
@@ -301,25 +317,25 @@ void main() {
                              : chromaAlpha(linearToSrgb(n[i]), chroma)) < 1.0;
     sharpened = !edge;
   }
-  // The mask and the key have read the picture as it came; sharpening, the
-  // key colour's cap and spill removal act on what is shown.
+  // The mask and the key have read the picture as it came; sharpening,
+  // spill removal, the colour balance and the key colour's cap act on what
+  // is shown.
   show(c, n, sharpened, e, flags);
   if (sharpened) c = sharpen(c, n[0], n[1], n[2], n[3], strength);
-  if (packed) {
-    if (!kCommon && keyGreen) {
-      // The picture itself must never look like the key colour, or the
-      // headset would cut holes into it (a green top, say): the key channel
-      // is capped just above the larger other one, in display values, below
-      // what the headset's keyer reacts to. (Key green with a packed mask
-      // uses the general pipeline.)
-      vec3 s = linearToSrgb(c);
-      vec3 rest = s * (vec3(1.0) - kKeyColor);
-      float keyed = dot(s, kKeyColor);
-      s += kKeyColor * (min(keyed, max(max(rest.r, rest.g), rest.b) + 0.02) - keyed);
-      c = srgbToLinear(s);
-    }
-  } else if (keyed) {
-    c = srgbToLinear(removeSpill(linearToSrgb(c), chroma.z));
+  if (keyed) c = srgbToLinear(removeSpill(linearToSrgb(c), chroma.z));
+  if (kBalanced) c = balanced(c);
+  if (!kCommon && keyGreen && (packed || keyed)) {
+    // The picture itself must never look like the key colour, or the
+    // headset would cut holes into it (a green top, say, or green the
+    // colour balance brings back after spill removal): the key channel is
+    // capped just above the larger other one, in display values, below what
+    // the headset's keyer reacts to. (Key green with a packed mask, or with
+    // a green screen and the colour balance, uses the general pipeline.)
+    vec3 s = linearToSrgb(c);
+    vec3 rest = s * (vec3(1.0) - kKeyColor);
+    float keyed = dot(s, kKeyColor);
+    s += kKeyColor * (min(keyed, max(max(rest.r, rest.g), rest.b) + 0.02) - keyed);
+    c = srgbToLinear(s);
   }
   // The Opacity setting: below 100 only with transparent output.
   alpha *= opacity();

@@ -865,6 +865,18 @@ struct ControllerStrings {
   const char* volumeHint;         // pointing at the volume (printf: grip's name, then the trigger's)
 };
 
+// Video settings' colour balance (colour_balance.h) in the Picture group.
+struct ColourBalanceStrings {
+  const char* warmth;
+  const char* tint;
+  const char* exposure;
+  const char* tipWarmth;
+  const char* tipTint;
+  const char* tipExposure;
+  const char* pictureHint;  // beside the Picture group's Reset, in place of Strings::pictureHint
+  const char* tipReset;     // ... in place of Strings::tipPictureReset
+};
+
 // Deleting the playing file (docs/alpha/delete-file.md): the delete
 // dialog, and why a deletion failed.
 struct DeleteStrings {
@@ -1165,6 +1177,7 @@ struct Strings {
   SetupStrings setup;
   ControllerStrings controls;
   DeleteStrings deletion;
+  ColourBalanceStrings colourBalance;
 };
 
 const Strings& strings();

@@ -171,6 +171,9 @@ void Menu::update(const MenuView& view) {
   if (view.brightness != view_.brightness) sliderChanged(MenuCommand::SetBrightness);
   if (view.contrast != view_.contrast) sliderChanged(MenuCommand::SetContrast);
   if (view.saturation != view_.saturation) sliderChanged(MenuCommand::SetSaturation);
+  if (view.balance.warmth != view_.balance.warmth) sliderChanged(MenuCommand::SetWarmth);
+  if (view.balance.tint != view_.balance.tint) sliderChanged(MenuCommand::SetTint);
+  if (view.balance.exposure != view_.balance.exposure) sliderChanged(MenuCommand::SetExposure);
   if (view.zoom != view_.zoom) sliderChanged(MenuCommand::SetZoom);
   if (view.originForward != view_.originForward) sliderChanged(MenuCommand::SetOriginForward);
   if (view.opacity != view_.opacity) sliderChanged(MenuCommand::SetOpacity);

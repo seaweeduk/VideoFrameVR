@@ -67,10 +67,11 @@ Pipelines::~Pipelines() {
     pipelines.insert(pipelines.end(), std::begin(q08cPlain_[s]), std::end(q08cPlain_[s]));
     layouts.push_back(q08cLayout_[s]);
   }
-  for (const auto& pass : surround_)
-    for (const auto& projection : pass)
-      for (const auto& cuts : projection)
-        pipelines.insert(pipelines.end(), std::begin(cuts), std::end(cuts));
+  for (const auto& balance : surround_)
+    for (const auto& pass : balance)
+      for (const auto& projection : pass)
+        for (const auto& cuts : projection)
+          pipelines.insert(pipelines.end(), std::begin(cuts), std::end(cuts));
   std::vector<VkSampler> samplers(std::begin(samplers_), std::end(samplers_));
   VkDescriptorSetLayout setLayout = setLayout_;
   gpu_->retire([d, pipelines, samplers, layouts, setLayout] {
@@ -246,16 +247,17 @@ void Pipelines::addSurround(std::vector<Job>& jobs, std::initializer_list<Surrou
                             const uint32_t* fragment, size_t fragmentBytes,
                             VkPipelineLayout layout) {
   for (SurroundSource source : sources)
-    for (int p = 0; p < kProjectionCount; ++p)
-      for (int c = 0; c < kCutCount; ++c)
-        for (int plain = 0; plain < (plainEyePass_ == eyePass_ ? 1 : 2); ++plain) {
-          const int32_t constants[] = {p, sourceConstant(source), c, 0};
-          add(jobs,
-              {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment, fragmentBytes,
-               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, 4},
-              plain ? plainEyePass_ : eyePass_, "surround (common mode)",
-              &surround_[plain][p][source][c], layout);
-        }
+    for (int balance = 0; balance < 2; ++balance)
+      for (int p = 0; p < kProjectionCount; ++p)
+        for (int c = 0; c < kCutCount; ++c)
+          for (int plain = 0; plain < (plainEyePass_ == eyePass_ ? 1 : 2); ++plain) {
+            const int32_t constants[] = {p, sourceConstant(source), c, 0, balance};
+            add(jobs,
+                {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment, fragmentBytes,
+                 VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, 5},
+                plain ? plainEyePass_ : eyePass_, "surround (common mode)",
+                &surround_[balance][plain][p][source][c], layout);
+          }
 }
 
 // With nothing cached yet (after an update) a batch's compiles add up to

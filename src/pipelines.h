@@ -57,7 +57,7 @@ class Pipelines {
   // No packed mask or green screen; the packed mask, with transparent output
   // only; a green screen without shrink.
   enum SurroundCut { kUncut, kPackedMask, kGreenScreen, kCutCount };
-  static constexpr uint32_t kMaxConstants = 4;
+  static constexpr uint32_t kMaxConstants = 5;
   // A pipeline's shaders (embedded SPIR-V) and fixed state.
   struct Desc {
     const uint32_t* vertex;
@@ -103,10 +103,11 @@ class Pipelines {
   }
   // Pushes a Q08C frame's image for the pipelines of its siting.
   void bindQ08c(VkCommandBuffer cmd, int siting, const Texture& frame) const;
+  // A common mode's pipeline, without or with the colour balance.
   VkPipeline surround(SurroundProjection projection, SurroundSource source, SurroundCut cut,
-                      bool plain) const {
-    const VkPipeline p = surround_[1][projection][source][cut];
-    return plain && p ? p : surround_[0][projection][source][cut];
+                      bool plain, bool balance) const {
+    const VkPipeline p = surround_[balance][1][projection][source][cut];
+    return plain && p ? p : surround_[balance][0][projection][source][cut];
   }
   // A pipeline of the scene's layout (or another one) for another render
   // pass (the sky, glass); the caller retires it.
@@ -147,7 +148,8 @@ class Pipelines {
   static void add(std::vector<Job>& jobs, const Desc& desc, VkRenderPass pass, const char* what,
                   VkPipeline* pipeline, VkPipelineLayout layout = VK_NULL_HANDLE);
   // Adds the common modes' surround pipelines of these sources (all of one
-  // shader and layout) for the eye passes.
+  // shader and layout) for the eye passes, each with and without the colour
+  // balance.
   void addSurround(std::vector<Job>& jobs, std::initializer_list<SurroundSource> sources,
                    const uint32_t* fragment, size_t fragmentBytes, VkPipelineLayout layout);
   // Creates the jobs' pipelines on several threads at once; false if any
@@ -175,7 +177,8 @@ class Pipelines {
   VkPipeline tp10_[3] = {}, tp10Plain_[3] = {};
   VkPipelineLayout q08cLayout_[kQ08cSitings] = {};
   VkPipeline q08c_[kQ08cSitings][3] = {}, q08cPlain_[kQ08cSitings][3] = {};
-  VkPipeline surround_[2][kProjectionCount][kSourceCount][kCutCount] = {};  // eye pass, plain one
+  // Without and with the colour balance; for the eye pass and the plain one.
+  VkPipeline surround_[2][2][kProjectionCount][kSourceCount][kCutCount] = {};
   VkSampler samplers_[kSamplerCount] = {};
   GpuImage dummyImage_;
   Texture dummy_;

@@ -1069,6 +1069,19 @@ const Strings kEnglish = {
         "Turn on Send to Stash in Settings to delete scenes played from Stash",
         "Stash isn't answering",
     },
+    {
+        "Warmth",
+        "Tint",
+        "Exposure",
+        "Cooler (blue) or warmer (orange) light. For all videos until the player closes.",
+        "Greener or more magenta light. For all videos until the player closes.",
+        "Less or more light: dark parts change least, black stays black. For all videos until the "
+        "player closes.",
+        "Saved for this video only; warmth, tint and exposure for all videos until the player "
+        "closes.",
+        "Reset brightness, contrast, saturation, zoom and viewpoint for this video, and warmth, tint "
+        "and exposure.",
+    },
 };
 
 const Strings kGerman = germanStrings(kEnglish);
