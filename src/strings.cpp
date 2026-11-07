@@ -1072,20 +1072,17 @@ const Strings kEnglish = {
         "Warmth",
         "Tint",
         "Exposure",
-        "Cooler (blue) or warmer (orange) light. For all videos until the player closes.",
-        "Greener or more magenta light. For all videos until the player closes.",
-        "Less or more light: dark parts change least, black stays black. For all videos until the "
-        "player closes.",
-        "Saved for this video only; warmth, tint and exposure for all videos until the player "
-        "closes.",
+        "Cooler (blue) or warmer (orange) light.",
+        "Greener or more magenta light.",
+        "Less or more light: dark parts change least, black stays black.",
         "Reset brightness, contrast, saturation, zoom and viewpoint for this video, and warmth, tint "
         "and exposure.",
         "Match the room",
         "Reading the room …",
         "Couldn't read the room",
         "Sets warmth, tint and exposure so the video looks lit like the room, as the cameras "
-        "show it; off puts them back. The first time, the picture disappears for a moment while "
-        "it looks. Grey cameras: exposure only.",
+        "show it. Not saved: off puts back the video's own. The first time, the picture "
+        "disappears for a moment while it looks. Grey cameras: exposure only.",
         "Shows when the room does: with passthrough on, or Opacity below 100 %.",
         "Read the room again, for when the light has changed",
         "Match colour",

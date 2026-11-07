@@ -165,7 +165,7 @@ struct MenuView {
   int slideshowSeconds = 0;  // 0 = no slideshow
   // Picture settings of the running video.
   int brightness = 0, contrast = 0, saturation = 0;
-  ColourBalance balance;  // for all videos, this run
+  ColourBalance balance;  // the video's, or Match the room's while it is on
   RoomMatch roomMatch = RoomMatch::Hidden;
   bool roomMatched = false;  // Match the room is on
   bool roomRead = false;     // ... and has a reading of this run to use again

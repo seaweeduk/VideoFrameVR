@@ -874,8 +874,7 @@ struct ColourBalanceStrings {
   const char* tipWarmth;
   const char* tipTint;
   const char* tipExposure;
-  const char* pictureHint;  // beside the Picture group's Reset, in place of Strings::pictureHint
-  const char* tipReset;     // ... in place of Strings::tipPictureReset
+  const char* tipReset;  // the Picture group's Reset, in place of Strings::tipPictureReset
   const char* matchRoom;  // a switch
   const char* reading;  // its label while it reads
   const char* failed;   // ... for a few seconds after a reading failed

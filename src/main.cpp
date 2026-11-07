@@ -749,30 +749,31 @@ int run(GLFWwindow* window, const Options& opts) {
   double greenCheckAt = 0;  // glfwGetTime() the check starts, a moment after the video opens
   const char* passthroughWhy = nullptr;  // the notice's first line
   double passthroughShownUntil = 0;
-  // The colour balance holds for every video until the player closes: the
-  // room's light (Match the room) belongs to the room, not to a video.
-  ColourBalance colourBalance;
+  // The colour balance: the video's own (app.video.balance, saved with it),
+  // or while Match the room is on the room's, for every video until it goes
+  // off, never saved: the room's light belongs to the room, not to a video.
   RoomLight roomLight;
   const bool roomReadable = kStandaloneHeadset && RoomLight::available();
   double roomFailedUntil = 0;  // glfwGetTime() Match the room stops saying it failed
   // Match the room, a switch: on, the room's reading (the run's first, or
-  // Read again's) times the strengths in the sliders; off, the sliders as
-  // they were before it went on. Moved by hand while on, they stay as moved
-  // until the match is applied again (a strength, Read again). A reading is
-  // kept when it ends, but applied only if the sliders were not moved by
-  // hand or reset after it was asked for.
+  // Read again's) times the strengths, from the video's own balance (grey
+  // cameras leave its warmth and tint). Moved by hand while on, the sliders
+  // stay as moved until the match is applied again (a strength, Read again).
+  // A reading is kept when it ends, but applied only if they were not moved
+  // by hand or reset after it was asked for.
+  ColourBalance roomBalance;
   std::optional<RoomLight::Reading> roomReading;  // this run's latest
   bool roomMatched = false;
-  ColourBalance beforeMatch;
-  unsigned balanceEdits = 0, roomAsked = 0;  // hand moves and resets; their count when last asked
+  // Hand moves while on, and Picture resets; their count when last asked.
+  unsigned balanceEdits = 0, roomAsked = 0;
   // A new reading, unless one runs (which keeps the count it was asked with).
   auto readRoom = [&] {
     if (roomLight.start()) roomAsked = balanceEdits;
   };
   auto applyRoomMatch = [&] {
     if (roomMatched && roomReading)
-      colourBalance.match(roomReading->light, roomReading->colour, roomReading->white,
-                          settings.matchColour / 100.0f, settings.matchBrightness / 100.0f);
+      roomBalance.match(roomReading->light, roomReading->colour, roomReading->white,
+                        settings.matchColour / 100.0f, settings.matchBrightness / 100.0f);
   };
 
   // Frame rates and drops over the video: the setting's, or the command
@@ -1423,24 +1424,28 @@ int run(GLFWwindow* window, const Options& opts) {
         applyPicture(VideoSettings::kSaturation);
         break;
       case MenuCommand::SetWarmth:  // the colour balance: applied while drawing
-        colourBalance.warmth = static_cast<int>(c.value);
-        ++balanceEdits;
-        break;
       case MenuCommand::SetTint:
-        colourBalance.tint = static_cast<int>(c.value);
-        ++balanceEdits;
+      case MenuCommand::SetExposure: {
+        // The video's, saved, or while Match the room is on the room's, not.
+        ColourBalance& balance = roomMatched ? roomBalance : app.video.balance;
+        const int value = std::clamp(static_cast<int>(c.value), -100, 100);
+        // Each its own part, as brightness etc.: an edit before the video's
+        // record is found leaves the other two as saved.
+        const bool warmth = c.type == MenuCommand::SetWarmth, tint = c.type == MenuCommand::SetTint;
+        (warmth ? balance.warmth : tint ? balance.tint : balance.exposure) = value;
+        if (roomMatched) ++balanceEdits;
+        else
+          storeVideoSoon(warmth ? VideoSettings::kWarmth
+                         : tint ? VideoSettings::kTint
+                                : VideoSettings::kExposure);
         break;
-      case MenuCommand::SetExposure:
-        colourBalance.exposure = static_cast<int>(c.value);
-        ++balanceEdits;
-        break;
-      case MenuCommand::ToggleMatchRoom:
+      }
+      case MenuCommand::ToggleMatchRoom:  // off: the video's own balance again
         roomFailedUntil = 0;
         roomMatched = !roomMatched;
-        if (!roomMatched) {
-          colourBalance = beforeMatch;
-        } else {
-          beforeMatch = colourBalance;
+        if (roomMatched) {
+          roomBalance = app.video.balance;
+          roomAsked = balanceEdits;  // a reading still under way is for this one
           if (roomReading) applyRoomMatch();
           else readRoom();
         }
@@ -1475,7 +1480,7 @@ int run(GLFWwindow* window, const Options& opts) {
         break;
       case MenuCommand::ResetPicture:
         app.video.brightness = app.video.contrast = app.video.saturation = 0;
-        colourBalance = {};
+        app.video.balance = {};
         roomMatched = false;
         ++balanceEdits;
         app.video.zoom = 1.0f;
@@ -2381,7 +2386,7 @@ int run(GLFWwindow* window, const Options& opts) {
         if (roomAsked == balanceEdits) applyRoomMatch();
       } else {
         roomFailedUntil = glfwGetTime() + 4;
-        if (!roomReading) roomMatched = false;
+        if (!roomReading) roomMatched = false;  // the video's own balance again
       }
     }
     // Saved on every change of folder, so even a killed player reopens there.
@@ -3062,7 +3067,7 @@ int run(GLFWwindow* window, const Options& opts) {
       view.brightness = app.video.brightness;
       view.contrast = app.video.contrast;
       view.saturation = app.video.saturation;
-      view.balance = colourBalance;
+      view.balance = roomMatched ? roomBalance : app.video.balance;
       view.roomMatch = !roomReadable            ? RoomMatch::Hidden
                        : roomLight.reading()    ? RoomMatch::Reading
                        : !blended               ? RoomMatch::Off
@@ -3243,7 +3248,7 @@ int run(GLFWwindow* window, const Options& opts) {
       video.photo = photo;
       video.seeThrough = focusIn.seeThrough;
       video.opacity = app.video.opacity;
-      const std::array<float, 3> gains = colourBalance.gains();
+      const std::array<float, 3> gains = (roomMatched ? roomBalance : app.video.balance).gains();
       for (int i = 0; i < 3; ++i) video.balance[i] = gains[i] - 1.0f;
       // Brightness etc. are applied while drawing to photos, and to videos
       // while a mask or key reads the frame; else mpv (or YuvColor) does it.

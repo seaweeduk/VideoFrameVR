@@ -1,5 +1,6 @@
 #pragma once
 
+#include "colour_balance.h"
 #include "flat_screen.h"
 #include "focus_settings.h"
 #include "video_format.h"
@@ -29,6 +30,9 @@ struct VideoSettings {
   bool hasFormat = false;  // the format was chosen by hand
   VideoFormat format;
   int brightness = 0, contrast = 0, saturation = 0;  // mpv's -100..100
+  // Warmth, tint and exposure: Match the room's, while it is on, are never
+  // stored here.
+  ColourBalance balance;
   float zoom = 1.0f;  // 180°/360° video: magnification
   float originForward = 0;  // surround viewpoint, in sphere radii toward the picture
   int opacity = 100;  // percent, over the room (blended by the headset itself)
@@ -59,7 +63,8 @@ struct VideoSettings {
   ScreenSize screen;
 
   bool pictureIsDefault() const {
-    return brightness == 0 && contrast == 0 && saturation == 0 && zoom == 1.0f;
+    return brightness == 0 && contrast == 0 && saturation == 0 && balance.neutral() &&
+           zoom == 1.0f;
   }
   // Nothing remembered: the video follows the defaults.
   bool isDefault() const {
@@ -72,8 +77,9 @@ struct VideoSettings {
   enum Part : unsigned { kFormat = 1, kBrightness = 2, kContrast = 4, kSaturation = 8, kZoom = 16,
                          kVolume = 32, kGreenScreen = 64, kFocus = 128, kPassthrough = 256,
                          kScreen = 512, kOrigin = 1024, kGreenCheck = 2048, kPackedMask = 4096,
-                         kOpacity = 8192, kAll = 16383,
-                         kPicture = kBrightness | kContrast | kSaturation | kZoom };
+                         kOpacity = 8192, kWarmth = 16384, kTint = 32768, kExposure = 65536,
+                         kAll = 131071, kBalance = kWarmth | kTint | kExposure,
+                         kPicture = kBrightness | kContrast | kSaturation | kBalance | kZoom };
   // Takes these parts from `other`.
   void take(const VideoSettings& other, unsigned parts) {
     if (parts & kFormat) {
@@ -83,6 +89,9 @@ struct VideoSettings {
     if (parts & kBrightness) brightness = other.brightness;
     if (parts & kContrast) contrast = other.contrast;
     if (parts & kSaturation) saturation = other.saturation;
+    if (parts & kWarmth) balance.warmth = other.balance.warmth;
+    if (parts & kTint) balance.tint = other.balance.tint;
+    if (parts & kExposure) balance.exposure = other.balance.exposure;
     if (parts & kZoom) zoom = other.zoom;
     if (parts & kOrigin) originForward = other.originForward;
     if (parts & kPassthrough) {
@@ -111,6 +120,7 @@ struct VideoSettings {
     return hasFormat == o.hasFormat && format.projection == o.format.projection &&
            format.stereo == o.format.stereo && format.packing == o.format.packing &&
            brightness == o.brightness && contrast == o.contrast && saturation == o.saturation &&
+           balance == o.balance &&
            zoom == o.zoom && passthrough == o.passthrough && volume == o.volume && g.on == h.on &&
            g.strength == h.strength &&
            g.softness == h.softness && g.spill == h.spill && g.shrink == h.shrink &&

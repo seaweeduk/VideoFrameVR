@@ -419,7 +419,7 @@ void Menu::layoutVideoSettings() {
   reset.fontSize = kTextSize;
   reset.tooltip = cb.tipReset;
   buttons_.push_back(reset);
-  addLabel(reset.x + reset.w + 20, y, w - reset.w - 20, 0, cb.pictureHint, kHintSize, true, 2);
+  addLabel(reset.x + reset.w + 20, y, w - reset.w - 20, 0, t.pictureHint, kHintSize, true, 2);
   const double pictureBottom = y + hintHeight(2) + 16;
   addGroup(columnX(1), pageTop, kColumnW, pictureBottom - pageTop, t.picture);
 
