@@ -61,6 +61,9 @@ struct Settings {
   bool foveationRing = kDefaultFoveationRing;
   int foveationOutside = 4;
   bool advancedSettings = false;
+  // Match the room (colour_balance.h): how much of the room's measured
+  // warmth and tint, and of its exposure, it applies (percent).
+  int matchColour = 70, matchBrightness = 60;
   // Frame: Hz, SteamVR's for this app (refresh_rate.h), read from it at start.
   int refreshRate = 120;
   // The performance preset the settings above match (presets.h), named in

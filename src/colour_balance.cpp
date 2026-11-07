@@ -26,12 +26,13 @@ std::array<float, 3> ColourBalance::gains() const {
   return g;
 }
 
-void ColourBalance::match(const float light[3], bool colour, float white) {
+void ColourBalance::match(const float light[3], bool colour, float white, float colourShare,
+                          float brightnessShare) {
   if (colour) {
     float l[3];
     for (int i = 0; i < 3; ++i) l[i] = std::log2(std::max(light[i], 1e-6f));
-    warmth = toSlider((l[0] - l[2]) / 2, kWarmthStops);
-    tint = toSlider((l[0] + l[2]) / 2 - l[1], kTintStops);
+    warmth = toSlider((l[0] - l[2]) / 2 * colourShare, kWarmthStops);
+    tint = toSlider(((l[0] + l[2]) / 2 - l[1]) * colourShare, kTintStops);
   }
-  exposure = toSlider(std::log2(std::max(white, 1e-6f)), kExposureStops);
+  exposure = toSlider(std::log2(std::max(white, 1e-6f)) * brightnessShare, kExposureStops);
 }

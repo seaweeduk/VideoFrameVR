@@ -90,6 +90,8 @@ std::string allLines(const Settings& s) {
   out << "foveation_ring=" << s.foveationRing << "\n";
   out << "foveation_outside=" << s.foveationOutside << "\n";
   out << "advanced_settings=" << s.advancedSettings << "\n";
+  out << "match_colour=" << s.matchColour << "\n";
+  out << "match_brightness=" << s.matchBrightness << "\n";
   out << "refresh_rate=" << s.refreshRate << "\n";
   out << "performance_preset=" << performancePresetName(s.performancePreset) << "\n";
   out << focusSettingLines(s.focus, s.focusPrefs);
@@ -240,6 +242,9 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "video_mipmaps") s.videoMipmaps = value != "0";
     else if (key == "anti_shimmer") parseAntiShimmer(value, s.antiShimmer);
     else if (key == "sharpen") s.sharpen = std::clamp(std::atoi(value.c_str()), 0, 300);
+    else if (key == "match_colour") s.matchColour = std::clamp(std::atoi(value.c_str()), 0, 100);
+    else if (key == "match_brightness")
+      s.matchBrightness = std::clamp(std::atoi(value.c_str()), 0, 100);
     else if (key == "tone_look") s.toneLook = value == "1";
     else if (key == "render_scale")
       s.legacyRenderScale = std::clamp(std::atoi(value.c_str()), 50, 200);

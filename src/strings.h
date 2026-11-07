@@ -876,11 +876,17 @@ struct ColourBalanceStrings {
   const char* tipExposure;
   const char* pictureHint;  // beside the Picture group's Reset, in place of Strings::pictureHint
   const char* tipReset;     // ... in place of Strings::tipPictureReset
-  const char* matchRoom;
-  const char* reading;  // the button while it reads
+  const char* matchRoom;  // a switch
+  const char* reading;  // its label while it reads
   const char* failed;   // ... for a few seconds after a reading failed
   const char* tipMatchRoom;
   const char* tipMatchRoomHidden;  // the room isn't shown (passthrough off, Opacity at 100 %)
+  const char* readAgain;           // the button beside the switch while it is on (tooltip)
+  // Advanced, for all videos: how much of the room's light it applies.
+  const char* matchColour;
+  const char* matchBrightness;
+  const char* tipMatchColour;
+  const char* tipMatchBrightness;
 };
 
 // Deleting the playing file (docs/alpha/delete-file.md): the delete

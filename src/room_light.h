@@ -27,8 +27,9 @@ class RoomLight {
   ~RoomLight();
   // Whether the view can be read (the device is there).
   static bool available();
-  // Starts a reading, unless one runs.
-  void start();
+  // Starts a reading, unless one runs: whether it did (a reading that
+  // couldn't start ends at once, failed).
+  bool start();
   bool reading() const { return running_.load(); }
   // While true, the player draws nothing.
   bool blank() const { return blank_.load(); }

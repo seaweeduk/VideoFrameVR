@@ -156,7 +156,8 @@ void Menu::update(const MenuView& view) {
       view.background != view_.background || view.autoPassthrough != view_.autoPassthrough ||
       view.passthrough != view_.passthrough || view.packedAlpha != view_.packedAlpha ||
       view.maskFormat != view_.maskFormat || view.opacityApplies != view_.opacityApplies ||
-      view.roomMatch != view_.roomMatch ||
+      view.roomMatch != view_.roomMatch || view.roomMatched != view_.roomMatched ||
+      view.roomRead != view_.roomRead ||
       view.greenScreen.on != view_.greenScreen.on ||
       view.resume != view_.resume ||
       view.seekPreview != view_.seekPreview || view.thumbnails != view_.thumbnails ||
@@ -175,6 +176,8 @@ void Menu::update(const MenuView& view) {
   if (view.balance.warmth != view_.balance.warmth) sliderChanged(MenuCommand::SetWarmth);
   if (view.balance.tint != view_.balance.tint) sliderChanged(MenuCommand::SetTint);
   if (view.balance.exposure != view_.balance.exposure) sliderChanged(MenuCommand::SetExposure);
+  if (view.matchColour != view_.matchColour) sliderChanged(MenuCommand::SetMatchColour);
+  if (view.matchBrightness != view_.matchBrightness) sliderChanged(MenuCommand::SetMatchBrightness);
   if (view.zoom != view_.zoom) sliderChanged(MenuCommand::SetZoom);
   if (view.originForward != view_.originForward) sliderChanged(MenuCommand::SetOriginForward);
   if (view.opacity != view_.opacity) sliderChanged(MenuCommand::SetOpacity);

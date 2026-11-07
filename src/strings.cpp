@@ -1084,10 +1084,15 @@ const Strings kEnglish = {
         "Match the room",
         "Reading the room …",
         "Couldn't read the room",
-        "Set warmth, tint and exposure so the video looks lit like the room around it, as the "
-        "cameras show it. The picture disappears for a moment while it looks. Grey cameras: "
-        "exposure only.",
+        "Sets warmth, tint and exposure so the video looks lit like the room, as the cameras "
+        "show it; off puts them back. The first time, the picture disappears for a moment while "
+        "it looks. Grey cameras: exposure only.",
         "Shows when the room does: with passthrough on, or Opacity below 100 %.",
+        "Read the room again, for when the light has changed",
+        "Match colour",
+        "Match brightness",
+        "How much of the room's warmth and tint Match the room applies. For all videos.",
+        "How much of the room's brightness Match the room applies. For all videos.",
     },
 };
 

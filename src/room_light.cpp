@@ -49,8 +49,8 @@ RoomLight::~RoomLight() {
   if (thread_.joinable()) thread_.join();
 }
 
-void RoomLight::start() {
-  if (running_) return;
+bool RoomLight::start() {
+  if (running_) return false;
   if (thread_.joinable()) thread_.join();
   running_ = true;
   blankSince_ = 0;
@@ -66,6 +66,7 @@ void RoomLight::start() {
     std::lock_guard<std::mutex> lock(mutex_);
     ended_ = true;
   }
+  return true;
 }
 
 void RoomLight::blankSubmitted() {

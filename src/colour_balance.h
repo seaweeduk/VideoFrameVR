@@ -20,7 +20,9 @@ struct ColourBalance {
   std::array<float, 3> gains() const;
   // Lights the picture as a room is lit: its light's colour (linear red,
   // green and blue, any scale) for warmth and tint, unless the cameras see
-  // no colour (`colour` false), and where its white sits (linear, 1 = the
-  // display's) for exposure. Each as far as its range goes.
-  void match(const float light[3], bool colour, float white);
+  // no colour (`colour` false: they stay as they are), and where its white
+  // sits (linear, 1 = the display's) for exposure. `colourShare` and
+  // `brightnessShare` (0..1) of the way, each as far as its range goes.
+  void match(const float light[3], bool colour, float white, float colourShare,
+             float brightnessShare);
 };

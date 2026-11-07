@@ -613,6 +613,19 @@ void Menu::layoutVideoSettings() {
                  command(MenuCommand::ToggleShowFoveation)).tooltip = t.showFoveationHint;
     y += kSettingStep;
   }
+  // How far Match the room goes (advanced: set once, to taste).
+  if (view_.advancedSettings && view_.roomMatch != RoomMatch::Hidden) {
+    const int share[] = {view_.matchColour, view_.matchBrightness};
+    const MenuCommand::Type types[] = {MenuCommand::SetMatchColour, MenuCommand::SetMatchBrightness};
+    const char* labels[] = {cb.matchColour, cb.matchBrightness};
+    const char* tips[] = {cb.tipMatchColour, cb.tipMatchBrightness};
+    for (int i = 0; i < 2; ++i) {
+      addValueRow(x, y, w, 230, labels[i], std::to_string(share[i]) + " %", share[i], 0, 100,
+                  command(types[i], std::max(0, share[i] - 10)),
+                  command(types[i], std::min(100, share[i] + 10)), false, false, tips[i]);
+      y += kSettingStep;
+    }
+  }
   const double imageBottom = y;
   addGroup(columnX(2), pageTop, kColumnW, imageBottom - pageTop, t.imageAllVideos);
 
@@ -664,23 +677,34 @@ void Menu::layoutVideoSettings() {
   resetKey.tooltip = t.greenScreenResetHint;
   resetKey.disabled = own && !view_.opacityApplies;
   buttons_.push_back(resetKey);
-  // Match the room (the Frame) on the same row: then the own mask's hint is
-  // left to the green screen switch's tooltip, which says it too.
+  // Match the room (the Frame), a switch, on the same row, and while it is
+  // on Read again after it: then the own mask's hint is left to the green
+  // screen switch's tooltip, which says it too. The switch's label says
+  // when it reads or failed.
   const RoomMatch room = view_.roomMatch;
   const bool ownHint = own && room == RoomMatch::Hidden;
   if (room != RoomMatch::Hidden) {
-    Button match = textButton(room == RoomMatch::Reading  ? cb.reading
-                              : room == RoomMatch::Failed ? cb.failed
-                                                          : cb.matchRoom,
-                              Icon::None, command(MenuCommand::MatchRoom));
-    match.panel = kBrowser;
-    match.x = x + w - match.w;
-    match.y = y;
-    match.h = kSettingRowH;
-    match.fontSize = kTextSize;
-    match.disabled = room == RoomMatch::Off || room == RoomMatch::Reading;
-    match.tooltip = room == RoomMatch::Off ? cb.tipMatchRoomHidden : cb.tipMatchRoom;
-    buttons_.push_back(match);
+    const bool again = view_.roomMatched && (room == RoomMatch::Ready || room == RoomMatch::Off);
+    double right = x + w;
+    if (again) {
+      Button read = iconButton(Icon::Refresh, command(MenuCommand::ReadRoomAgain));
+      read.panel = kBrowser;
+      read.w = read.h = kSettingRowH;
+      read.x = right - read.w;
+      read.y = y;
+      read.disabled = room == RoomMatch::Off;
+      read.tooltip = room == RoomMatch::Off ? cb.tipMatchRoomHidden : cb.readAgain;
+      buttons_.push_back(read);
+      right = read.x - 8;
+    }
+    const char* label = room == RoomMatch::Reading  ? cb.reading
+                        : room == RoomMatch::Failed ? cb.failed
+                                                    : cb.matchRoom;
+    const double switchW = textWidth(label, kTextSize, false) + 104;  // its label and pill
+    Button& match = addToggleRow(right - switchW, y, switchW, label, view_.roomMatched,
+                                 command(MenuCommand::ToggleMatchRoom),
+                                 room == RoomMatch::Off && !view_.roomMatched && !view_.roomRead);
+    match.tooltip = match.disabled ? cb.tipMatchRoomHidden : cb.tipMatchRoom;
   }
   if (ownHint)
     addLabel(resetKey.x + resetKey.w + 20, y, w - resetKey.w - 20, 0, t.greenScreenOwnMask,

@@ -755,6 +755,25 @@ int run(GLFWwindow* window, const Options& opts) {
   RoomLight roomLight;
   const bool roomReadable = kStandaloneHeadset && RoomLight::available();
   double roomFailedUntil = 0;  // glfwGetTime() Match the room stops saying it failed
+  // Match the room, a switch: on, the room's reading (the run's first, or
+  // Read again's) times the strengths in the sliders; off, the sliders as
+  // they were before it went on. Moved by hand while on, they stay as moved
+  // until the match is applied again (a strength, Read again). A reading is
+  // kept when it ends, but applied only if the sliders were not moved by
+  // hand or reset after it was asked for.
+  std::optional<RoomLight::Reading> roomReading;  // this run's latest
+  bool roomMatched = false;
+  ColourBalance beforeMatch;
+  unsigned balanceEdits = 0, roomAsked = 0;  // hand moves and resets; their count when last asked
+  // A new reading, unless one runs (which keeps the count it was asked with).
+  auto readRoom = [&] {
+    if (roomLight.start()) roomAsked = balanceEdits;
+  };
+  auto applyRoomMatch = [&] {
+    if (roomMatched && roomReading)
+      colourBalance.match(roomReading->light, roomReading->colour, roomReading->white,
+                          settings.matchColour / 100.0f, settings.matchBrightness / 100.0f);
+  };
 
   // Frame rates and drops over the video: the setting's, or the command
   // line's for this run until the menu switches it.
@@ -1405,16 +1424,40 @@ int run(GLFWwindow* window, const Options& opts) {
         break;
       case MenuCommand::SetWarmth:  // the colour balance: applied while drawing
         colourBalance.warmth = static_cast<int>(c.value);
+        ++balanceEdits;
         break;
       case MenuCommand::SetTint:
         colourBalance.tint = static_cast<int>(c.value);
+        ++balanceEdits;
         break;
       case MenuCommand::SetExposure:
         colourBalance.exposure = static_cast<int>(c.value);
+        ++balanceEdits;
         break;
-      case MenuCommand::MatchRoom:
+      case MenuCommand::ToggleMatchRoom:
         roomFailedUntil = 0;
-        roomLight.start();
+        roomMatched = !roomMatched;
+        if (!roomMatched) {
+          colourBalance = beforeMatch;
+        } else {
+          beforeMatch = colourBalance;
+          if (roomReading) applyRoomMatch();
+          else readRoom();
+        }
+        break;
+      case MenuCommand::ReadRoomAgain:
+        roomFailedUntil = 0;
+        if (roomMatched) readRoom();
+        break;
+      case MenuCommand::SetMatchColour:
+        settings.matchColour = std::clamp(static_cast<int>(c.value), 0, 100);
+        saveSettings(settings);
+        applyRoomMatch();
+        break;
+      case MenuCommand::SetMatchBrightness:
+        settings.matchBrightness = std::clamp(static_cast<int>(c.value), 0, 100);
+        saveSettings(settings);
+        applyRoomMatch();
         break;
       case MenuCommand::SetOpacity:  // applied while drawing
         app.video.opacity = static_cast<int>(c.value);
@@ -1433,6 +1476,8 @@ int run(GLFWwindow* window, const Options& opts) {
       case MenuCommand::ResetPicture:
         app.video.brightness = app.video.contrast = app.video.saturation = 0;
         colourBalance = {};
+        roomMatched = false;
+        ++balanceEdits;
         app.video.zoom = 1.0f;
         app.video.originForward = 0;
         applyPicture(VideoSettings::kPicture | VideoSettings::kOrigin);
@@ -2316,11 +2361,18 @@ int run(GLFWwindow* window, const Options& opts) {
     // Opacity below 100 blends the video over the camera too, with or
     // without passthrough (whose mask or key it doesn't bring).
     const bool blended = canBlend && (app.video.passthrough || app.video.opacity < 100);
-    // A room reading that ended: the room's light in the colour balance, or
-    // a moment saying it failed.
+    // A room reading that ended: kept for the run and matched while the
+    // switch is on (unless the sliders were moved or reset since it was asked
+    // for), or a moment saying it failed (the switch going off again, nothing
+    // matched yet, if there is no earlier reading to use).
     if (std::optional<RoomLight::Reading> reading; roomLight.take(reading)) {
-      if (reading) colourBalance.match(reading->light, reading->colour, reading->white);
-      else roomFailedUntil = glfwGetTime() + 4;
+      if (reading) {
+        roomReading = reading;
+        if (roomAsked == balanceEdits) applyRoomMatch();
+      } else {
+        roomFailedUntil = glfwGetTime() + 4;
+        if (!roomReading) roomMatched = false;
+      }
     }
     // Saved on every change of folder, so even a killed player reopens there.
     if (!menu.directory().empty() && menu.directory() != settings.lastFolder) {
@@ -3006,6 +3058,10 @@ int run(GLFWwindow* window, const Options& opts) {
                        : !blended               ? RoomMatch::Off
                        : now < roomFailedUntil ? RoomMatch::Failed
                                                 : RoomMatch::Ready;
+      view.roomMatched = roomMatched;
+      view.roomRead = roomReading.has_value();
+      view.matchColour = settings.matchColour;
+      view.matchBrightness = settings.matchBrightness;
       view.tvGamma = settings.tvGamma;
       view.zoom = app.video.zoom;
       view.originForward = static_cast<int>(std::lround(app.video.originForward * 100));
