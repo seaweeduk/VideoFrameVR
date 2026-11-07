@@ -7,6 +7,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
+#include <vector>
 
 // The scene's pipelines, made once at startup against the eye render pass,
 // whatever the settings (docs/vulkan-renderer.md, 2.5), with their one
@@ -15,10 +17,10 @@
 // bytes of push constants) and samplers (2.6).
 class Pipelines {
  public:
-  // kSurroundMask: surround.frag with the packed mask looked up first, for
-  // packed alpha passthrough; the ...Sharpen ones: the video shaders with
-  // sharpening, for a strength above 0 (videoPipeline()). Kept apart: on the
-  // Frame a shader gets much dearer with code in it it never runs.
+  // kSurround... : surround.frag's general pipelines (the common modes have
+  // their own, surround()); kSurroundMask with the packed mask looked up
+  // first, for packed alpha passthrough; the ...Sharpen ones: the video
+  // shaders with sharpening, for a strength above 0 (videoPipeline()).
   enum Id {
     kSurround,
     kScreen,
@@ -46,6 +48,14 @@ class Pipelines {
     kGlass,           // linear, clamped
     kSamplerCount
   };
+  // surround.frag's common modes (its pipeline constants): a pipeline each,
+  // whose per-pixel path has only that mode's code.
+  enum SurroundProjection { kEquirect, kFisheye, kCubemap, kProjectionCount };  // 180 or 360; both grids
+  enum SurroundSource { kImage, kPlanes, kTp10, kSourceCount };  // RGBA, YUV planes, a Q10C frame
+  // No packed mask or green screen; the packed mask, with transparent output
+  // only; a green screen without shrink.
+  enum SurroundCut { kUncut, kPackedMask, kGreenScreen, kCutCount };
+  static constexpr uint32_t kMaxConstants = 4;
   // A pipeline's shaders (embedded SPIR-V) and fixed state.
   struct Desc {
     const uint32_t* vertex;
@@ -54,6 +64,9 @@ class Pipelines {
     size_t fragmentBytes;
     VkPrimitiveTopology topology;
     bool blend;  // premultiplied alpha, colour and alpha alike
+    const int32_t* constants = nullptr;  // the fragment shader's specialization constants 0.., at
+                                         // most kMaxConstants
+    uint32_t constantCount = 0;
   };
 
   Pipelines() = default;
@@ -69,15 +82,20 @@ class Pipelines {
   // again for its float images, and its blur.
   bool initGlass(VkRenderPass glassPass);
   // The video's pipelines for Q10C decoder frames (Frame, DirectVideo): the
-  // unsharpened surround, its mask-first version and the screen, built for
-  // TP10 row bands, with their own layout (setLayout, a descriptor buffer's,
-  // and the same push constants).
+  // unsharpened surround (its common modes too), its mask-first version and
+  // the screen, built for TP10 row bands, with their own layout (setLayout, a
+  // descriptor buffer's, and the same push constants).
   bool initTp10(VkDescriptorSetLayout setLayout);
   VkPipeline tp10(bool screen, bool maskFirst, bool plain) const {
     const int i = screen ? 2 : maskFirst ? 1 : 0;
     return plain && tp10Plain_[i] ? tp10Plain_[i] : tp10_[i];
   }
   VkPipelineLayout tp10Layout() const { return tp10Layout_; }
+  VkPipeline surround(SurroundProjection projection, SurroundSource source, SurroundCut cut,
+                      bool plain) const {
+    const VkPipeline p = surround_[1][projection][source][cut];
+    return plain && p ? p : surround_[0][projection][source][cut];
+  }
   // A pipeline of the scene's layout (or another one) for another render
   // pass (the sky, glass); the caller retires it.
   VkPipeline create(const Desc& desc, VkRenderPass pass, const char* what,
@@ -100,6 +118,29 @@ class Pipelines {
 
  private:
   bool createSamplers();
+  VkShaderModule module(const uint32_t* code, size_t bytes, const char* what);
+  // create() with these modules for desc's code (which it doesn't read).
+  VkPipeline create(const Desc& desc, VkShaderModule vertex, VkShaderModule fragment,
+                    VkRenderPass pass, const char* what, VkPipelineLayout layout);
+  // One pipeline of a batch (createAll), with its own copy of desc's
+  // constants; layout VK_NULL_HANDLE for the scene's.
+  struct Job {
+    Desc desc;
+    int32_t constants[kMaxConstants];
+    VkRenderPass pass;
+    VkPipelineLayout layout;
+    const char* what;
+    VkPipeline* pipeline;
+  };
+  static void add(std::vector<Job>& jobs, const Desc& desc, VkRenderPass pass, const char* what,
+                  VkPipeline* pipeline, VkPipelineLayout layout = VK_NULL_HANDLE);
+  // Adds the common modes' surround pipelines of these sources (all of one
+  // shader and layout) for the eye passes.
+  void addSurround(std::vector<Job>& jobs, std::initializer_list<SurroundSource> sources,
+                   const uint32_t* fragment, size_t fragmentBytes, VkPipelineLayout layout);
+  // Creates the jobs' pipelines on several threads at once; false if any
+  // failed (those made are kept, for the destructor).
+  bool createAll(const std::vector<Job>& jobs);
   bool createDummy();
 
   GpuContext* gpu_ = nullptr;
@@ -114,6 +155,7 @@ class Pipelines {
   VkRenderPass eyePass_ = VK_NULL_HANDLE, plainEyePass_ = VK_NULL_HANDLE;
   VkPipelineLayout tp10Layout_ = VK_NULL_HANDLE;
   VkPipeline tp10_[3] = {}, tp10Plain_[3] = {};
+  VkPipeline surround_[2][kProjectionCount][kSourceCount][kCutCount] = {};  // eye pass, plain one
   VkSampler samplers_[kSamplerCount] = {};
   GpuImage dummyImage_;
   Texture dummy_;
