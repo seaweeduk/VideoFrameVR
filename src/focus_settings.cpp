@@ -9,14 +9,14 @@
 
 namespace {
 
-// The menu's steps and supported ranges (docs/autofocus.md).
-constexpr int kDistanceSteps[] = {10,  15,  20,  25,  30,  40,  50,  60,  70,  80,  90,
-                                  100, 120, 150, 200, 250, 300, 400, 500, 700, 1000};
-constexpr int kRangeSteps[] = {5,   10,  15,  20,  25,   30,   40,   50,   75,    100,
-                               150, 200, 300, 500, 750, 1000, 2000, 5000, 10000, 100000};
-constexpr int kSpeedSteps[] = {10, 20, 30, 50, 75, 100, 150, 200, 300, 500, 750, 1000};
-constexpr int kSensitivitySteps[] = {50, 60, 70, 80, 90, 100, 125, 150, 175, 200};
-constexpr int kAccuracySteps[] = {1, 2, 4, 8, 16, 32, 64, 128};
+// Each button changes one stored unit, matching the slider's precision.
+struct Range {
+  int lo, hi;
+  int clamp(int value) const { return std::clamp(value, lo, hi); }
+  int next(int value, int direction) const { return clamp(value + direction); }
+};
+constexpr Range kDistance{10, 1000}, kRange{5, 100000}, kSpeed{10, 1000},
+    kSensitivity{50, 200}, kAccuracy{1, 128};
 constexpr int kMinBaselineMm = 10, kMaxBaselineMm = 120;
 constexpr int kMaxOffsetDeg = 45;
 constexpr int kMinIpd = 400, kMaxIpd = 900;  // tenths of a mm (4 to 9 cm)
@@ -29,36 +29,19 @@ FocusMode modeFromName(const std::string& s) {
   return s == "manual" ? FocusMode::Manual : s == "off" ? FocusMode::Off : FocusMode::Automatic;
 }
 
-template <size_t N>
-int clampTo(const int (&steps)[N], int v) {
-  return std::clamp(v, steps[0], steps[N - 1]);
-}
-
-template <size_t N>
-int nextStep(const int (&steps)[N], int v, int direction) {
-  if (direction > 0) {
-    for (int s : steps)
-      if (s > v) return s;
-    return steps[N - 1];
-  }
-  for (auto it = std::rbegin(steps); it != std::rend(steps); ++it)
-    if (*it < v) return *it;
-  return steps[0];
-}
-
 // Every field brought into its range, Nearest below Farthest.
 FocusSettings sanitized(FocusSettings f) {
   f.mode = static_cast<FocusMode>(
       std::clamp(static_cast<int>(f.mode), 0, static_cast<int>(FocusMode::kCount) - 1));
-  f.distanceCm = clampTo(kDistanceSteps, f.distanceCm);
+  f.distanceCm = kDistance.clamp(f.distanceCm);
   f.baselineMm = std::clamp(f.baselineMm, kMinBaselineMm, kMaxBaselineMm);
-  f.minCm = clampTo(kRangeSteps, f.minCm);
-  f.maxCm = clampTo(kRangeSteps, f.maxCm);
-  if (f.minCm >= f.maxCm) f.maxCm = nextStep(kRangeSteps, f.minCm, 1);
-  if (f.minCm >= f.maxCm) f.minCm = nextStep(kRangeSteps, f.maxCm, -1);
-  f.speed = clampTo(kSpeedSteps, f.speed);
-  f.sensitivity = clampTo(kSensitivitySteps, f.sensitivity);
-  f.accuracy = clampTo(kAccuracySteps, f.accuracy);
+  f.minCm = kRange.clamp(f.minCm);
+  f.maxCm = kRange.clamp(f.maxCm);
+  if (f.minCm >= f.maxCm) f.maxCm = kRange.next(f.minCm, 1);
+  if (f.minCm >= f.maxCm) f.minCm = kRange.next(f.maxCm, -1);
+  f.speed = kSpeed.clamp(f.speed);
+  f.sensitivity = kSensitivity.clamp(f.sensitivity);
+  f.accuracy = kAccuracy.clamp(f.accuracy);
   f.pitchDeg = std::clamp(f.pitchDeg, -kMaxOffsetDeg, kMaxOffsetDeg);
   f.yawDeg = std::clamp(f.yawDeg, -kMaxOffsetDeg, kMaxOffsetDeg);
   return f;
@@ -104,14 +87,18 @@ std::vector<int> numbers(const std::string& list) {
 
 int nextFocusStep(FocusControl control, int value, int direction) {
   switch (control) {
-    case FocusControl::Distance: return nextStep(kDistanceSteps, value, direction);
+    case FocusControl::Distance: return kDistance.next(value, direction);
     case FocusControl::MinDistance:
-    case FocusControl::MaxDistance: return nextStep(kRangeSteps, value, direction);
-    case FocusControl::Transition: return nextStep(kSpeedSteps, value, direction);
-    case FocusControl::Sensitivity: return nextStep(kSensitivitySteps, value, direction);
-    case FocusControl::Accuracy: return nextStep(kAccuracySteps, value, direction);
-    case FocusControl::Ipd: return std::clamp(value + 5 * direction, kMinIpd, kMaxIpd);
-    default: return value + direction;  // mm, degrees
+    case FocusControl::MaxDistance: return kRange.next(value, direction);
+    case FocusControl::Transition: return kSpeed.next(value, direction);
+    case FocusControl::Sensitivity: return kSensitivity.next(value, direction);
+    case FocusControl::Accuracy: return kAccuracy.next(value, direction);
+    case FocusControl::Ipd: return std::clamp(value + direction, kMinIpd, kMaxIpd);
+    case FocusControl::Baseline:
+      return std::clamp(value + direction, kMinBaselineMm, kMaxBaselineMm);
+    case FocusControl::Pitch:
+    case FocusControl::Yaw: return std::clamp(value + direction, -kMaxOffsetDeg, kMaxOffsetDeg);
+    default: return value + direction;
   }
 }
 
@@ -157,12 +144,12 @@ bool applyFocusControl(FocusControl control, double value, bool& videoOwn, Focus
     case FocusControl::Distance: f.distanceCm = v; break;
     case FocusControl::Baseline: f.baselineMm = v; break;
     case FocusControl::MinDistance:
-      f.minCm = clampTo(kRangeSteps, v);
-      if (f.minCm >= f.maxCm) f.maxCm = nextStep(kRangeSteps, f.minCm, 1);
+      f.minCm = kRange.clamp(v);
+      if (f.minCm >= f.maxCm) f.maxCm = kRange.next(f.minCm, 1);
       break;
     case FocusControl::MaxDistance:
-      f.maxCm = clampTo(kRangeSteps, v);
-      if (f.minCm >= f.maxCm) f.minCm = nextStep(kRangeSteps, f.maxCm, -1);
+      f.maxCm = kRange.clamp(v);
+      if (f.minCm >= f.maxCm) f.minCm = kRange.next(f.maxCm, -1);
       break;
     case FocusControl::Transition: f.speed = v; break;
     case FocusControl::Sensitivity: f.sensitivity = v; break;

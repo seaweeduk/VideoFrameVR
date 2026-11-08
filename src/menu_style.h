@@ -186,17 +186,15 @@ constexpr double kIconSize = 52;
 
 constexpr int kSlideshowSeconds[] = {0, 3, 5, 10, 20, 30, 60};
 constexpr int kPictureStep = 1;  // brightness etc., of mpv's -100..100
-constexpr int kSharpenStep = 25;  // percent
-constexpr int kZoomStepPercent = 10;
+constexpr int kSharpenStep = 1;  // hundredths
+constexpr int kZoomStepPercent = 1;
 // The surround viewpoint, in percent of the sphere's radius toward the picture.
-constexpr int kViewpointStepPercent = 5;
+constexpr int kViewpointStepPercent = 1;
 constexpr int kMaxViewpointPercent =
     static_cast<int>(VideoSettings::kMaxOriginForward * 100 + 0.5f);
-// The flat screen's distance and height change in 5 cm steps. The curve
-// changes by 0.1; a 0.01 step would take a hundred presses without a
-// wrist-roll adjustment of a hovered control.
-constexpr int kScreenStepCm = 5;
-constexpr int kCurveStepPercent = 10;
+// Match the sliders' centimetre and hundredth units for fine adjustment.
+constexpr int kScreenStepCm = 1;
+constexpr int kCurveStepPercent = 1;
 
 inline double steadySeconds() {
   return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
