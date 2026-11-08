@@ -953,7 +953,9 @@ void DirectVideo::hold(DirectFrame* frame, bool held) {
   if (frame) frame->held_ = held;
 }
 
-void DirectVideo::release(video_export& e) {
+void DirectVideo::release(video_export& e) { release(e, gpu_ ? gpu_->completed() : 0); }
+
+void DirectVideo::release(video_export& e, uint64_t completed) {
   e.release_count = 0;
   auto room = [&] { return e.release_count < VIDEO_EXPORT_MAX_RELEASE; };
   while (!rejected_.empty() && room()) {
@@ -961,7 +963,6 @@ void DirectVideo::release(video_export& e) {
     rejected_.pop_back();
   }
   if (!gpu_) return;
-  const uint64_t completed = gpu_->completed();
   for (auto it = frames_.begin(); it != frames_.end() && room();) {
     DirectFrame& f = **it;
     const bool done = !f.held_ && !f.inFrame_ && !f.pinned_ && f.lastUse_ <= completed;
@@ -990,6 +991,16 @@ void DirectVideo::release(video_export& e) {
       ++it;
     }
   }
+}
+
+bool DirectVideo::returnable(uint64_t& completed) {
+  completed = 0;
+  uint64_t oldest = UINT64_MAX;
+  if (gpu_)
+    for (auto& f : frames_)
+      if (!f->held_ && !f->inFrame_ && !f->pinned_) oldest = std::min(oldest, f->lastUse_);
+  if (oldest != UINT64_MAX) completed = gpu_->completed();
+  return !rejected_.empty() || (oldest != UINT64_MAX && oldest <= completed);
 }
 
 bool DirectVideo::returning() const {

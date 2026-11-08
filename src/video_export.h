@@ -2,7 +2,9 @@
  * drawing them (docs/vulkan-renderer.md, section 11). Shared, as C, by the
  * app and packaging/frame/mpv-v4l2-reset.patch: the app passes a struct
  * video_export as render parameter VIDEO_EXPORT_PARAM with each
- * mpv_render_context_render(). Stock mpv ignores the parameter and draws. */
+ * mpv_render_context_render(). Stock mpv ignores the parameter and draws.
+ * Passed to mpv_render_context_set_parameter() instead, mpv only takes its
+ * releases (packaging/frame/mpv-export-release.patch); stock mpv refuses it. */
 #pragma once
 
 #include <stdint.h>

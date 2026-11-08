@@ -119,6 +119,8 @@ class DirectVideo {
   void hold(DirectFrame* frame, bool held);
   // Fills e's release list with frames done with, and forgets them.
   void release(video_export& e);
+  // The same, with the frame timeline's completed value just read.
+  void release(video_export& e, uint64_t completed);
   // Imports of buffers no frame uses are dropped (a new size, stop); release()
   // drops those of a closed decoder session too.
   void dropUnused();
@@ -143,6 +145,10 @@ class DirectVideo {
   void dropStill();
   // Whether frames not shown are still to go back to mpv (release()).
   bool returning() const;
+  // Whether release() would hand a frame back now: one not shown whose GPU
+  // uses have finished. The timeline is read only when there is one, into
+  // completed (else 0), for release().
+  bool returnable(uint64_t& completed);
 
   void useInFrame(const DirectFrame& frame);
   void recordAcquires(VkCommandBuffer cmd);

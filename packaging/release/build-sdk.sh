@@ -126,6 +126,8 @@ patch -d "$mpv_source" -p1 < /src/packaging/mpv/mpv-mvc.patch
 if [[ $arch == aarch64 ]]; then
   patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-reset.patch
   patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-hardware-only.patch
+  patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-interrupt.patch
+  patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-export-release.patch
   cp /src/packaging/frame/mpv/dmabuf_ubwc.{c,h} /src/src/video_export.h "$mpv_source/video/out/hwdec/"
   glslangValidator -V --target-env vulkan1.2 --vn dmabuf_ubwc_spv /src/packaging/frame/mpv/dmabuf_ubwc.comp \
     -o "$mpv_source/video/out/hwdec/dmabuf_ubwc.spv.h"
@@ -134,6 +136,7 @@ if [[ $arch == aarch64 ]]; then
   patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-capture-pool.patch
   patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-drain-seek.patch
   patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-staged-start.patch
+  patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-capture-interrupt.patch
   python3 /src/packaging/frame/iris_bootstrap.py "$ffmpeg_source/libavcodec/iris_bootstrap.h"
 fi
 cmake -S "$json_source" -B /work/json-build -DJSON_BuildTests=OFF \

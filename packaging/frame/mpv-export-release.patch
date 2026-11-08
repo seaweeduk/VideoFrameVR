@@ -1,0 +1,31 @@
+# Take the app's frame releases on their own (mpv_render_context_set_parameter),
+# as its frames are done with. Apply after mpv-v4l2-interrupt.patch.
+--- a/video/out/gpu/libmpv_gpu.c
++++ b/video/out/gpu/libmpv_gpu.c
+@@ -152,10 +152,26 @@ static bool check_format(struct render_backend *ctx, int imgfmt)
+     return gl_video_check_format(p->renderer, imgfmt);
+ }
+ 
++#if HAVE_DMABUF_INTEROP_GL
++static void take_releases(struct priv *p, struct video_export *e);
++#endif
++
+ static int set_parameter(struct render_backend *ctx, mpv_render_param param)
+ {
+     struct priv *p = ctx->priv;
+ 
++#if HAVE_DMABUF_INTEROP_GL
++    // The app's releases on their own, as its frames are done with: never
++    // waiting for a next frame, which the decoder may need them back for.
++    if ((int)param.type == VIDEO_EXPORT_PARAM) {
++        struct video_export *e = param.data;
++        if (!e || e->magic != VIDEO_EXPORT_MAGIC || e->size != sizeof(*e))
++            return MPV_ERROR_INVALID_PARAMETER;
++        take_releases(p, e);
++        return 0;
++    }
++#endif
++
+     switch (param.type) {
+     case MPV_RENDER_PARAM_ICC_PROFILE: {
+         mpv_byte_array *data = param.data;
