@@ -1,4 +1,4 @@
-# Retry refused Iris HEVC startup with full-size compressed capture and provisional input sizes.
+# Retry refused Iris HEVC and H.264 startup with full-size compressed capture and provisional input sizes.
 # Iris refusing commands with nothing to do (a decoder start after STREAMON, a
 # STREAMOFF of a queue that never streamed) logs no error.
 --- a/libavcodec/v4l2_m2m.h
@@ -18,7 +18,7 @@
  typedef struct V4L2m2mContext {
      char devname[PATH_MAX];
      int fd;
-@@ -114,6 +122,13 @@
+@@ -114,6 +122,16 @@
      /* req pkt */
      int req_pkt;
      int reorder_size;
@@ -27,15 +27,25 @@
 +    int64_t iris_seek_deadline;
 +    // No usable SPS in the codec header: the first packet's decides.
 +    int iris_sps_in_band;
++    // H.264's DPB size for the staged pool; its reorder_size stays the
++    // reorder depth the scheduler uses.
++    int iris_h264_dpb;
 +    int iris_staged_eligible;
 +    struct v4l2_format iris_capture_format;
  
      /* Ext data sent */
      int extdata_sent;
-@@ -130,6 +145,14 @@
+@@ -130,6 +148,21 @@
      struct dmabufs_ctl * db_ctl;
  } V4L2m2mContext;
  
++// The DPB the staged start's pool covers. This fork keeps HEVC's in
++// reorder_size.
++static inline int ff_v4l2_iris_staged_dpb(const V4L2m2mContext *s)
++{
++    return s->avctx && s->avctx->codec_id == AV_CODEC_ID_H264 ? s->iris_h264_dpb : s->reorder_size;
++}
++
 +static inline int64_t ff_v4l2_iris_deadline(const V4L2m2mContext *s)
 +{
 +    if (s->iris_seek_deadline)
@@ -49,21 +59,25 @@
  
 --- a/libavcodec/v4l2_m2m.c
 +++ b/libavcodec/v4l2_m2m.c
-@@ -188,6 +188,31 @@
+@@ -188,6 +188,35 @@
      return ret;
  }
  
-+// Whether a stream Iris refused can take the staged start. Iris checks its
-+// per-session size limit (8192x4320) against the input format, which the
-+// staged start sets smaller, so it is checked here.
++// Whether a stream Iris refused can take the staged start: HEVC Main or
++// Main 10, or 8-bit H.264. Iris checks its per-session size limit
++// (8192x4320) against the input format, which the staged start sets
++// smaller, so it is checked here.
 +static int iris_staged_start_fits(const V4L2m2mContext * const s)
 +{
 +    const AVCodecContext *const avctx = s->avctx;
 +    const enum AVPixelFormat pix_fmt = ((const V4L2m2mPriv *)s->priv)->source_pix_fmt;
 +
-+    return avctx && avctx->codec_id == AV_CODEC_ID_HEVC &&
-+           (s->iris_staged_eligible || s->iris_sps_in_band) &&
-+           (pix_fmt == AV_PIX_FMT_YUV420P || pix_fmt == AV_PIX_FMT_YUV420P10LE) &&
++    return avctx &&
++           ((avctx->codec_id == AV_CODEC_ID_HEVC &&
++             (s->iris_staged_eligible || s->iris_sps_in_band) &&
++             (pix_fmt == AV_PIX_FMT_YUV420P || pix_fmt == AV_PIX_FMT_YUV420P10LE)) ||
++            (avctx->codec_id == AV_CODEC_ID_H264 && s->iris_staged_eligible &&
++             pix_fmt == AV_PIX_FMT_YUV420P)) &&
 +           ((avctx->coded_width + 15) >> 4) * ((avctx->coded_height + 15) >> 4) <=
 +               (8192 / 16) * (4320 / 16);
 +}
@@ -81,7 +95,7 @@
  static int v4l2_configure_contexts(V4L2m2mContext *s)
  {
      void *log_ctx = s->avctx;
-@@ -227,6 +252,40 @@
+@@ -227,6 +256,40 @@
      }
  
      ret = ff_v4l2_context_init(&s->output);
@@ -249,7 +263,7 @@
 +            s->iris_sps_in_band = 0;
 +        }
 +#endif
-+        if (!s->output_drm || s->reorder_size < 1 || s->reorder_size > 6)
++        if (!s->output_drm || ff_v4l2_iris_staged_dpb(s) < 1 || ff_v4l2_iris_staged_dpb(s) > 6)
 +            return AVERROR(ENOSYS);
 +        // Both queues stream before the stream's headers arrive.
 +        if (!s->capture.streamon) {
@@ -348,16 +362,62 @@
                  return dst_rv;
              }
          }
-@@ -1004,6 +1133,8 @@
+@@ -1000,10 +1129,46 @@
+     return size + (1 << 16);
+ }
+ 
++#if CONFIG_H264_DECODER
++// Whether every SPS fits the staged start's pool, and the deepest DPB they
++// need: the stream's own, else its level's at this size (FFmpeg's level
++// table stops at 5.2), never fewer than its reference frames.
++static int iris_staged_h264_fit(const AVCodecContext * const avctx, const H264ParamSets * const ps,
++                                int * const dpb_max)
++{
++    int found = 0;
++
++    *dpb_max = 0;
++    for (unsigned int i = 0; i != MAX_SPS_COUNT; ++i) {
++        const SPS *p = ps->sps_list[i];
++        int dpb;
++        if (!p)
++            continue;
++        found = 1;
++        if (p->mb_width * 16 != avctx->coded_width || p->mb_height * 16 != avctx->coded_height ||
++            p->crop || !p->frame_mbs_only_flag || p->chroma_format_idc != 1 ||
++            p->bit_depth_luma != 8 || p->bit_depth_chroma != 8 ||
++            (p->profile_idc != 77 && p->profile_idc != 100 &&
++             (p->profile_idc != 66 || !(p->constraint_set_flags & 2))))
++            return 0;
++        dpb = p->bitstream_restriction_flag ? p->max_dec_frame_buffering :
++              p->level_idc >= 60 && p->level_idc <= 62 ? 696320 / (p->mb_width * p->mb_height) : 16;
++        dpb = FFMAX(dpb, p->ref_frame_count);
++        if (dpb < 1 || dpb > 6)
++            return 0;
++        *dpb_max = FFMAX(*dpb_max, dpb);
++    }
++    return found;
++}
++#endif
++
+ static void
  parse_extradata(AVCodecContext * const avctx, V4L2m2mContext * const s)
  {
      s->reorder_size = 0;
++    s->iris_h264_dpb = 0;
 +    s->iris_staged_eligible = 0;
 +    s->iris_sps_in_band = avctx->codec_id == AV_CODEC_ID_HEVC;
  
      if (!avctx->extradata || !avctx->extradata_size)
          return;
-@@ -1070,6 +1201,8 @@
+@@ -1035,6 +1200,7 @@
+                     avctx->profile = ff_h264_get_profile(sps);
+                     avctx->level = sps->level_idc;
+                     s->reorder_size = sps->num_reorder_frames;
++                    s->iris_staged_eligible = iris_staged_h264_fit(avctx, &ps, &s->iris_h264_dpb);
+                 }
+             }
+             ff_h264_ps_uninit(&ps);
+@@ -1070,6 +1236,8 @@
                      ((V4L2m2mPriv *)avctx->priv_data)->source_pix_fmt = sps->pix_fmt;
                      avctx->level   = sps->ptl.general_ptl.level_idc;
                      s->reorder_size = sps->temporal_layer[sps->max_sub_layers - 1].max_dec_pic_buffering;
@@ -366,7 +426,7 @@
                  }
              }
              ff_hevc_ps_uninit(&ps);
-@@ -1167,6 +1300,23 @@
+@@ -1167,6 +1335,23 @@
      // Get format converts capture.av_pix_fmt back into a V4L2 format in the context
      if ((rv = ff_v4l2_context_get_format(&s->capture, 0)) != 0)
          goto error;
@@ -390,7 +450,7 @@
      rv = ff_v4l2_context_set_format(&s->capture);
  
  error:
-@@ -1321,14 +1471,28 @@
+@@ -1321,14 +1506,28 @@
      int ret = 0;
  
      av_packet_unref(&s->buf_pkt);
@@ -419,7 +479,7 @@
              if (errno != EINTR) {
                  ret = AVERROR(errno);
                  goto done;
-@@ -1343,7 +1507,7 @@
+@@ -1343,7 +1542,7 @@
              ret != AVERROR_INVALIDDATA && ret != AVERROR(ENOSPC))
              goto done;
      }
@@ -428,7 +488,7 @@
          ret = AVERROR(ETIMEDOUT);
          goto done;
      }
-@@ -1360,20 +1524,27 @@
+@@ -1360,20 +1559,27 @@
      }
      cmd.cmd = V4L2_DEC_CMD_START;
      while (ioctl(s->fd, VIDIOC_DECODER_CMD, &cmd) < 0) {
@@ -693,7 +753,7 @@
  
     return 0;
  }
-@@ -1248,11 +1339,16 @@
+@@ -1248,11 +1339,20 @@
      // With capture_spare, a decoder's capture pool is the driver's minimum
      // (what it raises a request of one to) plus the caller's spare: frames
      // the stream keeps back for reordering and frames held until shown. The
@@ -705,25 +765,29 @@
 +    int spare = !V4L2_TYPE_IS_OUTPUT(ctx->type) && s->avctx &&
                        av_codec_is_decoder(s->avctx->codec) ?
                        ((const V4L2m2mPriv *)s->priv)->capture_spare : -1;
++    // A fixed count the staged start must still give, as it would unstaged.
++    unsigned int at_least = 0;
 +    if (s->iris_startup && !V4L2_TYPE_IS_OUTPUT(ctx->type)) {
 +        // The caller's spare already includes display/transfer retention.
 +        // Cover the real SPS reference depth plus one working picture too.
-+        spare = FFMAX(FFMAX(spare, 0), s->reorder_size + 1);
++        if (spare < 0)
++            at_least = req_buffers;
++        spare = FFMAX(FFMAX(spare, 0), ff_v4l2_iris_staged_dpb(s) + 1);
 +    }
  
      memset(&req, 0, sizeof(req));
      req.count = spare >= 0 ? 1 : req_buffers;
-@@ -1270,7 +1366,8 @@
+@@ -1270,7 +1370,8 @@
          // Requested again at the full size: Iris raises VIDIOC_CREATE_BUFS
          // counts to its minimum too, and its stream then fails.
          const unsigned int needed = req.count;
 -        req.count = needed + spare;
-+        const unsigned int required = needed + spare;
++        const unsigned int required = FFMAX(needed + spare, at_least);
 +        req.count = required;
          while ((ret = ioctl(s->fd, VIDIOC_REQBUFS, &req)) == -1) {
              if (errno != EINTR) {
                  ret = AVERROR(errno);
-@@ -1278,14 +1375,19 @@
+@@ -1278,14 +1379,19 @@
                  return ret;
              }
          }
@@ -744,7 +808,7 @@
          goto fail_release;
      }
  
-@@ -1301,6 +1403,14 @@
+@@ -1301,6 +1407,14 @@
              av_log(logger(ctx), AV_LOG_ERROR, "%s buffer[%d] initialization (%s)\n", ctx->name, i, av_err2str(ret));
              goto fail_release;
          }
@@ -759,7 +823,7 @@
      }
  
      av_log(logger(ctx), AV_LOG_DEBUG, "%s: %s %02d buffers initialized: %04ux%04u, sizeimage %08u, bytesperline %08u\n", ctx->name,
-@@ -1380,6 +1490,19 @@
+@@ -1380,6 +1494,19 @@
          goto fail_unlock;
      }
  
@@ -779,7 +843,7 @@
      memset(&qctrl, 0, sizeof(qctrl));
      qctrl.id = V4L2_CID_MIN_BUFFERS_FOR_OUTPUT;
      if (ioctl(s->fd, VIDIOC_QUERYCTRL, &qctrl) != 0) {
-@@ -1406,5 +1529,6 @@
+@@ -1406,5 +1533,6 @@
  
  fail_unlock:
      ff_mutex_destroy(&ctx->lock);
