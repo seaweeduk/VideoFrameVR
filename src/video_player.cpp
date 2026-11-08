@@ -1336,6 +1336,25 @@ void VideoPlayer::returnFrames() {
   export_.release_count = 0;
 }
 
+// Between mpv's frames, the frames done with go back as soon as the GPU is
+// done with them: the decoder can need them for mpv's next frame (they can
+// hold its whole pool), so waiting for that frame would wait forever. Unlike
+// returnFrames(), this takes no frame mpv queued meanwhile.
+void VideoPlayer::giveBackFrames() {
+  uint64_t completed = 0;
+  if (!render_ || !direct_ || releaseAlone_ < 0 || !direct_->returnable(completed)) return;
+  const mpv_render_param param{static_cast<mpv_render_param_type>(VIDEO_EXPORT_PARAM), &export_};
+  if (!releaseAlone_) {
+    // Asked with nothing to release: an mpv without it loses no frame.
+    export_.release_count = 0;
+    releaseAlone_ = mpv_render_context_set_parameter(render_, param) >= 0 ? 1 : -1;
+    if (releaseAlone_ < 0) return;
+  }
+  direct_->release(export_, completed);
+  if (export_.release_count) mpv_render_context_set_parameter(render_, param);
+  export_.release_count = 0;
+}
+
 void VideoPlayer::setDirectVideo(DirectVideo* direct) {
   direct_ = direct;
   updateCapture();
@@ -1430,10 +1449,15 @@ void VideoPlayer::render() {
   }
   // Keep the paused seek's first picture queued until its seek event has been
   // processed. A redraw cannot recover freshness evidence after consuming it.
-  if (videoSleep_ == VideoSleep::Seeking && seekStage_ != SeekStage::Started && !resumeRestarted_)
+  if (videoSleep_ == VideoSleep::Seeking && seekStage_ != SeekStage::Started && !resumeRestarted_) {
+    giveBackFrames();
     return;
+  }
   if (mpv_render_context_update(render_) & MPV_RENDER_UPDATE_FRAME) framePending_ = true;
-  if (!framePending_) return;
+  if (!framePending_) {
+    giveBackFrames();
+    return;
+  }
   framePending_ = false;
   mpv_render_frame_info info{};
   int infoResult = -1;

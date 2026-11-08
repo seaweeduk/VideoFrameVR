@@ -197,6 +197,7 @@ class VideoPlayer {
   void showDirect(DirectFrame* frame);
   void dropDirect();
   void returnFrames();
+  void giveBackFrames();
   // Sends a loadfile command; its reply names mpv's playlist entry for it.
   void loadFile(const char** cmd);
   struct SeekRequest {
@@ -226,6 +227,7 @@ class VideoPlayer {
   GlInterop* interop_ = nullptr;
   DirectVideo* direct_ = nullptr;
   video_export export_{};
+  int releaseAlone_ = 0;  // mpv takes releases without a render call: 1 yes, -1 no, 0 not asked
   // The frame shown and the next one, when mpv handed them out (else the
   // video_ slots have them).
   DirectFrame* directCurrent_ = nullptr;

@@ -1,0 +1,232 @@
+# Interrupt the decoder before locking its thread: a V4L2 decoder can wait there
+# for frames that only the locking thread returns. Apply after mpv-v4l2-reset.patch.
+--- a/filters/f_decoder_wrapper.c
++++ b/filters/f_decoder_wrapper.c
+@@ -224,6 +224,12 @@ struct priv {
+     bool dec_thread_valid;
+     mp_mutex cache_lock;
+ 
++    // --- Protected by decoder_lock: the decoder as another thread wanting
++    //     the decoding thread interrupts it (onlock_dec_thread()). Set only
++    //     through set_decoder(), read freely by the decoding thread.
++    mp_mutex decoder_lock;
++    bool decoder_interrupted;
++
+     // --- Protected by cache_lock.
+     char *cur_hwdec;
+     bool try_spdif;
+@@ -289,8 +295,26 @@ static void thread_unlock(struct priv *p)
+     mp_assert(p->dec_thread_lock);
+     p->dec_thread_lock = false;
+ 
+-    if (p->dec_dispatch)
++    if (p->dec_dispatch) {
++        // The decoding thread is still held here, so it cannot be waiting.
++        mp_mutex_lock(&p->decoder_lock);
++        if (p->decoder_interrupted) {
++            p->decoder_interrupted = false;
++            if (p->decoder && p->decoder->interrupt)
++                p->decoder->interrupt(p->decoder->f, false);
++        }
++        mp_mutex_unlock(&p->decoder_lock);
+         mp_dispatch_unlock(p->dec_dispatch);
++    }
++}
++
++static void set_decoder(struct priv *p, struct mp_decoder *decoder)
++{
++    mp_mutex_lock(&p->decoder_lock);
++    p->decoder = decoder;
++    if (decoder && decoder->interrupt && p->decoder_interrupted)
++        decoder->interrupt(decoder->f, true);
++    mp_mutex_unlock(&p->decoder_lock);
+ }
+ 
+ // This resets only the decoder. Unlike a full reset(), this doesn't imply a
+@@ -370,8 +394,9 @@ static void decf_destroy(struct mp_filter *f)
+ 
+     if (p->decoder) {
+         MP_DBG(f, "Uninit decoder.\n");
+-        talloc_free(p->decoder->f);
+-        p->decoder = NULL;
++        struct mp_decoder *decoder = p->decoder;
++        set_decoder(p, NULL);
++        talloc_free(decoder->f);
+         p->codec->decoder = NULL;
+         p->codec->decoder_desc = NULL;
+     }
+@@ -396,9 +421,10 @@ struct mp_decoder_list *audio_decoder_list(void)
+ 
+ static bool reinit_decoder(struct priv *p)
+ {
+-    if (p->decoder)
+-        talloc_free(p->decoder->f);
+-    p->decoder = NULL;
++    struct mp_decoder *old = p->decoder;
++    set_decoder(p, NULL);
++    if (old)
++        talloc_free(old->f);
+ 
+     reset_decoder(p);
+     p->has_broken_packet_pts = -10; // needs 10 packets to reach decision
+@@ -452,7 +478,7 @@ static bool reinit_decoder(struct priv *p)
+         struct mp_decoder_entry *sel = &list->entries[n];
+         MP_VERBOSE(p, "Opening decoder %s\n", sel->decoder);
+ 
+-        p->decoder = driver->create(p->decf, p->codec, sel->decoder);
++        set_decoder(p, driver->create(p->decf, p->codec, sel->decoder));
+         if (p->decoder) {
+             p->codec->decoder = talloc_strdup(p, sel->decoder);
+             p->codec->decoder_desc = talloc_strdup(p, sel->desc && sel->desc[0] ? sel->desc : NULL);
+@@ -1182,6 +1208,7 @@ static void public_f_destroy(struct mp_filter *f)
+     talloc_free(p->dec_root_filter);
+     talloc_free(p->queue);
+     mp_mutex_destroy(&p->cache_lock);
++    mp_mutex_destroy(&p->decoder_lock);
+ }
+ 
+ static const struct mp_filter_info decf_filter = {
+@@ -1210,6 +1237,14 @@ static void onlock_dec_thread(void *ptr)
+     struct priv *p = ptr;
+ 
+     mp_filter_graph_interrupt(p->dec_root_filter);
++
++    // A decoder waiting for frames to be returned would wait for this
++    // thread, which is about to wait for it (thread_unlock() ends this).
++    mp_mutex_lock(&p->decoder_lock);
++    p->decoder_interrupted = true;
++    if (p->decoder && p->decoder->interrupt)
++        p->decoder->interrupt(p->decoder->f, true);
++    mp_mutex_unlock(&p->decoder_lock);
+ }
+ 
+ struct mp_decoder_wrapper *mp_decoder_wrapper_create(struct mp_filter *parent,
+@@ -1223,6 +1258,7 @@ struct mp_decoder_wrapper *mp_decoder_wrapper_create(struct mp_filter *parent,
+     p->public.f = public_f;
+ 
+     mp_mutex_init(&p->cache_lock);
++    mp_mutex_init(&p->decoder_lock);
+     p->opt_cache = m_config_cache_alloc(p, public_f->global, &dec_wrapper_conf);
+     p->opts = p->opt_cache->opts;
+     p->header = src;
+--- a/filters/f_decoder_wrapper.h
++++ b/filters/f_decoder_wrapper.h
+@@ -98,6 +98,11 @@ struct mp_decoder {
+ 
+     // Can be set by decoder impl. on init for "special" functionality.
+     int (*control)(struct mp_filter *f, enum dec_ctrl cmd, void *arg);
++
++    // Optional. Called from another thread while the decoder may be decoding:
++    // on, it stops waiting for decoded frames to be returned, as the thread
++    // that returns them is waiting to lock the decoder thread.
++    void (*interrupt)(struct mp_filter *f, bool on);
+ };
+ 
+ struct mp_decoder_fns {
+--- a/video/decode/vd_lavc.c
++++ b/video/decode/vd_lavc.c
+@@ -19,6 +19,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <assert.h>
++#include <stdatomic.h>
+ #include <stdbool.h>
+ 
+ #include <libavcodec/avcodec.h>
+@@ -61,6 +62,9 @@ void frame_ubwc_decoder_closed(void);
+ 
+ #include "options/m_option.h"
+ 
++// The Frame's FFmpeg (packaging/frame/ffmpeg-capture-interrupt.patch).
++int av_v4l2_m2m_set_interrupted(AVCodecContext *avctx, int interrupted);
++
+ static void init_avctx(struct mp_filter *vd);
+ static void uninit_avctx(struct mp_filter *vd);
+ 
+@@ -273,6 +277,12 @@ typedef struct lavc_ctx {
+     struct mp_image_pool *dr_pool;
+     int dr_imgfmt, dr_w, dr_h, dr_stride_align;
+ 
++    // --- interrupt(), from another thread: interrupt_lock covers the open
++    // decoder it reaches. interrupted is also read by the decoding thread.
++    mp_mutex interrupt_lock;
++    AVCodecContext *interrupt_avctx;
++    atomic_bool interrupted;
++
+     struct mp_decoder public;
+ } vd_ffmpeg_ctx;
+ 
+@@ -967,6 +977,12 @@ static void init_avctx(struct mp_filter *vd)
+     if (avcodec_open2(avctx, lavc_codec, NULL) < 0)
+         goto error;
+ 
++    mp_mutex_lock(&ctx->interrupt_lock);
++    ctx->interrupt_avctx = avctx;
++    if (atomic_load(&ctx->interrupted))
++        av_v4l2_m2m_set_interrupted(avctx, 1);
++    mp_mutex_unlock(&ctx->interrupt_lock);
++
+     // Sometimes, the first packet contains information required for correct
+     // decoding of the rest of the stream. The only currently known case is the
+     // x264 build number (encoded in a SEI element), needed to enable a
+@@ -1044,6 +1060,9 @@ static void uninit_avctx(struct mp_filter *vd)
+ 
+     const char *wrapper = ctx->avctx && ctx->avctx->codec ? ctx->avctx->codec->wrapper_name : NULL;
+     bool v4l2 = wrapper && strcmp(wrapper, "v4l2m2m") == 0;
++    mp_mutex_lock(&ctx->interrupt_lock);
++    ctx->interrupt_avctx = NULL;
++    mp_mutex_unlock(&ctx->interrupt_lock);
+     avcodec_free_context(&ctx->avctx);
+     // Before a new session allocates its capture buffers (a seek reopens
+     // the decoder), so the old ones are not still kept by the converter.
+@@ -1637,6 +1656,12 @@ static int receive_frame(struct mp_filter *vd, struct mp_frame *out_frame)
+     if (ret == AVERROR(EAGAIN) && ctx->mvc && vd_mvc_next(ctx->mvc, &mvc_pkt))
+         return 0; // force retry, so send_mvc_queue() gets called
+ 
++    // Interrupted: lavc_process() feeds no packet for a non-EAGAIN result,
++    // and the decoder could not take one now; it tries again once unlocked.
++    if (ret == AVERROR(EAGAIN) && atomic_load(&ctx->interrupted) &&
++        ctx->num_delay_queue <= ctx->max_delay_queue)
++        return AVERROR(EINTR);
++
+     if (ctx->num_delay_queue <= ctx->max_delay_queue && ret != AVERROR_EOF)
+         return ret;
+ 
+@@ -1746,6 +1771,17 @@ static void vd_lavc_reset(struct mp_filter *vd)
+     ctx->framedrop_flags = 0;
+ }
+ 
++static void interrupt(struct mp_filter *vd, bool on)
++{
++    vd_ffmpeg_ctx *ctx = vd->priv;
++
++    mp_mutex_lock(&ctx->interrupt_lock);
++    atomic_store(&ctx->interrupted, on);
++    if (ctx->interrupt_avctx)
++        av_v4l2_m2m_set_interrupted(ctx->interrupt_avctx, on);
++    mp_mutex_unlock(&ctx->interrupt_lock);
++}
++
+ static void vd_lavc_destroy(struct mp_filter *vd)
+ {
+     vd_ffmpeg_ctx *ctx = vd->priv;
+@@ -1753,6 +1789,7 @@ static void vd_lavc_destroy(struct mp_filter *vd)
+     uninit_avctx(vd);
+ 
+     mp_mutex_destroy(&ctx->dr_lock);
++    mp_mutex_destroy(&ctx->interrupt_lock);
+ }
+ 
+ static const struct mp_filter_info vd_lavc_filter = {
+@@ -1789,8 +1826,11 @@ static struct mp_decoder *create(struct mp_filter *parent,
+ 
+     ctx->public.f = vd;
+     ctx->public.control = control;
++    ctx->public.interrupt = interrupt;
+ 
+     mp_mutex_init(&ctx->dr_lock);
++    mp_mutex_init(&ctx->interrupt_lock);
++    atomic_init(&ctx->interrupted, false);
+ 
+     // hwdec/DR
+     struct mp_stream_info *info = mp_filter_find_stream_info(vd);

@@ -145,10 +145,11 @@ def assemble(bundle, app, work, sdk, cache, supplement, metadata, source_name):
         "json": "MIT; compiled-in header library, unmodified",
         "mpv": ("upstream GPL-2.0-or-later, combined under GPLv3; both builds modified by mpv-mvc.patch and the "
                 "packaging/mpv/mvc sources (3D Blu-ray, GPL-3.0); Frame build also by mpv-v4l2-reset.patch, "
-                "mpv-v4l2-hardware-only.patch and dmabuf_ubwc sources"),
+                "mpv-v4l2-hardware-only.patch, mpv-v4l2-interrupt.patch, mpv-export-release.patch and dmabuf_ubwc sources"),
         "ffmpeg": ("upstream LGPL-2.1-or-later fork. Desktop build: unmodified, LGPL-2.1-or-later. "
                    "Frame build: modified by ffmpeg-iris.patch, ffmpeg-main10.patch, ffmpeg-capture-pool.patch, "
-                   "ffmpeg-drain-seek.patch, ffmpeg-staged-start.patch and iris_bootstrap.py (GPL-3.0), so this "
+                   "ffmpeg-drain-seek.patch, ffmpeg-staged-start.patch, ffmpeg-capture-interrupt.patch and "
+                   "iris_bootstrap.py (GPL-3.0), so this "
                    "modified FFmpeg is distributed under GPL-3.0-or-later as a whole (LGPL-2.1 section 3; "
                    "configured with --enable-gpl --enable-version3)"),
         "nv-codec-headers": "MIT (in each header); desktop build only, compiled into FFmpeg's NVIDIA decoding, unmodified",
