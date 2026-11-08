@@ -670,6 +670,8 @@ Strings frenchStrings(const Strings& english) {
   s.focus.motion = "Simuler le mouvement";
   s.focus.motionDistance = "Distance du mouvement";
   s.focus.motionHint = "Les mouvements de tête simulent la parallaxe à cette distance.";
+  s.focus.motionFollowsFocus = "Utiliser la distance de mise au point";
+  s.focus.motionFollowsFocusHint = "Le mouvement suit la distance actuelle de mise au point stéréo. Utilise la distance du mouvement si la mise au point est désactivée ou indisponible.";
   s.focus.ipd = "IPD";
   s.focus.ipdHint = "Écart entre les pupilles. Une valeur manuelle remplace l'IPD automatique.";
   s.focus.makeDefault = "Appliquer à toutes les vidéos";

@@ -670,6 +670,8 @@ Strings japaneseStrings(const Strings& english) {
   s.focus.motion = "移動を再現";
   s.focus.motionDistance = "移動再現距離";
   s.focus.motionHint = "この距離で頭の移動による視差を再現。";
+  s.focus.motionFollowsFocus = "ステレオ焦点距離を使う";
+  s.focus.motionFollowsFocusHint = "移動は現在のステレオ焦点距離に追従します。ステレオフォーカスがオフまたは利用できない場合は移動再現距離を使います。";
   s.focus.ipd = "IPD";
   s.focus.ipdHint = "瞳孔間距離。手動設定すると自動IPDより優先。";
   s.focus.makeDefault = "全動画の標準にする";

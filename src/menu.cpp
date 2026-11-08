@@ -229,7 +229,8 @@ void Menu::update(const MenuView& view) {
     dirty_ = true;
   if (page_ == Page::Focus) {
     if (!(view.focus == view_.focus)) focusChanged(view.focus);
-    if (view.motionEmulation != view_.motionEmulation) browserChanged();
+    if (view.motionEmulation != view_.motionEmulation ||
+        view.motionFollowsFocus != view_.motionFollowsFocus) browserChanged();
     if (view.motionDistance != view_.motionDistance) sliderChanged(MenuCommand::SetMotionDistance);
   }
   if (library_ && (changed || library_->generation() != currentGeneration_)) {

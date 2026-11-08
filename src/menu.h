@@ -74,7 +74,8 @@ struct MenuCommand {
               SetPacking, ToggleVideoMipmaps, SetAntiShimmer, SetSharpen, SetVideoResolution,
               SetFoveation, ToggleShowFoveation, SetSharpBins, ToggleFoveationRing,
               SetFoveationOutside, ToggleAdvancedSettings, SetRefreshRate, SetFocus,
-              ToggleMotion, SetMotionDistance, ToggleResume, ToggleToneLook, Stop,
+              ToggleMotion, SetMotionDistance, ToggleMotionFollowsFocus, ToggleResume,
+              ToggleToneLook, Stop,
               ToggleTvGamma, ToggleSeekPreview, ToggleThumbnails, ToggleShowPerformance, SetScreenDistance,
               SetScreenHeight, SetScreenCurve, ResetScreen, SetOriginForward, SetOpacity,
               SetWarmth, SetTint, SetExposure, ToggleMatchRoom, ReadRoomAgain,
@@ -216,6 +217,7 @@ struct MenuView {
   FocusView focus;  // stereo focus of the running video
   bool motionEmulation = true;  // global: head translation emulation (motion.h)
   int motionDistance = 200;     // ... cm
+  bool motionFollowsFocus = false;
   bool resume = true;           // videos start where they were left
   bool seekPreview = true;      // the seek bar shows the frame where the pointer is
   bool seekPreviewAvailable = true;  // ... can at all (not on the Steam Frame)

@@ -325,6 +325,8 @@ struct FocusStrings {
   const char* motion;
   const char* motionDistance;
   const char* motionHint;
+  const char* motionFollowsFocus;
+  const char* motionFollowsFocusHint;
   const char* ipd;
   const char* ipdHint;
   const char* makeDefault;

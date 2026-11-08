@@ -1,4 +1,5 @@
 #include "autofocus.h"
+#include "motion.h"
 #include "strings.h"
 
 #include <cmath>
@@ -77,6 +78,12 @@ FocusOutput Autofocus::update(const FocusInput& in) {
   const bool supported = stereoCorrectionSupported(in.format);
   const FocusMode mode = supported ? s.mode : FocusMode::Off;
   const bool automatic = mode == FocusMode::Automatic && ready_;
+  float distance = mode == FocusMode::Manual ? s.distanceCm / 100.0f : 0;
+  auto motionAt = [&](float depth) {
+    return in.motion + emulatedMotion(true, in.motionDistance, in.headOffset, {},
+                                      in.motionFollowsFocus ? depth : 0);
+  };
+  Vec3 motion = motionAt(distance);
 
   // The analysed direction: the target with its offset, as seen (marker) and
   // through the zoom into the video's axes.
@@ -88,7 +95,7 @@ FocusOutput Autofocus::update(const FocusInput& in) {
   // With emulated head translation the head looks from off the centre: the
   // measured direction is where its ray meets the (unit) sphere.
   const Mat4 toVideoAxes = transposedRotation(in.picture);
-  const Vec3 origin = transformDir(toVideoAxes, in.motion);
+  Vec3 origin = transformDir(toVideoAxes, motion);
   auto toVideo = [&](Vec3 d) {
     const Vec3 zoomed = d.z < 0 ? normalize(Vec3{d.x / in.zoom, d.y / in.zoom, d.z}) : d;
     const Vec3 ray = transformDir(toVideoAxes, transformDir(rotation(in.head), zoomed));
@@ -96,10 +103,7 @@ FocusOutput Autofocus::update(const FocusInput& in) {
   };
   out.marker = transformDir(rotation(in.head), offset(s.yawDeg * kDegree));
 
-  float distance = 0;
-  if (mode == FocusMode::Manual) {
-    distance = s.distanceCm / 100.0f;
-  } else if (automatic) {
+  if (automatic) {
     char key[64];
     std::snprintf(key, sizeof(key), "|%d|%d|%d", static_cast<int>(in.format.projection),
                   static_cast<int>(in.format.stereo), s.baselineMm);
@@ -121,6 +125,10 @@ FocusOutput Autofocus::update(const FocusInput& in) {
       controller_.submit(e, requestPhase_);
       if (requestPhase_ == 0) reachAlpha_ = e.reachAlpha, reachBeta_ = e.reachBeta;
     }
+    // Use the same smoothed depth for this frame's motion, probe and correction.
+    distance = controller_.advance(s, in.now, in.target.eyes);
+    motion = motionAt(distance);
+    origin = transformDir(toVideoAxes, motion);
     // Measuring as often as the last measurement allows: one in flight.
     if (!loading && in.headValid && in.target.usable) {
       const int phase = controller_.phase();
@@ -139,7 +147,6 @@ FocusOutput Autofocus::update(const FocusInput& in) {
       q.tag = generation_;
       if (estimator_.request(q)) requestPhase_ = phase;
     }
-    distance = controller_.advance(s, in.now, in.target.eyes);
     out.automatic = true;
     if (!in.target.eyes) reachAlpha_ = reachBeta_ = 0;
     // The marker shows where the centre probe measured: moved off the target
@@ -161,9 +168,9 @@ FocusOutput Autofocus::update(const FocusInput& in) {
   throughUnitSphere(origin, transformDir(toVideoAxes, out.marker), &along);
   if (distance > 0 && in.shown)
     out.correction = stereoCorrection(distance, s.baselineMm / 1000.0f, in.leftEye, in.rightEye,
-                                      in.picture, in.viewerIpd, in.motion);
-  else if (in.shown && length(in.motion) > 0 && in.format.projection != Projection::Flat)
-    out.correction = motionCorrection(in.motion, in.picture);
+                                      in.picture, in.viewerIpd, motion);
+  else if (in.shown && length(motion) > 0 && in.format.projection != Projection::Flat)
+    out.correction = motionCorrection(motion, in.picture);
   out.distance = distance;
   out.markerDistance = distance * along;
   if (statusAt_ < 0 || in.now - statusAt_ >= kStatusInterval) {

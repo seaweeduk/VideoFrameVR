@@ -9,8 +9,10 @@ constexpr int kSteps[] = {5, 10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000}
 
 }  // namespace
 
-Vec3 emulatedMotion(bool enabled, int distanceCm, Vec3 head, Vec3 recenterPosition) {
+Vec3 emulatedMotion(bool enabled, int distanceCm, Vec3 head, Vec3 recenterPosition,
+                    float focusDistance) {
   if (!enabled) return {};
+  if (focusDistance > 0) return (head - recenterPosition) * (1.0f / focusDistance);
   return (head - recenterPosition) * (100.0f / clampMotionDistance(distanceCm));
 }
 

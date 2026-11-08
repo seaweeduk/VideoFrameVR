@@ -539,6 +539,8 @@ const Strings kEnglish = {
         "Diagnostics", "Show the focus target and measured distance.",
         "Motion (all videos)", "Motion emulation", "Motion distance",
         "Head movement simulates parallax at this distance.",
+        "Use stereo focus distance",
+        "Motion follows the live stereo focus distance. Uses Motion distance when stereo focus is off or unavailable.",
         "IPD", "Distance between your pupils. Setting it overrides Automatic IPD.",
         "Use for all videos", "Use these settings for videos without their own focus settings.",
         "Back to the default", "Clear this video's focus settings and follow the default.",

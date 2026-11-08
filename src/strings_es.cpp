@@ -670,6 +670,8 @@ Strings spanishStrings(const Strings& english) {
   s.focus.motion = "Simular movimiento";
   s.focus.motionDistance = "Distancia de movimiento";
   s.focus.motionHint = "Mover la cabeza simula paralaje a esta distancia.";
+  s.focus.motionFollowsFocus = "Usar distancia del enfoque";
+  s.focus.motionFollowsFocusHint = "El movimiento sigue la distancia actual del enfoque estéreo. Usa la distancia de movimiento si el enfoque está desactivado o no disponible.";
   s.focus.ipd = "IPD";
   s.focus.ipdHint = "Distancia interpupilar. Un valor propio sustituye la IPD automática.";
   s.focus.makeDefault = "Usar en todos los vídeos";

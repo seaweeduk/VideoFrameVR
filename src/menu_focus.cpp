@@ -122,12 +122,15 @@ void Menu::layoutFocus() {
   }
   addGroup(left, pageTop, w, y + 10 - pageTop, t.allTitle);
 
-  // Motion: head translation emulation, for all surround video (not part of
-  // the stereo focus, but shown here alongside it).
+  // Motion: head translation emulation, for all surround video.
   const double motionTop = y + 10 + kGap;
   y = firstRow(motionTop);
   addToggleRow(x, y, rowW, t.motion, view_.motionEmulation,
                [] { return MenuCommand{MenuCommand::ToggleMotion}; }).tooltip = t.motionHint;
+  y += kSettingStep;
+  addToggleRow(x, y, rowW, t.motionFollowsFocus, view_.motionFollowsFocus,
+               [] { return MenuCommand{MenuCommand::ToggleMotionFollowsFocus}; },
+               !view_.motionEmulation).tooltip = t.motionFollowsFocusHint;
   y += kSettingStep;
   auto motionDistance = [](int cm) {
     return [cm] {
@@ -141,9 +144,10 @@ void Menu::layoutFocus() {
   if (advanced) {
     addValueRow(x, y, rowW, labelW, t.motionDistance, distanceText(md), md, 5, 1000,
                 motionDistance(nextMotionDistance(md, -1)), motionDistance(nextMotionDistance(md, 1)),
-                !view_.motionEmulation, true, t.motionHint);
+                 !view_.motionEmulation || view_.motionFollowsFocus, true, t.motionHint);
     y += kSettingStep;
-    addLabel(x + 12, y, rowW - 12, 0, t.motionHint, kHintSize, true, 2);
+    addLabel(x + 12, y, rowW - 12, 0,
+             view_.motionFollowsFocus ? t.motionFollowsFocusHint : t.motionHint, kHintSize, true, 2);
     y += hintHeight(2);
   }
   addGroup(left, motionTop, w, y + 10 - motionTop, t.motionTitle);

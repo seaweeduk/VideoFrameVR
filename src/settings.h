@@ -73,6 +73,7 @@ struct Settings {
   FocusPreferences focusPrefs;
   bool motionEmulation = true;    // surround video: head translation shown as parallax (motion.h)
   int motionDistance = 200;       // ... of things this far away, cm
+  bool motionFollowsFocus = false;  // use the live stereo focus distance when available
   bool resume = true;             // videos start where they were left (library.h)
   bool seekPreview = true;        // pointing along the seek bar shows the frame there (seek_preview.h)
   bool thumbnails = true;         // file browser and library: video thumbnails, else a video icon

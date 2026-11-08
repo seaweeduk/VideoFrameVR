@@ -1739,6 +1739,10 @@ int run(GLFWwindow* window, const Options& opts) {
         settings.motionDistance = clampMotionDistance(static_cast<int>(c.value));
         saveSettings(settings);
         break;
+      case MenuCommand::ToggleMotionFollowsFocus:
+        settings.motionFollowsFocus = !settings.motionFollowsFocus;
+        saveSettings(settings);
+        break;
       case MenuCommand::SetSharpen:
         settings.sharpen = std::clamp(static_cast<int>(c.value), 0, 300);
         player.setSharpened(settings.sharpen > 0);
@@ -3027,9 +3031,10 @@ int run(GLFWwindow* window, const Options& opts) {
       }
       if (!focusIn.headValid || !settings.focusPrefs.enabled) focusIn.settings.mode = FocusMode::Off;
       if (!settings.focusPrefs.autoIpd) focusIn.viewerIpd = settings.focusPrefs.ipdTenthMm / 1e4f;
-      if (headValid)
-        focusIn.motion = emulatedMotion(settings.motionEmulation, settings.motionDistance, headPos,
-                                        app.screen.anchorPosition);
+      if (headValid && settings.motionEmulation)
+        focusIn.headOffset = headPos - app.screen.anchorPosition;
+      focusIn.motionDistance = settings.motionDistance;
+      focusIn.motionFollowsFocus = settings.motionFollowsFocus;
       focusIn.head = headRot;
       focusIn.picture = app.screen.rotation();
       // Static placement and head motion share the correction's sphere limit.
@@ -3222,6 +3227,7 @@ int run(GLFWwindow* window, const Options& opts) {
       view.focus.targetStatus = targetStatusText(focusTargets.status());
       view.motionEmulation = settings.motionEmulation;
       view.motionDistance = settings.motionDistance;
+      view.motionFollowsFocus = settings.motionFollowsFocus;
       view.resume = settings.resume;
       view.downloadsTo = settings.downloadsTo;
       view.seekPreview = settings.seekPreview;

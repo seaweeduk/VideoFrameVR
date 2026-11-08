@@ -670,6 +670,8 @@ Strings germanStrings(const Strings& english) {
   s.focus.motion = "Bewegung emulieren";
   s.focus.motionDistance = "Bewegungsabstand";
   s.focus.motionHint = "Kopfbewegungen simulieren Parallaxe in diesem Abstand.";
+  s.focus.motionFollowsFocus = "Stereofokusabstand nutzen";
+  s.focus.motionFollowsFocusHint = "Bewegung folgt dem aktuellen Stereofokusabstand. Ist der Stereofokus aus oder nicht verfügbar, gilt der Bewegungsabstand.";
   s.focus.ipd = "IPD";
   s.focus.ipdHint = "Pupillenabstand. Eigener Wert ersetzt die automatische IPD.";
   s.focus.makeDefault = "Für alle Videos nutzen";

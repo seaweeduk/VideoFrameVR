@@ -670,6 +670,8 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.focus.motion = "运动模拟";
   s.focus.motionDistance = "运动距离";
   s.focus.motionHint = "头部移动时，模拟此距离下的视差。";
+  s.focus.motionFollowsFocus = "使用立体对焦距离";
+  s.focus.motionFollowsFocusHint = "移动跟随当前立体对焦距离。立体对焦关闭或不可用时，使用运动距离。";
   s.focus.ipd = "瞳距";
   s.focus.ipdHint = "双眼瞳孔的间距。手动设置将覆盖自动瞳距。";
   s.focus.makeDefault = "用于所有视频";

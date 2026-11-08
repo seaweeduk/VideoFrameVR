@@ -34,7 +34,10 @@ struct FocusInput {
   Quat head;              // head orientation, local space
   Vec3 leftEye, rightEye;  // eye positions, local space
   float viewerIpd = 0;     // meters; 0 = the eyes' own separation
-  Vec3 motion;             // head translation emulation: offset / motion distance, local space
+  Vec3 motion;             // static placement offset on the unit sphere, local space
+  Vec3 headOffset;         // head translation since recenter, meters; zero when motion is off
+  int motionDistance = 200;  // fixed distance or fallback when stereo focus is off, cm
+  bool motionFollowsFocus = false;
   Mat4 picture;           // ScreenPlacement::rotation()
   float zoom = 1.0f;
   FocusTarget target;
