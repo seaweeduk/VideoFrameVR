@@ -554,7 +554,7 @@ const Strings kEnglish = {
     },
     "Show fine-tuning rows on the settings pages.",
     "Move floating subtitles up or down.",
-    "Reset brightness, contrast, saturation, zoom and viewpoint for this video.",
+    "Reset brightness, contrast, saturation, zoom, viewpoint and scene size for this video.",
     "Smooth downscaled video using smaller copies of each frame.",
     "Smooth downscaled video. Costs GPU time on the Frame.",
     "Emphasize edges in all videos.",
@@ -1077,8 +1077,8 @@ const Strings kEnglish = {
         "Cooler (blue) or warmer (orange) light.",
         "Greener or more magenta light.",
         "Less or more light: dark parts change least, black stays black.",
-        "Reset brightness, contrast, saturation, zoom and viewpoint for this video, and warmth, tint "
-        "and exposure.",
+        "Reset brightness, contrast, saturation, zoom, viewpoint and scene size for this video, and "
+        "warmth, tint and exposure.",
         "Match the room",
         "Reading the room …",
         "Couldn't read the room",
@@ -1097,6 +1097,14 @@ const Strings kEnglish = {
         "Close",
         "Show after updates",
         "Updated from %s to %s",
+    },
+    {
+        "Scene size",
+        "%d %% (now %d %%)",
+        "How big people and things look, through 3D depth. Exact at the focus distance, "
+        "less so nearer or farther. Up close, larger is limited so the background stays "
+        "comfortable.",
+        "Needs stereo focus on, with 3D 180° or fisheye video.",
     },
 };
 

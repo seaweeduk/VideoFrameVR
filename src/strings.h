@@ -512,6 +512,14 @@ struct ViewpointStrings {
   const char* tip;
 };
 
+// How large the filmed scene looks, for one video (Video settings → Picture).
+struct SizeStrings {
+  const char* label;
+  const char* limited;      // printf: the size chosen and the size shown now (percent, %d each)
+  const char* tip;
+  const char* unavailable;  // the row is disabled: no stereo focus correction
+};
+
 // Passthrough switching itself on (Settings → View, see_through.h).
 struct AutoPassthroughStrings {
   const char* setting;
@@ -1200,6 +1208,7 @@ struct Strings {
   DeleteStrings deletion;
   ColourBalanceStrings colourBalance;
   WhatsNewStrings whatsNew;
+  SizeStrings size;
 };
 
 const Strings& strings();

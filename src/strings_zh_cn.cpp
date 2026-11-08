@@ -696,7 +696,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
 
   s.tipAdvanced = "在设置页面显示微调选项。";
   s.tipSubtitleRaise = "上下移动悬浮字幕。";
-  s.tipPictureReset = "重置此视频的亮度、对比度、饱和度、缩放和视点。";
+  s.tipPictureReset = "重置此视频的亮度、对比度、饱和度、缩放、视点和场景大小。";
   s.tipMipmaps = "用每帧的较小副本平滑缩小后的视频。";
   s.tipMipmapsFrame = "平滑缩小后的视频，在 Frame 上占用 GPU 时间。";
   s.tipSharpen = "强化所有视频的边缘。";
@@ -1205,7 +1205,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.colourBalance.tipWarmth = "偏冷（蓝）或偏暖（橙）的光线。";
   s.colourBalance.tipTint = "偏绿或偏品红的光线。";
   s.colourBalance.tipExposure = "减少或增加光线：暗部变化最小，黑色保持纯黑。";
-  s.colourBalance.tipReset = "重置此视频的亮度、对比度、饱和度、缩放和视点，以及色温、色调和曝光。";
+  s.colourBalance.tipReset = "重置此视频的亮度、对比度、饱和度、缩放、视点和场景大小，以及色温、色调和曝光。";
   s.colourBalance.matchRoom = "匹配房间";
   s.colourBalance.reading = "正在读取房间…";
   s.colourBalance.failed = "无法读取房间";
@@ -1220,5 +1220,9 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.whatsNew.close = "关闭";
   s.whatsNew.showAfterUpdates = "更新后显示";
   s.whatsNew.updatedFrom = "已从 %s 更新到 %s";
+  s.size.label = "场景大小";
+  s.size.limited = "%d%%（当前 %d%%）";
+  s.size.tip = "人和物体在 3D 中看起来有多大。在对焦距离处准确，更近或更远处稍差。近距离时会限制放大，让背景保持舒适。";
+  s.size.unavailable = "需要开启立体对焦，并播放 3D 180° 或鱼眼视频。";
   return s;
 }

@@ -696,7 +696,7 @@ Strings japaneseStrings(const Strings& english) {
 
   s.tipAdvanced = "設定ページに詳細な調整項目を表示。";
   s.tipSubtitleRaise = "立体表示する字幕を上下に移動。";
-  s.tipPictureReset = "この動画の明るさ・コントラスト・彩度・ズーム・視点をリセット。";
+  s.tipPictureReset = "この動画の明るさ・コントラスト・彩度・ズーム・視点・シーンの大きさをリセット。";
   s.tipMipmaps = "各フレームの縮小コピーを使い、縮小映像を滑らかに。";
   s.tipMipmapsFrame = "縮小映像を滑らかに。FrameのGPU負荷が増加。";
   s.tipSharpen = "全動画の輪郭を強調。";
@@ -1205,7 +1205,7 @@ Strings japaneseStrings(const Strings& english) {
   s.colourBalance.tipWarmth = "光を寒色（青）または暖色（オレンジ）に調整。";
   s.colourBalance.tipTint = "光を緑寄りまたはマゼンタ寄りに調整。";
   s.colourBalance.tipExposure = "光の量を増減。暗部はあまり変わらず、黒は黒のまま保たれます。";
-  s.colourBalance.tipReset = "この動画の明るさ・コントラスト・彩度・ズーム・視点と、暖かみ・色合い・露出をリセット。";
+  s.colourBalance.tipReset = "この動画の明るさ・コントラスト・彩度・ズーム・視点・シーンの大きさと、暖かみ・色合い・露出をリセット。";
   s.colourBalance.matchRoom = "部屋に合わせる";
   s.colourBalance.reading = "部屋を測定中…";
   s.colourBalance.failed = "読み取り失敗";
@@ -1220,5 +1220,9 @@ Strings japaneseStrings(const Strings& english) {
   s.whatsNew.close = "閉じる";
   s.whatsNew.showAfterUpdates = "アップデート後に表示";
   s.whatsNew.updatedFrom = "%s から %s にアップデートしました";
+  s.size.label = "シーンの大きさ";
+  s.size.limited = "%d%%（現在 %d%%）";
+  s.size.tip = "3Dで人や物がどれくらいの大きさに見えるか。フォーカス距離で正確で、それより近い・遠いものはやや不正確です。近距離では背景が見やすいよう拡大を制限します。";
+  s.size.unavailable = "立体フォーカスをオンにし、180°か魚眼の3D動画が必要です。";
   return s;
 }

@@ -696,7 +696,7 @@ Strings brazilianPortugueseStrings(const Strings& english) {
 
   s.tipAdvanced = "Mostra os ajustes finos nas páginas de configurações.";
   s.tipSubtitleRaise = "Mover legendas flutuantes para cima ou para baixo.";
-  s.tipPictureReset = "Redefinir brilho, contraste, saturação, zoom e ponto de vista deste vídeo.";
+  s.tipPictureReset = "Redefinir brilho, contraste, saturação, zoom, ponto de vista e tamanho da cena deste vídeo.";
   s.tipMipmaps = "Suavizar vídeos reduzidos com cópias menores de cada quadro.";
   s.tipMipmapsFrame = "Suavizar vídeos reduzidos. Usa GPU no Frame.";
   s.tipSharpen = "Realçar bordas em todos os vídeos.";
@@ -1205,7 +1205,7 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.colourBalance.tipWarmth = "Luz mais fria (azul) ou mais quente (laranja).";
   s.colourBalance.tipTint = "Luz mais verde ou mais magenta.";
   s.colourBalance.tipExposure = "Menos ou mais luz: partes escuras mudam menos, o preto continua preto.";
-  s.colourBalance.tipReset = "Redefinir brilho, contraste, saturação, zoom e ponto de vista deste vídeo, e calor, matiz e exposição.";
+  s.colourBalance.tipReset = "Redefinir brilho, contraste, saturação, zoom, ponto de vista e tamanho da cena deste vídeo, e calor, matiz e exposição.";
   s.colourBalance.matchRoom = "Igualar ambiente";
   s.colourBalance.reading = "Lendo ambiente …";
   s.colourBalance.failed = "Erro ao ler ambiente";
@@ -1220,5 +1220,9 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.whatsNew.close = "Fechar";
   s.whatsNew.showAfterUpdates = "Mostrar após atualizações";
   s.whatsNew.updatedFrom = "Atualizado de %s para %s";
+  s.size.label = "Tamanho da cena";
+  s.size.limited = "%d %% (agora %d %%)";
+  s.size.tip = "O tamanho com que pessoas e coisas aparecem em 3D. Exato na distância de foco, menos mais perto ou mais longe. De perto, aumentar é limitado para o fundo continuar confortável.";
+  s.size.unavailable = "Exige o foco estéreo ligado e vídeo 3D em 180° ou Fisheye.";
   return s;
 }

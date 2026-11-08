@@ -93,6 +93,7 @@ std::string settingsJson(const VideoSettings& s) {
   if (s.balance.exposure) j["exposure"] = s.balance.exposure;
   if (s.zoom != 1.0f) j["zoom"] = std::round(s.zoom * 1000.0) / 1000.0;
   if (s.originForward != 0) j["origin_forward"] = s.originForward;
+  if (s.size != 1.0f) j["size"] = std::round(s.size * 100.0) / 100.0;
   // Kept off too once chosen by hand, so that it is not switched on by itself.
   if (s.passthroughChosen) j["passthrough"] = s.passthrough;
   if (s.greenCheckVersion > 0)
@@ -156,6 +157,7 @@ bool parseSettings(const std::string& text, VideoSettings& s) {
   s.zoom = field(j, "zoom", 1.0f);
   s.originForward = std::clamp(field(j, "origin_forward", 0.0f), -VideoSettings::kMaxOriginForward,
                                VideoSettings::kMaxOriginForward);
+  s.size = std::clamp(field(j, "size", 1.0f), VideoSettings::kMinSize, VideoSettings::kMaxSize);
   if (const auto p = j.find("passthrough"); p != j.end() && p->is_boolean()) {
     s.passthrough = p->get<bool>();
     s.passthroughChosen = true;  // (older versions stored it only when on)

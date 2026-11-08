@@ -43,9 +43,19 @@ Vec3 limitedMotion(Vec3 motion);
 // by the motion distance (local space); the eyes then look from that far
 // off each sphere's centre, in units of its radius, plus the viewer-minus-
 // source eye offset divided by distance.
+// size: the scene shown this many times larger (shownSize()), as if the
+// cameras, spheres and motion distance were: the eye offsets are divided by
+// it. The caller divides the head's part of motion by the chosen size.
 StereoCorrection stereoCorrection(float distance, float baseline, Vec3 leftEye, Vec3 rightEye,
                                   const Mat4& pictureRotation, float viewerIpd = 0,
-                                  Vec3 motion = {});
+                                  Vec3 motion = {}, float size = 1);
+// The scene size that may be shown at this focus distance, for the size
+// chosen (1 = as filmed) and the viewer IPD in effect. Exact only at the focus
+// distance. Larger narrows the eyes' lookups, which turns what lies behind
+// the focus outward: a far background by at most 1°, and looking ahead never
+// more than 1° past parallel. Smaller never brings the focus nearer than
+// 30 cm. Neither limits what size 1 shows.
+float shownSize(float size, float distance, float baseline, float ipd);
 // Head translation emulation alone, for any surround video without stereo
 // correction: both eyes look from `motion` inside a unit sphere.
 StereoCorrection motionCorrection(Vec3 motion, const Mat4& pictureRotation);

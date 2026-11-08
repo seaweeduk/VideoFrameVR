@@ -78,7 +78,7 @@ struct MenuCommand {
               ToggleTvGamma, ToggleSeekPreview, ToggleThumbnails, ToggleShowPerformance, SetScreenDistance,
               SetScreenHeight, SetScreenCurve, ResetScreen, SetOriginForward, SetOpacity,
               SetWarmth, SetTint, SetExposure, ToggleMatchRoom, ReadRoomAgain,
-              SetMatchColour, SetMatchBrightness,
+              SetMatchColour, SetMatchBrightness, SetSize,
               ToggleAutoPassthrough, ToggleVibration,
               // Stash (docs/stash.md): on or off, its server, its switches,
               // Sync now, and the format the Scenes page shows.
@@ -178,6 +178,8 @@ struct MenuView {
   int matchColour = 70, matchBrightness = 60;  // percent (Settings::matchColour)
   float zoom = 1.0f;
   int originForward = 0;  // surround viewpoint: percent of the sphere's radius toward the picture
+  int size = 100;       // the scene's size chosen for this video, percent (VideoSettings::size)
+  int sizeShown = 0;    // ... as shown now (shownSize()); 0 = not applied (no stereo correction)
   bool tvGamma = false;  // SDR video converted for a TV's gamma (darker shadows)
   bool videoMipmaps = true;  // global: video sampled through mipmaps
   AntiShimmer antiShimmer = AntiShimmer::On;  // this run's: without them (anti_shimmer.h)

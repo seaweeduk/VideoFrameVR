@@ -427,6 +427,23 @@ void Menu::layoutVideoSettings() {
                 t.viewpoint.tip);
     y += kSettingStep;
   }
+  {
+    // Only where the stereo focus corrects (sizeShown 0 otherwise); a
+    // limited size shows what is shown now too.
+    const SizeStrings& s = t.size;
+    const int now = view_.size, shown = view_.sizeShown, step = kSizeStepPercent;
+    std::string value = std::to_string(now) + " %";
+    if (shown > 0 && shown != now) {
+      char buf[64];
+      std::snprintf(buf, sizeof(buf), s.limited, now, shown);
+      value = buf;
+    }
+    addValueRow(x, y, w, 230, s.label, value, now, kMinSizePercent, kMaxSizePercent,
+                command(MenuCommand::SetSize, std::max(kMinSizePercent, now - step)),
+                command(MenuCommand::SetSize, std::min(kMaxSizePercent, now + step)), shown == 0,
+                false, shown > 0 ? s.tip : s.unavailable);
+    y += kSettingStep;
+  }
   Button reset = textButton(t.reset, Icon::None, command(MenuCommand::ResetPicture));
   reset.panel = kBrowser;
   reset.x = x;

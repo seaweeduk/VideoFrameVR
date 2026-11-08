@@ -696,7 +696,7 @@ Strings germanStrings(const Strings& english) {
 
   s.tipAdvanced = "Zeigt Feineinstellungen auf den Einstellungsseiten.";
   s.tipSubtitleRaise = "Schwebende Untertitel nach oben oder unten verschieben.";
-  s.tipPictureReset = "Helligkeit, Kontrast, Sättigung, Zoom und Blickpunkt dieses Videos zurücksetzen.";
+  s.tipPictureReset = "Helligkeit, Kontrast, Sättigung, Zoom, Blickpunkt und Szenengröße dieses Videos zurücksetzen.";
   s.tipMipmaps = "Verkleinerte Videos mit kleineren Kopien jedes Bildes glätten.";
   s.tipMipmapsFrame = "Verkleinerte Videos glätten. Braucht GPU-Zeit auf dem Frame.";
   s.tipSharpen = "Kanten in allen Videos betonen.";
@@ -1205,7 +1205,7 @@ Strings germanStrings(const Strings& english) {
   s.colourBalance.tipWarmth = "Kühleres (blau) oder wärmeres (orange) Licht.";
   s.colourBalance.tipTint = "Grüneres oder stärker magentafarbenes Licht.";
   s.colourBalance.tipExposure = "Weniger oder mehr Licht: Dunkles ändert sich am wenigsten, Schwarz bleibt schwarz.";
-  s.colourBalance.tipReset = "Helligkeit, Kontrast, Sättigung, Zoom und Blickpunkt dieses Videos sowie Wärme, Tönung und Belichtung zurücksetzen.";
+  s.colourBalance.tipReset = "Helligkeit, Kontrast, Sättigung, Zoom, Blickpunkt und Szenengröße dieses Videos sowie Wärme, Tönung und Belichtung zurücksetzen.";
   s.colourBalance.matchRoom = "Raum anpassen";
   s.colourBalance.reading = "Lese Raum …";
   s.colourBalance.failed = "Raum nicht lesbar";
@@ -1220,5 +1220,9 @@ Strings germanStrings(const Strings& english) {
   s.whatsNew.close = "Schließen";
   s.whatsNew.showAfterUpdates = "Nach Updates anzeigen";
   s.whatsNew.updatedFrom = "Aktualisiert von %s auf %s";
+  s.size.label = "Szenengröße";
+  s.size.limited = "%d %% (jetzt %d %%)";
+  s.size.tip = "Wie groß Menschen und Dinge in 3D wirken. Genau beim Fokusabstand, näher oder weiter weniger genau. Aus der Nähe ist größer begrenzt, damit der Hintergrund angenehm bleibt.";
+  s.size.unavailable = "Braucht eingeschalteten Stereofokus und 3D-Video in 180° oder Fisheye.";
   return s;
 }

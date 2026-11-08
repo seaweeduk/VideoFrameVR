@@ -696,7 +696,7 @@ Strings frenchStrings(const Strings& english) {
 
   s.tipAdvanced = "Affiche les réglages fins sur les pages de réglages.";
   s.tipSubtitleRaise = "Monter ou descendre les sous-titres flottants.";
-  s.tipPictureReset = "Réinitialiser luminosité, contraste, saturation, zoom et point de vue de cette vidéo.";
+  s.tipPictureReset = "Réinitialiser luminosité, contraste, saturation, zoom, point de vue et taille de la scène de cette vidéo.";
   s.tipMipmaps = "Lisser la vidéo réduite avec des copies plus petites de chaque image.";
   s.tipMipmapsFrame = "Lisser la vidéo réduite. Coût GPU accru sur le Frame.";
   s.tipSharpen = "Accentuer les contours de toutes les vidéos.";
@@ -1205,7 +1205,7 @@ Strings frenchStrings(const Strings& english) {
   s.colourBalance.tipWarmth = "Lumière plus froide (bleue) ou plus chaude (orange).";
   s.colourBalance.tipTint = "Lumière plus verte ou plus magenta.";
   s.colourBalance.tipExposure = "Moins ou plus de lumière : les zones sombres changent le moins, le noir reste noir.";
-  s.colourBalance.tipReset = "Réinitialiser luminosité, contraste, saturation, zoom et point de vue de cette vidéo, ainsi que chaleur, teinte et exposition.";
+  s.colourBalance.tipReset = "Réinitialiser luminosité, contraste, saturation, zoom, point de vue et taille de la scène de cette vidéo, ainsi que chaleur, teinte et exposition.";
   s.colourBalance.matchRoom = "Selon la pièce";
   s.colourBalance.reading = "Lecture pièce …";
   s.colourBalance.failed = "Lecture impossible";
@@ -1220,5 +1220,9 @@ Strings frenchStrings(const Strings& english) {
   s.whatsNew.close = "Fermer";
   s.whatsNew.showAfterUpdates = "Afficher après les mises à jour";
   s.whatsNew.updatedFrom = "Mis à jour de %s vers %s";
+  s.size.label = "Taille de la scène";
+  s.size.limited = "%d %% (ici %d %%)";
+  s.size.tip = "La taille apparente des personnes et des objets en 3D. Exacte à la distance de mise au point, moins plus près ou plus loin. De près, l'agrandissement est limité pour que l'arrière-plan reste confortable.";
+  s.size.unavailable = "Nécessite le focus stéréo activé et une vidéo 3D 180° ou fisheye.";
   return s;
 }

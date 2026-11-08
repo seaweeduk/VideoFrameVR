@@ -11,6 +11,11 @@ namespace {
 // unlike a hard clamp that stops forward motion at strong saved origins.
 constexpr double kMotionKnee = 0.6;
 constexpr double kMaxMotion = 0.8;
+constexpr float kMinDistance = 0.1f;  // meters: the smallest focus radius
+// A larger scene: how far past parallel a far background may turn, in
+// radians, while the eyes converge on the focus.
+constexpr float kMaxDivergence = 1.0f * 3.14159265f / 180.0f;
+constexpr float kNearest = 0.3f;  // meters: a smaller scene's nearest focus
 
 }  // namespace
 
@@ -39,14 +44,15 @@ bool stereoCorrectionSupported(const VideoFormat& format) {
 }
 
 StereoCorrection stereoCorrection(float distance, float baseline, Vec3 leftEye, Vec3 rightEye,
-                                  const Mat4& pictureRotation, float viewerIpd, Vec3 motion) {
+                                  const Mat4& pictureRotation, float viewerIpd, Vec3 motion,
+                                  float size) {
   StereoCorrection c;
   const Mat4 toVideo = transposedRotation(pictureRotation);
   const Vec3 center = (leftEye + rightEye) * 0.5f;
   const Vec3 eyes[2] = {leftEye, rightEye};
   // Keep a nonzero minimum focus radius; eye offsets also affect whether
   // the viewer is inside its source-camera-centred sphere.
-  distance = std::max(distance, 0.1f);
+  distance = std::max(distance, kMinDistance);
   const Vec3 moved = transformDir(toVideo, limitedMotion(motion)) * distance;
   for (int i = 0; i < 2; ++i) {
     EyeCorrection& e = c.eyes[i];
@@ -54,11 +60,25 @@ StereoCorrection stereoCorrection(float distance, float baseline, Vec3 leftEye, 
     Vec3 offset = eyes[i] - center;
     const float half = length(offset);
     if (viewerIpd > 0 && half > 1e-5f) offset = offset * (0.5f * viewerIpd / half);
+    if (size != 1) offset = offset * (1 / size);
     e.viewer = transformDir(toVideo, offset) + moved;
     e.camera = {(i == 0 ? -0.5f : 0.5f) * baseline, 0.0f, 0.0f};
     e.distance = distance;
   }
   return c;
+}
+
+// The eyes' lookups of a far background differ by (ipd / size - baseline) /
+// distance looking ahead, and the size turns them outward by at most ipd *
+// (1 - 1 / size) / distance in any direction. The focus is shown size times
+// as far.
+float shownSize(float size, float distance, float baseline, float ipd) {
+  distance = std::max(distance, kMinDistance);
+  float shown = std::max(size, std::min(1.0f, kNearest / distance));
+  const float turn = kMaxDivergence * distance;
+  const float narrowest = std::max(ipd - turn, std::min(ipd, baseline - turn));
+  if (narrowest > 0) shown = std::min(shown, ipd / narrowest);
+  return shown;
 }
 
 StereoCorrection motionCorrection(Vec3 motion, const Mat4& pictureRotation) {

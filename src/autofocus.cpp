@@ -77,6 +77,11 @@ FocusOutput Autofocus::update(const FocusInput& in) {
   const bool supported = stereoCorrectionSupported(in.format);
   const FocusMode mode = supported ? s.mode : FocusMode::Off;
   const bool automatic = mode == FocusMode::Automatic && ready_;
+  // The scene's size needs the correction's depth. Its head motion is that
+  // of a scene `size` times larger; the saved viewpoint is in sphere radii.
+  const bool corrected = in.shown && (mode == FocusMode::Manual || automatic);
+  const float size = corrected ? in.size : 1;
+  const Vec3 motion = (size != 1 ? in.motion * (1 / size) : in.motion) + in.placement;
 
   // The analysed direction: the target with its offset, as seen (marker) and
   // through the zoom into the video's axes.
@@ -88,7 +93,7 @@ FocusOutput Autofocus::update(const FocusInput& in) {
   // With emulated head translation the head looks from off the centre: the
   // measured direction is where its ray meets the (unit) sphere.
   const Mat4 toVideoAxes = transposedRotation(in.picture);
-  const Vec3 origin = transformDir(toVideoAxes, in.motion);
+  const Vec3 origin = transformDir(toVideoAxes, motion);
   auto toVideo = [&](Vec3 d) {
     const Vec3 zoomed = d.z < 0 ? normalize(Vec3{d.x / in.zoom, d.y / in.zoom, d.z}) : d;
     const Vec3 ray = transformDir(toVideoAxes, transformDir(rotation(in.head), zoomed));
@@ -159,13 +164,19 @@ FocusOutput Autofocus::update(const FocusInput& in) {
 
   float along = 1.0f;
   throughUnitSphere(origin, transformDir(toVideoAxes, out.marker), &along);
-  if (distance > 0 && in.shown)
-    out.correction = stereoCorrection(distance, s.baselineMm / 1000.0f, in.leftEye, in.rightEye,
-                                      in.picture, in.viewerIpd, in.motion);
-  else if (in.shown && length(in.motion) > 0 && in.format.projection != Projection::Flat)
-    out.correction = motionCorrection(in.motion, in.picture);
+  if (distance > 0 && in.shown) {
+    const float baseline = s.baselineMm / 1000.0f;
+    if (size != 1) {
+      const float ipd = in.viewerIpd > 0 ? in.viewerIpd : length(in.rightEye - in.leftEye);
+      out.size = shownSize(size, distance, baseline, ipd);
+    }
+    out.correction = stereoCorrection(distance, baseline, in.leftEye, in.rightEye, in.picture,
+                                      in.viewerIpd, motion, out.size);
+  } else if (in.shown && length(motion) > 0 && in.format.projection != Projection::Flat) {
+    out.correction = motionCorrection(motion, in.picture);
+  }
   out.distance = distance;
-  out.markerDistance = distance * along;
+  out.markerDistance = distance * along * out.size;
   if (statusAt_ < 0 || in.now - statusAt_ >= kStatusInterval) {
     statusAt_ = in.now;
     describe(in, automatic, distance);

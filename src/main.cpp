@@ -1514,13 +1514,19 @@ int run(GLFWwindow* window, const Options& opts) {
         ++balanceEdits;
         app.video.zoom = 1.0f;
         app.video.originForward = 0;
-        applyPicture(VideoSettings::kPicture | VideoSettings::kOrigin);
+        app.video.size = 1.0f;
+        applyPicture(VideoSettings::kPicture | VideoSettings::kOrigin | VideoSettings::kSize);
         break;
       case MenuCommand::SetOriginForward:
         app.video.originForward = std::clamp(static_cast<float>(c.value / 100.0),
                                              -VideoSettings::kMaxOriginForward,
                                              VideoSettings::kMaxOriginForward);
         storeVideoSoon(VideoSettings::kOrigin);
+        break;
+      case MenuCommand::SetSize:  // applied while drawing
+        app.video.size = std::clamp(static_cast<float>(c.value / 100.0), VideoSettings::kMinSize,
+                                    VideoSettings::kMaxSize);
+        storeVideoSoon(VideoSettings::kSize);
         break;
       case MenuCommand::Paste: menu.typeText(clipboardText(input)); break;
       case MenuCommand::SetSlideshow:
@@ -3034,8 +3040,8 @@ int run(GLFWwindow* window, const Options& opts) {
       focusIn.picture = app.screen.rotation();
       // Static placement and head motion share the correction's sphere limit.
       if (app.format.projection != Projection::Flat && app.video.originForward != 0)
-        focusIn.motion = focusIn.motion +
-                         transformDir(focusIn.picture, {0, 0, -app.video.originForward});
+        focusIn.placement = transformDir(focusIn.picture, {0, 0, -app.video.originForward});
+      focusIn.size = app.video.size;
       focusIn.zoom = app.screen.zoom;
       // Only passthrough the eye images show: without alpha blending the
       // Frame draws the video whole.
@@ -3074,7 +3080,7 @@ int run(GLFWwindow* window, const Options& opts) {
       focusMarker.updateGaze(
           settings.focusPrefs.gazeDot && focusTargets.gazeKnown() && focusIn.headValid,
           (focusIn.leftEye + focusIn.rightEye) * 0.5f,
-          transformDir(rotation(headRot), focusTargets.gaze()), focusOut.distance);
+          transformDir(rotation(headRot), focusTargets.gaze()), focusOut.distance * focusOut.size);
 
       if (panel.open && !loading) releaseUpdate.menuOpened();
       releaseUpdate.poll();
@@ -3175,6 +3181,9 @@ int run(GLFWwindow* window, const Options& opts) {
       view.tvGamma = settings.tvGamma;
       view.zoom = app.video.zoom;
       view.originForward = static_cast<int>(std::lround(app.video.originForward * 100));
+      view.size = static_cast<int>(std::lround(app.video.size * 100));
+      view.sizeShown =
+          focusIn.shown && focusOut.distance > 0 ? static_cast<int>(std::lround(focusOut.size * 100)) : 0;
       view.videoMipmaps = settings.videoMipmaps;
       view.antiShimmer = antiShimmer;
       view.sharpen = settings.sharpen;

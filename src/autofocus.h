@@ -35,6 +35,8 @@ struct FocusInput {
   Vec3 leftEye, rightEye;  // eye positions, local space
   float viewerIpd = 0;     // meters; 0 = the eyes' own separation
   Vec3 motion;             // head translation emulation: offset / motion distance, local space
+  Vec3 placement;          // the video's saved viewpoint, in sphere radii, local space
+  float size = 1;          // VideoSettings::size, with stereo correction only
   Mat4 picture;           // ScreenPlacement::rotation()
   float zoom = 1.0f;
   FocusTarget target;
@@ -46,6 +48,7 @@ struct FocusOutput {
   StereoCorrection correction;  // for the renderer; none if off or not possible
   float distance = 0;           // meters corrected at, 0 = none
   float markerDistance = 0;     // meters from the head to the measured spot as shown
+  float size = 1;               // the scene size shown (shownSize()), 1 without correction
   bool automatic = false;
   Vec3 marker;         // the measured direction (local space), for the diagnostics
   std::string status;  // one line for the menu

@@ -182,6 +182,12 @@ void Menu::update(const MenuView& view) {
   if (view.matchBrightness != view_.matchBrightness) sliderChanged(MenuCommand::SetMatchBrightness);
   if (view.zoom != view_.zoom) sliderChanged(MenuCommand::SetZoom);
   if (view.originForward != view_.originForward) sliderChanged(MenuCommand::SetOriginForward);
+  // Its row is disabled where the stereo focus doesn't correct; a limited
+  // size follows the focus distance.
+  if (page_ == Page::VideoSettings && (view.sizeShown > 0) != (view_.sizeShown > 0))
+    browserChanged();
+  else if (view.size != view_.size || view.sizeShown != view_.sizeShown)
+    sliderChanged(MenuCommand::SetSize);
   if (view.opacity != view_.opacity) sliderChanged(MenuCommand::SetOpacity);
   if (view.sharpen != view_.sharpen) sliderChanged(MenuCommand::SetSharpen);
   if (view.screen.distanceCm != view_.screen.distanceCm) sliderChanged(MenuCommand::SetScreenDistance);

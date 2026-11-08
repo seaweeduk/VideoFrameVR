@@ -35,6 +35,10 @@ struct VideoSettings {
   ColourBalance balance;
   float zoom = 1.0f;  // 180°/360° video: magnification
   float originForward = 0;  // surround viewpoint, in sphere radii toward the picture
+  // How large the filmed scene looks, 1 = as filmed: through the stereo
+  // focus's correction (shownSize(), stereo_correction.h), so only where it acts.
+  float size = 1.0f;
+  static constexpr float kMinSize = 0.5f, kMaxSize = 1.5f;
   int opacity = 100;  // percent, over the room (blended by the headset itself)
   // Persisted control range. The combined origin and head motion are eased
   // inside the sphere by stereo_correction.cpp, not clamped at this value.
@@ -71,7 +75,7 @@ struct VideoSettings {
 
   bool pictureIsDefault() const {
     return brightness == 0 && contrast == 0 && saturation == 0 && balance.neutral() &&
-           zoom == 1.0f;
+           zoom == 1.0f && size == 1.0f;
   }
   // Nothing remembered: the video follows the defaults.
   bool isDefault() const {
@@ -86,7 +90,8 @@ struct VideoSettings {
                          kVolume = 32, kGreenScreen = 64, kFocus = 128, kPassthrough = 256,
                          kScreen = 512, kOrigin = 1024, kGreenCheck = 2048, kPackedMask = 4096,
                          kOpacity = 8192, kWarmth = 16384, kTint = 32768, kExposure = 65536,
-                         kMaskLayers = 131072, kSecondLayer = 262144, kAll = 524287,
+                         kMaskLayers = 131072, kSecondLayer = 262144, kSize = 524288,
+                         kAll = 1048575,
                          kBalance = kWarmth | kTint | kExposure,
                          kPicture = kBrightness | kContrast | kSaturation | kBalance | kZoom };
   // Takes these parts from `other`.
@@ -103,6 +108,7 @@ struct VideoSettings {
     if (parts & kExposure) balance.exposure = other.balance.exposure;
     if (parts & kZoom) zoom = other.zoom;
     if (parts & kOrigin) originForward = other.originForward;
+    if (parts & kSize) size = other.size;
     if (parts & kPassthrough) {
       passthrough = other.passthrough;
       passthroughChosen = other.passthroughChosen;
@@ -139,7 +145,7 @@ struct VideoSettings {
            g.strength == h.strength &&
            g.softness == h.softness && g.spill == h.spill && g.shrink == h.shrink &&
            hasFocus == o.hasFocus && focus == o.focus && hasScreen == o.hasScreen &&
-           screen == o.screen && originForward == o.originForward &&
+           screen == o.screen && originForward == o.originForward && size == o.size &&
            passthroughChosen == o.passthroughChosen && greenCheckVersion == o.greenCheckVersion &&
            greenScreenFound == o.greenScreenFound && packedMask == o.packedMask &&
            opacity == o.opacity && maskLayersVersion == o.maskLayersVersion &&

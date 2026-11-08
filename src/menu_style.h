@@ -192,6 +192,10 @@ constexpr int kZoomStepPercent = 10;
 constexpr int kViewpointStepPercent = 5;
 constexpr int kMaxViewpointPercent =
     static_cast<int>(VideoSettings::kMaxOriginForward * 100 + 0.5f);
+// The scene's size, in percent of as filmed.
+constexpr int kSizeStepPercent = 5;
+constexpr int kMinSizePercent = static_cast<int>(VideoSettings::kMinSize * 100 + 0.5f);
+constexpr int kMaxSizePercent = static_cast<int>(VideoSettings::kMaxSize * 100 + 0.5f);
 // The flat screen's distance and height change in 5 cm steps. The curve
 // changes by 0.1; a 0.01 step would take a hundred presses without a
 // wrist-roll adjustment of a hovered control.
