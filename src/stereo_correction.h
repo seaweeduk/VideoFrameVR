@@ -54,8 +54,9 @@ StereoCorrection stereoCorrection(float distance, float baseline, Vec3 leftEye, 
 // distance. Larger narrows the eyes' lookups, which turns what lies behind
 // the focus outward: a far background by at most 1°, and looking ahead never
 // more than 1° past parallel. Smaller never brings the focus nearer than
-// 30 cm. Neither limits what size 1 shows.
-float shownSize(float size, float distance, float baseline, float ipd);
+// 30 cm. Neither limits what size 1 shows. reach: the nearest the sphere
+// can be from the eyes, in parts of its radius (1 = from its centre).
+float shownSize(float size, float distance, float baseline, float ipd, float reach = 1);
 // Head translation emulation alone, for any surround video without stereo
 // correction: both eyes look from `motion` inside a unit sphere.
 StereoCorrection motionCorrection(Vec3 motion, const Mat4& pictureRotation);

@@ -68,14 +68,14 @@ StereoCorrection stereoCorrection(float distance, float baseline, Vec3 leftEye, 
   return c;
 }
 
-// The eyes' lookups of a far background differ by (ipd / size - baseline) /
-// distance looking ahead, and the size turns them outward by at most ipd *
-// (1 - 1 / size) / distance in any direction. The focus is shown size times
-// as far.
-float shownSize(float size, float distance, float baseline, float ipd) {
+// The eyes' lookups of a far background differ by (ipd / size - baseline)
+// over the distance to the sphere looking ahead, and the size turns them
+// outward by at most ipd * (1 - 1 / size) over it in any direction. The
+// focus is shown size times as far.
+float shownSize(float size, float distance, float baseline, float ipd, float reach) {
   distance = std::max(distance, kMinDistance);
   float shown = std::max(size, std::min(1.0f, kNearest / distance));
-  const float turn = kMaxDivergence * distance;
+  const float turn = kMaxDivergence * distance * reach;
   const float narrowest = std::max(ipd - turn, std::min(ipd, baseline - turn));
   if (narrowest > 0) shown = std::min(shown, ipd / narrowest);
   return shown;

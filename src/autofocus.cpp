@@ -77,11 +77,47 @@ FocusOutput Autofocus::update(const FocusInput& in) {
   const bool supported = stereoCorrectionSupported(in.format);
   const FocusMode mode = supported ? s.mode : FocusMode::Off;
   const bool automatic = mode == FocusMode::Automatic && ready_;
-  // The scene's size needs the correction's depth. Its head motion is that
-  // of a scene `size` times larger; the saved viewpoint is in sphere radii.
-  const bool corrected = in.shown && (mode == FocusMode::Manual || automatic);
-  const float size = corrected ? in.size : 1;
-  const Vec3 motion = (size != 1 ? in.motion * (1 / size) : in.motion) + in.placement;
+  const bool loading = in.texture == 0 && !in.drawer;
+
+  float distance = 0;
+  if (mode == FocusMode::Manual) {
+    distance = s.distanceCm / 100.0f;
+  } else if (automatic) {
+    char key[64];
+    std::snprintf(key, sizeof(key), "|%d|%d|%d", static_cast<int>(in.format.projection),
+                  static_cast<int>(in.format.stereo), s.baselineMm);
+    const std::string contentKey = in.video + key;
+    if (contentKey != contentKey_) {
+      contentKey_ = contentKey;
+      startOver(true, "new video, layout or baseline");
+    } else if (!loading && lastPosition_ >= 0) {
+      const double moved = in.position - lastPosition_;
+      if (moved < -kSeekBack || moved > in.now - lastNow_ + kSeekJump) startOver(false, "seek");
+    }
+    lastPosition_ = loading ? -1 : in.position;
+    lastNow_ = in.now;
+
+    DepthEstimate e;
+    if (estimator_.poll(e) && e.tag == generation_ && !loading) {
+      if (e.sceneChange > kSceneCut) startOver(false, "scene cut");
+      controller_.submit(e, requestPhase_);
+      if (requestPhase_ == 0) reachAlpha_ = e.reachAlpha, reachBeta_ = e.reachBeta;
+    }
+    distance = controller_.advance(s, in.now, in.target.eyes);
+  }
+
+  // The scene's size needs the correction's depth. Everything uses the size
+  // shown at this distance: the eyes, and the head motion of a scene that
+  // much larger; the saved viewpoint is in sphere radii. Its limit sees the
+  // sphere from as far off its centre as the viewpoint and head can put the
+  // eyes.
+  const float baseline = s.baselineMm / 1000.0f;
+  if (distance > 0 && in.shown && in.size != 1) {
+    const float ipd = in.viewerIpd > 0 ? in.viewerIpd : length(in.rightEye - in.leftEye);
+    const float off = length(limitedMotion({length(in.placement) + length(in.motion), 0, 0}));
+    out.size = shownSize(in.size, distance, baseline, ipd, 1 - off);
+  }
+  const Vec3 motion = (out.size != 1 ? in.motion * (1 / out.size) : in.motion) + in.placement;
 
   // The analysed direction: the target with its offset, as seen (marker) and
   // through the zoom into the video's axes.
@@ -101,31 +137,7 @@ FocusOutput Autofocus::update(const FocusInput& in) {
   };
   out.marker = transformDir(rotation(in.head), offset(s.yawDeg * kDegree));
 
-  float distance = 0;
-  if (mode == FocusMode::Manual) {
-    distance = s.distanceCm / 100.0f;
-  } else if (automatic) {
-    char key[64];
-    std::snprintf(key, sizeof(key), "|%d|%d|%d", static_cast<int>(in.format.projection),
-                  static_cast<int>(in.format.stereo), s.baselineMm);
-    const std::string contentKey = in.video + key;
-    const bool loading = in.texture == 0 && !in.drawer;
-    if (contentKey != contentKey_) {
-      contentKey_ = contentKey;
-      startOver(true, "new video, layout or baseline");
-    } else if (!loading && lastPosition_ >= 0) {
-      const double moved = in.position - lastPosition_;
-      if (moved < -kSeekBack || moved > in.now - lastNow_ + kSeekJump) startOver(false, "seek");
-    }
-    lastPosition_ = loading ? -1 : in.position;
-    lastNow_ = in.now;
-
-    DepthEstimate e;
-    if (estimator_.poll(e) && e.tag == generation_ && !loading) {
-      if (e.sceneChange > kSceneCut) startOver(false, "scene cut");
-      controller_.submit(e, requestPhase_);
-      if (requestPhase_ == 0) reachAlpha_ = e.reachAlpha, reachBeta_ = e.reachBeta;
-    }
+  if (automatic) {
     // Measuring as often as the last measurement allows: one in flight.
     if (!loading && in.headValid && in.target.usable) {
       const int phase = controller_.phase();
@@ -137,14 +149,13 @@ FocusOutput Autofocus::update(const FocusInput& in) {
       q.format = in.format;
       q.flip = in.flip;
       q.direction = toVideo(offset(s.yawDeg * kDegree + phase * spread));
-      q.baseline = s.baselineMm / 1000.0f;
+      q.baseline = baseline;
       q.accuracy = s.accuracy;
       if (in.target.eyes) q.window = kEyeWindow, q.reach = kEyeReach;
       q.seeThrough = in.seeThrough;
       q.tag = generation_;
       if (estimator_.request(q)) requestPhase_ = phase;
     }
-    distance = controller_.advance(s, in.now, in.target.eyes);
     out.automatic = true;
     if (!in.target.eyes) reachAlpha_ = reachBeta_ = 0;
     // The marker shows where the centre probe measured: moved off the target
@@ -164,17 +175,11 @@ FocusOutput Autofocus::update(const FocusInput& in) {
 
   float along = 1.0f;
   throughUnitSphere(origin, transformDir(toVideoAxes, out.marker), &along);
-  if (distance > 0 && in.shown) {
-    const float baseline = s.baselineMm / 1000.0f;
-    if (size != 1) {
-      const float ipd = in.viewerIpd > 0 ? in.viewerIpd : length(in.rightEye - in.leftEye);
-      out.size = shownSize(size, distance, baseline, ipd);
-    }
+  if (distance > 0 && in.shown)
     out.correction = stereoCorrection(distance, baseline, in.leftEye, in.rightEye, in.picture,
                                       in.viewerIpd, motion, out.size);
-  } else if (in.shown && length(motion) > 0 && in.format.projection != Projection::Flat) {
+  else if (in.shown && length(motion) > 0 && in.format.projection != Projection::Flat)
     out.correction = motionCorrection(motion, in.picture);
-  }
   out.distance = distance;
   out.markerDistance = distance * along * out.size;
   if (statusAt_ < 0 || in.now - statusAt_ >= kStatusInterval) {
