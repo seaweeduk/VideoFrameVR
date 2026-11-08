@@ -1,5 +1,6 @@
 #include "green_screen_check.h"
 
+#include "platform.h"
 #include "remote_avio.h"
 #include "thumbnailer.h"  // frameScaler
 
@@ -9,6 +10,7 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
+#include <sched.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -131,14 +133,20 @@ bool keyframeAt(AVFormatContext* format, AVCodecContext* codec, int stream, doub
   if (av_seek_frame(format, -1, static_cast<int64_t>(seconds * AV_TIME_BASE), AVSEEK_FLAG_BACKWARD) < 0)
     return false;
   avcodec_flush_buffers(codec);
+  // Its packet alone, then the end of input: the decoder holds a frame back
+  // until the next it decodes, here the next keyframe, seconds of video on.
   AVPacket* packet = av_packet_alloc();
   AVFrame* frame = av_frame_alloc();
   bool got = false;
-  for (int reads = 0; !got && reads < 2000 && !Interrupt::check(&interrupt); ++reads) {
+  for (int reads = 0; reads < 2000 && !Interrupt::check(&interrupt); ++reads) {
     if (av_read_frame(format, packet) < 0) break;
-    if (packet->stream_index == stream) avcodec_send_packet(codec, packet);
+    const bool key = packet->stream_index == stream && (packet->flags & AV_PKT_FLAG_KEY);
+    if (key) avcodec_send_packet(codec, packet);
     av_packet_unref(packet);
+    if (!key) continue;
+    avcodec_send_packet(codec, nullptr);
     got = avcodec_receive_frame(codec, frame) == 0;
+    break;
   }
   bool ok = false;
   if (got && frame->width > 0 && frame->height > 0) {
@@ -173,8 +181,8 @@ bool keyframeAt(AVFormatContext* format, AVCodecContext* codec, int stream, doub
   return ok;
 }
 
-// The check itself: at most one sample may fail, and the green must be the
-// same hue in all that pass. `looked`: the keyframes decoded; with fewer than
+// The check itself: three samples of the same green hue (at most one
+// failing), so it stops at the third pass or the second failure. `looked`: the keyframes decoded; with fewer than
 // two (a file that can't be read now), there is no answer.
 bool hasGreenScreen(const std::string& path, StereoLayout stereo, Interrupt& interrupt,
                     int& looked) {
@@ -218,6 +226,7 @@ bool hasGreenScreen(const std::string& path, StereoLayout stereo, Interrupt& int
         ++passed;
         lowHue = std::min(lowHue, hue);
         highHue = std::max(highHue, hue);
+        if (passed >= 3) break;
       } else if (++failed >= 2) {
         break;
       }
@@ -262,8 +271,17 @@ bool GreenScreenCheck::result(std::string& path, bool& found) {
 }
 
 void GreenScreenCheck::work() {
-  // Behind playback and everything else: one video's check can wait.
-  setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 19);
+  // Behind playback and everything else: one video's check can wait. On the
+  // Frame off the compositor's cores (its decoder's threads follow).
+  const auto tid = static_cast<pid_t>(syscall(SYS_gettid));
+  setpriority(PRIO_PROCESS, static_cast<id_t>(tid), 19);
+  syscall(SYS_ioprio_set, 1 /* IOPRIO_WHO_PROCESS */, tid, 3 << 13 /* IOPRIO_CLASS_IDLE */);
+  if (kStandaloneHeadset) {
+    cpu_set_t cores;
+    CPU_ZERO(&cores);
+    for (const int core : kFrameBackgroundCores) CPU_SET(core, &cores);
+    sched_setaffinity(tid, sizeof(cores), &cores);
+  }
   for (;;) {
     Job job;
     {

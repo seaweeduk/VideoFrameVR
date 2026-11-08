@@ -1,5 +1,6 @@
 #include "remote_avio.h"
 #include "bluray.h"
+#include "read_ahead.h"
 #include "stash_stream.h"
 
 extern "C" {
@@ -27,7 +28,8 @@ bool RemoteAvio::attach(AVFormatContext* format, const std::string& path) {
     file_ = remote::File::open(path, status);
     if (!file_) return false;
   }
-  constexpr int kBufferSize = 256 * 1024;
+  // A remote read's most (File::read): each waits its turn behind playback.
+  constexpr int kBufferSize = static_cast<int>(ReadAhead::kBlock);
   auto* buffer = static_cast<uint8_t*>(av_malloc(kBufferSize));
   if (!buffer) return false;
   io_ = avio_alloc_context(buffer, kBufferSize, 0, this, read, nullptr, seek);

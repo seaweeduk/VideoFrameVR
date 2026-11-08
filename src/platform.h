@@ -11,6 +11,11 @@ constexpr bool kStandaloneHeadset =
     false;
 #endif
 
+// On the Frame, the cores background decoding runs on (thumbnails, the green
+// screen check), of those Steam gives the app: the compositor's render thread
+// uses 4-6.
+constexpr int kFrameBackgroundCores[] = {3, 7};
+
 // The app's name: in its config, data and cache paths and as the OpenXR and
 // Vulkan application name (SteamVR derives its app key from it; no spaces),
 // and as shown to people (window title, version).
