@@ -103,7 +103,9 @@ const int kSourceYcbcr = 2;
 // linear colour: the image, or a decoded frame as mpv would have drawn it
 // into the sRGB image the other path samples. range as yuvToRgb's; matrix:
 // Kr, Kb, then the chroma lookup's offset (planes).
-vec3 videoTap(sampler2D tex, sampler2D chroma, vec2 p, int source, vec4 range, vec4 matrix) {
+// ... a decoded frame's display values, as mpv draws them (not an image's).
+mediump vec3 videoDisplay(sampler2D tex, sampler2D chroma, vec2 p, int source, vec4 range,
+                          vec4 matrix) {
   // Lookups at full precision: half precision ones move the taps.
   float y;
   vec2 c;
@@ -111,7 +113,6 @@ vec3 videoTap(sampler2D tex, sampler2D chroma, vec2 p, int source, vec4 range, v
   y = tp10Luma(chroma, p);
   c = textureLod(chroma, p + matrix.zw, 0.0).rg;
 #else
-  if (source == kSourceImage) return textureLod(tex, p, 0.0).rgb;
   if (source == kSourceYcbcr) {
     vec3 s = textureLod(tex, p, 0.0).rgb;
     y = s.g;
@@ -121,7 +122,14 @@ vec3 videoTap(sampler2D tex, sampler2D chroma, vec2 p, int source, vec4 range, v
     c = textureLod(chroma, p + matrix.zw, 0.0).rg;
   }
 #endif
-  mediump vec3 e = clamp(yuvToRgb(y, c, range, matrix.xy), 0.0, 1.0);
+  return clamp(yuvToRgb(y, c, range, matrix.xy), 0.0, 1.0);
+}
+
+vec3 videoTap(sampler2D tex, sampler2D chroma, vec2 p, int source, vec4 range, vec4 matrix) {
+#ifndef TP10
+  if (source == kSourceImage) return textureLod(tex, p, 0.0).rgb;
+#endif
+  mediump vec3 e = videoDisplay(tex, chroma, p, source, range, matrix);
   // To linear light as mpv's image would be sampled: sRGB's curve, or with TV
   // gamma, the 2.4 power mpv converts BT.1886 video with (the same work).
   bool tv = (drawFlags() & kTvGamma) != 0u;

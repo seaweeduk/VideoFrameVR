@@ -98,6 +98,9 @@ std::string settingsJson(const VideoSettings& s) {
   if (s.greenCheckVersion > 0)
     j["green_check"] = {{"version", s.greenCheckVersion}, {"found", s.greenScreenFound}};
   if (s.packedMask.has_value()) j["packed_mask"] = *s.packedMask;
+  if (s.maskLayersVersion > 0 || s.maskLayersFound)
+    j["mask_layers"] = {{"version", s.maskLayersVersion}, {"found", s.maskLayersFound}};
+  if (s.secondLayerHidden) j["second_layer_hidden"] = true;
   if (s.opacity != 100) j["opacity"] = s.opacity;
   if (s.legacyTvGamma.has_value()) j["tv_gamma"] = *s.legacyTvGamma;
   if (s.volume >= 0) j["volume"] = s.volume;
@@ -164,6 +167,13 @@ bool parseSettings(const std::string& text, VideoSettings& s) {
   }
   if (const auto mask = j.find("packed_mask"); mask != j.end() && mask->is_boolean())
     s.packedMask = mask->get<bool>();
+  if (const auto layers = j.find("mask_layers"); layers != j.end() && layers->is_object()) {
+    s.maskLayersVersion = field(*layers, "version", 0);
+    const auto found = layers->find("found");
+    s.maskLayersFound = found != layers->end() && found->is_boolean() && found->get<bool>();
+  }
+  if (const auto hidden = j.find("second_layer_hidden"); hidden != j.end() && hidden->is_boolean())
+    s.secondLayerHidden = hidden->get<bool>();
   s.opacity = std::clamp(field(j, "opacity", 100), 0, 100);
   if (const auto tv = j.find("tv_gamma"); tv != j.end() && tv->is_boolean())
     s.legacyTvGamma = tv->get<bool>();

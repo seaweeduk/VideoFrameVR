@@ -34,10 +34,14 @@ namespace {
 constexpr int32_t kMaskFirst[] = {-1, -1, 1, 0};
 constexpr int32_t kSharpened[] = {-1, -1, -1, 1};
 constexpr int32_t kMaskFirstSharpened[] = {-1, -1, 1, 1};
+// ... with the mask's other colours (Pipelines::SurroundCut's values).
+constexpr int32_t kRedBlueFirst[] = {-1, -1, Pipelines::kPackedRedBlue, 0};
+constexpr int32_t kRedBlueFirstSharpened[] = {-1, -1, Pipelines::kPackedRedBlue, 1};
 // The general pipelines for a Q08C frame (source 2; screen.frag reads the
 // source alone).
 constexpr int32_t kYcbcrGeneral[] = {-1, 2, -1, 0};
 constexpr int32_t kYcbcrMaskFirst[] = {-1, 2, 1, 0};
+constexpr int32_t kYcbcrRedBlueFirst[] = {-1, 2, Pipelines::kPackedRedBlue, 0};
 
 // A common mode's source as the shader's constant (video.glsl's kSource...).
 int32_t sourceConstant(Pipelines::SurroundSource source) {
@@ -137,6 +141,11 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
        4},
       {kSpirv_screen_vert, sizeof(kSpirv_screen_vert), kSpirv_screen_sharpen_frag,
        sizeof(kSpirv_screen_sharpen_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, false},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_frag,
+       sizeof(kSpirv_surround_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kRedBlueFirst, 4},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_frag,
+       sizeof(kSpirv_surround_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false,
+       kRedBlueFirstSharpened, 4},
   };
   static const char* names[kCount] = {"surround",
                                       "screen",
@@ -146,7 +155,9 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
                                       "surround (mask first)",
                                       "surround (sharpened)",
                                       "surround (mask first, sharpened)",
-                                      "screen (sharpened)"};
+                                      "screen (sharpened)",
+                                      "surround (mask first, red and blue)",
+                                      "surround (mask first, red and blue, sharpened)"};
   std::vector<Job> jobs;
   for (int i = 0; i < kCount; ++i) {
     descs_[i] = descs[i];
@@ -176,15 +187,20 @@ bool Pipelines::initGlass(VkRenderPass glassPass) {
 }
 
 bool Pipelines::initTp10(VkDescriptorSetLayout setLayout) {
-  const Desc descs[3] = {
+  const Desc descs[kDirectCount] = {
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_tp10_frag,
        sizeof(kSpirv_surround_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_tp10_frag,
        sizeof(kSpirv_surround_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kMaskFirst, 4},
       {kSpirv_screen_vert, sizeof(kSpirv_screen_vert), kSpirv_screen_tp10_frag,
        sizeof(kSpirv_screen_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, false},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_tp10_frag,
+       sizeof(kSpirv_surround_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kRedBlueFirst,
+       4},
   };
-  static const char* names[3] = {"surround (TP10)", "surround (mask first, TP10)", "screen (TP10)"};
+  static const char* names[kDirectCount] = {
+      "surround (TP10)", "surround (mask first, TP10)", "screen (TP10)",
+      "surround (mask first, red and blue, TP10)"};
   std::vector<Job> jobs;
   if (!addDirect(jobs, setLayout, descs, names, tp10Layout_, tp10_, tp10Plain_)) return false;
   addSurround(jobs, {kTp10}, kSpirv_surround_tp10_frag, sizeof(kSpirv_surround_tp10_frag),
@@ -193,15 +209,20 @@ bool Pipelines::initTp10(VkDescriptorSetLayout setLayout) {
 }
 
 bool Pipelines::initQ08c(const VkDescriptorSetLayout* setLayouts) {
-  const Desc descs[3] = {
+  const Desc descs[kDirectCount] = {
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_frag,
        sizeof(kSpirv_surround_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kYcbcrGeneral, 4},
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_frag,
        sizeof(kSpirv_surround_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kYcbcrMaskFirst, 4},
       {kSpirv_screen_vert, sizeof(kSpirv_screen_vert), kSpirv_screen_frag,
        sizeof(kSpirv_screen_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, false, kYcbcrGeneral, 4},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_frag,
+       sizeof(kSpirv_surround_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kYcbcrRedBlueFirst,
+       4},
   };
-  static const char* names[3] = {"surround (Q08C)", "surround (mask first, Q08C)", "screen (Q08C)"};
+  static const char* names[kDirectCount] = {
+      "surround (Q08C)", "surround (mask first, Q08C)", "screen (Q08C)",
+      "surround (mask first, red and blue, Q08C)"};
   // All sitings in one batch.
   std::vector<Job> jobs;
   for (int s = 0; s < kQ08cSitings; ++s) {
@@ -214,9 +235,10 @@ bool Pipelines::initQ08c(const VkDescriptorSetLayout* setLayouts) {
 }
 
 bool Pipelines::addDirect(std::vector<Job>& jobs, VkDescriptorSetLayout setLayout,
-                          const Desc (&descs)[3], const char* const (&names)[3],
-                          VkPipelineLayout& layout, VkPipeline (&pipelines)[3],
-                          VkPipeline (&plain)[3]) {
+                          const Desc (&descs)[kDirectCount],
+                          const char* const (&names)[kDirectCount], VkPipelineLayout& layout,
+                          VkPipeline (&pipelines)[kDirectCount],
+                          VkPipeline (&plain)[kDirectCount]) {
   VkPushConstantRange push{};
   push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
   push.size = kPushConstantBytes;
@@ -228,7 +250,7 @@ bool Pipelines::addDirect(std::vector<Job>& jobs, VkDescriptorSetLayout setLayou
   if (!gpu_->check(vkCreatePipelineLayout(gpu_->device(), &layoutInfo, nullptr, &layout),
                    "decoder frames' pipeline layout"))
     return false;
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < kDirectCount; ++i) {
     add(jobs, descs[i], eyePass_, names[i], &pipelines[i], layout);
     if (plainEyePass_ != eyePass_) add(jobs, descs[i], plainEyePass_, names[i], &plain[i], layout);
   }
@@ -251,6 +273,7 @@ void Pipelines::addSurround(std::vector<Job>& jobs, std::initializer_list<Surrou
       for (int p = 0; p < kProjectionCount; ++p)
         for (int c = 0; c < kCutCount; ++c)
           for (int plain = 0; plain < (plainEyePass_ == eyePass_ ? 1 : 2); ++plain) {
+            if (c >= kPackedRedBlue && p != kFisheye) continue;
             const int32_t constants[] = {p, sourceConstant(source), c, 0, balance};
             add(jobs,
                 {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment, fragmentBytes,

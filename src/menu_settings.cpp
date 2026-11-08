@@ -659,6 +659,12 @@ void Menu::layoutVideoSettings() {
                  !view_.maskFormat)
         .tooltip = view_.maskFormat ? t.packedMaskHint : t.packedMaskFormatHint;
     y += kSettingStep;
+    if (own && view_.maskLayers) {
+      addToggleRow(x, y, w, t.secondLayer, !view_.secondLayerHidden,
+                   command(MenuCommand::ToggleSecondLayer))
+          .tooltip = t.secondLayerHint;
+      y += kSettingStep;
+    }
     if (!own) {
       addToggleRow(x, y, w, t.greenScreenOn, view_.greenScreen.on,
                    command(MenuCommand::ToggleGreenScreen))

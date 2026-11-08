@@ -125,6 +125,8 @@ Strings germanStrings(const Strings& english) {
   s.packedMask = "Maske im Video";
   s.packedMaskHint = "Für Videos mit eigener Maske (DeoVR-Alpha). Folgt „_ALPHA“ im Dateinamen, außer hier eingestellt. Für dieses Video gespeichert.";
   s.packedMaskFormatHint = "Nur für Fisheye-Videos 3D nebeneinander. Wähle zuerst dieses Format.";
+  s.secondLayer = "Zweite Ebene der Maske";
+  s.secondLayerHint = "Die Maske dieses Videos hat eine zweite Ebene, die du ausblenden kannst. Für dieses Video gespeichert.";
   s.keyStrength = "Stärke";
   s.keySoftness = "Kanten";
   s.keySpill = "Grünstich";

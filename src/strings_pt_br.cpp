@@ -125,6 +125,8 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.packedMask = "Máscara no vídeo";
   s.packedMaskHint = "Para vídeos com máscara própria (alfa do DeoVR). Segue \"_ALPHA\" no nome do arquivo, a menos que seja definido aqui. Salvo para este vídeo.";
   s.packedMaskFormatHint = "Só para vídeo fisheye 3D lado a lado. Escolha esse formato primeiro.";
+  s.secondLayer = "Segunda camada da máscara";
+  s.secondLayerHint = "A máscara deste vídeo tem uma segunda camada que você pode ocultar. Salvo para este vídeo.";
   s.keyStrength = "Intensidade";
   s.keySoftness = "Bordas";
   s.keySpill = "Reflexo verde";

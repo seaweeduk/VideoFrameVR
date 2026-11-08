@@ -1017,6 +1017,8 @@ struct Strings {
   const char* packedMask;
   const char* packedMaskHint;
   const char* packedMaskFormatHint;
+  const char* secondLayer;  // a packed mask's hideable second layer (shown while on)
+  const char* secondLayerHint;
   const char* keyStrength;
   const char* keySoftness;
   const char* keySpill;

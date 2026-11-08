@@ -61,13 +61,14 @@ layout(constant_id = 0) const int kProjection = -1;  // 0: 180 or 360, 1: fishey
 layout(constant_id = 1) const int kSource = -1;
 // 0: no packed mask or green screen, 1: the packed mask (looked up first,
 // with transparent output in a common mode), 2: a green screen without
-// shrink (common modes only).
+// shrink (common modes only), 3: as 1 with its blue second layer shown.
 layout(constant_id = 2) const int kSeeThrough = -1;
 layout(constant_id = 3) const bool kSharpen = false;  // general pipelines: sharpening, for a strength above 0
 // Common modes: the colour balance (general pipelines always apply it).
 layout(constant_id = 4) const bool kBalance = false;
 const bool kCommon = kProjection >= 0;
-const bool kMaskFirst = kSeeThrough == 1;
+const bool kMaskRedBlue = kSeeThrough == 3;
+const bool kMaskFirst = kSeeThrough == 1 || kMaskRedBlue;
 
 #ifdef TP10
 #define tex tp10Bands[0]  // a Q10C frame's luma (video.glsl), always kYuv
@@ -156,16 +157,25 @@ void show(inout vec3 c, inout vec3 n[4], bool sharpened, EyeData e, uint flags) 
 // DeoVR's packed alpha at uv: each eye's mask, at alpha.xy of the frame,
 // sits centred on the middle of the top edge (left eye) or on the corners
 // (right eye) and wraps around the frame's edges (into the corners and gaps
-// next to the fisheye circles). Its red channel is opacity.
+// next to the fisheye circles). Its red channel is opacity. A second layer
+// in blue (SLR's layered masks) adds to it where shown: where the layers
+// meet, the decoder's half-size chroma leaves both a little low for a
+// pixel, which their overlap makes up, so no line shows between them.
 float packedAlpha(vec2 uv, EyeData e, vec2 dx, vec2 dy) {
   vec2 alphaScale = pc.draw.alpha.xy;
   vec2 alphaCenter = vec2(e.position.w < 0.5 ? 0.5 : 0.0, 0.0);
   vec2 m = uv - 0.5;
   if (length(m) > 0.5) return 0.0;
   vec2 maskUv = fract(alphaCenter + m * alphaScale);
+  // Compression leaves black a little above 0 and full red below 1.
+  if (kMaskRedBlue) {
+    // Display values: a decoded frame's straight from its planes.
+    vec3 s = isYuv() ? videoDisplay(tex, chromaTex, maskUv, source(), pc.draw.yuv, yuvMatrix())
+                     : linearToSrgb(textureGrad(tex, maskUv, dx * alphaScale, dy * alphaScale).rgb);
+    return smoothstep(0.08, 0.92, s.r + s.b + min(s.r, s.b));
+  }
   vec3 mask = isYuv() ? tap(maskUv) : textureGrad(tex, maskUv, dx * alphaScale, dy * alphaScale).rgb;
   float red = linearToSrgb(mask).r;
-  // Compression leaves black a little above 0 and full red below 1.
   return smoothstep(0.08, 0.92, red);
 }
 
@@ -275,7 +285,7 @@ void main() {
   }
 
   bool keyGreen = (flags & kKeyGreen) != 0u, alphaOut = (flags & kAlphaOut) != 0u;
-  bool packed = kSeeThrough < 0 ? (flags & kPackedAlpha) != 0u : kSeeThrough == 1;
+  bool packed = kSeeThrough < 0 ? (flags & kPackedAlpha) != 0u : kMaskFirst;
   bool keyed = kSeeThrough < 0 ? !packed && (flags & kChromaKey) != 0u : kSeeThrough == 2;
   if (kSeeThrough == 0 || (kSeeThrough < 0 && !keyGreen && !alphaOut)) {
     // No packed mask or green screen: the picture where there is one, else

@@ -156,6 +156,8 @@ class VideoPlayer {
   // Before GL reads glTexture(): acquires it for GL and makes its mipmaps
   // match the current frame, if they do not yet.
   bool prepareRead();
+  // ... acquires it for GL alone, to be read at its full size (MaskProbe).
+  bool prepareFullSizeRead();
 
   bool hasVideo() const { return video_.valid(); }
   // True from load() until the new file's first frame is in texture(); the

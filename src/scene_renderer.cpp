@@ -378,10 +378,11 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
     else pipelines_.bindTextures(cmd, v.texture, sampler, chroma);
   };
   // The general pipelines.
+  const MaskColours colours = v.seeThrough.maskColours;
   auto general = [&](bool screen, bool maskFirst) {
-    if (tp10) return pipelines_.tp10(screen, maskFirst, plainEye_);
-    if (q08c >= 0) return pipelines_.q08c(q08c, screen, maskFirst, plainEye_);
-    return pipeline(Pipelines::videoPipeline(screen, maskFirst, sharpen > 0.0f));
+    if (tp10) return pipelines_.tp10(screen, maskFirst, colours, plainEye_);
+    if (q08c >= 0) return pipelines_.q08c(q08c, screen, maskFirst, colours, plainEye_);
+    return pipeline(Pipelines::videoPipeline(screen, maskFirst, colours, sharpen > 0.0f));
   };
 
   if (v.format.projection == Projection::Flat) {
@@ -497,9 +498,12 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
         : q08c >= 0 ? static_cast<Pipelines::SurroundSource>(Pipelines::kYcbcr + q08c)
         : yuv       ? Pipelines::kPlanes
                     : Pipelines::kImage;
-    const auto cut = maskFirst            ? Pipelines::kPackedMask
+    const auto packed =
+        colours == MaskColours::RedBlue ? Pipelines::kPackedRedBlue : Pipelines::kPackedMask;
+    const auto cut = maskFirst            ? packed
                      : flags & kChromaKey ? Pipelines::kGreenScreen
                                           : Pipelines::kUncut;
+    // The other colours' cuts are made for fisheye alone: else the general one.
     common = pipelines_.surround(family, source, cut, plainEye_, balance);
   }
   bind(common ? common : general(false, maskFirst));

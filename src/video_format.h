@@ -69,8 +69,13 @@ float eyeDisplayAspect(const VideoFormat& format, float frameAspect);
 // ("_ALPHA", as DeoVR and SLR name them).
 bool hasPackedAlpha(const std::string& path);
 
+// Which of a packed mask's colours make it opaque: red (every mask), or red
+// and blue (a mask whose blue second layer is shown).
+enum class MaskColours { Red, RedBlue };
+
 // Where passthrough shows the room through a video (seeThrough() in see_through.h).
 struct SeeThrough {
   bool packedAlpha = false;  // DeoVR's packed alpha mask
+  MaskColours maskColours = MaskColours::Red;  // ... read so
   float greenKey = 0;        // else a keyed green screen: the greenness cut away (0 = none)
 };

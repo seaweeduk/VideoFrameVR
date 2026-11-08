@@ -125,6 +125,8 @@ Strings japaneseStrings(const Strings& english) {
   s.packedMask = "動画内のマスク";
   s.packedMaskHint = "独自のマスクを持つ動画用（DeoVR アルファ）。ここで設定しない限り、ファイル名の「_ALPHA」に従います。この動画に保存されます。";
   s.packedMaskFormatHint = "魚眼 3D 左右分割の動画専用です。先にその形式を選んでください。";
+  s.secondLayer = "マスクの第2レイヤー";
+  s.secondLayerHint = "この動画のマスクには、非表示にできる第2レイヤーがあります。この動画に保存されます。";
   s.keyStrength = "強度";
   s.keySoftness = "輪郭";
   s.keySpill = "色かぶり";

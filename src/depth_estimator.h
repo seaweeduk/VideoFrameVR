@@ -33,9 +33,16 @@ struct DepthPatch {
   int projection = 0;  // 0 = 180, 2 = fisheye
   float fisheyeFov = 0;
   bool flip = false, sbs = false;
-  bool alphaPacked = false;
+  // The packed mask, read as surround.frag's kSeeThrough: 1 its red, 3 red
+  // and blue (maskRule()); 0 = none.
+  int alphaPacked = 0;
   float alphaScale[2] = {};
   float greenKey = 0;
+  // MaskProbe's instead: rows 0.. of a width x height image cover the left
+  // eye's packed mask (inside its circle; -1 outside), the next ones the
+  // right eye's, one tap of the full-size picture per pixel, 1 where it has
+  // VideoCheck's blue, else 0 (no thumbnail).
+  bool maskProbe = false;
 };
 
 // Draws a DepthPatch from a frame that stays out of GL (DirectDepth).
