@@ -15,6 +15,16 @@ Sections, each only if it has lines, in this order: New, Improved, Fixed,
 Removed. Every line starts "- ", then optionally "[Frame] " or "[Desktop] ".
 -->
 
+## 0.3.0 · 2026-11-08
+### New
+- Support for a newer passthrough video format with two masked layers
+- Turn off Mask's second layer to hide male genitalia in supported videos
+### Improved
+- Green screen videos are detected faster
+### Fixed
+- [Frame] Playback could freeze after several quick seeks
+- [Frame] Some 8K HEVC and H.264 videos would not play after waking from sleep
+
 ## 0.2.0 · 2026-11-07
 ### New
 - Play videos from SFTP servers: any computer or NAS you can reach over SSH
