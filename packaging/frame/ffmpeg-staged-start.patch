@@ -20,23 +20,24 @@
  typedef struct V4L2m2mContext {
      char devname[PATH_MAX];
      int fd;
-@@ -114,6 +124,11 @@
+@@ -114,6 +124,13 @@
      /* req pkt */
      int req_pkt;
      int reorder_size;
 +    enum IrisStartup iris_startup;
 +    int64_t iris_startup_deadline;
 +    int64_t iris_seek_deadline;
++    // No usable SPS in the codec header: the first packet's decides.
++    int iris_sps_in_band;
 +    int iris_staged_eligible;
 +    struct v4l2_format iris_capture_format;
  
      /* Ext data sent */
      int extdata_sent;
-@@ -129,6 +144,15 @@
- 
+@@ -130,6 +147,15 @@
      struct dmabufs_ctl * db_ctl;
  } V4L2m2mContext;
-+
+ 
 +static inline int64_t ff_v4l2_iris_deadline(const V4L2m2mContext *s)
 +{
 +    if (s->iris_seek_deadline)
@@ -45,16 +46,17 @@
 +           s->iris_startup == IRIS_START_REAL_DRC ||
 +           s->iris_startup == IRIS_START_FIRST_FRAME ? s->iris_startup_deadline : 0;
 +}
- 
++
  typedef struct V4L2m2mPriv {
      AVClass *class;
+ 
 --- a/libavcodec/v4l2_m2m.c
 +++ b/libavcodec/v4l2_m2m.c
 @@ -227,6 +227,39 @@
      }
  
      ret = ff_v4l2_context_init(&s->output);
-+    if (ret == AVERROR(ENOMEM) && s->iris_staged_eligible && s->avctx &&
++    if (ret == AVERROR(ENOMEM) && (s->iris_staged_eligible || s->iris_sps_in_band) && s->avctx &&
 +        s->avctx->codec_id == AV_CODEC_ID_HEVC &&
 +        s->avctx->coded_width == 8192 &&
 +        (s->avctx->coded_height == 4096 || s->avctx->coded_height == 4320) &&
@@ -100,7 +102,15 @@
  #include "libavcodec/avcodec.h"
  #include "codec_internal.h"
  #include "libavcodec/decode.h"
-@@ -290,11 +291,16 @@
+@@ -50,6 +51,7 @@
+ #include "h264_parse.h"
+ #endif
+ #if CONFIG_HEVC_DECODER
++#include "h2645_parse.h"
+ #include "hevc_parse.h"
+ #endif
+ 
+@@ -290,11 +292,16 @@
          return ret;
      }
  
@@ -118,7 +128,78 @@
      }
      else {
          av_log(avctx, AV_LOG_TRACE, "VIDIOC_DECODER_CMD start OK\n");
-@@ -468,6 +474,14 @@
+@@ -464,10 +471,85 @@
+ // NQ_DRAINING     At EOS, dQ dest until EOS there too
+ // NQ_DEAD         Not running (do not retry, do not attempt capture dQ)
+ 
++#if CONFIG_HEVC_DECODER
++// Whether every SPS fits the staged start's pool, raising *reorder_size to
++// their deepest reference count. Main 10 allows 8-bit pictures, and the
++// level doesn't size the pool.
++static int iris_staged_sps_fit(const AVCodecContext * const avctx, const HEVCParamSets * const ps,
++                               const enum AVPixelFormat pix_fmt, int * const reorder_size)
++{
++    int found = 0, fit = 1;
++
++    for (unsigned int i = 0; i != HEVC_MAX_SPS_COUNT; ++i) {
++        const HEVCSPS *p = ps->sps_list[i];
++        if (!p)
++            continue;
++        found = 1;
++        if (p->width != avctx->coded_width || p->height != avctx->coded_height ||
++            p->pix_fmt != pix_fmt || p->chroma_format_idc != 1 ||
++            (p->bit_depth != 8 && p->bit_depth != 10) ||
++            p->bit_depth_chroma != p->bit_depth ||
++            (p->ptl.general_ptl.profile_idc != 2 &&
++             (p->ptl.general_ptl.profile_idc != 1 || p->bit_depth != 8)) ||
++            p->max_sub_layers < 1 || p->max_sub_layers > 7) {
++            fit = 0;
++            continue;
++        }
++        for (unsigned int j = 0; j < p->max_sub_layers; ++j) {
++            const int dpb = p->temporal_layer[j].max_dec_pic_buffering;
++            if (dpb < 1 || dpb > 6)
++                fit = 0;
++            *reorder_size = FFMAX(*reorder_size, dpb);
++        }
++    }
++    return found && fit;
++}
++
++// For a codec header without a usable SPS (hev1, or an hvcC missing its
++// VPS): the first packet's parameter sets. That packet is a keyframe, after
++// a start or a seek alike.
++static int iris_staged_packet_fits(AVCodecContext * const avctx, V4L2m2mContext * const s,
++                                   const AVPacket * const pkt)
++{
++    HEVCParamSets ps = {0};
++    H2645Packet h = {0};
++    int ret = ff_h2645_packet_split(&h, pkt->data, pkt->size, avctx, 0, 0, AV_CODEC_ID_HEVC, 1, 0);
++    int fit = 0;
++
++    // VPSs first: an SPS needs its VPS, which may follow it. Any set that
++    // can't be read fails the packet, so no SPS goes unchecked.
++    for (int sps = 0; ret >= 0 && sps < 2; ++sps) {
++        for (int i = 0; ret >= 0 && i < h.nb_nals; ++i) {
++            H2645NAL *nal = &h.nals[i];
++            if (nal->nuh_layer_id > 0 || nal->type != (sps ? HEVC_NAL_SPS : HEVC_NAL_VPS))
++                continue;
++            ret = sps ? ff_hevc_decode_nal_sps(&nal->gb, avctx, &ps, 0) :
++                        ff_hevc_decode_nal_vps(&nal->gb, avctx, &ps);
++        }
++    }
++    if (ret >= 0) {
++        s->reorder_size = 0;
++        fit = iris_staged_sps_fit(avctx, &ps, ((V4L2m2mPriv *)avctx->priv_data)->source_pix_fmt,
++                                  &s->reorder_size);
++    }
++    ff_h2645_packet_uninit(&h);
++    ff_hevc_ps_uninit(&ps);
++    return fit;
++}
++#endif
++
+ static int try_enqueue_src(AVCodecContext * const avctx, V4L2m2mContext * const s, const int do_not_get)
  {
      int ret;
  
@@ -133,7 +214,7 @@
      // If we don't already have a coded packet - get a new one
      // We will already have a coded pkt if the output Q was full last time we
      // tried to Q it
-@@ -559,6 +573,29 @@
+@@ -559,6 +641,38 @@
      if ((ret = check_output_streamon(avctx, s)) != 0)
          return ret;
  
@@ -144,6 +225,15 @@
 +            .size = ten ? sizeof(iris_bootstrap_10) : sizeof(iris_bootstrap_8),
 +            .pts = AV_NOPTS_VALUE, .dts = AV_NOPTS_VALUE,
 +        };
++#if CONFIG_HEVC_DECODER
++        if (s->iris_sps_in_band) {
++            if (!iris_staged_packet_fits(avctx, s, &s->buf_pkt)) {
++                av_log(avctx, AV_LOG_ERROR, "Iris staged startup: the stream's SPS doesn't fit\n");
++                return AVERROR(ENOSYS);
++            }
++            s->iris_sps_in_band = 0;
++        }
++#endif
 +        if (!s->output_drm || s->reorder_size < 1 || s->reorder_size > 6)
 +            return AVERROR(ENOSYS);
 +        if (!s->capture.streamon) {
@@ -163,18 +253,18 @@
      if (s->extdata_sent)
          ret = ff_v4l2_context_enqueue_packet(&s->output, &s->buf_pkt, NULL, 0);
      else
-@@ -576,6 +613,10 @@
-         if (ret) {
+@@ -577,6 +691,10 @@
              av_log(avctx, AV_LOG_ERROR, "Packet enqueue failure: err=%d\n", ret);
              return ret;
-+        }
+         }
 +        if (s->iris_startup == IRIS_START_REAL) {
 +            s->iris_startup = IRIS_START_REAL_DRC;
 +            s->iris_startup_deadline = av_gettime_relative() + 2000000;
-         }
++        }
      }
  
-@@ -594,12 +635,31 @@
+     // Start if we haven't
+@@ -594,12 +712,31 @@
  static int qbuf_wait(AVCodecContext * const avctx, V4L2Context * const ctx)
  {
      int rv = 0;
@@ -208,7 +298,7 @@
              av_log(avctx, AV_LOG_ERROR, "Cond wait failure: %s\n", av_err2str(rv));
              break;
          }
-@@ -651,7 +711,7 @@
+@@ -651,7 +788,7 @@
              // hint that we want a frame but not good enough to require it in
              // all cases; however if it has got > 31 that exceeds its margin of
              // error so require a frame to prevent ridiculous levels of latency
@@ -217,7 +307,7 @@
                  src_rv == NQ_Q_FULL ? -1 :
                  src_rv == NQ_DRAINING ? 300 :
                  prefer_dq ? (s->running && pending > 31 ? 100 : 5) : 0;
-@@ -672,6 +732,8 @@
+@@ -672,6 +809,8 @@
              }
  
              if (dst_rv == 0) {
@@ -226,7 +316,7 @@
                  set_best_effort_pts(avctx, &s->pts_stat, frame);
                  if (!s->running) {
                      s->running = 1;
-@@ -679,7 +741,8 @@
+@@ -679,7 +818,8 @@
                  }
              }
  
@@ -236,7 +326,7 @@
                  av_log(avctx, AV_LOG_WARNING, "Timeout in drain - assume EOF");
                  dst_rv = AVERROR_EOF;
                  s->capture.done = 1;
-@@ -692,8 +755,12 @@
+@@ -692,8 +832,12 @@
                         s->draining, s->capture.done, dst_rv);
              // Preserve a failed capture allocation instead of consuming more
              // packets and replacing ENOMEM with the stopped queue's EOF.
@@ -250,44 +340,25 @@
                  return dst_rv;
              }
          }
-@@ -1004,6 +1071,7 @@
+@@ -1004,6 +1148,8 @@
  parse_extradata(AVCodecContext * const avctx, V4L2m2mContext * const s)
  {
      s->reorder_size = 0;
 +    s->iris_staged_eligible = 0;
++    s->iris_sps_in_band = avctx->codec_id == AV_CODEC_ID_HEVC;
  
      if (!avctx->extradata || !avctx->extradata_size)
          return;
-@@ -1070,6 +1138,28 @@
+@@ -1070,6 +1216,8 @@
                      ((V4L2m2mPriv *)avctx->priv_data)->source_pix_fmt = sps->pix_fmt;
                      avctx->level   = sps->ptl.general_ptl.level_idc;
                      s->reorder_size = sps->temporal_layer[sps->max_sub_layers - 1].max_dec_pic_buffering;
-+                    s->iris_staged_eligible = 1;
-+                    for (i = 0; i != HEVC_MAX_SPS_COUNT; ++i) {
-+                        const HEVCSPS *p = ps.sps_list[i];
-+                        if (!p)
-+                            continue;
-+                        if (p->width != avctx->coded_width || p->height != avctx->coded_height ||
-+                            p->pix_fmt != sps->pix_fmt || p->chroma_format_idc != 1 ||
-+                            (p->bit_depth != 8 && p->bit_depth != 10) ||
-+                            p->bit_depth_chroma != p->bit_depth ||
-+                            p->ptl.general_ptl.profile_idc != (p->bit_depth == 10 ? 2 : 1) ||
-+                            p->ptl.general_ptl.level_idc > 186 ||
-+                            p->max_sub_layers < 1 || p->max_sub_layers > 7) {
-+                            s->iris_staged_eligible = 0;
-+                            continue;
-+                        }
-+                        for (unsigned int j = 0; j < p->max_sub_layers; ++j) {
-+                            const int dpb = p->temporal_layer[j].max_dec_pic_buffering;
-+                            if (dpb < 1 || dpb > 6)
-+                                s->iris_staged_eligible = 0;
-+                            s->reorder_size = FFMAX(s->reorder_size, dpb);
-+                        }
-+                    }
++                    s->iris_staged_eligible = iris_staged_sps_fit(avctx, &ps, sps->pix_fmt, &s->reorder_size);
++                    s->iris_sps_in_band = 0;
                  }
              }
              ff_hevc_ps_uninit(&ps);
-@@ -1167,6 +1257,23 @@
+@@ -1167,6 +1315,23 @@
      // Get format converts capture.av_pix_fmt back into a V4L2 format in the context
      if ((rv = ff_v4l2_context_get_format(&s->capture, 0)) != 0)
          goto error;
@@ -311,7 +382,7 @@
      rv = ff_v4l2_context_set_format(&s->capture);
  
  error:
-@@ -1321,14 +1428,28 @@
+@@ -1321,14 +1486,28 @@
      int ret = 0;
  
      av_packet_unref(&s->buf_pkt);
@@ -340,7 +411,7 @@
              if (errno != EINTR) {
                  ret = AVERROR(errno);
                  goto done;
-@@ -1343,7 +1464,7 @@
+@@ -1343,7 +1522,7 @@
              ret != AVERROR_INVALIDDATA && ret != AVERROR(ENOSPC))
              goto done;
      }
@@ -349,7 +420,7 @@
          ret = AVERROR(ETIMEDOUT);
          goto done;
      }
-@@ -1360,20 +1481,27 @@
+@@ -1360,20 +1539,27 @@
      }
      cmd.cmd = V4L2_DEC_CMD_START;
      while (ioctl(s->fd, VIDIOC_DECODER_CMD, &cmd) < 0) {
@@ -397,7 +468,7 @@
  #include "libavcodec/avcodec.h"
  #include "decode.h"
  #include "v4l2_buffers.h"
-@@ -324,18 +325,87 @@
+@@ -324,12 +325,16 @@
      int reinit;
      struct v4l2_format cap_fmt = s->capture.format;
  
@@ -415,11 +486,10 @@
      }
  
      if (((V4L2m2mPriv *)avctx->priv_data)->capture_10bit &&
-         ff_v4l2_get_format_pixelformat(&cap_fmt) != v4l2_fourcc('Q','1','0','C')) {
-         av_log(avctx, AV_LOG_ERROR, "Iris changed Main 10 capture away from Q10C\n");
+@@ -338,6 +343,71 @@
          return AVERROR(EINVAL);
-+    }
-+
+     }
+ 
 +    if (s->iris_startup) {
 +        const struct v4l2_pix_format_mplane *p = &cap_fmt.fmt.pix_mp;
 +        const struct v4l2_pix_format_mplane *pool = &s->iris_capture_format.fmt.pix_mp;
@@ -483,9 +553,11 @@
 +            }
 +        }
 +        return 1;
-     }
- 
++    }
++
      get_default_selection(&s->capture, &s->capture.selection);
+ 
+     reinit = ctx_resolution_changed(&s->capture, &cap_fmt);
 @@ -482,13 +552,17 @@
  
      while (ioctl(m->fd, VIDIOC_DQBUF, &buf) != 0) {
@@ -671,11 +743,10 @@
          goto fail_release;
      }
  
-@@ -1300,6 +1409,14 @@
-         if (ret) {
+@@ -1301,6 +1410,14 @@
              av_log(logger(ctx), AV_LOG_ERROR, "%s buffer[%d] initialization (%s)\n", ctx->name, i, av_err2str(ret));
              goto fail_release;
-+        }
+         }
 +        if (s->iris_startup && !V4L2_TYPE_IS_OUTPUT(ctx->type)) {
 +            const V4L2Buffer *buf = (V4L2Buffer *)ctx->bufrefs[i]->data;
 +            if (buf->num_planes != 1 ||
@@ -683,9 +754,10 @@
 +                ret = AVERROR(EINVAL);
 +                goto fail_release;
 +            }
-         }
++        }
      }
  
+     av_log(logger(ctx), AV_LOG_DEBUG, "%s: %s %02d buffers initialized: %04ux%04u, sizeimage %08u, bytesperline %08u\n", ctx->name,
 @@ -1380,6 +1497,19 @@
          goto fail_unlock;
      }
