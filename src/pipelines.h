@@ -2,6 +2,7 @@
 
 #include "gpu_context.h"
 #include "texture.h"
+#include "video_format.h"
 
 #include <vulkan/vulkan.h>
 
@@ -19,8 +20,9 @@ class Pipelines {
  public:
   // kSurround... : surround.frag's general pipelines (the common modes have
   // their own, surround()); kSurroundMask with the packed mask looked up
-  // first, for packed alpha passthrough; the ...Sharpen ones: the video
-  // shaders with sharpening, for a strength above 0 (videoPipeline()).
+  // first, for packed alpha passthrough (...RedBlue: its blue second layer
+  // too, MaskColours); the ...Sharpen ones: the video shaders with
+  // sharpening, for a strength above 0 (videoPipeline()).
   enum Id {
     kSurround,
     kScreen,
@@ -31,12 +33,16 @@ class Pipelines {
     kSurroundSharpen,
     kSurroundMaskSharpen,
     kScreenSharpen,
+    kSurroundMaskRedBlue,
+    kSurroundMaskRedBlueSharpen,
     kCount
   };
   // The video's pipeline: the surround or the flat screen, with the mask
-  // first or not (surround only), sharpened or not.
-  static Id videoPipeline(bool screen, bool maskFirst, bool sharpen) {
+  // first (read with these colours) or not (surround only), sharpened or not.
+  static Id videoPipeline(bool screen, bool maskFirst, MaskColours colours, bool sharpen) {
     if (screen) return sharpen ? kScreenSharpen : kScreen;
+    if (maskFirst && colours == MaskColours::RedBlue)
+      return sharpen ? kSurroundMaskRedBlueSharpen : kSurroundMaskRedBlue;
     if (maskFirst) return sharpen ? kSurroundMaskSharpen : kSurroundMask;
     return sharpen ? kSurroundSharpen : kSurround;
   }
@@ -55,8 +61,9 @@ class Pipelines {
   // each siting's sampler is in its own set layout).
   enum SurroundSource { kImage, kPlanes, kTp10, kYcbcr, kSourceCount = kYcbcr + kQ08cSitings };
   // No packed mask or green screen; the packed mask, with transparent output
-  // only; a green screen without shrink.
-  enum SurroundCut { kUncut, kPackedMask, kGreenScreen, kCutCount };
+  // only; a green screen without shrink; the packed mask read in its other
+  // colours (MaskColours), fisheye only (where a packed mask comes).
+  enum SurroundCut { kUncut, kPackedMask, kGreenScreen, kPackedRedBlue, kCutCount };
   static constexpr uint32_t kMaxConstants = 5;
   // A pipeline's shaders (embedded SPIR-V) and fixed state.
   struct Desc {
@@ -84,12 +91,13 @@ class Pipelines {
   // again for its float images, and its blur.
   bool initGlass(VkRenderPass glassPass);
   // The video's pipelines for Q10C decoder frames (Frame, DirectVideo): the
-  // unsharpened surround (its common modes too), its mask-first version and
-  // the screen, built for TP10 row bands, with their own layout (setLayout, a
-  // descriptor buffer's, and the same push constants).
+  // unsharpened surround (its common modes too), its mask-first versions
+  // (one for each MaskColours) and the screen, built for TP10 row bands,
+  // with their own layout (setLayout, a descriptor buffer's, and the same
+  // push constants).
   bool initTp10(VkDescriptorSetLayout setLayout);
-  VkPipeline tp10(bool screen, bool maskFirst, bool plain) const {
-    const int i = screen ? 2 : maskFirst ? 1 : 0;
+  VkPipeline tp10(bool screen, bool maskFirst, MaskColours colours, bool plain) const {
+    const int i = directPipeline(screen, maskFirst, colours);
     return plain && tp10Plain_[i] ? tp10Plain_[i] : tp10_[i];
   }
   VkPipelineLayout tp10Layout() const { return tp10Layout_; }
@@ -97,8 +105,8 @@ class Pipelines {
   // sampler: a set for each chroma siting, whose immutable sampler is in its
   // set layout (setLayouts, kQ08cSitings push sets'; binding 1 unused).
   bool initQ08c(const VkDescriptorSetLayout* setLayouts);
-  VkPipeline q08c(int siting, bool screen, bool maskFirst, bool plain) const {
-    const int i = screen ? 2 : maskFirst ? 1 : 0;
+  VkPipeline q08c(int siting, bool screen, bool maskFirst, MaskColours colours, bool plain) const {
+    const int i = directPipeline(screen, maskFirst, colours);
     return plain && q08cPlain_[siting][i] ? q08cPlain_[siting][i] : q08c_[siting][i];
   }
   // Pushes a Q08C frame's image for the pipelines of its siting.
@@ -156,12 +164,21 @@ class Pipelines {
   // failed (those made are kept, for the destructor).
   bool createAll(const std::vector<Job>& jobs);
   bool createDummy();
+  // A decoder frame's general pipelines (tp10(), q08c()): the surround, its
+  // mask-first version, the screen, then the mask-first versions for the
+  // mask's other colours.
+  enum { kDirectSurround, kDirectMask, kDirectScreen, kDirectMaskRedBlue, kDirectCount };
+  static int directPipeline(bool screen, bool maskFirst, MaskColours colours) {
+    if (screen) return kDirectScreen;
+    if (!maskFirst) return kDirectSurround;
+    return colours == MaskColours::RedBlue ? kDirectMaskRedBlue : kDirectMask;
+  }
   // Makes decoder frames' own layout (setLayout and the same push constants)
-  // and adds their general pipelines: the surround, its mask-first version
-  // and the screen.
-  bool addDirect(std::vector<Job>& jobs, VkDescriptorSetLayout setLayout, const Desc (&descs)[3],
-                 const char* const (&names)[3], VkPipelineLayout& layout,
-                 VkPipeline (&pipelines)[3], VkPipeline (&plain)[3]);
+  // and adds their general pipelines (kDirect...).
+  bool addDirect(std::vector<Job>& jobs, VkDescriptorSetLayout setLayout,
+                 const Desc (&descs)[kDirectCount], const char* const (&names)[kDirectCount],
+                 VkPipelineLayout& layout, VkPipeline (&pipelines)[kDirectCount],
+                 VkPipeline (&plain)[kDirectCount]);
 
   GpuContext* gpu_ = nullptr;
   VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
@@ -174,9 +191,9 @@ class Pipelines {
   VkPipeline foveation_[2] = {};
   VkRenderPass eyePass_ = VK_NULL_HANDLE, plainEyePass_ = VK_NULL_HANDLE;
   VkPipelineLayout tp10Layout_ = VK_NULL_HANDLE;
-  VkPipeline tp10_[3] = {}, tp10Plain_[3] = {};
+  VkPipeline tp10_[kDirectCount] = {}, tp10Plain_[kDirectCount] = {};
   VkPipelineLayout q08cLayout_[kQ08cSitings] = {};
-  VkPipeline q08c_[kQ08cSitings][3] = {}, q08cPlain_[kQ08cSitings][3] = {};
+  VkPipeline q08c_[kQ08cSitings][kDirectCount] = {}, q08cPlain_[kQ08cSitings][kDirectCount] = {};
   // Without and with the colour balance; for the eye pass and the plain one.
   VkPipeline surround_[2][2][kProjectionCount][kSourceCount][kCutCount] = {};
   VkSampler samplers_[kSamplerCount] = {};

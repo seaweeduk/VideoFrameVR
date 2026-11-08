@@ -1,6 +1,6 @@
 #include "see_through.h"
 
-#include "green_screen_check.h"
+#include "video_check.h"
 
 bool packedMask(const std::string& path, const VideoSettings& video) {
   return video.packedMask.value_or(hasPackedAlpha(path));
@@ -21,11 +21,17 @@ bool maskShown(bool alphaPacked, const VideoFormat& format) {
 
 }  // namespace
 
+MaskColours maskColours(const VideoSettings& video) {
+  return video.maskLayersFound && !video.secondLayerHidden ? MaskColours::RedBlue
+                                                           : MaskColours::Red;
+}
+
 SeeThrough seeThrough(bool passthrough, bool alphaPacked, const VideoFormat& format,
-                      const GreenScreen& key) {
+                      const GreenScreen& key, MaskColours colours) {
   SeeThrough s;
   if (!passthrough) return s;
   s.packedAlpha = maskShown(alphaPacked, format);
+  if (s.packedAlpha) s.maskColours = colours;
   if (!s.packedAlpha && key.on) s.greenKey = 0.55f - 0.45f * key.strength / 100.0f;
   return s;
 }
@@ -41,5 +47,11 @@ AutoPassthrough autoPassthrough(const std::string& path, const VideoFormat& form
 bool greenCheckWanted(const std::string& path, const VideoFormat& format,
                       const VideoSettings& video) {
   return !video.passthroughChosen && !maskShown(packedMask(path, video), format) &&
-         video.greenCheckVersion < GreenScreenCheck::kVersion;
+         video.greenCheckVersion < VideoCheck::kGreenVersion;
+}
+
+bool layerCheckWanted(const std::string& path, const VideoFormat& format,
+                      const VideoSettings& video) {
+  return maskShown(packedMask(path, video), format) && !video.maskLayersFound &&
+         video.maskLayersVersion < VideoCheck::kLayersVersion;
 }

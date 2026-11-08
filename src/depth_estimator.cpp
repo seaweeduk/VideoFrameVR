@@ -8,6 +8,12 @@
 
 namespace {
 
+// How the shaders read a packed mask (DepthPatch::alphaPacked).
+int maskRule(const SeeThrough& s) {
+  if (!s.packedAlpha) return 0;
+  return s.maskColours == MaskColours::RedBlue ? 3 : 1;
+}
+
 constexpr float kDegree = 3.14159265f / 180.0f;
 // Candidate depths: half-convergence angles (each camera's turn
 // inward from parallel) from kAngleStart in steps of kAngleRange / accuracy,
@@ -86,7 +92,9 @@ uniform float uFisheyeFov;
 uniform bool uFlip;
 uniform vec2 uEyeScale;
 uniform vec2 uEyeOffset;
-uniform bool uAlphaPacked;  // DeoVR's packed mask: centre and scale in the frame
+// DeoVR's packed mask, read as surround.frag's kSeeThrough (1: red, 3: red
+// and blue; 0 = none): centre and scale in the frame
+uniform int uAlphaPacked;
 uniform vec2 uAlphaCenter;
 uniform vec2 uAlphaScale;
 uniform float uGreenKey;    // > 0: a green screen, keyed above this greenness
@@ -126,11 +134,17 @@ void main() {
                    dy * uEyeScale);
   float l = pow(max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 0.0), 1.0 / 2.2);
   bool clear = false;
-  if (uMode == 0 && uAlphaPacked) {
+  if (uMode == 0 && uAlphaPacked != 0) {
     vec2 m = uv - 0.5;
-    // Red below 0.5 in display values.
-    clear = picture(fract(uAlphaCenter + m * uAlphaScale), dx * uAlphaScale, dy * uAlphaScale).r <
-            0.214;
+    vec3 mask = picture(fract(uAlphaCenter + m * uAlphaScale), dx * uAlphaScale, dy * uAlphaScale);
+    // Red below 0.5 in display values; or its colours, as the scene adds them up.
+    if (uAlphaPacked == 1) {
+      clear = mask.r < 0.214;
+    } else {
+      vec3 v = clamp(mask, 0.0, 1.0);  // to display values, as the scene reads them
+      vec3 e = mix(12.92 * v, 1.055 * pow(v, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, v));
+      clear = e.r + e.b + min(e.r, e.b) < 0.5;
+    }
   } else if (uMode == 0 && uGreenKey > 0.0) {
     vec3 e = pow(max(c, 0.0), vec3(1.0 / 2.2));
     clear = (e.g - max(e.r, e.b)) / max(e.g, 0.04) > uGreenKey;
@@ -584,7 +598,7 @@ bool DepthEstimator::request(const DepthRequest& q) {
     patch.fisheyeFov = fisheyeFov;
     patch.flip = q.flip;
     patch.sbs = sbs;
-    patch.alphaPacked = q.seeThrough.packedAlpha;
+    patch.alphaPacked = maskRule(q.seeThrough);
     patch.alphaScale[0] = 0.4f * (sbs ? 0.5f : 1.0f);
     patch.alphaScale[1] = 0.4f * (sbs ? 1.0f : 0.5f);
     patch.greenKey = q.seeThrough.greenKey;
@@ -620,7 +634,7 @@ bool DepthEstimator::request(const DepthRequest& q) {
   glUniform1f(uFisheyeFov_, fisheyeFov);
   glUniform1i(uFlip_, q.flip);
   glUniform2f(uEyeScale_, sbs ? 0.5f : 1.0f, sbs ? 1.0f : 0.5f);
-  glUniform1i(uAlphaPacked_, q.seeThrough.packedAlpha);
+  glUniform1i(uAlphaPacked_, maskRule(q.seeThrough));
   glUniform2f(uAlphaScale_, 0.4f * (sbs ? 0.5f : 1.0f), 0.4f * (sbs ? 1.0f : 0.5f));
   glUniform1f(uGreenKey_, q.seeThrough.greenKey);
   // Both eyes over the same angles; rows 0.. left, then right, then the thumbnail.

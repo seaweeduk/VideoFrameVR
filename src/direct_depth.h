@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-// Automatic focus's patches (DepthEstimator) from the decoded frames mpv
+// Automatic focus's patches (DepthEstimator), or MaskProbe's, from the decoded frames mpv
 // hands out (Frame, docs/vulkan-renderer.md 11), which stay out of GL: an
 // import there kept a decoder buffer after its frames were gone, and with it
 // room the decoder's next session needed. Drawn by Vulkan with the GL
@@ -26,7 +26,9 @@ class DirectDepth : public DepthPatchDrawer {
 
   // False (and nothing drawn) unless direct is available. Q10C and Q08C
   // frames need direct to sample them (acceptsQ10c(), acceptsQ08c()) by then.
-  bool init(GpuContext& gpu, DirectVideo& direct);
+  // Patches up to width x rows (with their thumbnail) fit.
+  bool init(GpuContext& gpu, DirectVideo& direct, int width = DepthEstimator::kMaxPatchWidth,
+            int rows = DepthEstimator::kMaxPatchRows);
   // The drawer for automatic focus to use with frame (the shown one), or
   // nullptr if there is none or it cannot be drawn.
   DepthPatchDrawer* source(DirectFrame* frame);
@@ -59,5 +61,6 @@ class DirectDepth : public DepthPatchDrawer {
   DirectFrame* source_ = nullptr;  // the frame source() was last asked for
   DirectFrame* frame_ = nullptr;   // the queued draw's, pinned until submitted
   DepthPatch patch_;
+  uint32_t width_ = 0, rows_ = 0;  // the image's
   uint64_t done_ = 0;  // the frame timeline value of the submitted draw (0: none)
 };

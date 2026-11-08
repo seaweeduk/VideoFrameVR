@@ -14,7 +14,7 @@
 #include "frame_timer.h"
 #include "gaze_notice.h"
 #include "hints.h"
-#include "green_screen_check.h"
+#include "video_check.h"
 #include "removable_drives.h"
 #include "room_light.h"
 #include "gl_interop.h"
@@ -22,6 +22,7 @@
 #include "gpu_context.h"
 #include "library.h"
 #include "library_index.h"
+#include "mask_probe.h"
 #include "menu.h"
 #include "mirror_window.h"
 #include "motion.h"
@@ -77,6 +78,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -756,9 +758,13 @@ int run(GLFWwindow* window, const Options& opts) {
   double softwareSince = -1;       // the video has played in software decoding since
   // Passthrough switching itself on for videos made for it (see_through.h):
   // once per video, when its size and settings are known.
-  GreenScreenCheck greenCheck;
+  // The green screen check, or the mask layer check for a video with a
+  // packed mask (video_check.h).
+  VideoCheck videoCheck;
   bool passthroughSettled = false;
-  double greenCheckAt = 0;  // glfwGetTime() the check starts, a moment after the video opens
+  double videoCheckAt = 0;  // glfwGetTime() the check starts, a moment after the video opens
+  VideoCheck::Kind videoCheckKind = VideoCheck::Kind::GreenScreen;
+  std::set<std::string> layersSeen;  // videos whose mask's second layer MaskProbe found
   const char* passthroughWhy = nullptr;  // the notice's first line
   double passthroughShownUntil = 0;
   // The colour balance: the video's own (app.video.balance, saved with it),
@@ -802,6 +808,13 @@ int run(GLFWwindow* window, const Options& opts) {
   switchReadout(showPerformance);
   Autofocus autofocus;  // without it, only manual stereo focus
   autofocus.init();
+  // A packed mask's second layer showing late (mask_probe.h), from GL or
+  // from frames handed out.
+  MaskProbe maskProbe;
+  const bool maskProbeReady = maskProbe.init();
+  DirectDepth maskProbeDirect;
+  const bool maskProbeDirectReady =
+      direct.available() && maskProbeDirect.init(gpu, direct, MaskProbe::kGrid, 2 * MaskProbe::kGrid);
   FocusTargetSelector focusTargets;  // head direction or eye gaze
   FocusMarker focusMarker;
   if (!focusMarker.init(uploader)) return 1;
@@ -1154,7 +1167,7 @@ int run(GLFWwindow* window, const Options& opts) {
     awaitingResume = awaitingRecord && settings.resume && !isStream(path) && !isPhotoFile(path);
     resolvedResume = -1;
     passthroughSettled = false;
-    greenCheckAt = 0;
+    videoCheckAt = 0;
     passthroughShownUntil = 0;
     opacityTwist.cancel();  // a twist under way was the last video's
     opacityShownUntil = 0;
@@ -1779,6 +1792,12 @@ int run(GLFWwindow* window, const Options& opts) {
         std::printf("Passthrough: mask in the video %s\n", on ? "on" : "off");
         break;
       }
+      case MenuCommand::ToggleSecondLayer:
+        app.video.secondLayerHidden = !app.video.secondLayerHidden;
+        storeVideo(VideoSettings::kSecondLayer);
+        std::printf("Passthrough: the mask's second layer %s\n",
+                    app.video.secondLayerHidden ? "hidden" : "shown");
+        break;
       case MenuCommand::ToggleGreenScreen:
       case MenuCommand::SetKeyStrength:
       case MenuCommand::SetKeySoftness:
@@ -2312,7 +2331,15 @@ int run(GLFWwindow* window, const Options& opts) {
       const std::string& path = app.currentFile;
       if (autoPassthroughOn && !isPhotoFile(path) && !isStream(path)) {
         passthroughByItself(autoPassthrough(path, app.format, app.video));
-        if (greenCheckWanted(path, app.format, app.video)) greenCheckAt = glfwGetTime() + 2.0;
+        if (greenCheckWanted(path, app.format, app.video)) {
+          videoCheckAt = glfwGetTime() + 2.0;
+          videoCheckKind = VideoCheck::Kind::GreenScreen;
+        }
+      }
+      // Whatever the setting: a mask's second layer shows whenever passthrough does.
+      if (!isPhotoFile(path) && !isStream(path) && layerCheckWanted(path, app.format, app.video)) {
+        videoCheckAt = glfwGetTime() + 2.0;
+        videoCheckKind = VideoCheck::Kind::MaskLayers;
       }
     }
     if (RemovableDrives::Change change; drives.poll(change)) {
@@ -2354,24 +2381,28 @@ int run(GLFWwindow* window, const Options& opts) {
     offline.watchStash(stash && stash->catalog() &&
                        (stash->catalog()->stats().streamed > 0 || !offline.downServers().empty()));
     for (const Offline::Download& d : downloaded) library.addCopy(d.path, d.oshash, d.size, d.mtime);
-    if (greenCheckAt > 0 && glfwGetTime() >= greenCheckAt) {
-      greenCheckAt = 0;
-      greenCheck.start(app.currentFile, app.format.stereo);
+    if (videoCheckAt > 0 && glfwGetTime() >= videoCheckAt) {
+      videoCheckAt = 0;
+      videoCheck.start(app.currentFile, app.format.stereo, videoCheckKind);
     }
-    {
-      std::string checked;
-      bool found = false;
-      if (greenCheck.result(checked, found)) {
-        // Kept for the video, even if another plays by now: it runs once.
-        VideoSettings result;
-        result.greenCheckVersion = GreenScreenCheck::kVersion;
-        result.greenScreenFound = found;
-        library.setSettings(checked, result, VideoSettings::kGreenCheck);
-        if (checked == app.currentFile) {
+    if (VideoCheck::Result checked; videoCheck.result(checked)) {
+      // Kept for the video, even if another plays by now: it runs once.
+      VideoSettings result;
+      const bool current = checked.path == app.currentFile;
+      if (checked.kind == VideoCheck::Kind::GreenScreen) {
+        result.greenCheckVersion = VideoCheck::kGreenVersion;
+        result.greenScreenFound = checked.found;
+        library.setSettings(checked.path, result, VideoSettings::kGreenCheck);
+        if (current) {
           app.video.take(result, VideoSettings::kGreenCheck);
           if (autoPassthroughOn)
-            passthroughByItself(autoPassthrough(checked, app.format, app.video));
+            passthroughByItself(autoPassthrough(checked.path, app.format, app.video));
         }
+      } else if (!layersSeen.count(checked.path)) {  // else found while it played
+        result.maskLayersVersion = VideoCheck::kLayersVersion;
+        result.maskLayersFound = checked.found;
+        library.setSettings(checked.path, result, VideoSettings::kMaskLayers);
+        if (current) app.video.take(result, VideoSettings::kMaskLayers);
       }
     }
 
@@ -3010,7 +3041,25 @@ int run(GLFWwindow* window, const Options& opts) {
       // Frame draws the video whole.
       focusIn.seeThrough = seeThrough(alphaPassthrough || keyPassthrough,
                                       packedMask(app.currentFile, app.video), app.format,
-                                      app.video.greenScreen);
+                                      app.video.greenScreen,
+                                      maskColours(app.video));
+      // A second layer not found yet (by the keyframe check, which may not
+      // have run or answered): looked for while the video plays.
+      const bool probeWanted =
+          maskProbeReady && !photo && focusIn.seeThrough.packedAlpha &&
+          !app.video.maskLayersFound && !player.playback().paused && !player.seeking() &&
+          !player.loading();
+      DepthPatchDrawer* probeDrawer =
+          !photo && !videoTexture && maskProbeDirectReady
+              ? maskProbeDirect.source(player.directCurrent())
+              : nullptr;
+      if (maskProbe.update(now, app.currentFile, probeWanted, videoTexture,
+                           [&player] { return player.prepareFullSizeRead(); }, probeDrawer)) {
+        app.video.maskLayersVersion = VideoCheck::kLayersVersion;
+        app.video.maskLayersFound = true;
+        layersSeen.insert(app.currentFile);
+        storeVideo(VideoSettings::kMaskLayers);
+      }
       focusIn.now = now;
       focusIn.target = focusTargets.update(settings.focusPrefs.eyeTracking, xr.gaze(), headRot,
                                            now, settings.focusPrefs.gazeCorrect);
@@ -3095,6 +3144,8 @@ int run(GLFWwindow* window, const Options& opts) {
       view.greenScreen = app.video.greenScreen;
       view.packedAlpha = packedMask(app.currentFile, app.video);
       view.maskFormat = maskFormat(app.format);
+      view.maskLayers = app.video.maskLayersFound;
+      view.secondLayerHidden = app.video.secondLayerHidden;
       view.opacity = app.video.opacity;
       view.opacityApplies = canBlend;
       view.subtitleSize = settings.subtitleSize;
@@ -3522,6 +3573,7 @@ int run(GLFWwindow* window, const Options& opts) {
     xr.releaseEyes();
     xr.endFrame(drawn);
     directDepth.submit();  // after the frame's work, which it never delays
+    if (maskProbeDirectReady) maskProbeDirect.submit();
     timer.lap(FrameTimer::XrEnd);
     mirror.present();  // after the XR frame, which never waits for the desktop
     timer.lap(FrameTimer::Swap);

@@ -61,10 +61,11 @@ add_executable(videoframevr
   src/key_share.cpp
   src/focus_settings.cpp
   src/glass_backdrop.cpp
-  src/green_screen_check.cpp
+  src/video_check.cpp
   src/library.cpp
   src/library_index.cpp
   src/accent.cpp
+  src/mask_probe.cpp
   src/menu.cpp
   src/menu_browser.cpp
   src/menu_delete.cpp

@@ -1577,6 +1577,14 @@ bool VideoPlayer::prepareRead() {
   return true;
 }
 
+bool VideoPlayer::prepareFullSizeRead() {
+  if (directCurrent_) return false;
+  SharedImage* image = video_.current();
+  if (!image) return false;
+  interop_->acquireForGl(*image);
+  return true;
+}
+
 void VideoPlayer::logTiming(bool controlsVisible, bool previewBusy, bool xrRendering, bool xrFocused) {
   if (!timing_) return;
   auto& t = timingState_;

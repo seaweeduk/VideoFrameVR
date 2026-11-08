@@ -125,6 +125,8 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.packedMask = "视频自带遮罩";
   s.packedMaskHint = "用于自带遮罩的视频（DeoVR alpha）。除非在此设置，否则按文件名中的“_ALPHA”判断。仅对此视频保存。";
   s.packedMaskFormatHint = "仅适用于左右 3D 鱼眼视频。请先选择该格式。";
+  s.secondLayer = "遮罩第二层";
+  s.secondLayerHint = "此视频的遮罩有可隐藏的第二层。仅对此视频保存。";
   s.keyStrength = "强度";
   s.keySoftness = "边缘柔化";
   s.keySpill = "去绿边";

@@ -42,10 +42,10 @@ layout(push_constant) uniform Push {
   vec2 alphaScale;
   float step;
   float fisheyeFov;
-  int mode;        // 0: an eye's patch, 1: the whole eye scaled down
+  int mode;        // 0: an eye's patch, 1: the whole eye scaled down, 2: MaskProbe's
   int projection;  // 0 = 180, 2 = fisheye
   int flip;
-  int alphaPacked;
+  int alphaPacked;  // as DepthPatch's
   float greenKey;
 } u;
 
@@ -77,6 +77,16 @@ vec3 picture(vec2 p, vec2 dx, vec2 dy) {
 
 void main() {
   vec2 p = gl_FragCoord.xy - u.rect.xy;
+  if (u.mode == 2) {
+    // MaskProbe (DepthPatch::maskProbe): VideoCheck's blue, at least 0.6 in
+    // display values with red and green at most 0.2, in linear values.
+    vec2 m = p / u.rect.zw - 0.5;
+    vec3 c = yuvTexel(fract(u.alphaCenter + m * u.alphaScale));
+    fragColor = vec4(length(m) > 0.5                                 ? -1.0
+                     : c.b >= 0.318 && c.r <= 0.0331 && c.g <= 0.0331 ? 1.0
+                                                                       : 0.0);
+    return;
+  }
   vec2 uv;
   bool inside = true;
   if (u.mode == 1) {
@@ -107,9 +117,16 @@ void main() {
   bool clear = false;
   if (u.mode == 0 && u.alphaPacked != 0) {
     vec2 m = uv - 0.5;
-    // Red below 0.5 in display values.
-    clear = picture(fract(u.alphaCenter + m * u.alphaScale), dx * u.alphaScale, dy * u.alphaScale).r <
-            0.214;
+    vec3 mask = picture(fract(u.alphaCenter + m * u.alphaScale), dx * u.alphaScale,
+                        dy * u.alphaScale);
+    // Red below 0.5 in display values; or its colours, as the scene adds them up.
+    if (u.alphaPacked == 1) {
+      clear = mask.r < 0.214;
+    } else {
+      vec3 v = clamp(mask, 0.0, 1.0);  // to display values, as the scene reads them
+      vec3 e = mix(12.92 * v, 1.055 * pow(v, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, v));
+      clear = e.r + e.b + min(e.r, e.b) < 0.5;
+    }
   } else if (u.mode == 0 && u.greenKey > 0.0) {
     vec3 e = pow(max(c, 0.0), vec3(1.0 / 2.2));
     clear = (e.g - max(e.r, e.b)) / max(e.g, 0.04) > u.greenKey;

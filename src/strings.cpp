@@ -109,6 +109,8 @@ const Strings kEnglish = {
     "For videos that carry their own mask (DeoVR alpha). Follows “_ALPHA” in the file name unless "
     "set here. Saved for this video.",
     "Only for side-by-side fisheye video. Choose that format first.",
+    "Mask's second layer",
+    "This video's mask has a second layer that you can hide. Saved for this video.",
     "Strength",
     "Edges",
     "Spill",

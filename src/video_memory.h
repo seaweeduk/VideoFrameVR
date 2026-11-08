@@ -43,13 +43,20 @@ struct VideoSettings {
   // Passthrough was set by hand for this video, on or off: it is then never
   // switched automatically (autoPassthrough(), see_through.h).
   bool passthroughChosen = false;
-  // What the green screen check found (green_screen_check.h), and the
+  // What the green screen check found (video_check.h), and the
   // version of it that looked; 0 = not checked.
   int greenCheckVersion = 0;
   bool greenScreenFound = false;
   // The packed mask (DeoVR alpha) chosen by hand for this video; else the
   // file name decides (packedMask(), see_through.h).
   std::optional<bool> packedMask;
+  // Whether the packed mask has a second layer, in blue (SLR's layered
+  // masks): found by the keyframe check (video_check.h, which stores its
+  // version; 0 = not checked) or while the video played (MaskProbe), and
+  // then never looked for again.
+  int maskLayersVersion = 0;
+  bool maskLayersFound = false;
+  bool secondLayerHidden = false;  // ... hidden by hand (it shows otherwise)
   std::optional<bool> legacyTvGamma;  // kept in the library, no longer applied
   // A volume stored by older versions for this video (-1 none): kept as it
   // is, no longer applied (the volume is a setting for all videos).
@@ -70,7 +77,8 @@ struct VideoSettings {
   bool isDefault() const {
     return !hasFormat && pictureIsDefault() && volume < 0 && greenScreen.isDefault() &&
            !hasFocus && !hasScreen && !passthrough && !passthroughChosen && originForward == 0 &&
-           greenCheckVersion == 0 && !packedMask && opacity == 100;
+           greenCheckVersion == 0 && !packedMask && opacity == 100 && maskLayersVersion == 0 &&
+           !maskLayersFound && !secondLayerHidden;
   }
 
   // The parts the user changes one at a time.
@@ -78,7 +86,8 @@ struct VideoSettings {
                          kVolume = 32, kGreenScreen = 64, kFocus = 128, kPassthrough = 256,
                          kScreen = 512, kOrigin = 1024, kGreenCheck = 2048, kPackedMask = 4096,
                          kOpacity = 8192, kWarmth = 16384, kTint = 32768, kExposure = 65536,
-                         kAll = 131071, kBalance = kWarmth | kTint | kExposure,
+                         kMaskLayers = 131072, kSecondLayer = 262144, kAll = 524287,
+                         kBalance = kWarmth | kTint | kExposure,
                          kPicture = kBrightness | kContrast | kSaturation | kBalance | kZoom };
   // Takes these parts from `other`.
   void take(const VideoSettings& other, unsigned parts) {
@@ -103,6 +112,11 @@ struct VideoSettings {
       greenScreenFound = other.greenScreenFound;
     }
     if (parts & kPackedMask) packedMask = other.packedMask;
+    if (parts & kMaskLayers) {
+      maskLayersVersion = other.maskLayersVersion;
+      maskLayersFound = other.maskLayersFound;
+    }
+    if (parts & kSecondLayer) secondLayerHidden = other.secondLayerHidden;
     if (parts & kOpacity) opacity = other.opacity;
     if (parts & kVolume) volume = other.volume;
     if (parts & kGreenScreen) greenScreen = other.greenScreen;
@@ -128,7 +142,8 @@ struct VideoSettings {
            screen == o.screen && originForward == o.originForward &&
            passthroughChosen == o.passthroughChosen && greenCheckVersion == o.greenCheckVersion &&
            greenScreenFound == o.greenScreenFound && packedMask == o.packedMask &&
-           opacity == o.opacity;
+           opacity == o.opacity && maskLayersVersion == o.maskLayersVersion &&
+           maskLayersFound == o.maskLayersFound && secondLayerHidden == o.secondLayerHidden;
   }
   bool operator!=(const VideoSettings& o) const { return !(*this == o); }
 };

@@ -13,7 +13,6 @@
 namespace {
 
 constexpr VkFormat kFormat = VK_FORMAT_R32_SFLOAT;
-constexpr uint32_t kWidth = DepthEstimator::kMaxPatchWidth, kRows = DepthEstimator::kMaxPatchRows;
 
 // depth_patch.frag's push constants.
 struct Push {
@@ -62,12 +61,14 @@ DirectDepth::~DirectDepth() {
   gpu_->retire(image_);
 }
 
-bool DirectDepth::init(GpuContext& gpu, DirectVideo& direct) {
+bool DirectDepth::init(GpuContext& gpu, DirectVideo& direct, int width, int rows) {
   if (!direct.available()) return false;
   gpu_ = &gpu;
   direct_ = &direct;
+  width_ = static_cast<uint32_t>(width);
+  rows_ = static_cast<uint32_t>(rows);
   VkDevice d = gpu.device();
-  if (!gpu.createImage(kWidth, kRows, 1, kFormat,
+  if (!gpu.createImage(width_, rows_, 1, kFormat,
                        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, image_,
                        "focus patch image"))
     return false;
@@ -114,8 +115,8 @@ bool DirectDepth::init(GpuContext& gpu, DirectVideo& direct) {
   fbInfo.renderPass = pass_;
   fbInfo.attachmentCount = 1;
   fbInfo.pAttachments = &image_.view;
-  fbInfo.width = kWidth;
-  fbInfo.height = kRows;
+  fbInfo.width = width_;
+  fbInfo.height = rows_;
   fbInfo.layers = 1;
   if (!gpu.check(vkCreateFramebuffer(d, &fbInfo, nullptr, &framebuffer_), "focus patch framebuffer"))
     return false;
@@ -178,7 +179,7 @@ bool DirectDepth::init(GpuContext& gpu, DirectVideo& direct) {
 
   // Read back by the CPU: cached memory if there is such.
   VkBufferCreateInfo bufferInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-  bufferInfo.size = sizeof(float) * kWidth * kRows;
+  bufferInfo.size = sizeof(float) * width_ * rows_;
   bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
   if (!gpu.check(vkCreateBuffer(d, &bufferInfo, nullptr, &buffer_), "focus patch buffer")) return false;
   VkMemoryRequirements req;
@@ -212,8 +213,8 @@ DepthPatchDrawer* DirectDepth::source(DirectFrame* frame) {
 }
 
 bool DirectDepth::draw(const DepthPatch& patch) {
-  if (!source_ || frame_ || patch.width > static_cast<int>(kWidth) ||
-      2 * patch.height + DepthEstimator::kThumbH > static_cast<int>(kRows))
+  if (!source_ || frame_ || patch.width > static_cast<int>(width_) ||
+      2 * patch.height + (patch.maskProbe ? 0 : DepthEstimator::kThumbH) > static_cast<int>(rows_))
     return false;
   frame_ = source_;
   direct_->pin(*frame_);
@@ -234,7 +235,8 @@ void DirectDepth::submit() {
   }
   direct_->recordBarriers(cmd, frame, true);
   const int w = patch_.width, h = patch_.height;
-  const uint32_t rows = static_cast<uint32_t>(2 * h + DepthEstimator::kThumbH);
+  const int parts = patch_.maskProbe ? 2 : 3;
+  const uint32_t rows = static_cast<uint32_t>(2 * h + (parts == 3 ? DepthEstimator::kThumbH : 0));
   VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
   begin.renderPass = pass_;
   begin.framebuffer = framebuffer_;
@@ -270,7 +272,8 @@ void DirectDepth::submit() {
     gpu_->cmdPushDescriptorSet(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 2, writes);
   }
   // As DepthEstimator::request's draws: both eyes over the same angles,
-  // rows 0.. left, then right, then the thumbnail of the left eye.
+  // rows 0.. left, then right, then the thumbnail of the left eye (or
+  // MaskProbe's two eyes, DepthPatch::maskProbe).
   Push p{};
   for (int i = 0; i < 4; ++i) {
     p.yuvRange[i] = frame.color().neutralRange[i];
@@ -288,7 +291,7 @@ void DirectDepth::submit() {
   p.flip = patch_.flip;
   p.alphaPacked = patch_.alphaPacked;
   p.greenKey = patch_.greenKey;
-  for (int part = 0; part < 3; ++part) {
+  for (int part = 0; part < parts; ++part) {
     const bool thumb = part == 2;
     const VkRect2D area{{0, part * h},
                         {static_cast<uint32_t>(thumb ? DepthEstimator::kThumbW : w),
@@ -306,7 +309,7 @@ void DirectDepth::submit() {
     p.eyeOffset[1] = thumb || patch_.sbs ? 0.0f : 0.5f * eye;
     p.alphaCenter[0] = eye == 0 ? 0.5f : 0.0f;  // as SceneRenderer
     p.alphaCenter[1] = 0.0f;
-    p.mode = thumb ? 1 : 0;
+    p.mode = patch_.maskProbe ? 2 : thumb ? 1 : 0;
     vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(p), &p);
     vkCmdDraw(cmd, 3, 1, 0, 0);
   }

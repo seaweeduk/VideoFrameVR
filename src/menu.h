@@ -93,6 +93,7 @@ struct MenuCommand {
               // settings as one, apply, rename or delete one.
               ListUserPresets, SaveUserPreset, ApplyUserPreset, RenameUserPreset,
               DeleteUserPreset, MoveUserPreset, TogglePackedMask,
+              ToggleSecondLayer,     // the packed mask's second layer, shown or hidden
               SetKeyboardLayout,
               EndSetup,  // first-run setup ended: value 1 finished, 0 Set up later
               SetupPlaces,  // ... the places ticked so far, one per line in path
@@ -151,6 +152,8 @@ struct MenuView {
   GreenScreen greenScreen;   // of the running video
   bool packedAlpha = false;  // the running video brings its own mask (no keying needed)
   bool maskFormat = false;   // its format is the one a packed mask comes in (maskFormat())
+  bool maskLayers = false;   // its mask has a second layer (VideoSettings::maskLayersFound)
+  bool secondLayerHidden = false;  // ... hidden by hand
   int opacity = 100;            // of the running video, percent
   bool opacityApplies = false;  // the headset blends the video over the room (its own camera)
   std::string currentFile;
