@@ -45,10 +45,8 @@ using Size = Thumbnailer::Size;
 constexpr int kSharp = SWS_LANCZOS | SWS_ACCURATE_RND | SWS_FULL_CHR_H_INT | SWS_FULL_CHR_H_INP;
 constexpr auto kRetryInterval = std::chrono::seconds(60);
 // Workers, each on its own file: from a network share each mostly waits on
-// round trips. On the Frame they run on these cores of those Steam gives the
-// app (the compositor's render thread uses 4-6).
+// round trips. On the Frame they run on kFrameBackgroundCores.
 constexpr int kWorkers = 3;
-constexpr int kFrameCores[] = {3, 7};
 
 struct Interrupt {
   const std::atomic<bool>& quit;
@@ -443,14 +441,14 @@ void Thumbnailer::setPlaying(bool playing) {
 }
 
 void Thumbnailer::work(const std::shared_ptr<Worker>& worker) {
-  // Behind playback and the menu; on the Frame on kFrameCores.
+  // Behind playback and the menu; on the Frame on kFrameBackgroundCores.
   const auto tid = static_cast<pid_t>(syscall(SYS_gettid));
   setpriority(PRIO_PROCESS, static_cast<id_t>(tid), 19);
   syscall(SYS_ioprio_set, 1 /* IOPRIO_WHO_PROCESS */, tid, 3 << 13 /* IOPRIO_CLASS_IDLE */);
   if (kStandaloneHeadset) {
     cpu_set_t cores;
     CPU_ZERO(&cores);
-    for (const int core : kFrameCores) CPU_SET(core, &cores);
+    for (const int core : kFrameBackgroundCores) CPU_SET(core, &cores);
     sched_setaffinity(tid, sizeof(cores), &cores);
   }
   const Size gallery = worker->gallery;
