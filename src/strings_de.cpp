@@ -1031,6 +1031,14 @@ Strings germanStrings(const Strings& english) {
   s.stashSetup.httpError = "Stash hat mit einem Fehler geantwortet (HTTP %d).";
   s.stashSetup.elsewhere = "Diese Adresse leitet auf einen anderen Server weiter. Gib stattdessen dessen Adresse ein.";
   s.stashSetup.stashSaid = "Stash: %s";
+  s.stashSetup.untrustedTitle = "%s kann nicht geprüft werden";
+  s.stashSetup.untrusted = "Sein Zertifikat ist nicht vertrauenswürdig. Bei eigenen Servern mit selbstsigniertem Zertifikat normal.";
+  s.stashSetup.untrustedRisk = "Wer sich als dieser Server ausgibt, könnte deine Stash-Anmeldung erhalten.";
+  s.stashSetup.connectUnverified = "Ohne Prüfung verbinden";
+  s.stashSetup.unverified = "Das Zertifikat von %s wird nicht geprüft.";
+  s.stashSetup.verify = "Zertifikat prüfen";
+  s.stashSetup.untrustedStatus = "Unsicheres Zertifikat";
+  s.stashSetup.untrustedTip = "Das Zertifikat von Stash ist nicht vertrauenswürdig. Wähle, ob du trotzdem verbinden willst.";
   s.setup.putOnHeadset = "Setz dein Headset auf";
   s.setup.startsWhenWorn = "Die Einrichtung startet, sobald du es trägst.";
   s.setup.setUpLater = "Später einrichten";

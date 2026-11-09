@@ -921,6 +921,8 @@ void Menu::layoutDialog() {
     layoutDeleteDialog(row);
   } else if (dialog_ == Dialog::Update) {
     layoutUpdateDialog(row);
+  } else if (dialog_ == Dialog::StashCertificate) {
+    StashPages::layoutCertificateDialog(*this, row);
   } else if (dialog_ >= Dialog::KeyRefused) {
     layoutNetworkDialog(row);
   } else if (dialog_ == Dialog::Error || dialog_ == Dialog::Deleted) {
@@ -976,6 +978,8 @@ void Menu::drawDialog(cairo_t* cr) {
     drawOfflineDialog(cr, boxX, boxY);
   } else if (dialog_ == Dialog::Update) {
     drawUpdateDialog(cr, textX, boxY);
+  } else if (dialog_ == Dialog::StashCertificate) {
+    StashPages::drawCertificateDialog(*this, cr, textX, boxY);
   } else if (dialog_ >= Dialog::KeyRefused) {
     drawNetworkDialog(cr, textX, boxY);
   } else if (dialog_ == Dialog::ConfirmQuit) {

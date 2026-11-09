@@ -66,11 +66,13 @@ Stash::Stash(const StashSettings& settings, Library& library)
     : settings_(settings),
       library_(library),
       sync_(std::make_unique<StashSync>(settings)),
-      images_(std::make_unique<StashImages>(cacheDir() / "stash", settings.url, settings.apiKey)),
-      preview_(std::make_unique<StashPreview>(settings.url, settings.apiKey)),
+      images_(std::make_unique<StashImages>(cacheDir() / "stash", settings.url, settings.apiKey,
+                                            settings.unverified())),
+      preview_(std::make_unique<StashPreview>(settings.url, settings.apiKey, settings.unverified())),
       finder_(std::make_unique<StashFolderFinder>()) {
   hideInRunLog(urlHost(settings.url), "<Stash server>");
-  stashServe(settings.url, settings.apiKey);
+  if (settings.unverified()) std::printf("Stash: its certificate is not verified, as chosen\n");
+  stashServe(settings.url, settings.apiKey, settings.unverified());
   library_.setFingerprintSource([this](const std::string& path, uint64_t size, int64_t mtime) {
     const auto& catalog = sync_->catalog();
     return catalog ? catalog->oshashFor(path, size, mtime) : std::string();
@@ -85,7 +87,7 @@ Stash::Stash(const StashSettings& settings, Library& library)
 }
 
 Stash::~Stash() {
-  stashServe({}, {});
+  stashServe({}, {}, false);
   library_.setFingerprintSource(nullptr);
   library_.setRatingPlayObserver(nullptr);
   sync_->stop();

@@ -326,9 +326,9 @@ struct StashPreview::State {
   }
 };
 
-StashPreview::StashPreview(const std::string& url, std::string apiKey)
+StashPreview::StashPreview(const std::string& url, std::string apiKey, bool unverified)
     : state_(std::make_unique<State>()) {
-  state_->address = StashAddress(url);
+  state_->address = StashAddress(url, unverified);
   state_->apiKey = std::move(apiKey);
 }
 

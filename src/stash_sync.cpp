@@ -213,7 +213,7 @@ void StashSync::work(std::shared_ptr<Shared> shared) {
     status.syncing = true;
     shared->status = status;
     shared->changed = true;
-    StashClient client(settings.url, settings.apiKey);
+    StashClient client(settings.url, settings.apiKey, settings.unverified());
     shared->client = &client;
     lock.unlock();
     const auto start = std::chrono::steady_clock::now();
@@ -239,6 +239,6 @@ void StashSync::work(std::shared_ptr<Shared> shared) {
 std::shared_ptr<const StashCatalog> stashSyncOnce(const StashSettings& settings,
                                                   const StashLibraryFormats& library,
                                                   StashStatus& status) {
-  StashClient client(settings.url, settings.apiKey);
+  StashClient client(settings.url, settings.apiKey, settings.unverified());
   return sync(client, settings, library, status, [](const StashStatus&) {});
 }

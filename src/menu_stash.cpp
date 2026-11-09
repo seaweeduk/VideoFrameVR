@@ -239,10 +239,13 @@ void StashPages::setText(Menu& m, const std::string& text) {
       if (st.renaming >= 0 && st.renaming < static_cast<int>(st.pins.size()))
         st.pins[st.renaming].name = text;
       break;
-    case StashMenu::Typing::Server:
+    case StashMenu::Typing::Server: {
+      const bool unverified = draftUnverified(m);
       st.draft[st.field] = text;
       m.typedChanged();
+      if (draftUnverified(m) != unverified) m.dirty_ = true;  // Verify certificate comes or goes
       return;
+    }
     case StashMenu::Typing::Performers:
       if (text == st.performers.text) return;
       st.performers.text = text;
@@ -286,11 +289,18 @@ MenuCommand StashPages::serverCommand(Menu& m) {
   }
   c.path = st.draft[0] + "\n" + st.draft[1];
   for (const StashFolderMap& f : folders) c.path += "\n" + f.from + "\n" + f.to;
+  c.option = draftUnverified(m) ? 1 : 0;
   st.draft[kStashPassword].clear();
   st.signInError.clear();
   m.editing_ = false;
   m.dirty_ = true;
   return c;
+}
+
+bool StashPages::draftUnverified(Menu& m) {
+  const StashMenu& st = state(m);
+  return !st.draftUnverified.empty() && !st.draft[0].empty() &&
+         stashHost(st.draft[0]) == st.draftUnverified;
 }
 
 // Enter (or Done): the search keeps its words, a pinned list its new name,
@@ -312,30 +322,36 @@ MenuCommand StashPages::submitText(Menu& m) {
 // Save and sync: a new address is looked for as setup's Connect does
 // (https, http, Stash's port) and saved as it answered, else as typed; with
 // a password typed, Stash is signed in to there and its key saved with the
-// rest (updateSignIn()).
+// rest (updateSignIn()). A certificate that isn't trusted saves nothing: a
+// dialog says so, and offers to connect without verifying it. Verifying it
+// again is looked for the same way.
 MenuCommand StashPages::saveServer(Menu& m) {
   StashMenu& st = state(m);
   if (st.signingIn.valid()) return {};
-  const bool moved = st.draft[0] != m.view_.stash.url;
+  const bool unverified = draftUnverified(m);
+  const bool moved = st.draft[0] != m.view_.stash.url || unverified != m.view_.stash.unverified();
   if (st.draft[kStashPassword].empty() && !moved) return serverCommand(m);
   auto done = std::make_shared<std::promise<StashMenu::SignIn>>();
   st.signingIn = done->get_future();
   st.signInError.clear();
   // Its own thread, as the SMB sign-in: a server that doesn't answer
   // mustn't hold up anything else, and Cancel just drops the result.
-  std::thread([done, moved, url = st.draft[0], user = st.draft[kStashUser],
+  std::thread([done, moved, unverified, url = st.draft[0], user = st.draft[kStashUser],
                password = st.draft[kStashPassword]] {
     StashMenu::SignIn r;
+    r.host = stashHost(url);
     if (moved) {
-      StashClient found(url, std::string());
+      StashClient found(url, std::string(), unverified);
       const StashClient::Answer a = found.check();
       if (a == StashClient::Answer::Open || a == StashClient::Answer::NeedsSignIn) r.url = found.server();
+      r.untrusted = a == StashClient::Answer::Failed && found.problem() == StashProblem::Certificate;
     }
-    r.ok = true;
-    if (!password.empty()) {
-      StashClient client(r.url.empty() ? url : r.url, std::string());
+    r.ok = !r.untrusted;
+    if (r.ok && !password.empty()) {
+      StashClient client(r.url.empty() ? url : r.url, std::string(), unverified);
       r.ok = client.signIn(user, password, r.apiKey, r.refused);
       r.error = client.error();
+      r.untrusted = !r.ok && client.problem() == StashProblem::Certificate;
     }
     done->set_value(std::move(r));
   }).detach();
@@ -353,6 +369,10 @@ void StashPages::updateSignIn(Menu& m) {
   const StashMenu::SignIn r = st.signingIn.get();
   m.dirty_ = true;
   if (!r.url.empty()) st.draft[0] = r.url;
+  if (r.untrusted) {
+    m.openDialog(Menu::Dialog::StashCertificate, r.host);
+    return;
+  }
   if (!r.ok) {
     st.signInError = r.refused ? strings().stashSetup.wrongLogin : r.error;
     return;

@@ -46,6 +46,7 @@
 #include "remote.h"
 #include "stash.h"
 #include "stash_delete.h"
+#include "stash_http.h"
 #include "stash_stream.h"
 #include "strings.h"
 #include "subtitle_overlay.h"
@@ -1679,10 +1680,13 @@ int run(GLFWwindow* window, const Options& opts) {
         const size_t line = c.path.find('\n');
         const std::string url = c.path.substr(0, line);
         const std::string key = line == std::string::npos ? "" : c.path.substr(line + 1);
-        const bool same = stash && settings.stash.url == url && settings.stash.apiKey == key;
+        const std::string unverifiedHost = c.option ? stashHost(url) : std::string();
+        const bool same = stash && settings.stash.url == url && settings.stash.apiKey == key &&
+                          settings.stash.unverifiedHost == unverifiedHost;
         settings.stash.enabled = true;
         settings.stash.url = url;
         settings.stash.apiKey = key;
+        settings.stash.unverifiedHost = unverifiedHost;
         settings.stash.card = false;
         stashInSetup = true;
         saveSettings(settings);
@@ -1918,7 +1922,8 @@ int run(GLFWwindow* window, const Options& opts) {
                                     expected = deletion.expected,
                                     ask = settings.stash.writeBack && deletion.scene != 0,
                                     scene = deletion.scene, stashPath = deletion.stashPath,
-                                    url = settings.stash.url, key = settings.stash.apiKey] {
+                                    url = settings.stash.url, key = settings.stash.apiKey,
+                                    unverified = settings.stash.unverified()] {
           Deletion::Look r;
           if (file.empty())
             r.status = DeleteStatus::Gone;
@@ -1931,7 +1936,7 @@ int run(GLFWwindow* window, const Options& opts) {
           if (check && (r.oshash.empty() || r.oshash != expected)) r.status = DeleteStatus::Changed;
           if (r.status != DeleteStatus::Ok || !ask || r.oshash.empty()) return r;
           r.asked = true;
-          r.stash = lookUpStashFile(url, key, scene, r.oshash, stashPath);
+          r.stash = lookUpStashFile(url, key, unverified, scene, r.oshash, stashPath);
           return r;
         });
         break;
@@ -1976,6 +1981,7 @@ int run(GLFWwindow* window, const Options& opts) {
                                                           writeBack = settings.stash.writeBack,
                                                           url = settings.stash.url,
                                                           key = settings.stash.apiKey,
+                                                          unverified = settings.stash.unverified(),
                                                           scene = deletion.scene,
                                                           stashPath = deletion.stashPath,
                                                           oshash = deletion.oshash,
@@ -1983,7 +1989,7 @@ int run(GLFWwindow* window, const Options& opts) {
           const bool here = !isStashScene(target);
           DeleteOutcome r;
           if (throughStash)
-            r = deleteThroughStash(url, key, writeBack, scene, oshash, stashPath,
+            r = deleteThroughStash(url, key, unverified, writeBack, scene, oshash, stashPath,
                                    here ? target : std::string(), stamp, trash);
           else
             r.status = removeFile(target, stamp, r.error);
@@ -2020,8 +2026,11 @@ int run(GLFWwindow* window, const Options& opts) {
                           : changed.url.substr(first, changed.url.find_last_not_of(" \t") - first + 1);
         while (changed.url.size() > 1 && changed.url.back() == '/') changed.url.pop_back();
         changed.card = changed.card && changed.url.empty();  // set up: no "Use Stash?" card
+        // Its certificate accepted unverified (option 1) for its host alone.
+        changed.unverifiedHost = c.option && !changed.url.empty() ? stashHost(changed.url) : std::string();
         if (changed.url != settings.stash.url || changed.apiKey != settings.stash.apiKey ||
-            changed.folders != settings.stash.folders) {
+            changed.folders != settings.stash.folders ||
+            changed.unverifiedHost != settings.stash.unverifiedHost) {
           settings.stash = changed;
           saveSettings(settings);
           restartStash();

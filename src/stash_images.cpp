@@ -695,10 +695,11 @@ StashImages::DiskUsage StashImages::diskUsage(const fs::path& root) {
   return usage;
 }
 
-StashImages::StashImages(fs::path root, const std::string& url, std::string apiKey)
+StashImages::StashImages(fs::path root, const std::string& url, std::string apiKey,
+                         bool unverified)
     : state_(std::make_unique<State>()) {
   state_->root = std::move(root);
-  state_->address = StashAddress(url);
+  state_->address = StashAddress(url, unverified);
   state_->apiKey = std::move(apiKey);
 }
 

@@ -91,10 +91,15 @@ struct SetupStash {
     int answer = 0;  // a StashClient::Answer
     std::string url;  // Connect's: where Stash answered
     std::string apiKey, error;
+    bool untrusted = false;  // failed on a certificate that isn't trusted
   };
   setup_places::Async<Reply> asking;
   std::shared_ptr<StashClient> client;
   std::string error;  // under the fields
+  // The host whose certificate wasn't trusted, while the fields say so and
+  // Connect offers to connect without verification; the host the user
+  // chose that for (sent with SetupStash while the address names it).
+  std::string untrusted, unverifiedHost;
 };
 
 // Your controllers (menu_setup_controls.cpp): the bindings, SteamVR's

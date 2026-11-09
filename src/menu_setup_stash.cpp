@@ -34,6 +34,13 @@ std::string trimmedAddress(const std::string& typed) {
   return url;
 }
 
+// Whether the typed address's certificate is accepted without being
+// verified: the user chose that for its host.
+bool unverified(const SetupStash& st) {
+  const std::string url = trimmedAddress(st.text[SetupStash::Address]);
+  return !st.unverifiedHost.empty() && !url.empty() && stashHost(url) == st.unverifiedHost;
+}
+
 // One "•" per character typed.
 std::string hidden(const std::string& text) {
   std::string dots;
@@ -84,6 +91,7 @@ void SetupPages::setText(Menu& m, const std::string& text) {
   field = text;
   if (st.asking.running()) stopAsking(m);
   st.error.clear();
+  st.untrusted.clear();
   m.typedChanged();
 }
 
@@ -92,6 +100,7 @@ void SetupPages::openStashPage(Menu& m, Page page) {
   stopAsking(m);
   st.page = page;
   st.error.clear();
+  st.untrusted.clear();
   st.field = page == Page::SignIn ? SetupStash::User : SetupStash::Address;
   st.showPassword = false;
   st.text[SetupStash::Password].clear();
@@ -114,7 +123,8 @@ void SetupPages::askStash(Menu& m) {
   const std::string url = trimmedAddress(st.text[SetupStash::Address]);
   if (url.empty() || st.asking.running()) return;
   st.error.clear();
-  auto client = std::make_shared<StashClient>(url, std::string());
+  st.untrusted.clear();
+  auto client = std::make_shared<StashClient>(url, std::string(), unverified(st));
   st.client = client;
   if (st.page == Page::SignIn) {
     st.asking.start([client, user = st.text[SetupStash::User], password = st.text[SetupStash::Password]] {
@@ -123,6 +133,7 @@ void SetupPages::askStash(Menu& m) {
       const bool ok = client->signIn(user, password, r.apiKey, refused);
       r.answer = static_cast<int>(ok ? Answer::Open : Answer::Failed);
       r.error = refused ? strings().stashSetup.wrongLogin : client->error();
+      r.untrusted = !ok && client->problem() == StashProblem::Certificate;
       return r;
     });
   } else {
@@ -131,6 +142,7 @@ void SetupPages::askStash(Menu& m) {
       r.answer = static_cast<int>(client->check());
       r.url = client->server();
       r.error = client->error();
+      r.untrusted = client->problem() == StashProblem::Certificate;
       return r;
     });
   }
@@ -153,7 +165,12 @@ void SetupPages::updateStash(Menu& m) {
     case Answer::Open: m.command_ = stashAccepted(m, r.apiKey); break;
     case Answer::NeedsSignIn: openStashPage(m, Page::SignIn); break;
     case Answer::Unreached: st.error = kStandaloneHeadset ? t.unreachableHeadset : t.unreachableComputer; break;
-    case Answer::Failed: st.error = r.error; break;
+    case Answer::Failed:
+      st.error = r.error;
+      // A certificate that isn't trusted: the page says what connecting
+      // anyway means, and Connect offers it.
+      if (r.untrusted && !unverified(st)) st.untrusted = stashHost(trimmedAddress(st.text[SetupStash::Address]));
+      break;
   }
 }
 
@@ -164,6 +181,7 @@ MenuCommand SetupPages::stashAccepted(Menu& m, const std::string& apiKey) {
   MenuCommand c;
   c.type = MenuCommand::SetupStash;
   c.path = trimmedAddress(st.text[SetupStash::Address]) + "\n" + apiKey;
+  c.option = unverified(st) ? 1 : 0;
   st.text[SetupStash::Password].clear();
   m.editing_ = false;
   return c;
@@ -237,7 +255,14 @@ void SetupPages::layoutStash(Menu& m) {
   } else {
     field(SetupStash::Address, 240, kFieldW);
   }
-  // Back stops a request under way, else goes back a page.
+  // Back stops a request under way, else goes back a page. After a
+  // certificate that isn't trusted, Connect connects without verifying it,
+  // and isn't the button selected.
+  const bool untrusted = !st.untrusted.empty() && !asking;
+  const std::string go = asking      ? (signIn ? n.signingIn : t.connecting)
+                         : untrusted ? m.text().stashSetup.connectUnverified
+                         : signIn    ? n.signIn
+                                     : t.connect;
   addFooter(m, [&m, signIn] {
     SetupStash& st = m.setup_->stash;
     if (st.asking.running() && !signIn)
@@ -245,11 +270,13 @@ void SetupPages::layoutStash(Menu& m) {
     else
       openStashPage(m, signIn ? Page::Address : Page::Ask);
     return MenuCommand{};
-  }, asking ? (signIn ? n.signingIn : t.connecting) : (signIn ? n.signIn : t.connect), [&m] {
+  }, go, [&m] {
+    SetupStash& st = m.setup_->stash;
+    if (!st.untrusted.empty()) st.unverifiedHost = st.untrusted;
     askStash(m);
     return MenuCommand{};
-  }, true, asking || trimmedAddress(st.text[SetupStash::Address]).empty() ||
-               (signIn && st.text[SetupStash::User].empty()));
+  }, !untrusted, asking || trimmedAddress(st.text[SetupStash::Address]).empty() ||
+                     (signIn && st.text[SetupStash::User].empty()));
   if (m.editing_) m.layoutKeyboard(Menu::kSetup, kW / 2, kH + 34, 90);
 }
 
@@ -312,9 +339,31 @@ void SetupPages::drawStash(Menu& m, cairo_t* cr) {
       m.drawText(cr, label, kLeft, y, 600, 34, 24, false, false, pal.textDim.r, pal.textDim.g,
                  pal.textDim.b);
   }
-  if (!st.error.empty()) {
-    const double ink[4] = {1, 0.55, 0.5, 1};
-    m.drawTextLines(cr, st.error, kLeft, st.page == Page::SignIn ? 482 : 362, kInner, 24, 3, ink, false);
+  const double red[4] = {1, 0.55, 0.5, 1};
+  if (!st.untrusted.empty()) {
+    // As an SFTP server's changed key: a warning, what it means, and the
+    // risk in red, in a box of its own.
+    const StashSetupStrings& ts = m.text().stashSetup;
+    const double y = st.page == Page::SignIn ? 490 : 370, pad = 28, textX = kLeft + pad + 52;
+    const double textW = kInner - 2 * pad - 52;
+    const int bodyLines = m.wrappedLines(ts.untrusted, textW, 24, 3);
+    const int riskLines = m.wrappedLines(ts.untrustedRisk, textW, 24, 2, true);
+    const double bodyY = y + pad + 50, riskY = bodyY + bodyLines * 24 * 1.36 + 12;
+    const double h = riskY + riskLines * 24 * 1.36 + pad - y;
+    roundedRect(cr, kLeft, y, kInner, h, 18);
+    cairo_set_source_rgba(cr, red[0], red[1], red[2], 0.1);
+    cairo_fill_preserve(cr);
+    cairo_set_source_rgba(cr, red[0], red[1], red[2], 0.45);
+    cairo_set_line_width(cr, 2);
+    cairo_stroke(cr);
+    Menu::drawIcon(cr, Menu::Icon::Warning, kLeft + pad + 20, y + pad + 20, 36, red[0], red[1], red[2]);
+    m.drawText(cr, stashPrinted(ts.untrustedTitle, st.untrusted), textX, y + pad, textW, 42, 30, true, false,
+               pal.text.r, pal.text.g, pal.text.b);
+    const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, 1};
+    m.drawTextLines(cr, ts.untrusted, textX, bodyY, textW, 24, 3, dim, false);
+    m.drawTextLines(cr, ts.untrustedRisk, textX, riskY, textW, 24, 2, red, false, 0, true);
+  } else if (!st.error.empty()) {
+    m.drawTextLines(cr, st.error, kLeft, st.page == Page::SignIn ? 482 : 362, kInner, 24, 3, red, false);
   }
   drawDots(m, cr);
   drawKeyboardPanel(m, cr);

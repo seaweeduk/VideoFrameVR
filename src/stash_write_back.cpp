@@ -403,7 +403,7 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
     if (shared->stop) return;
     if (shared->paused) continue;
 
-    StashClient client(shared->settings.url, shared->settings.apiKey);
+    StashClient client(shared->settings.url, shared->settings.apiKey, shared->settings.unverified());
     shared->client = &client;
     const std::function<bool()> paused = [&shared] {
       std::lock_guard<std::mutex> hold(shared->mutex);

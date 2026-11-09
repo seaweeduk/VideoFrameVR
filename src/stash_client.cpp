@@ -386,8 +386,8 @@ std::string rfc3339(int64_t seconds) {
 
 }  // namespace
 
-StashClient::StashClient(const std::string& url, std::string apiKey)
-    : typed_(url), address_(url), apiKey_(std::move(apiKey)) {}
+StashClient::StashClient(const std::string& url, std::string apiKey, bool unverified)
+    : typed_(url), address_(url, unverified), apiKey_(std::move(apiKey)) {}
 
 bool StashClient::post(const std::string& query, std::string& body, std::string& error,
                        StashProblem& problem, const std::string& variables, bool slow) {
@@ -453,6 +453,7 @@ bool StashClient::post(const std::string& query, std::string& body, std::string&
       return false;
     }
     error = stashUnreachable(reply.code);
+    if (stashUntrusted(reply.code)) problem = StashProblem::Certificate;
     std::fprintf(stderr, "Stash: %s\n", *message ? message : curl_easy_strerror(reply.code));
     return false;
   }
@@ -548,8 +549,10 @@ StashClient::Answer StashClient::check() {
   } reset{quick_};
   int best = -1;  // how far the try whose error() is kept got
   std::string error;
+  StashProblem problem = StashProblem::Other;
+  const bool unverified = address_.unverified;
   for (const std::string& url : stashTries(typed_)) {
-    address_ = StashAddress(url);
+    address_ = StashAddress(url, unverified);
     error_.clear();
     std::string body;
     json data;
@@ -569,17 +572,20 @@ StashClient::Answer StashClient::check() {
     if (cancelled_) break;
     // Nothing there, as against a server that answers in a way that can't be
     // used (its certificate, https on plain http, an address that isn't one),
-    // or answers but not as Stash: the first that got furthest says why.
+    // or answers but not as Stash: the first that got furthest says why. A
+    // certificate that isn't trusted comes first, as it can be accepted.
     const bool there = error_ == t.certificate || error_ == t.noSecure || error_ == t.badAddress;
-    const int got = reached_ ? 2 : there ? 1 : 0;
+    const int got = problem_ == StashProblem::Certificate ? 3 : reached_ ? 2 : there ? 1 : 0;
     if (got > best) {
       best = got;
       error = error_;
+      problem = problem_;
     }
     if (error_ == t.noHost) break;  // the same name in each
   }
-  address_ = StashAddress(typed_);
+  address_ = StashAddress(typed_, unverified);
   error_ = error;
+  problem_ = problem;
   return best > 0 ? Answer::Failed : Answer::Unreached;
 }
 
@@ -707,6 +713,7 @@ bool StashClient::signIn(const std::string& user, const std::string& password, s
     reached_ = reply.code == CURLE_OK;
     if (reply.code != CURLE_OK) {
       error_ = stashUnreachable(reply.code);
+      if (stashUntrusted(reply.code)) problem_ = StashProblem::Certificate;
       std::fprintf(stderr, "Stash: %s\n", *message ? message : curl_easy_strerror(reply.code));
       return 0L;
     }

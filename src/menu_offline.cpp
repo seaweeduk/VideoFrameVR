@@ -904,6 +904,12 @@ double Menu::dialogHeight() const {
     case Dialog::NoRoom: return 460;
     case Dialog::KeyRefused: return 440;
     case Dialog::HostKeyChanged: return 500;
+    case Dialog::StashCertificate: {  // a line more for each the text wraps to
+      const StashSetupStrings& t = text().stashSetup;
+      const int lines = wrappedLines(t.untrusted, kDialogW - 100, 26, 3) +
+                        wrappedLines(t.untrustedRisk, kDialogW - 100, 26, 2, true);
+      return kDialogH + (lines - 2) * 26 * 1.36;
+    }
     case Dialog::ForgetServer: return 410;
     case Dialog::ForgetOffline: return 470;
     case Dialog::ConfirmDelete:

@@ -114,6 +114,7 @@ enum class StashLook {
   CoStar,         // a co-star on the performer page: round portrait, name, count; chosen blue (on)
   Studio,  // a studio's card: its logo (stashId), name and two lines
   Shelf,   // a Home shelf's heading: title, a dim note, and "See all" at the right
+  Warning,  // a problem to act on: a red warning sign, then its label
 };
 enum class StashIcon { None, Stash, Home, Scenes, Performers, Studios, Pin, Shuffle, Filters, Ban,
                        Undo, Back };
@@ -291,11 +292,16 @@ struct StashMenu {
   // and why the last one failed.
   struct SignIn {
     bool ok = false, refused = false;
+    bool untrusted = false;  // failed on a certificate that isn't trusted
+    std::string host;        // ... the server's, as Save sent it
     std::string url;  // where Stash answered, if it did
     std::string apiKey, error;
   };
   std::future<SignIn> signingIn;
   std::string signInError;
+  // The host whose certificate the fields accept without verifying it (as
+  // StashSettings::unverifiedHost).
+  std::string draftUnverified;
   std::vector<StashPin> pins;
   bool pinsLoaded = false;
   std::future<std::vector<StashPin>> pendingPins;
@@ -364,6 +370,10 @@ struct StashPages {
   static void layoutCard(Menu& m, double x, double w, double bottom);  // "Use Stash?"
   static void layoutSettingsGroup(Menu& m, double top);
   static void layoutServerEditor(Menu& m);
+  // Its certificate isn't trusted: Don't connect, or Connect without
+  // verification (Dialog::StashCertificate, the host in dialogPath_).
+  static void layoutCertificateDialog(Menu& m, std::vector<Menu::Button>& row);
+  static void drawCertificateDialog(Menu& m, cairo_t* cr, double textX, double boxY);
   // The server's fields, with the keyboard; the folders' are those of the
   // mapping Stash's `folder` goes by (the first for "").
   static void editServer(Menu& m, int field, const std::string& folder = std::string());
@@ -382,6 +392,8 @@ struct StashPages {
   static MenuCommand submitText(Menu& m);
   static MenuCommand saveServer(Menu& m);     // Save and sync
   static MenuCommand serverCommand(Menu& m);  // ... the fields as SetStashServer takes them
+  // Whether the server typed has its certificate accepted unverified.
+  static bool draftUnverified(Menu& m);
   static void updateSignIn(Menu& m);  // each frame, while Stash is on (set up or not)
   static void stopEditing(Menu& m);
   // Where a page shows a Stash catalog that isn't there yet: what the sync
