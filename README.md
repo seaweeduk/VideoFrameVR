@@ -43,8 +43,8 @@ Hardware decoding on a PC needs an NVIDIA GPU.
 - **Passthrough**: videos with their own alpha mask (DeoVR) or a green screen
   put the people in them into your room.
 - **180°, 360°, fisheye and flat video**, 2D or 3D, from the headset, microSD,
-  USB or SMB shares (built-in client, no mounting).
-- **Offline downloads** copy videos from SMB or Stash to the headset, a microSD
+  USB or SMB or SFTP shares (built-in client, no mounting).
+- **Offline downloads** copy videos from SMB, SFTP or Stash to the headset, a microSD
   card or a USB drive, to watch without a network.
 - **[Stash](https://stashapp.cc) integration** (optional): browse and filter
   your scenes by performer, studio and tag, with covers and moving previews.
