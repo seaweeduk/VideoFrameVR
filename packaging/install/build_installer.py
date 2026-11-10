@@ -62,6 +62,8 @@ def main():
         package.write(HERE / "installer.py", "installer.py")
         package.write(HERE / "config.json", "config.json")
         package.write(HERE / "steam_client.py", "steam_client.py")
+        for name in ["LICENSE", "README.md"]:
+            package.write(HERE.parent / "frame-control" / name, "licenses/frame-control/" + name)
         package.write(HERE.parents[1] / "tools/install_steam_shortcut.py", "install_steam_shortcut.py")
     helper = helper.getvalue()
     archive = args.archive.read_bytes()

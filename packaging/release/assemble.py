@@ -107,7 +107,8 @@ def frameplayerx_notices(app, licenses):
     return ("FramePlayerX, Copyright 2026 remotesojourner (derived from FramePlayer by yellkell): "
             "https://github.com/remotesojourner/frameplayerx; Apache-2.0 material adapted for "
             "Q10C carrier images, TP10 descriptors and conversion; mount-path parsing and "
-            "unescaping, removable-drive detection and SteamOS-specific automount policy "
+            "unescaping, removable-drive detection, SteamOS-specific automount policy "
+            "and the SteamVR launch-dashboard workaround "
             "also credited. Upstream license, notices, revisions and "
             "VideoFrameVR modification scope: share/licenses/frameplayerx/.")
 
@@ -141,6 +142,13 @@ def assemble(bundle, app, work, sdk, cache, supplement, metadata, source_name):
         "ffebf8c1ee449e544955a7e813c54f9b73848eac; SIL OFL-1.1; unmodified.",
     ]
     notices.append(frameplayerx_notices(app, licenses))
+    destination = licenses / "frame-control"
+    destination.mkdir()
+    for name in ["LICENSE", "README.md"]:
+        shutil.copy2(app / "packaging/frame-control" / name, destination / name)
+    notices.append("Frame Control, Copyright (c) 2026 saphid: https://github.com/saphid/frame-control; "
+                   "MIT; portions of the Steam client helper, shortcut-details subscription and artwork "
+                   "integration adapted for VideoFrameVR. License and provenance: share/licenses/frame-control/.")
     patterns = {
         "libsmb2": ["COPYING", "LICENCE-LGPL-2.1.txt"],
         "libssh": ["COPYING", "BSD"],

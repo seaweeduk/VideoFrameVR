@@ -51,6 +51,23 @@ VideoFrameVR uses GIO D-Bus to enumerate UDisks objects and request mounts, with
 its own C++ worker and change-delivery interface. FramePlayerX enumerates sysfs
 and udev records and invokes `udisksctl` to mount drives.
 
+## SteamVR launch dashboard
+
+Upstream revision: [`8d95bab648c057cf53a0d56c65970e3c0a72dc59`](https://github.com/remotesojourner/frameplayerx/commit/8d95bab648c057cf53a0d56c65970e3c0a72dc59),
+19 October 2026.
+
+FramePlayerX is credited for the launch-dashboard dismissal and environment
+isolation approach in `src/xr_context.cpp`. Upstream
+[`crates/fp-xr/src/context.rs`](https://github.com/remotesojourner/frameplayerx/blob/8d95bab648c057cf53a0d56c65970e3c0a72dc59/crates/fp-xr/src/context.rs)
+and [`crates/fp-xr/src/session.rs`](https://github.com/remotesojourner/frameplayerx/blob/8d95bab648c057cf53a0d56c65970e3c0a72dc59/crates/fp-xr/src/session.rs)
+run `vrcmd --hidedashboard` asynchronously with Steam identity and preload
+variables removed, isolate its library environment, and stop dismissing the
+dashboard after the session first gains focus.
+
+VideoFrameVR uses GLib spawning with the Frame's SteamVR directory as its library
+path. It makes one attempt after submitting a scene, while FramePlayerX locates
+`vrcmd` through the runtime manifest and allows repeated attempts during launch.
+
 ## Dates and distribution
 
 The credited material was present in VideoFrameVR's initial public commit
