@@ -408,6 +408,8 @@ void GlInterop::publish() {
     image->inGl_ = false;
     image->vulkanLast_ = false;
     image->publishedAt_ = value;
+    if (image->written_) image->contentAt_ = value;
+    image->written_ = false;
   }
   inGl_ = kept;
   signalNeeded_ = !inGl_.empty();

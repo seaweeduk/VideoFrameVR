@@ -28,7 +28,10 @@ struct Push {
   float fisheyeFov;
   int32_t mode, projection, flip, alphaPacked;
   float greenKey;
+  int32_t tvGamma;
+  float keyColour, keyCut;
 };
+static_assert(sizeof(Push) <= 128, "the push constants Vulkan guarantees");
 
 }  // namespace
 
@@ -213,8 +216,10 @@ DepthPatchDrawer* DirectDepth::source(DirectFrame* frame) {
 }
 
 bool DirectDepth::draw(const DepthPatch& patch) {
-  if (!source_ || frame_ || patch.width > static_cast<int>(width_) ||
-      2 * patch.height + (patch.maskProbe ? 0 : DepthEstimator::kThumbH) > static_cast<int>(rows_))
+  const int rows = patch.keyPick     ? patch.height
+                   : patch.maskProbe ? 2 * patch.height
+                                     : 2 * patch.height + DepthEstimator::kThumbH;
+  if (!source_ || frame_ || patch.width > static_cast<int>(width_) || rows > static_cast<int>(rows_))
     return false;
   frame_ = source_;
   direct_->pin(*frame_);
@@ -235,8 +240,9 @@ void DirectDepth::submit() {
   }
   direct_->recordBarriers(cmd, frame, true);
   const int w = patch_.width, h = patch_.height;
-  const int parts = patch_.maskProbe ? 2 : 3;
-  const uint32_t rows = static_cast<uint32_t>(2 * h + (parts == 3 ? DepthEstimator::kThumbH : 0));
+  const int parts = patch_.keyPick ? 1 : patch_.maskProbe ? 2 : 3;
+  const uint32_t rows =
+      static_cast<uint32_t>(parts == 1 ? h : 2 * h + (parts == 3 ? DepthEstimator::kThumbH : 0));
   VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
   begin.renderPass = pass_;
   begin.framebuffer = framebuffer_;
@@ -273,7 +279,7 @@ void DirectDepth::submit() {
   }
   // As DepthEstimator::request's draws: both eyes over the same angles,
   // rows 0.. left, then right, then the thumbnail of the left eye (or
-  // MaskProbe's two eyes, DepthPatch::maskProbe).
+  // MaskProbe's two eyes, DepthPatch::maskProbe, or KeyPicker's one row).
   Push p{};
   for (int i = 0; i < 4; ++i) {
     p.yuvRange[i] = frame.color().neutralRange[i];
@@ -291,6 +297,9 @@ void DirectDepth::submit() {
   p.flip = patch_.flip;
   p.alphaPacked = patch_.alphaPacked;
   p.greenKey = patch_.greenKey;
+  p.tvGamma = frame.color().tvGamma;
+  p.keyColour = patch_.keyColour;
+  p.keyCut = patch_.keyCut;
   for (int part = 0; part < parts; ++part) {
     const bool thumb = part == 2;
     const VkRect2D area{{0, part * h},
@@ -309,7 +318,15 @@ void DirectDepth::submit() {
     p.eyeOffset[1] = thumb || patch_.sbs ? 0.0f : 0.5f * eye;
     p.alphaCenter[0] = eye == 0 ? 0.5f : 0.0f;  // as SceneRenderer
     p.alphaCenter[1] = 0.0f;
-    p.mode = patch_.maskProbe ? 2 : thumb ? 1 : 0;
+    p.mode = patch_.keyPick ? 3 : patch_.maskProbe ? 2 : thumb ? 1 : 0;
+    if (patch_.keyPick) {
+      p.start[0] = patch_.pickUv[0];
+      p.start[1] = patch_.pickUv[1];
+      p.eyeOffset[0] = patch_.pickPart[0];
+      p.eyeOffset[1] = patch_.pickPart[1];
+      p.eyeScale[0] = patch_.pickPart[2];
+      p.eyeScale[1] = patch_.pickPart[3];
+    }
     vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(p), &p);
     vkCmdDraw(cmd, 3, 1, 0, 0);
   }

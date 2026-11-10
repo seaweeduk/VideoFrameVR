@@ -6,6 +6,7 @@
 #include "foveation.h"
 #include "glass_backdrop.h"
 #include "gpu_context.h"
+#include "key_mask.h"
 #include "pipelines.h"
 #include "stereo_correction.h"
 #include "texture.h"
@@ -59,15 +60,16 @@ struct VideoDraw {
   bool look = false;            // tone curve and vignette
   float sharpen = 0;            // sharpening strength (Settings::sharpen / 100), 0 = off
   SeeThrough seeThrough;        // with passthrough on: the packed mask or a keyed green screen
-  GreenScreen key;              // ... its softness, spill and shrink
+  KeySliders key;               // ... its key's softness, spill and shrink
   StereoCorrection correction;
 
   // A packed mask or a key is read from the frame (the surround, with
-  // passthrough shown): it reads the frame as it came, and the picture
+  // passthrough shown), or the key's colour is picked from it: it reads the frame as it came, and the picture
   // settings are applied to what is shown.
   bool readsFrame(ClearMode clear) const {
     return clear != ClearMode::Dark && format.projection != Projection::Flat &&
-           (seeThrough.packedAlpha || seeThrough.greenKey > 0);
+           (seeThrough.packedAlpha || seeThrough.greenKey > 0 || seeThrough.colourKey ||
+            seeThrough.picking);
   }
 };
 
@@ -150,6 +152,7 @@ enum VideoFlag : uint32_t {
   kYuv = 512,
   kTvGamma = 1024,
   kPhoto = 2048,
+  kColourKey = 4096,
 };
 
 // shaders/surround.frag, SurroundDraw.
@@ -273,6 +276,8 @@ class SceneRenderer {
   // seconds, for the test pattern. Adds what the submission waits for.
   void record(GpuContext::FrameSlot& slot, const EyeFrame& eyes, const EyeMatrices* matrices,
               const FrameScene& scene, double time, std::vector<SemaphoreWait>& waits);
+  // The frame recorded last was not submitted (as GlInterop's).
+  void frameAbandoned() { keyMask_.frameAbandoned(); }
   // The times of the slot's last frame, once its slot is reused (never
   // waits); false if they are not there.
   bool readTimes(const GpuContext::FrameSlot& slot, GpuTimes& times);
@@ -281,6 +286,9 @@ class SceneRenderer {
   void timestamp(GpuContext::FrameSlot& slot, Timestamp t, VkPipelineStageFlagBits stage);
   bool createSky();
   void drawSky(VkCommandBuffer cmd, EyeData eye);
+  // The colour key's mask (KeyMask) for the video's frame, if it has a
+  // colour key and the mask does not hold this frame's yet.
+  void drawKeyMask(VkCommandBuffer cmd, const VideoDraw& video, ClearMode clear);
   // sharpen: the strength (VideoDraw::sharpen), 0 off.
   void drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const VideoDraw& video,
                  ClearMode clear, float sharpen);
@@ -305,6 +313,8 @@ class SceneRenderer {
   Uploader* uploader_ = nullptr;
   EyeTargets* targets_ = nullptr;
   Pipelines pipelines_;
+  KeyMask keyMask_;
+  uint64_t unsharedMasks_ = 0;  // masks made of images without a publication to tell apart
   GpuImage skyImage_;
   Texture sky_;
   bool testPattern_ = false;
@@ -317,3 +327,8 @@ class SceneRenderer {
 
 // An eye's push-constant data for this frame (the whole frame as its part).
 EyeData eyeData(const EyeMatrices& eye, const VkRect2D& area, int index);
+// This eye's part of a stereo frame (left: left or top half), as EyeData::stereo.
+void stereoRect(StereoLayout stereo, int eye, float* rect);
+// surround.frag's projection number for a surround format, and a fisheye's
+// field of view. eyeAspect: one eye's picture, width / height.
+int surroundProjection(const VideoFormat& format, float eyeAspect, float& fisheyeFov);

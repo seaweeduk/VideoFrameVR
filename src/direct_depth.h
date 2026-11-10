@@ -8,8 +8,9 @@
 
 #include <cstdint>
 
-// Automatic focus's patches (DepthEstimator), or MaskProbe's, from the decoded frames mpv
-// hands out (Frame, docs/vulkan-renderer.md 11), which stay out of GL: an
+// Automatic focus's patches (DepthEstimator), or MaskProbe's or
+// KeyPicker's, from the decoded frames mpv hands out (Frame,
+// docs/vulkan-renderer.md 11), which stay out of GL: an
 // import there kept a decoder buffer after its frames were gone, and with it
 // room the decoder's next session needed. Drawn by Vulkan with the GL
 // program's lookups, from the frame's two planes, a Q10C frame's TP10

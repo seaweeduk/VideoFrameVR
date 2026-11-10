@@ -38,7 +38,9 @@ struct SurroundDraw {
   vec4 adjust;  // brightness, contrast, saturation (-1..1), w sharpening strength (0 = off)
   // Green screen: x = how green is cut away, y = half its soft edge, z =
   // spill removal 0..2, w = shrink: how many texels the cut reaches past
-  // what looks green.
+  // what looks green. A flat background's colour key: x, y its cut and
+  // soft edge (colourAlpha()), zw the part of its mask's image the frame's
+  // mask fills.
   vec4 chroma;
   vec4 alpha;   // packed alpha: xy = each eye's mask size, in parts of the frame;
                 // zw the chroma lookup's offset (kYuv)
@@ -55,13 +57,17 @@ uint drawFlags() { return pc.draw.mode.y; }
 // general pipeline, which takes everything else from the draw too (with
 // mipmaps, footprint taps, the tone look, sharpening and the rarer cases);
 // otherwise a common mode, which samples the full-size level with one tap.
-layout(constant_id = 0) const int kProjection = -1;  // 0: 180 or 360, 1: fisheye, 2: either cubemap
+// 0: 180 or 360, 1: fisheye, 2: either cubemap; 3 (the COLOUR_KEY build): 180,
+// 360 or fisheye.
+layout(constant_id = 0) const int kProjection = -1;
 // What tex holds (video.glsl's kSource...); -1: an image or planes, from the
 // draw (general pipelines only).
 layout(constant_id = 1) const int kSource = -1;
 // 0: no packed mask or green screen, 1: the packed mask (looked up first,
 // with transparent output in a common mode), 2: a green screen without
-// shrink (common modes only), 3: as 1 with its blue second layer shown.
+// shrink (common modes only), 3: as 1 with its blue second layer shown, 4: a
+// flat background's colour key (the COLOUR_KEY build alone: no other
+// pipeline's shader has its code).
 layout(constant_id = 2) const int kSeeThrough = -1;
 layout(constant_id = 3) const bool kSharpen = false;  // general pipelines: sharpening, for a strength above 0
 // Common modes: the colour balance (general pipelines always apply it).
@@ -179,12 +185,31 @@ float packedAlpha(vec2 uv, EyeData e, vec2 dx, vec2 dy) {
   return smoothstep(0.08, 0.92, red);
 }
 
+#ifdef COLOUR_KEY
+// The colour key's mask (KeyMask), made from each new frame before the eye
+// passes, over the frame at chroma.zw of the image: x the square root of
+// the key's distance (as colourAlpha() takes it) the shrink reaches here, y
+// how much of the background is near (spill removal's edge).
+layout(set = 1, binding = 0) uniform sampler2D keyMask;
+#endif
+
 // Where the view direction dir falls in this eye's picture (pictureUv).
 vec2 surroundUv(vec3 dir, int projection, out bool inside) {
   inside = true;
   if (kProjection == 0) return equirectUv(dir, projection == 0 ? PI : 2.0 * PI, inside);
   if (kProjection == 1) return fisheyeUv(dir, pc.draw.params.x, inside);
   if (kProjection == 2) return cubemapUv(dir, projection == 4);
+#ifdef COLOUR_KEY
+  if (kProjection == 3) {
+    // 180, 360 or fisheye, both worked out and one taken, without a branch.
+    bool fisheyeInside;
+    vec2 fisheye = fisheyeUv(dir, pc.draw.params.x, fisheyeInside);
+    vec2 equirect = equirectUv(dir, projection == 0 ? PI : 2.0 * PI, inside);
+    bool isFisheye = projection == 2;
+    inside = isFisheye ? fisheyeInside : inside;
+    return isFisheye ? fisheye : equirect;
+  }
+#endif
   return pictureUv(dir, projection, pc.draw.params.x, inside);
 }
 
@@ -286,7 +311,11 @@ void main() {
 
   bool keyGreen = (flags & kKeyGreen) != 0u, alphaOut = (flags & kAlphaOut) != 0u;
   bool packed = kSeeThrough < 0 ? (flags & kPackedAlpha) != 0u : kMaskFirst;
+#ifdef COLOUR_KEY
+  bool keyed = true;  // kSeeThrough 4: no packed mask
+#else
   bool keyed = kSeeThrough < 0 ? !packed && (flags & kChromaKey) != 0u : kSeeThrough == 2;
+#endif
   if (kSeeThrough == 0 || (kSeeThrough < 0 && !keyGreen && !alphaOut)) {
     // No packed mask or green screen: the picture where there is one, else
     // what the passthrough mode shows the room with.
@@ -302,9 +331,32 @@ void main() {
   keyed = keyed && inside;
   float alpha = inside ? 1.0 : 0.0;
   vec4 chroma = pc.draw.chroma;
+#ifdef COLOUR_KEY
+  // The colour key: its colour (display values), and its mask here (kept on
+  // the part of the image the frame's mask fills).
+  vec3 keyRgb = keyColour(pc.draw.alpha.x);
+  vec2 faceLo = vec2(0.0), faceHi = vec2(0.0);
+  if (cube) {
+    // A cubemap's on this face, half a mask texel in (the next face's mask
+    // is elsewhere in the frame).
+    vec2 grid = projection == 3 ? vec2(3.0, 2.0) : vec2(2.0, 3.0);
+    vec2 cell = min(floor(uv * grid), grid - 1.0);
+    faceLo = (eyeOffset + cell / grid * eyeScale) * chroma.zw + 0.5 / kKeyMaskSize;
+    faceHi = (eyeOffset + (cell + 1.0) / grid * eyeScale) * chroma.zw - 0.5 / kKeyMaskSize;
+  }
+  vec2 keyAt = textureLod(keyMask,
+                          cube ? clamp(eyeUv * chroma.zw, faceLo, faceHi)
+                               : min(eyeUv * chroma.zw, chroma.zw - 0.5 / kKeyMaskSize),
+                          0.0).rg;
+#endif
   if (packed) {
     alpha = kMaskFirst ? maskAlpha : packedAlpha(uv, e, dx, dy);
   } else if (keyed) {
+#ifdef COLOUR_KEY
+    // This pixel's own distance, or the shrink's from the mask.
+    alpha = colourAlpha(min(sqrt(keyDistance2(linearToSrgb(c), keyRgb)), keyAt.x * keyAt.x),
+                        chroma);
+#else
     alpha = chromaAlpha(linearToSrgb(c), chroma);
     if (!kCommon && chroma.w > 0.0 && alpha > 0.0) {
       // Shrink (general pipelines): cut where any neighbour that far away is
@@ -317,14 +369,19 @@ void main() {
         alpha = min(alpha, chromaAlpha(linearToSrgb(t), chroma));
       }
     }
+#endif
   }
   // Near what is cut away nothing is sharpened, so the cut gets no fringes;
   // the coverage itself never is.
   if (sharpened && (packed || keyed)) {
     bool edge = alpha < 1.0;
     for (int i = 0; i < 4; ++i)
+#ifdef COLOUR_KEY
+      edge = edge || colourAlpha(sqrt(keyDistance2(linearToSrgb(n[i]), keyRgb)), chroma) < 1.0;
+#else
       edge = edge || (packed ? packedAlpha(nUv[i], e, dx, dy)
                              : chromaAlpha(linearToSrgb(n[i]), chroma)) < 1.0;
+#endif
     sharpened = !edge;
   }
   // The mask and the key have read the picture as it came; sharpening,
@@ -332,7 +389,18 @@ void main() {
   // is shown.
   show(c, n, sharpened, e, flags);
   if (sharpened) c = sharpen(c, n[0], n[1], n[2], n[3], strength);
+#ifdef COLOUR_KEY
+  if (keyed && keyAt.y > 0.0 && alpha > 0.0) {
+    // The colour key's spill removal, on a pixel tinted towards the key, acts
+    // as much as the background is near (the mask's y).
+    vec3 s = linearToSrgb(c);
+    vec3 axis;
+    float excess = keySpill(s, keyRgb, axis);
+    if (excess > 0.0) c = srgbToLinear(mix(s, clamp(s - excess * axis, 0.0, 1.0), keyAt.y));
+  }
+#else
   if (keyed) c = srgbToLinear(removeSpill(linearToSrgb(c), chroma.z));
+#endif
   if (kBalanced) c = balanced(c);
   if (!kCommon && keyGreen && (packed || keyed)) {
     // The picture itself must never look like the key colour, or the

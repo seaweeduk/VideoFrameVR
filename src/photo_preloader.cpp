@@ -235,7 +235,7 @@ void PhotoPreloader::update() {
       s.uploadedRows = 0;
       s.ready = false;
       s.image = std::move(image);
-      interop_->acquireForGl(*s.image);
+      interop_->acquireForWrite(*s.image);
       interop_->keepInGl(*s.image, true);
     } else {
       // The slot keeps what it had.

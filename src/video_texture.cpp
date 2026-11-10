@@ -31,7 +31,7 @@ void VideoTexture::release() {
 
 SharedImage& VideoTexture::back() {
   SharedImage& image = *slots_[hasFrame_ ? 1 - current_ : current_];
-  interop_->acquireForGl(image);
+  interop_->acquireForWrite(image);
   return image;
 }
 

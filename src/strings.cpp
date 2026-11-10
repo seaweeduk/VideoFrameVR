@@ -97,7 +97,7 @@ const Strings kEnglish = {
     "Nothing in this folder matches “%s”",
     "%d of %d in this folder",
     "Green screen",
-    "Remove green using the sliders below.",
+    "Remove the video's background using the settings below.",
     "This video has its own mask.",
     "Passthrough",
     "Opacity",
@@ -108,7 +108,6 @@ const Strings kEnglish = {
     "Mask in the video",
     "For videos that carry their own mask (DeoVR alpha). Follows “_ALPHA” in the file name unless "
     "set here. Saved for this video.",
-    "Only for side-by-side fisheye video. Choose that format first.",
     "Mask's second layer",
     "This video's mask has a second layer that you can hide. Saved for this video.",
     "Strength",
@@ -116,6 +115,21 @@ const Strings kEnglish = {
     "Spill",
     "Shrink",
     "Restore the sliders' defaults.",
+    "Background",
+    "The circle shows the colour removed from this video. A crossed-out circle means nothing was "
+    "detected, so nothing is removed: choose Green screen or Solid colour. Saved for this video.",
+    {"Automatic", "Green screen", "Solid colour …"},
+    {"Check the video: remove the solid colour or green screen it finds; nothing if it finds "
+     "neither.",
+     "For videos filmed in front of a real green screen: remove its green, lit or in shadow.",
+     "For a flat background of exactly one colour, any colour including green. Point at it and "
+     "pull the trigger."},
+    "Solid colour",
+    "Checking …",
+    "Point at the background and pull the trigger",
+    "Its colour is removed from this video.",
+    "That spot isn't one colour. Point at a plain area of the background.",
+    "A colour can't be picked from this video. Cancel, then choose Automatic or Green screen.",
     "Half SBS",
     "Half TB",
     "Stretch half-size eyes to their original proportions. Flat 3D only.",
@@ -175,7 +189,7 @@ const Strings kEnglish = {
     "Stereo focus",
     "Screen",
     "Image (all videos)",
-    "Cut out the green",
+    "Remove background",
     "Video settings",
     "Main menu",
     "Quit",
@@ -567,8 +581,8 @@ const Strings kEnglish = {
     "Size of the full-detail area around your gaze.",
     "Add a half-detail ring around the sharp area.",
     "Pixels sharing one shading sample outside the sharp area.",
-    {"How much green to remove.", "Shrink the visible foreground's edges.",
-     "Soften the cutout's edges.", "Remove green tint from foreground edges."},
+    {"How much of the background to remove.", "Shrink the visible foreground's edges.",
+     "Soften the cutout's edges.", "Remove the background's tint from foreground edges."},
     "Change the screen's size, measured from bottom to top.",
     "Bend the screen around you. Zero is flat.",
     "Rate in half-stars; select the saved rating again to clear.",
@@ -736,12 +750,13 @@ const Strings kEnglish = {
     },
     {
         "Automatic passthrough",
-        "Passthrough switches itself on for videos made for it: with a mask or a green screen. "
-        "Turned off for a video, it stays off.",
-        "For videos made for it (a mask or a green screen). Only for headsets whose camera "
-        "shows the room in the green, such as the Steam Frame.",
+        "Passthrough switches itself on for videos made for it: with a mask, a green screen or a "
+        "solid background. Turned off for a video, it stays off.",
+        "For videos made for it (a mask, a green screen or a solid background). Only for headsets "
+        "whose camera shows the room in the green, such as the Steam Frame.",
         "Passthrough on: this video has a mask",
         "Passthrough on: green screen video",
+        "Passthrough on: solid background",
         "Video settings → Passthrough turns it off",
     },
     {

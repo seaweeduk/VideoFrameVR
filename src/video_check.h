@@ -1,6 +1,7 @@
 #pragma once
 
 #include "video_format.h"
+#include "video_memory.h"  // KeyColour
 
 #include <atomic>
 #include <condition_variable>
@@ -22,6 +23,15 @@
 // and two failures end the check early, so most videos cost two keyframes
 // (about 6 s of two low-priority threads on the Frame for 8K).
 //
+// With it, in its first two samples, a software-filled background (the fill
+// check, for the background key's Automatic): in each eye (a fisheye's
+// circle), its most common exact colour covers much of the picture and most
+// of its top and of both its upper corners, the same in both eyes and both
+// samples. Only saturated colours: black, grey and white are too often a real
+// room or a border. Looking costs next to nothing beside a decode, and
+// adds none. A fill found ends the check after those two (its colour key
+// wins over the green keyer: green fills look like green screens too).
+//
 // A packed mask's second layer (SLR's layered masks, VideoSettings::
 // maskLayersFound): a saturated blue, with neither red nor green, in both
 // eyes' masks. Older masks never have it: red ones only bleed a little blue
@@ -35,6 +45,7 @@ class VideoCheck {
   // Stored with each result: a newer check runs again on videos the older
   // one looked at.
   static constexpr int kGreenVersion = 1;
+  static constexpr int kFillVersion = 1;
   static constexpr int kLayersVersion = 1;
 
   VideoCheck() = default;
@@ -43,19 +54,26 @@ class VideoCheck {
   ~VideoCheck();
 
   // Checks this video (a local file or a remote one), replacing a check in progress.
-  void start(const std::string& path, StereoLayout stereo, Kind kind);
-  // A finished check, once: its video, what it looked for and whether it found it.
+  void start(const std::string& path, const VideoFormat& format, Kind kind);
+  // A finished check, once: its video, what it looked for and whether it
+  // found it; for a green screen check, also the fill check's answer, and
+  // the fill's colour as the key compares it (display RGB of the frame).
+  // Unanswered: the video couldn't be read, or not in time (it runs again
+  // next time).
   struct Result {
     std::string path;
     Kind kind = Kind::GreenScreen;
     bool found = false;
+    bool fillFound = false;
+    KeyColour fillColour;
+    bool answered = true;
   };
   bool result(Result& out);
 
  private:
   struct Job {
     std::string path;
-    StereoLayout stereo = StereoLayout::Mono;
+    VideoFormat format;
     Kind kind = Kind::GreenScreen;
     uint64_t generation = 0;
   };

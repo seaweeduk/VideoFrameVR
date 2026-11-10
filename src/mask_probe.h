@@ -31,6 +31,8 @@ class MaskProbe {
   // layer is found.
   bool update(double now, const std::string& video, bool wanted, GLuint texture,
               const std::function<bool()>& prepare, DepthPatchDrawer* drawer);
+  // A drawer's probe is on its way.
+  bool drawing() const { return drawer_ != nullptr; }
 
  private:
   bool count(const float* values);

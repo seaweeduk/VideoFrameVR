@@ -38,11 +38,24 @@ struct DepthPatch {
   int alphaPacked = 0;
   float alphaScale[2] = {};
   float greenKey = 0;
+  // Else a flat background's key (above 0): clear within keyCut of
+  // keyColour (SeeThrough::packedKeyColour()).
+  float keyColour = 0, keyCut = 0;
   // MaskProbe's instead: rows 0.. of a width x height image cover the left
   // eye's packed mask (inside its circle; -1 outside), the next ones the
   // right eye's, one tap of the full-size picture per pixel, 1 where it has
   // VideoCheck's blue, else 0 (no thumbnail).
   bool maskProbe = false;
+  // KeyPicker's instead: red, green and blue in a 4 x 1 image (width 4,
+  // height 1), each the mean display value (as the frame came, before TV
+  // gamma) of the 5 x 5 texels of the full-size picture around pickUv
+  // (frame coordinates), within pickPart (the eye's part or its cube face:
+  // its offset and size, as EyeData::stereo's zw and xy), then the largest
+  // difference between them in any channel, as the colour key compares
+  // them.
+  bool keyPick = false;
+  float pickUv[2] = {};
+  float pickPart[4] = {};
 };
 
 // Draws a DepthPatch from a frame that stays out of GL (DirectDepth).
@@ -146,7 +159,8 @@ class DepthEstimator {
   GLuint sampler_ = 0;  // trilinear, whatever filter the video texture is set to
   GLint uTex_ = -1, uMode_ = -1, uRect_ = -1, uStart_ = -1, uStep_ = -1, uProjection_ = -1,
         uFisheyeFov_ = -1, uFlip_ = -1, uEyeScale_ = -1, uEyeOffset_ = -1, uAlphaPacked_ = -1,
-        uAlphaCenter_ = -1, uAlphaScale_ = -1, uGreenKey_ = -1;
+        uAlphaCenter_ = -1, uAlphaScale_ = -1, uGreenKey_ = -1, uKeyCut_ = -1,
+        uKey_ = -1;
   GLsync fence_ = nullptr;
   DepthPatchDrawer* drawer_ = nullptr;  // drawing pending_ instead of GL
   Job pending_;  // read back on the GPU

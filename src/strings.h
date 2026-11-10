@@ -519,7 +519,8 @@ struct AutoPassthroughStrings {
   const char* hintDesktop;  // a PC: only for headsets whose camera keys the green
   const char* mask;         // shown in front of the eyes as it switches on
   const char* greenScreen;
-  const char* undo;         // the line below either
+  const char* fill;         // a flat background (the fill check)
+  const char* undo;         // the line below any
 };
 
 // microSD cards and USB drives (removable_drives.h): the navigation's name
@@ -1016,7 +1017,6 @@ struct Strings {
   const char* opacityOverlay;  // printf format with one %d (percent), shown as a twist changes it
   const char* packedMask;
   const char* packedMaskHint;
-  const char* packedMaskFormatHint;
   const char* secondLayer;  // a packed mask's hideable second layer (shown while on)
   const char* secondLayerHint;
   const char* keyStrength;
@@ -1024,6 +1024,22 @@ struct Strings {
   const char* keySpill;
   const char* keyShrink;
   const char* greenScreenResetHint;
+  // The background key's Background row (VideoSettings::colourKeyed()): its
+  // choices, each with a tooltip, and what its button says: the choice, a
+  // colour picked, or (Automatic) that the video is being checked. A swatch
+  // beside it shows the colour removed.
+  const char* keyBackground;
+  const char* keyBackgroundHint;
+  const char* keySources[3];  // Automatic, Green screen, Solid colour …
+  const char* keySourceHints[3];
+  const char* keyPicked;
+  const char* keyChecking;
+  // Picking its colour: what the strip says, and under it, or instead why
+  // the last press took none (KeyPickNote).
+  const char* keyPick;
+  const char* keyPickDetail;
+  const char* keyPickUneven;
+  const char* keyPickUnreadable;
   const char* halfSbs;  // format tile: flat 3D with half-squeezed eyes
   const char* halfTb;
   const char* halfPackedHint;

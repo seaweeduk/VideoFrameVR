@@ -19,6 +19,8 @@ const uint kTexture = 256u;     // screen: a picture (else its placeholder colou
 const uint kYuv = 512u;         // a decoded frame: the texture is its luma, binding 1 its chroma
 const uint kTvGamma = 1024u;    // TV gamma, BT.1886's plain 2.4 power instead of sRGB's curve
 const uint kPhoto = 2048u;      // a photo: brightness etc. as adjustPicture() applies them
+// 4096: VideoFlag::kColourKey, a flat background keyed, read by C++ alone (it
+// has pipelines of its own, surround.frag's COLOUR_KEY build).
 
 // The draw's flags (above), from its push constants: each shader defines it.
 uint drawFlags();
@@ -225,4 +227,52 @@ vec3 removeSpill(vec3 e, float spill) {
   float limit = mix(max(e.r, e.b) + 0.02, 0.5 * (e.r + e.b), min(spill, 1.0));
   if (e.g > limit) e.g = max(limit - max(spill - 1.0, 0.0) * (e.g - limit), 0.0);
   return e;
+}
+
+// A flat background's colour (display RGB), packed by C++ as 8-bit red,
+// green and blue in the low 24 bits of a float in 0.5..2.
+vec3 keyColour(float packed) {
+  uint u = floatBitsToUint(packed);
+  return vec3(float(u & 255u), float((u >> 8) & 255u), float((u >> 16) & 255u)) / 255.0;
+}
+
+// A display colour as the colour key compares it: BT.601 luma at a third
+// (brightness counts less than colour, so shading matters less, yet black
+// can still be keyed), and the colour differences U and V.
+float keyLuma(vec3 e) { return dot(e, vec3(0.299, 0.587, 0.114)); }
+vec3 keySpace(vec3 e) {
+  return vec3(keyLuma(e) / 3.0, dot(e, vec3(-0.169, -0.331, 0.5)),
+              dot(e, vec3(0.5, -0.419, -0.081)));
+}
+
+// How far the display colour e is from a flat background's (keyRgb) as its
+// key compares them, squared.
+float keyDistance2(vec3 e, vec3 keyRgb) {
+  vec3 d = keySpace(e - keyRgb);
+  return dot(d, d);
+}
+
+// How much of a pixel stays (1) or is cut (0) by a flat background's key
+// at that distance: cut within x of it, then fading in over y.
+float colourAlpha(float distance, vec4 chroma) {
+  return clamp((distance - chroma.x) / chroma.y, 0.0, 1.0);
+}
+
+// The colour key's mask images (KeyMask), this many texels on each side. A
+// macro: other shaders' code stays as it was.
+#define kKeyMaskSize 2048.0
+
+// A kept pixel's tint of a flat background (keyRgb, display values): how
+// far the part of its colour (apart from luma) towards the key's, along
+// axis, is more than three times the rest of its colour. Spill removal
+// takes that out (e - excess * axis, clamped), so luma stays; a grey key
+// (black) has no colour to take out (0).
+float keySpill(vec3 e, vec3 keyRgb, out vec3 axis) {
+  axis = keyRgb - keyLuma(keyRgb);
+  float size = length(axis);
+  if (size < 1e-4) return 0.0;
+  axis /= size;
+  vec3 colour = e - keyLuma(e);
+  float along = dot(colour, axis);
+  return max(along - 3.0 * length(colour - along * axis), 0.0);
 }

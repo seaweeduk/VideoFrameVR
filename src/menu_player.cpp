@@ -23,6 +23,10 @@ std::string upper(std::string s) {
 }  // namespace
 
 void Menu::layoutMain() {
+  if (view_.keyPicking) {
+    layoutKeyPick();
+    return;
+  }
   const Strings& t = text();
   const PlaybackState& p = view_.playback;
 
@@ -431,6 +435,10 @@ void Menu::seekBarPoint(double fraction, float& u, float& v) const {
 // lighter beyond it), chapter marks, the file name on its left and the
 // time on its right.
 void Menu::drawMainPage(cairo_t* cr) {
+  if (view_.keyPicking) {
+    drawKeyPick(cr);
+    return;
+  }
   const Strings& t = text();
   const PlaybackState& p = view_.playback;
   const Palette& pal = palette();
@@ -502,4 +510,31 @@ void Menu::drawMainPage(cairo_t* cr) {
   else
     drawText(cr, StashPages::playingTitle(*this, title), x + 24, kBandY, titleRight - x - 24,
              kBandH, 27, false, false, 1, 1, 1);
+}
+
+// Picking the background key's colour: the browser is hidden, and the
+// strip says what to do, with Cancel under it (the menu button cancels too).
+void Menu::layoutKeyPick() {
+  Button cancel = textButton(text().cancel, Icon::None, command(MenuCommand::CancelKeyPick));
+  cancel.w = std::max(cancel.w, 220.0);
+  cancel.h = 64;
+  cancel.x = (kMainWidth - cancel.w) / 2;
+  cancel.y = kStripBodyY + kStripBodyHeight - cancel.h - 28;
+  buttons_.push_back(cancel);
+}
+
+void Menu::drawKeyPick(cairo_t* cr) {
+  const Strings& t = text();
+  const Palette& pal = palette();
+  const double x = kMargin, w = kMainWidth - 2 * kMargin;
+  drawText(cr, t.keyPick, x, kStripBodyY + 26, w, 48, 30, true, true, pal.text.r, pal.text.g,
+           pal.text.b);
+  // Under it what it does, or (brighter) why the last press took no colour.
+  const KeyPickNote note = view_.keyPickNote;
+  const char* detail = note == KeyPickNote::Uneven       ? t.keyPickUneven
+                       : note == KeyPickNote::Unreadable ? t.keyPickUnreadable
+                                                         : t.keyPickDetail;
+  const Rgba& c = note == KeyPickNote::None ? pal.textDim : pal.text;
+  const double rgba[4] = {c.r, c.g, c.b, c.a};
+  drawTextLines(cr, detail, x, kStripBodyY + 80, w, kTextSize, 2, rgba, true);
 }
