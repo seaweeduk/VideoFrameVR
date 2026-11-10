@@ -1,6 +1,13 @@
 #version 450
 #extension GL_EXT_buffer_reference : require
 #extension GL_EXT_samplerless_texture_functions : require
+// Q10C conversion adapted from FramePlayerX, Copyright 2026 remotesojourner.
+// Upstream: crates/fp-render/shaders/q10c.wgsl at
+// 0358020e13bc3185fe66a3ebf88d5ad9c50f24f6, Apache-2.0.
+// https://github.com/remotesojourner/frameplayerx
+// Modified for GLSL and packed buffer output in VideoFrameVR; present by
+// 2026-11-03, attribution added 2026-11-10. See packaging/frameplayerx/.
+//
 // Copies one band of a Q10C plane, read through a TP10 texture
 // (dmabuf_ubwc.c), into a P010 plane: two samples or a UV pair a word.
 

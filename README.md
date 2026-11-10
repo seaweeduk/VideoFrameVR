@@ -66,6 +66,27 @@ and Pango for the menus.
   </tr>
 </table>
 
+## License
+
+VideoFrameVR is free software under the GNU General Public License, version 3.
+See [LICENSE](LICENSE). Each release has source archives with the exact source
+used to build it.
+
+It is a modified version of [tuxVRdome](https://github.com/tzyvkq9eoyrg/tuxVRdome)
+by PandaSoda45, forked at commit `4c14ef8` (12 October 2026) and modified by
+seaweeduk since then.
+
+Q10C carrier-image and TP10 descriptor support includes adaptations from
+[FramePlayerX](https://github.com/remotesojourner/frameplayerx) by remotesojourner,
+under Apache-2.0. The mount-path unescaping helper and comment are also credited to
+FramePlayerX. See [provenance and notices](packaging/frameplayerx/README.md) for
+the scope and VideoFrameVR's changes, including direct decoder-buffer sampling.
+
+Third-party components bundled with a release, and their licences, are listed in
+the `THIRD-PARTY-NOTICES` file inside it and under `share/licenses/`.
+
+[Screenshot credits](.github/readme/CREDITS.md).
+
 ## Install
 
 Get the installer from [Releases](https://github.com/seaweeduk/VideoFrameVR/releases).
@@ -135,18 +156,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). To build the app yourself, see
 
 This app was written with the help of the latest frontier AI models from
 Anthropic and OpenAI, using [OpenCode](https://github.com/anomalyco/opencode).
-
-## License
-
-VideoFrameVR is free software under the GNU General Public License, version 3.
-See [LICENSE](LICENSE). Each release has source archives with the exact source
-used to build it.
-
-It is a modified version of [tuxVRdome](https://github.com/tzyvkq9eoyrg/tuxVRdome)
-by PandaSoda45, forked at commit `4c14ef8` (12 October 2026) and modified by
-seaweeduk since then.
-
-Third-party components bundled with a release, and their licences, are listed in
-the `THIRD-PARTY-NOTICES` file inside it and under `share/licenses/`.
-
-[Screenshot credits](.github/readme/CREDITS.md).

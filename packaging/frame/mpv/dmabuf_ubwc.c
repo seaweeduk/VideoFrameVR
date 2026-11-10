@@ -1,3 +1,13 @@
+/* Q10C carrier images, TP10 descriptor rewriting, band splitting and reference
+ * layout checks adapted from FramePlayerX, Copyright 2026 remotesojourner.
+ * Upstream: crates/fp-render/src/q10c.rs at
+ * 0358020e13bc3185fe66a3ebf88d5ad9c50f24f6, Apache-2.0.
+ * https://github.com/remotesojourner/frameplayerx
+ * Modified for VideoFrameVR's C/mpv DMA-BUF import and conversion pipeline;
+ * present in VideoFrameVR by 2026-11-03, attribution added 2026-11-10.
+ * See packaging/frameplayerx/ for the upstream license, notices and scope.
+ */
+
 /* Private mpv integration for the native Steam Frame bundle.
  * Frame's decoder exposes UBWC NV12/P010. Import the whole compressed image
  * through Vulkan, then transfer its planes into an exported linear buffer.

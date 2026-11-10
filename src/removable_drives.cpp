@@ -47,6 +47,14 @@ bool wanted(Kind kind, const std::string& type) {
   return false;
 }
 
+// Mount-path unescaping helper and comment credited to FramePlayerX,
+// Copyright 2026 remotesojourner. Upstream: crates/fp-core/src/volume.rs at
+// 0c43903b78e3c1312ddaee3ce1674817a2799c0b, Apache-2.0.
+// https://github.com/remotesojourner/frameplayerx
+// VideoFrameVR's C++ version was present by 2026-11-03; credit added
+// 2026-11-10. This credit does not cover the whole removable-drive subsystem.
+// See packaging/frameplayerx/ for the upstream license, notices and scope.
+//
 // /proc/mounts writes spaces and a few other bytes as \ooo.
 std::string unescape(const std::string& s) {
   std::string out;
