@@ -1,3 +1,32 @@
+# Portions adapted from saphid's Frame Control, frame/android/steam_shortcuts.py
+# at 1b39fc171829f692807fe2d3e658905a15857122.
+# https://github.com/saphid/frame-control
+# Modified for VideoFrameVR's loopback discovery, shortcut matching, socket
+# cleanup and account-specific artwork; present by 2026-11-07, credited 2026-11-10.
+# See packaging/frame-control/ for provenance and the upstream license.
+#
+# MIT License
+#
+# Copyright (c) 2026 saphid
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 """Change non-Steam shortcuts through the running Steam client, without restarting it.
 
 Steam on the Steam Frame always runs with CEF remote debugging on loopback, and

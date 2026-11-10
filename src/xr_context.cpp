@@ -44,6 +44,12 @@ const char* const kFrameControllerExtension = "XR_VALVE_frame_controller_interac
 constexpr char kVrcmdDir[] = "/opt/steamvr/bin/linuxarm64";
 constexpr char kVrcmd[] = "/opt/steamvr/bin/linuxarm64/vrcmd";
 
+// Launch-dashboard dismissal and environment isolation credited to FramePlayerX,
+// Copyright 2026 remotesojourner, Apache-2.0. Upstream: crates/fp-xr/src/context.rs
+// and session.rs at 8d95bab648c057cf53a0d56c65970e3c0a72dc59.
+// https://github.com/remotesojourner/frameplayerx
+// Modified for VideoFrameVR's GLib spawn and single-attempt launch handoff;
+// present by 2026-11-03, attribution added 2026-11-10. See packaging/frameplayerx/.
 void hideLaunchDashboard() {
   gchar** env = g_get_environ();
   for (const char* key : {"SteamAppId", "SteamGameId", "SteamOverlayGameId", "LD_PRELOAD"})
@@ -1647,6 +1653,7 @@ void XrContext::pollEvents(bool& quit) {
       case XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED: {
         const auto* e = reinterpret_cast<XrEventDataSessionStateChanged*>(&event);
         sessionState_ = e->state;
+        // FramePlayerX launch-handoff approach; attribution above hideLaunchDashboard.
         // First focus ends the launch handoff, even if another event in this
         // batch takes focus away again. Never close a dashboard opened later.
         if (e->state == XR_SESSION_STATE_FOCUSED || e->state == XR_SESSION_STATE_STOPPING ||

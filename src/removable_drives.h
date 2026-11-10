@@ -6,6 +6,11 @@
 #include <thread>
 #include <vector>
 
+// SteamOS drive-detection and automount policy, with the associated explanation,
+// credited to FramePlayerX, Copyright 2026 remotesojourner, Apache-2.0.
+// Modified for VideoFrameVR by 2026-11-03; attribution added 2026-11-10.
+// See packaging/frameplayerx/ for upstream revisions, license and notices.
+//
 // microSD cards and USB drives. udisks mounts them under /run/media; the
 // browser's navigation lists what is mounted there (places.h). On the Frame,
 // SteamOS mounts only ext4 microSD cards (Steam needs symlinks) and no USB

@@ -1,3 +1,12 @@
+// Mount-path parsing/unescaping, removable-drive detection and SteamOS-specific
+// automount policy credited to FramePlayerX, Copyright 2026 remotesojourner.
+// Upstream: crates/frameplayerx/src/drives.rs,
+// crates/frameplayerx/src/app/tasks.rs and crates/fp-core/src/volume.rs at
+// 0c43903b78e3c1312ddaee3ce1674817a2799c0b,
+// Apache-2.0. https://github.com/remotesojourner/frameplayerx
+// Modified for VideoFrameVR's C++ worker and GIO D-Bus integration; present by
+// 2026-11-03, attribution added 2026-11-10. See packaging/frameplayerx/.
+
 #include "removable_drives.h"
 
 #include <gio/gio.h>

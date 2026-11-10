@@ -53,6 +53,14 @@ bool signalled(int fd, int timeout = 0) {
   return result > 0 && (p.revents & POLLIN) && !(p.revents & (POLLERR | POLLNVAL));
 }
 
+// TP10 descriptor helpers adapted from FramePlayerX, Copyright 2026
+// remotesojourner. Upstream: crates/fp-render/src/q10c.rs at
+// 0358020e13bc3185fe66a3ebf88d5ad9c50f24f6, Apache-2.0.
+// https://github.com/remotesojourner/frameplayerx
+// Modified for VideoFrameVR's direct DMA-BUF import and sampling; present by
+// 2026-11-03, attribution added 2026-11-10. See packaging/frameplayerx/.
+// This credit covers the carrier/descriptor machinery, not the whole renderer.
+//
 // a6xx/a7xx texture descriptor fields (Mesa's A6XX_TEX_MEMOBJ), as the
 // converter (packaging/frame/mpv/dmabuf_ubwc.c) changes them.
 uint32_t texGet(const uint32_t* d, unsigned word, unsigned shift, unsigned bits) {

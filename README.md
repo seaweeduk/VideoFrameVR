@@ -126,16 +126,6 @@ and say what you'd like to do and why the app doesn't let you today.
 [Join the Discord](https://seaweeduk.github.io/VideoFrameVR/discord/) to get
 help, share ideas or chat about the app.
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). To build the app yourself, see
-[BUILDING.md](BUILDING.md).
-
-## AI disclosure
-
-This app was written with the help of the latest frontier AI models from
-Anthropic and OpenAI, using [OpenCode](https://github.com/anomalyco/opencode).
-
 ## License
 
 VideoFrameVR is free software under the GNU General Public License, version 3.
@@ -146,7 +136,29 @@ It is a modified version of [tuxVRdome](https://github.com/tzyvkq9eoyrg/tuxVRdom
 by PandaSoda45, forked at commit `4c14ef8` (12 October 2026) and modified by
 seaweeduk since then.
 
+Q10C carrier-image and TP10 descriptor support includes adaptations from
+[FramePlayerX](https://github.com/remotesojourner/frameplayerx) by remotesojourner,
+under Apache-2.0. FramePlayerX is also credited for mount-path parsing and
+unescaping, removable-drive detection, the SteamOS-specific automount policy
+and the SteamVR launch-dashboard workaround.
+See [provenance and notices](packaging/frameplayerx/README.md) for the scope and
+VideoFrameVR's changes, including direct decoder-buffer sampling.
+
+The Steam client helper includes adaptations from
+[Frame Control](https://github.com/saphid/frame-control) by saphid, under MIT.
+See [Frame Control provenance and license](packaging/frame-control/README.md).
+
 Third-party components bundled with a release, and their licences, are listed in
 the `THIRD-PARTY-NOTICES` file inside it and under `share/licenses/`.
 
 [Screenshot credits](.github/readme/CREDITS.md).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). To build the app yourself, see
+[BUILDING.md](BUILDING.md).
+
+## AI disclosure
+
+This app was written with the help of the latest frontier AI models from
+Anthropic and OpenAI, using [OpenCode](https://github.com/anomalyco/opencode).
