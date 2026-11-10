@@ -78,8 +78,9 @@ seaweeduk since then.
 
 Q10C carrier-image and TP10 descriptor support includes adaptations from
 [FramePlayerX](https://github.com/remotesojourner/frameplayerx) by remotesojourner,
-under Apache-2.0. The mount-path unescaping helper and comment are also credited to
-FramePlayerX. See [provenance and notices](packaging/frameplayerx/README.md) for
+under Apache-2.0. FramePlayerX is also credited for mount-path parsing and
+unescaping, removable-drive detection and the SteamOS-specific automount policy.
+See [provenance and notices](packaging/frameplayerx/README.md) for
 the scope and VideoFrameVR's changes, including direct decoder-buffer sampling.
 
 Third-party components bundled with a release, and their licences, are listed in

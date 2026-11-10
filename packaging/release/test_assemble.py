@@ -25,7 +25,8 @@ class FramePlayerXNoticesTest(unittest.TestCase):
                 self.assertEqual((destination / name).read_bytes(),
                                  (APP / "packaging/frameplayerx" / name).read_bytes())
             for text in ["remotesojourner", "yellkell", "Apache-2.0", "Q10C",
-                         "mount-path unescaping", "share/licenses/frameplayerx/"]:
+                         "mount-path parsing", "unescaping", "removable-drive detection",
+                         "SteamOS-specific automount policy", "share/licenses/frameplayerx/"]:
                 self.assertIn(text, notice)
 
     def test_missing_attribution_fails_the_build(self):
@@ -78,7 +79,9 @@ class FramePlayerXNoticesTest(unittest.TestCase):
 
                 notices = (bundle / "THIRD-PARTY-NOTICES").read_text()
                 self.assertIn("FramePlayerX, Copyright 2026 remotesojourner", notices)
-                self.assertIn("mount-path unescaping", notices)
+                self.assertIn("mount-path parsing and unescaping", notices)
+                self.assertIn("removable-drive detection", notices)
+                self.assertIn("SteamOS-specific automount policy", notices)
                 self.assertIn("share/licenses/frameplayerx/", notices)
                 self.assertIn("Combined application: GPL-3.0", notices)
                 self.assertNotIn("Application and repository additions: GPL-3.0", notices)

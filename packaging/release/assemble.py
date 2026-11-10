@@ -106,8 +106,9 @@ def frameplayerx_notices(app, licenses):
         shutil.copy2(app / "packaging/frameplayerx" / name, destination / name)
     return ("FramePlayerX, Copyright 2026 remotesojourner (derived from FramePlayer by yellkell): "
             "https://github.com/remotesojourner/frameplayerx; Apache-2.0 material adapted for "
-            "Q10C carrier images, TP10 descriptors and conversion; mount-path unescaping "
-            "helper and comment also credited. Upstream license, notices, revisions and "
+            "Q10C carrier images, TP10 descriptors and conversion; mount-path parsing and "
+            "unescaping, removable-drive detection and SteamOS-specific automount policy "
+            "also credited. Upstream license, notices, revisions and "
             "VideoFrameVR modification scope: share/licenses/frameplayerx/.")
 
 

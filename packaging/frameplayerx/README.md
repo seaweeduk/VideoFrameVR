@@ -26,16 +26,30 @@ The direct path also uses overlapping luma bands for texture sampling. This
 credit is for the underlying carrier/descriptor machinery, not the entire
 renderer or zero-copy pipeline.
 
-## Mount-path unescaping
+## Removable drives
 
 Upstream revision: [`0c43903b78e3c1312ddaee3ce1674817a2799c0b`](https://github.com/remotesojourner/frameplayerx/commit/0c43903b78e3c1312ddaee3ce1674817a2799c0b),
 21 October 2026.
 
-The mount-path unescaping helper and comment in `src/removable_drives.cpp` are
-credited to [`crates/fp-core/src/volume.rs`](https://github.com/remotesojourner/frameplayerx/blob/0c43903b78e3c1312ddaee3ce1674817a2799c0b/crates/fp-core/src/volume.rs).
-The comment closely matches upstream; the small parser follows the standard
-octal-escape format. This narrow credit does not claim that the whole
-removable-drive subsystem was adapted from FramePlayerX.
+FramePlayerX is credited for mount-path parsing and unescaping, removable-drive
+detection and the SteamOS-specific automount policy in
+`src/removable_drives.cpp` and `src/removable_drives.h`.
+
+| Upstream file | Credited material |
+| --- | --- |
+| [`crates/fp-core/src/volume.rs`](https://github.com/remotesojourner/frameplayerx/blob/0c43903b78e3c1312ddaee3ce1674817a2799c0b/crates/fp-core/src/volume.rs) | Mount-list parsing, octal unescaping and associated comments |
+| [`crates/frameplayerx/src/drives.rs`](https://github.com/remotesojourner/frameplayerx/blob/0c43903b78e3c1312ddaee3ce1674817a2799c0b/crates/frameplayerx/src/drives.rs) | Card/USB identification, filesystem eligibility, UDisks mounting options and SteamOS-specific explanations |
+| [`crates/frameplayerx/src/app/tasks.rs`](https://github.com/remotesojourner/frameplayerx/blob/0c43903b78e3c1312ddaee3ce1674817a2799c0b/crates/frameplayerx/src/app/tasks.rs) | Polling and attempted-mount tracking |
+
+The unescaping helper includes closely matching wording and code structure.
+The broader credit recognizes the matching drive-identification rules,
+filesystem allowlist, ext4 handling, mounting options and SteamOS rationale.
+These routines also appeared in earlier FramePlayer versions before being split
+into the files above.
+
+VideoFrameVR uses GIO D-Bus to enumerate UDisks objects and request mounts, with
+its own C++ worker and change-delivery interface. FramePlayerX enumerates sysfs
+and udev records and invokes `udisksctl` to mount drives.
 
 ## Dates and distribution
 
