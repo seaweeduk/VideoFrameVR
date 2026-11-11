@@ -141,10 +141,11 @@ fi
 cmake -S "$json_source" -B /work/json-build -DJSON_BuildTests=OFF \
   -DJSON_Install=ON -DCMAKE_INSTALL_PREFIX="$prefix" "${cmake_cross[@]}"
 cmake --install /work/json-build
-# Desktop: NVIDIA decoding. The headers only; FFmpeg and mpv open the
+# Desktop: NVDEC and VA-API. NVIDIA headers only; FFmpeg and mpv open the
 # driver's libcuda/libnvcuvid at run time (Steam Linux Runtime imports them).
-ffmpeg_nvidia=()
-mpv_nvidia=()
+# VA-API libraries come from the Platform, its vendor driver from the host.
+ffmpeg_desktop=()
+mpv_desktop=()
 # The Frame's FFmpeg carries this repository's GPL-3.0 patches, so it is built
 # as GPLv3 as a whole (LGPL-2.1 section 3). The desktop's is unmodified LGPL.
 ffmpeg_licence=()
@@ -155,12 +156,12 @@ if [[ $arch == aarch64 ]]; then
 fi
 if [[ $arch == x86_64 ]]; then
   make -C /work/source/nv-codec-headers-12.0.16.1 PREFIX="$prefix" install
-  ffmpeg_nvidia=(--enable-ffnvcodec --enable-cuda --enable-nvdec --enable-cuvid)
-  mpv_nvidia=(-Dcuda-hwaccel=enabled -Dcuda-interop=enabled)
+  ffmpeg_desktop=(--enable-ffnvcodec --enable-cuda --enable-nvdec --enable-cuvid --enable-vaapi)
+  mpv_desktop=(-Dcuda-hwaccel=enabled -Dcuda-interop=enabled -Dvaapi=enabled -Dvaapi-drm=enabled)
 fi
 mkdir -p /work/ffmpeg-build
 cd /work/ffmpeg-build
-"$ffmpeg_source/configure" --prefix="$prefix" "${ffmpeg_cross[@]}" "${ffmpeg_nvidia[@]}" "${ffmpeg_licence[@]}" \
+"$ffmpeg_source/configure" --prefix="$prefix" "${ffmpeg_cross[@]}" "${ffmpeg_desktop[@]}" "${ffmpeg_licence[@]}" \
   --pkg-config="$PKG_CONFIG" --disable-autodetect --enable-libdrm --enable-v4l2-m2m \
   --enable-zlib --enable-bzlib --enable-lzma --enable-gnutls --enable-libdav1d --enable-libopus \
   --enable-shared --disable-static --disable-doc --disable-debug --disable-programs \
@@ -171,7 +172,8 @@ for flag in "${expected[@]}"; do
   grep -qx "#define CONFIG_${flag%=*} ${flag#*=}" /work/ffmpeg-build/config.h
 done
 if [[ $arch == x86_64 ]]; then
-  for flag in NVDEC CUDA HEVC_NVDEC_HWACCEL H264_NVDEC_HWACCEL AV1_NVDEC_HWACCEL; do
+  for flag in NVDEC CUDA HEVC_NVDEC_HWACCEL H264_NVDEC_HWACCEL AV1_NVDEC_HWACCEL \
+              VAAPI HEVC_VAAPI_HWACCEL H264_VAAPI_HWACCEL AV1_VAAPI_HWACCEL VP9_VAAPI_HWACCEL; do
     # grep reads the files itself: behind a pipe, -q's early exit gets cat
     # killed by SIGPIPE, which pipefail makes a failed build.
     grep -qhx "#define CONFIG_${flag} 1" /work/ffmpeg-build/config.h /work/ffmpeg-build/config_components.h
@@ -184,7 +186,7 @@ meson setup /work/mpv-build "$mpv_source" "${cross[@]}" \
   -Dlua=disabled -Dmanpage-build=disabled -Dpdf-build=disabled -Dhtml-build=disabled \
   -Dgl=enabled -Dplain-gl=enabled -Degl=enabled -Ddrm=enabled -Dgbm=enabled \
   -Dlibavdevice=enabled -Dlcms2=enabled -Dzlib=enabled -Diconv=enabled \
-  -Dalsa=enabled -Dpulse=enabled -Dpipewire=enabled "${mpv_nvidia[@]}"
+  -Dalsa=enabled -Dpulse=enabled -Dpipewire=enabled "${mpv_desktop[@]}"
 ninja -C /work/mpv-build -j"$jobs"
 meson install -C /work/mpv-build
 "$CC" --version > /work/compiler.txt

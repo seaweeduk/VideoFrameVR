@@ -8,6 +8,7 @@
 
 struct mpv_handle;
 struct mpv_render_context;
+class MpvGlContext;
 
 // A second, silent mpv instance that shows single frames on request, for the
 // seek bar preview (it opens links too). Frames are scaled into an image
@@ -24,7 +25,8 @@ class FrameGrabber {
 
   // Frames are scaled down to fit maxWidth x maxHeight on the CPU. Pass a
   // copy-back hwdec (e.g. "nvdec-copy", "v4l2m2m-copy") or "no".
-  bool init(GlInterop& interop, const std::string& hwdec, int maxWidth, int maxHeight);
+  bool init(GlInterop& interop, const std::string& hwdec, int maxWidth, int maxHeight,
+            const MpvGlContext& glContext);
   // Opens a file or stream, paused at `start` (mpv syntax: seconds or "20%").
   void open(const std::string& path, const std::string& start);
   void close();

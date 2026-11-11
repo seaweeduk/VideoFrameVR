@@ -36,7 +36,8 @@ class SeekPreview {
 
   // hwdec: copy-back (e.g. "nvdec-copy") or "no", so frames can be shrunk on the
   // CPU. False if its canvases could not be made; without its mpv it never shows.
-  bool init(GlInterop& interop, const std::string& hwdec, Uploader& uploader);
+  bool init(GlInterop& interop, const std::string& hwdec, Uploader& uploader,
+            const MpvGlContext& glContext);
   // Off, it shows nothing and keeps no video open.
   void setEnabled(bool enabled);
   // Another video plays. Streams take seconds to open, so the preview opens

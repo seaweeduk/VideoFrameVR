@@ -26,6 +26,7 @@
 #include "menu.h"
 #include "mirror_window.h"
 #include "motion.h"
+#include "mpv_gl_context.h"
 #include "offline.h"
 #include "performance_readout.h"
 #include "photo_preloader.h"
@@ -468,8 +469,9 @@ enum class StartMenu { None, Strip, Browser, Settings, Seek };
 
 struct Options {
   std::string file;
-  std::string hwdec = "nvdec,nvdec-copy";
-  std::string previewHwdec = "nvdec-copy";
+  // Empty selects defaults for the OpenXR GPU, after device creation.
+  std::string hwdec;
+  std::string previewHwdec;
   bool mirror = true;
   bool timing = false;
   float refreshRate = -1;  // --refresh-rate, never saved; -1 makes no request
@@ -559,7 +561,7 @@ struct QuitWatchdogArm {
   ~QuitWatchdogArm() { armQuitWatchdog(); }
 };
 
-int run(GLFWwindow* window, const Options& opts) {
+int run(Options opts) {
   WindowPtr mirrorWindow(nullptr, glfwDestroyWindow);
   GpuRequirements requirements;
   if (opts.mirror) {
@@ -610,6 +612,18 @@ int run(GLFWwindow* window, const Options& opts) {
     writeAppRefreshRate(Presets(std::vector<int>{}).with(settings.performancePreset, settings).refreshRate);
 
   if (!xr.init(requirements)) return 1;
+  const bool amd = xr.gpuDevice().caps.vendorId == 0x1002;
+  if (opts.hwdec.empty()) opts.hwdec = amd ? "vaapi,vaapi-copy" : "nvdec,nvdec-copy";
+  if (opts.previewHwdec.empty()) opts.previewHwdec = amd ? "vaapi-copy" : "nvdec-copy";
+  if (opts.hwdec == "no") opts.previewHwdec = "no";
+  if (amd)
+    std::printf("AMD support is experimental: use Mesa 26.1+ radeonsi and RADV\n");
+  std::printf("Video decoding requested: %s; previews: %s\n",
+              opts.hwdec.c_str(), opts.previewHwdec.c_str());
+  // OpenXR chooses the GPU before GL is created, so AMD can use EGL without
+  // changing NVIDIA's context API or creating a temporary GLX context.
+  MpvGlContext glContext;
+  if (!glContext.init(amd || opts.hwdec == "v4l2m2m", amd && opts.hwdec != "no")) return 1;
   GpuContext gpu;
   if (!gpu.init(xr.gpuDevice())) return 1;
   GlInterop interop;  // what GL renders, the scene samples
@@ -707,12 +721,12 @@ int run(GLFWwindow* window, const Options& opts) {
   }
   // The keyboard and the clipboard go through the mirror's window; without
   // it the hidden one gets no keys.
-  GLFWwindow* input = mirrorWindow ? mirrorWindow.get() : window;
+  GLFWwindow* input = mirrorWindow ? mirrorWindow.get() : glContext.window();
   DirectVideo direct;  // before the player, which hands it frames
   if (requirements.directVideo && direct.init(gpu)) renderer.setDirectVideo(&direct);
   VideoPlayer player;
   QuitWatchdogArm quitWatchdogArm;
-  if (!player.init(opts.hwdec, interop, opts.timing, opts.decoderQueue)) return 1;
+  if (!player.init(opts.hwdec, interop, glContext, opts.timing, opts.decoderQueue)) return 1;
   player.command(("set volume " + std::to_string(settings.volume)).c_str());
   if (direct.available()) player.setDirectVideo(&direct);
   DirectDepth directDepth;  // automatic focus on frames handed out, which stay out of GL
@@ -736,7 +750,7 @@ int run(GLFWwindow* window, const Options& opts) {
   // Not on the Frame: a second full-size decoder beside playback fails there
   // (docs/frame-plan.md, W4). Without init() it never shows.
   if (!kStandaloneHeadset &&
-      !seekPreview.init(interop, opts.hwdec == "no" ? "no" : opts.previewHwdec, uploader))
+      !seekPreview.init(interop, opts.previewHwdec, uploader, glContext))
     return 1;
   GazeNotice countdownNotice(0);  // "Recentering in 2 …"
   // "Viewpoint: 15 % closer" while the stick moves it, or "Opacity: 70 %"
@@ -3785,31 +3799,12 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "GLFW error %d: %s\n", code, desc);
   });
   if (!glfwInit()) return 1;
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-  glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
-  // mpv imports Frame's V4L2 DMA-BUFs through EGL; GLX cannot expose that path.
-  if (opts.hwdec == "v4l2m2m")
-    glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
-  // The window only carries the GL context; mapped, Frame shows it as an
-  // empty black app window beside the headset view and Steam's menus. The
-  // mirror has a window of its own.
-  glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-  GLFWwindow* window = glfwCreateWindow(1280, 720, kAppTitle, nullptr, nullptr);
-  if (!window) {
-    glfwTerminate();
-    return 1;
-  }
-  glfwMakeContextCurrent(window);
-  glfwSwapInterval(0);  // the headset sets the pace, not the desktop monitor
 
   catchQuitSignals();
-  const int rc = run(window, opts);
+  const int rc = run(opts);
   disarmQuitWatchdog();
   Stash::finishStopping();  // a sync under way gives up within about a second
 
-  glfwDestroyWindow(window);
   glfwTerminate();
   return rc;
 }
