@@ -289,8 +289,10 @@ class SceneRenderer {
   bool createSky();
   void drawSky(VkCommandBuffer cmd, EyeData eye);
   // The colour key's mask (KeyMask) for the video's frame, if it has a
-  // colour key and the mask does not hold this frame's yet.
-  void drawKeyMask(VkCommandBuffer cmd, const VideoDraw& video, ClearMode clear);
+  // colour key and the mask does not hold this frame's yet where these
+  // eyes (all of the frame's eye passes, glass's too) can read it.
+  void drawKeyMask(VkCommandBuffer cmd, const VideoDraw& video, ClearMode clear,
+                   const EyeFrame& eyes, const EyeMatrices* matrices);
   // sharpen: the strength (VideoDraw::sharpen), 0 off.
   void drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const VideoDraw& video,
                  ClearMode clear, float sharpen);

@@ -2,6 +2,7 @@
 
 #include "gpu_context.h"
 #include "texture.h"
+#include "visible_part.h"
 
 #include <vulkan/vulkan.h>
 
@@ -21,15 +22,22 @@ static_assert(sizeof(KeyMaskPush) == 80, "KeyMaskPush must match shaders/key_mas
 
 // The colour key's mask, made from each new frame before the eye passes
 // read it (one bilinear lookup each), at most kSize texels on a side over
-// the whole frame: key_distance.frag stores how far each texel is from the
-// key's colour, key_reach.frag the shrink's reach and how much background
-// is near (spill removal) from those. Made once at startup, so its
+// the frame: key_distance.frag stores how far each texel is from the key's
+// colour, key_reach.frag the shrink's reach and how much background is near
+// (spill removal) from those. Made only in the rectangles the eyes can read
+// (visiblePart(), up to one per eye's part) with kSpare texels around them,
+// and again when an eye needs more; the rest of the images keeps what
+// earlier frames stored, which nothing reads. Made once at startup, so its
 // descriptors never change: the passes, both images and their
 // framebuffers, and the eye pipelines' set 1 for it (or a Q10C frame's,
 // DirectVideo::setTp10Mask).
 class KeyMask {
  public:
   static constexpr uint32_t kSize = 2048;  // video.glsl's kKeyMaskSize
+  // Mask texels made around what the eyes need, so that small head
+  // movements while a frame shows don't make it again.
+  static constexpr uint32_t kSpare = 24;
+  using Rect = TexelRect;
 
   KeyMask() = default;
   KeyMask(const KeyMask&) = delete;
@@ -50,15 +58,30 @@ class KeyMask {
   static uint32_t texelsPer(uint32_t width, uint32_t height);
   static void scale(uint32_t width, uint32_t height, float* scale);
 
-  // Whether the mask holds what `push` makes of this image's content
-  // (`generation`: the publication of its picture, or its decoded frame); if not, it will once
-  // the passes being recorded are (then true until frameAbandoned()).
-  bool current(const void* image, uint64_t generation, const KeyMaskPush& push);
-  void frameAbandoned() { made_ = false; }
+  // The mask texels the eye shader's lookups read for uv b of an eye's part
+  // (EyeData::stereo) of a width x height frame (maskTexels()).
+  static Rect needed(const float* stereo, const UvBounds& b, uint32_t width, uint32_t height);
 
-  // Records a pass over the frame's part of its image (distancePass(): 0,
-  // reachPass(): 1) with `pipeline`, whose textures the caller binds.
-  void begin(VkCommandBuffer cmd, int pass, uint32_t width, uint32_t height) const;
+  // Whether the mask holds what `push` makes of this image's content
+  // (`generation`: the publication of its picture, or its decoded frame) in
+  // the `count` rectangles `needs` (none: the frame's whole part); if not,
+  // it will once the passes over made() being recorded are (then true until
+  // frameAbandoned()).
+  bool current(const void* image, uint64_t generation, const KeyMaskPush& push, const Rect* needs,
+               int count, uint32_t width, uint32_t height);
+  void frameAbandoned() { made_ = false; }
+  // The rectangles the reach pass makes (the needs with kSpare around them,
+  // one where they overlap or touch), and those the distance pass makes
+  // for them: grown by what the reach pass reads around a texel.
+  int madeCount() const { return madeCount_; }
+  const Rect& made(int i) const { return madeRects_[i]; }
+  int distanceCount() const { return distanceCount_; }
+  const Rect& distance(int i) const { return distanceRects_[i]; }
+
+  // Records a pass over a rectangle of the frame's part of its image
+  // (distancePass(): 0, reachPass(): 1) with `pipeline`, whose textures the
+  // caller binds; the viewport is the whole part.
+  void begin(VkCommandBuffer cmd, int pass, uint32_t width, uint32_t height, const Rect& rect) const;
   void end(VkCommandBuffer cmd) const;
   const Texture& distances() const { return distanceTexture_; }
 
@@ -75,4 +98,6 @@ class KeyMask {
   const void* image_ = nullptr;
   uint64_t generation_ = 0;
   KeyMaskPush push_{};
+  Rect madeRects_[2] = {}, distanceRects_[2] = {};
+  int madeCount_ = 0, distanceCount_ = 0;
 };
