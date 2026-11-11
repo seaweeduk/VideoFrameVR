@@ -345,9 +345,12 @@ void Pipelines::addSurround(std::vector<Job>& jobs, std::initializer_list<Surrou
   for (SurroundSource source : sources)
     for (int finish = 0; finish < kFinishCount; ++finish)
       for (int p = 0; p < kProjectionCount; ++p)
-        for (int c = 0; c < kCutCount; ++c)
+        for (const SurroundCut c :
+             {kUncut, kPackedMask, kGreenScreen, kPackedRedBlue, kGreenScreenShrink})
           for (int plain = 0; plain < (plainEyePass_ == eyePass_ ? 1 : 2); ++plain) {
-            if (c >= kPackedRedBlue && p != kFisheye) continue;
+            if (c == kPackedRedBlue && p != kFisheye) continue;
+            // Shrink's cut: not for cubemaps or with the look (the general ones).
+            if (c == kGreenScreenShrink && (p == kCubemap || finish == kLookBalanced)) continue;
             // The look's pipelines apply the colour balance too.
             const int32_t constants[] = {p, sourceConstant(source), c, 0, finish != kAsItIs,
                                          finish == kLookBalanced};

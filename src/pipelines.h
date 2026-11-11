@@ -69,8 +69,17 @@ class Pipelines {
   enum SurroundSource { kImage, kPlanes, kTp10, kYcbcr, kSourceCount = kYcbcr + kQ08cSitings };
   // No packed mask or green screen; the packed mask, with transparent output
   // only; a green screen without shrink; the packed mask read in its other
-  // colours (MaskColours), fisheye only (where a packed mask comes).
-  enum SurroundCut { kUncut, kPackedMask, kGreenScreen, kPackedRedBlue, kCutCount };
+  // colours (MaskColours), fisheye only (where a packed mask comes); a green
+  // screen with shrink, but for cubemaps and the tone look. The shader's
+  // values (4 is the colour key's build).
+  enum SurroundCut {
+    kUncut,
+    kPackedMask,
+    kGreenScreen,
+    kPackedRedBlue,
+    kGreenScreenShrink = 5,
+    kCutCount
+  };
   // The picture as it is; the colour balance; the tone look, then the colour
   // balance.
   enum SurroundFinish { kAsItIs, kBalanced, kLookBalanced, kFinishCount };

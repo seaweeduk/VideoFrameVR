@@ -1,5 +1,6 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require
 #ifdef TP10
 #extension GL_EXT_nonuniform_qualifier : require
 #endif
@@ -67,7 +68,7 @@ layout(constant_id = 1) const int kSource = -1;
 // with transparent output in a common mode), 2: a green screen without
 // shrink (common modes only), 3: as 1 with its blue second layer shown, 4: a
 // flat background's colour key (the COLOUR_KEY build alone: no other
-// pipeline's shader has its code).
+// pipeline's shader has its code), 5: as 2 with shrink (common modes only).
 layout(constant_id = 2) const int kSeeThrough = -1;
 layout(constant_id = 3) const bool kSharpen = false;  // general pipelines: sharpening, for a strength above 0
 // Common modes: the colour balance (general pipelines always apply it).
@@ -78,6 +79,7 @@ layout(constant_id = 5) const bool kToneLook = false;
 const bool kCommon = kProjection >= 0;
 const bool kMaskRedBlue = kSeeThrough == 3;
 const bool kMaskFirst = kSeeThrough == 1 || kMaskRedBlue;
+const bool kShrink = kSeeThrough == 5;
 
 #ifdef TP10
 #define tex tp10Bands[0]  // a Q10C frame's luma (video.glsl), always kYuv
@@ -318,7 +320,8 @@ void main() {
 #ifdef COLOUR_KEY
   bool keyed = true;  // kSeeThrough 4: no packed mask
 #else
-  bool keyed = kSeeThrough < 0 ? !packed && (flags & kChromaKey) != 0u : kSeeThrough == 2;
+  bool keyed =
+      kSeeThrough < 0 ? !packed && (flags & kChromaKey) != 0u : kSeeThrough == 2 || kShrink;
 #endif
   if (kSeeThrough == 0 || (kSeeThrough < 0 && !keyGreen && !alphaOut)) {
     // No packed mask or green screen: the picture where there is one, else
@@ -362,6 +365,15 @@ void main() {
                         chroma);
 #else
     alpha = chromaAlpha(linearToSrgb(c), chroma);
+    if (kShrink && alpha > 0.0) {
+      // Shrink in its common mode: as below, a tap at a time (a loop: four
+      // taps live at once took twice the registers).
+      vec2 texel = chroma.w / videoSize(tex, chromaTex);
+      [[dont_unroll]] for (int i = 0; i < 4; ++i) {
+        vec2 o = texel * vec2(i == 0 ? 1.0 : i == 1 ? -1.0 : 0.0, i == 2 ? 1.0 : i == 3 ? -1.0 : 0.0);
+        alpha = min(alpha, chromaAlpha(linearToSrgb(clamp(tap(eyeUv + o), 0.0, 1.0)), chroma));
+      }
+    }
     if (!kCommon && chroma.w > 0.0 && alpha > 0.0) {
       // Shrink (general pipelines): cut where any neighbour that far away is
       // cut.
