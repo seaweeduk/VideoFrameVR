@@ -11,6 +11,7 @@
 #include "focus_marker.h"
 #include "focus_target.h"
 #include "foveation.h"
+#include "frame_reuse.h"
 #include "frame_timer.h"
 #include "gaze_notice.h"
 #include "hints.h"
@@ -197,6 +198,7 @@ void printUsage(const char* argv0) {
               "          [--fixed-view] [--open-menu=PAGE] [--foveation=LEVEL] [--foveation-gaze=WHERE]\n"
               "          [--resolution=SIZE] [--resolution-cycle=SIZES[:SECONDS]] [--sharp-area=WHAT]\n"
               "          [--video-pipeline=on|off] [--decoder-queue=on|off] [--anti-shimmer=off|on|strong]\n"
+              "          [--frame-reuse=on|off]\n"
               "          [--show-performance] [--menu-sharpness=BIAS]\n"
               "          [--show-foveation]\n"
               "          [--sharp-bins=1|3] [--ring=on|off]\n"
@@ -225,7 +227,12 @@ void printUsage(const char* argv0) {
               "--video-pipeline=on shows each new video frame from the next headset frame on, so\n"
               "drawing never waits for its decoding and conversion (on by default with\n"
               "--hwdec=v4l2m2m); off shows it in the frame it arrives in.\n"
-              "--decoder-queue=off disables the Frame's two-frame V4L2 decoder queue for this run.\n",
+              "--decoder-queue=off disables the Frame's two-frame V4L2 decoder queue for this run.\n"
+              "--frame-reuse=on shows the last drawn frame again, reprojected by the runtime, while\n"
+              "a new one would look the same (no new video frame, nothing else drawn, the head\n"
+              "nearly still); off draws every frame. Without it, the Steam Frame follows the setting\n"
+              "Skip repeated frames (on by default) and other devices draw every frame. The option\n"
+              "is never saved; changing the setting in the menu replaces it for the rest of the run.\n",
               argv0);
   std::printf("%s\n", strings().refreshRateHelp);
 }
@@ -501,6 +508,9 @@ struct Options {
   // --video-pipeline: -1 = on with V4L2 decoding (the Frame), else 0/1.
   int videoPipeline = -1;
   bool decoderQueue = true;  // Frame V4L2 only; --decoder-queue=off for comparison
+  // --frame-reuse at start, never saved: -1 = the setting's on the Steam
+  // Frame, off elsewhere, else 0/1.
+  int frameReuse = -1;
   // --anti-shimmer for this run, never saved.
   bool antiShimmerSet = false;
   AntiShimmer antiShimmer = AntiShimmer::On;
@@ -888,6 +898,13 @@ int run(GLFWwindow* window, const Options& opts) {
       opts.videoPipeline < 0 ? opts.hwdec == "v4l2m2m" : opts.videoPipeline == 1;
   double pipelinePeriod = 0;
   std::printf("Video pipeline: %s\n", pipelineVideo ? "on, one headset frame ahead" : "off");
+  // A frame that would look like the last one drawn is not drawn: the
+  // runtime shows that one again (frame_reuse.h). The setting decides on
+  // the Steam Frame, --frame-reuse at start anywhere.
+  FrameReuse frameReuse;
+  frameReuse.setEnabled(opts.frameReuse < 0 ? kStandaloneHeadset && settings.frameReuse
+                                             : opts.frameReuse == 1);
+  std::printf("Frame reuse: %s\n", frameReuse.enabled() ? "on" : "off");
   seekPreview.setEnabled(settings.seekPreview);
   FolderMemory folders;
   folders.load();
@@ -1788,6 +1805,13 @@ int run(GLFWwindow* window, const Options& opts) {
         matchPreset();
         saveSettings(settings);
         break;
+      case MenuCommand::ToggleFrameReuse:
+        settings.frameReuse = !frameReuse.enabled();
+        saveSettings(settings);
+        frameReuse.setEnabled(kStandaloneHeadset && settings.frameReuse);
+        frameReuse.forget();  // nothing drawn before the switch is shown again
+        std::printf("Frame reuse: %s\n", frameReuse.enabled() ? "on" : "off");
+        break;
       case MenuCommand::ToggleResume:
         settings.resume = !settings.resume;
         saveSettings(settings);
@@ -2150,6 +2174,16 @@ int run(GLFWwindow* window, const Options& opts) {
   double resolutionCycleAt = glfwGetTime() + opts.resolutionCycleSeconds;
   size_t resolutionCycleStep = 0;
   FrameScene scene;  // what each frame draws
+  // Frames shown again and drawn, by FrameReuse::Reason: for --timing's
+  // lines and its totals at the end.
+  unsigned long long framesBy[FrameReuse::kReasons] = {}, framesReported[FrameReuse::kReasons] = {};
+  const auto reuseReport = [&](const unsigned long long* since) {
+    std::string text;
+    for (int i = 0; i < FrameReuse::kReasons; ++i)
+      text += std::string(i ? " " : "") + FrameReuse::reasonName(static_cast<FrameReuse::Reason>(i)) +
+              "=" + std::to_string(framesBy[i] - (since ? since[i] : 0));
+    return text;
+  };
   EyeCorrection shownCorrection;  // the left eye's stereo correction, as last drawn
   while (!xrQuit && !app.quit && !quitSignal && !glfwWindowShouldClose(input)) {
     timer.start();
@@ -3355,6 +3389,7 @@ int run(GLFWwindow* window, const Options& opts) {
       view.sharpBins = sharpBins;
       view.foveationRing = foveationRing;
       view.foveationOutside = foveationOutside;
+      view.frameReuse = frameReuse.enabled();
       view.advancedSettings = settings.advancedSettings;
       view.refreshRate = refreshRateAvailable ? settings.refreshRate : 0;
       view.performancePreset = settings.performancePreset;
@@ -3670,6 +3705,7 @@ int run(GLFWwindow* window, const Options& opts) {
     // One submission per drawn frame: a frame slot once the GPU is done with
     // its last frame, then the eye images, recorded, submitted and given back.
     bool drawn = false;
+    bool shownAgain = false;  // the last drawn frame instead (frame_reuse.h)
     // --resolution-cycle: the next of its sizes, as the command line's size.
     if (!opts.resolutionCycle.empty() && glfwGetTime() >= resolutionCycleAt) {
       const size_t step = resolutionCycleStep++ % opts.resolutionCycle.size();
@@ -3690,7 +3726,32 @@ int run(GLFWwindow* window, const Options& opts) {
                     xr.eyeHeight(0), xr.eyeImageWidth(0), xr.eyeImageHeight(0),
                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - switchStart)
                         .count());
-      GpuContext::FrameSlot* slot = gpu.beginFrame();
+      foveation.update();  // the density maps' offsets for the images acquired now
+      // Not over the room while Match the room reads it.
+      scene.showFoveation = !roomBlank && showFoveation && foveation.active();
+      if (scene.showFoveation)
+        for (int i = 0; i < xr.eyeCount(); ++i) scene.foveation[i] = foveation.debug(i);
+      // What this frame's eye images depend on: if the last drawn frame's
+      // would do as well, the runtime shows those again and nothing is drawn.
+      FrameReuse::Frame shown;
+      shown.scene = &scene;
+      shown.picture = player.pictureVersion();
+      shown.alphaBlend = blended;
+      shown.displayTime = xr.displayTime();
+      shown.eyeCount = xr.eyeCount();
+      shown.eyes = shown.eyeCount > 0 ? &xr.eye(0) : nullptr;
+      shown.targets = xr.eyeTargetsVersion();
+      shown.mapsKnown = !foveation.active() || xr.appDensityMaps();
+      shown.maps = foveation.mapsVersion();
+      for (int i = 0; i < 2; ++i) {
+        shown.mapOffset[i] = foveation.offset(i);
+        shown.sharp[i] = foveation.sharpSize(i);
+      }
+      const FrameReuse::Reason reason = roomBlank || opts.xrTest || !xr.canShowAgain()
+                                            ? FrameReuse::Off : frameReuse.compare(shown);
+      shownAgain = reason == FrameReuse::Same;
+      ++framesBy[reason];
+      GpuContext::FrameSlot* slot = shownAgain ? nullptr : gpu.beginFrame();
       timer.lap(FrameTimer::Fence);
       if (slot) {
         SceneRenderer::GpuTimes gpuTimes;
@@ -3699,17 +3760,12 @@ int run(GLFWwindow* window, const Options& opts) {
                     gpuTimes.frame);
           if (showPerformance) readout.gpuTime(gpuTimes.frame);
         }
-        foveation.update();  // the density maps' offsets for the images acquired now
-        // Not over the room while Match the room reads it.
-        scene.showFoveation = !roomBlank && showFoveation && foveation.active();
-        if (scene.showFoveation)
-          for (int i = 0; i < xr.eyeCount(); ++i) scene.foveation[i] = foveation.debug(i);
         const EyeFrame* eyes = xr.acquireEyes();
         if (eyes) mirror.acquire(*slot);
         timer.lap(FrameTimer::Acquire);
         if (eyes) {
           std::vector<SemaphoreWait> waits;
-          renderer.record(*slot, *eyes, &xr.eye(0), scene, glfwGetTime(), waits);
+          const bool whole = renderer.record(*slot, *eyes, &xr.eye(0), scene, glfwGetTime(), waits);
           timer.lap(FrameTimer::Record);
           std::vector<VkSemaphore> signals;
           mirror.addSignals(signals);
@@ -3719,6 +3775,10 @@ int run(GLFWwindow* window, const Options& opts) {
           if (drawn) {
             interop.frameSubmitted(value);
             direct.frameSubmitted(value);
+            // A frame recorded without its picture is not one to show again.
+            if (whole) frameReuse.drawn(shown);
+            else frameReuse.forget();
+            timer.drew();
           } else {
             interop.frameAbandoned();
             direct.frameAbandoned();
@@ -3734,7 +3794,8 @@ int run(GLFWwindow* window, const Options& opts) {
     if (drawn && roomBlank) roomLight.blankSubmitted();
     xr.setAlphaBlend(blended || roomBlank);
     xr.releaseEyes();
-    xr.endFrame(drawn);
+    if (shownAgain) xr.endFrameShownAgain();
+    else xr.endFrame(drawn);
     directDepth.submit();  // after the frame's work, which it never delays
     if (maskProbeDirectReady) maskProbeDirect.submit();
     timer.lap(FrameTimer::XrEnd);
@@ -3745,12 +3806,17 @@ int run(GLFWwindow* window, const Options& opts) {
       break;
     }
     timer.memory(gpu.liveBytes(), gpu.retiredBytes());
-    if (timer.finishFrame() && opts.timing)
+    if (timer.finishFrame() && opts.timing) {
       std::printf("[render] eye=%dx%d images=%dx%d %s\n", xr.eyeWidth(0), xr.eyeHeight(0),
                   xr.eyeImageWidth(0), xr.eyeImageHeight(0), foveation.report().c_str());
+      // Frames shown again (same), and those drawn by why they were.
+      std::printf("[reuse] %s\n", reuseReport(framesReported).c_str());
+      std::copy(std::begin(framesBy), std::end(framesBy), std::begin(framesReported));
+    }
     player.logTiming(panel.open, seekPreview.busy(), shouldRender, xr.isFocused());
   }
   if (quitSignal) std::printf("Quitting (signal %d)\n", static_cast<int>(quitSignal));
+  if (opts.timing) std::printf("Frame reuse: frames %s\n", reuseReport(nullptr).c_str());
   saveUnsaved();
   keepVolume();
   keepResume();
@@ -3823,6 +3889,8 @@ int main(int argc, char** argv) {
       opts.videoPipeline = arg == "--video-pipeline=on";
     } else if (arg == "--decoder-queue=on" || arg == "--decoder-queue=off") {
       opts.decoderQueue = arg == "--decoder-queue=on";
+    } else if (arg == "--frame-reuse=on" || arg == "--frame-reuse=off") {
+      opts.frameReuse = arg == "--frame-reuse=on";
     } else if (arg.rfind("--foveation=", 0) == 0) {
       opts.foveationSet = true;
       if (!parseFoveationLevel(arg.substr(12), opts.foveation) || opts.foveation == FoveationLevel::Custom) {

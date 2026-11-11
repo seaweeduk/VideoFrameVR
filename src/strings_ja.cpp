@@ -181,6 +181,8 @@ Strings japaneseStrings(const Strings& english) {
   s.foveationHint = "強くするほど視線外の精細さを下げ、GPU負荷を軽減。";
   s.showFoveation = "Foveationを可視化";
   s.showFoveationHint = "緑：全精細。黄：各軸1/2。無色：1/4。十字：視線。";
+  s.frameReuse = "重複フレームを省略";
+  s.frameReuseHint = "動画か視点が変わったときだけ描き直します。消費電力とヘッドセットの発熱を抑えます。動きがぎこちない場合はオフに。";
   s.foveationFrameOnly = "Steam Frame専用";
   s.sharpArea = "高精細領域";
   s.sharpBins[0] = "1ビン";

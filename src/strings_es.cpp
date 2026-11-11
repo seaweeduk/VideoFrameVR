@@ -181,6 +181,8 @@ Strings spanishStrings(const Strings& english) {
   s.foveationHint = "Niveles altos ahorran GPU al reducir el detalle fuera de la mirada.";
   s.showFoveation = "Mostrar foveation";
   s.showFoveationHint = "Verde: detalle total. Amarillo: mitad por eje. Sin color: un cuarto. Cruz: mirada.";
+  s.frameReuse = "Omitir fotogramas repetidos";
+  s.frameReuseHint = "Dibuja una imagen nueva solo si cambia el vídeo o tu vista. Gasta menos energía y mantiene el visor más fresco. Desactívalo si el movimiento se ve irregular.";
   s.foveationFrameOnly = "Solo Steam Frame";
   s.sharpArea = "Zona nítida";
   s.sharpBins[0] = "1 bin";

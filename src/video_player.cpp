@@ -794,6 +794,8 @@ void VideoPlayer::setSubtitleStyle(double scale, int raise) {
 }
 
 void VideoPlayer::setPicture(int brightness, int contrast, int saturation) {
+  // Frames handed out take them at once, as they are (DirectVideo).
+  if (brightness != picture_[0] || contrast != picture_[1] || saturation != picture_[2]) ++pictureVersion_;
   picture_[0] = brightness;
   picture_[1] = contrast;
   picture_[2] = saturation;
@@ -855,6 +857,7 @@ void VideoPlayer::pollEvents() {
       if (DirectFrame* still = direct_->still(*directCurrent_)) {
         direct_->hold(directCurrent_, false);
         directCurrent_ = still;
+        ++pictureVersion_;
       }
     }
     if (directPending_ && direct_->closedSession(*directPending_, session)) {
@@ -1256,6 +1259,7 @@ bool VideoPlayer::updateVideoSize(const mpv_node& params, bool preparing) {
   height_ = static_cast<int>(h);
 
   // Mipmaps keep an 8K frame from shimmering when shown smaller than native.
+  ++pictureVersion_;
   if (!video_.resize(width_, height_)) {
     std::fprintf(stderr, "No image for the video (%dx%d)\n", width_, height_);
     releaseTarget();
@@ -1310,6 +1314,7 @@ void VideoPlayer::logPixelPath(int64_t displayW, int64_t displayH, int maxSize, 
 
 void VideoPlayer::releaseTarget() {
   video_.release();
+  ++pictureVersion_;
   width_ = height_ = 0;
   dropDirect();
   if (direct_) {
@@ -1381,6 +1386,7 @@ void VideoPlayer::dropDirect() {
   direct_->hold(directCurrent_, false);
   direct_->hold(directPending_, false);
   directCurrent_ = directPending_ = nullptr;
+  ++pictureVersion_;
 }
 
 // Only where the eye shaders show the frame as mpv would draw it: no
@@ -1407,6 +1413,7 @@ void VideoPlayer::showDirect(DirectFrame* frame) {
   } else {
     direct_->hold(directCurrent_, false);
     directCurrent_ = frame;
+    ++pictureVersion_;
     if (newVideoSized_ && loadRestarted_) loading_ = false;
   }
 }
@@ -1435,6 +1442,7 @@ void VideoPlayer::showRendered() {
     directCurrent_ = nullptr;
     advanced = true;
   }
+  if (advanced) ++pictureVersion_;
   if (advanced && firstFrameDeferred_) {
     firstFrameDeferred_ = false;
     loading_ = false;
@@ -1581,6 +1589,7 @@ void VideoPlayer::render() {
     video_.swap();
     if (direct_) direct_->hold(directCurrent_, false);
     directCurrent_ = nullptr;
+    ++pictureVersion_;
   }
   if (mipmaps_) updateMipmaps(video_.newest());
 }

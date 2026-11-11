@@ -89,6 +89,7 @@ std::string allLines(const Settings& s) {
   out << "sharp_bins=" << s.sharpBins << "\n";
   out << "foveation_ring=" << s.foveationRing << "\n";
   out << "foveation_outside=" << s.foveationOutside << "\n";
+  out << "frame_reuse=" << (s.frameReuse ? 1 : 0) << "\n";
   out << "advanced_settings=" << s.advancedSettings << "\n";
   out << "match_colour=" << s.matchColour << "\n";
   out << "match_brightness=" << s.matchBrightness << "\n";
@@ -260,6 +261,7 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "sharp_bins") s.sharpBins = value == "1" ? 1 : 3;
     else if (key == "foveation_ring" || key == "ring") s.foveationRing = value != "0" && value != "off";
     else if (key == "foveation_outside") s.foveationOutside = value == "2" ? 2 : 4;
+    else if (key == "frame_reuse") s.frameReuse = value != "0";
     else if (key == "advanced_settings") s.advancedSettings = value == "1";
     else if (key == "refresh_rate") {
       const int hz = std::atoi(value.c_str());

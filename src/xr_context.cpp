@@ -1526,6 +1526,7 @@ bool XrContext::updateEyeSize() {
                   made[0].imageWidth, made[0].imageHeight, ms);
       retireSwapchains(std::move(swapchains_));
       swapchains_ = std::move(made);
+      layerHeld_ = false;
       imageScale_ = makingScale_;
       ++targetsVersion_;
       changed = true;
@@ -1659,6 +1660,7 @@ void XrContext::pollEvents(bool& quit) {
         if (e->state == XR_SESSION_STATE_FOCUSED || e->state == XR_SESSION_STATE_STOPPING ||
             e->state == XR_SESSION_STATE_EXITING || e->state == XR_SESSION_STATE_LOSS_PENDING)
           launchDashboardPending_ = false;
+        layerHeld_ = false;  // shown again only within one unbroken run of frames
         switch (e->state) {
           case XR_SESSION_STATE_READY: {
             XrSessionBeginInfo beginInfo{XR_TYPE_SESSION_BEGIN_INFO};
@@ -1867,7 +1869,6 @@ float XrContext::eyePixelsPerDegree(int i, bool vertical) const {
 
 void XrContext::endFrame(bool drawn) {
   if (!frameBegun_) return;
-  frameBegun_ = false;
   // Only images drawn, submitted and released go to the compositor.
   bool layerReady = drawn && viewsValid_;
   for (size_t i = 0; i < swapchains_.size(); ++i) {
@@ -1882,7 +1883,24 @@ void XrContext::endFrame(bool drawn) {
                                     static_cast<int32_t>(sc.area.extent.height)};
     pv.subImage.imageArrayIndex = 0;
   }
+  submitFrame(layerReady);
+}
 
+bool XrContext::canShowAgain() const {
+  if (!frameBegun_ || !layerHeld_) return false;
+  for (const Swapchain& sc : swapchains_)
+    if (sc.isAcquired) return false;
+  return true;
+}
+
+void XrContext::endFrameShownAgain() {
+  if (!frameBegun_) return;
+  // projViews_ are still the last drawn frame's.
+  submitFrame(canShowAgain());
+}
+
+void XrContext::submitFrame(bool layerReady) {
+  frameBegun_ = false;
   XrCompositionLayerProjection layer{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
   layer.space = headLocked_ ? viewSpace_ : localSpace_;
   layer.viewCount = static_cast<uint32_t>(projViews_.size());
@@ -1899,8 +1917,8 @@ void XrContext::endFrame(bool drawn) {
       useAlphaBlend_ ? XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND : XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
   endInfo.layerCount = layerReady ? 1 : 0;
   endInfo.layers = layerReady ? layers : nullptr;
-  if (checkFrame(xrEndFrame(session_, &endInfo), "xrEndFrame") && layerReady)
-    sceneSubmitted_ = true;
+  layerHeld_ = checkFrame(xrEndFrame(session_, &endInfo), "xrEndFrame") && layerReady;
+  if (layerHeld_) sceneSubmitted_ = true;
 }
 
 void XrContext::setRenderArea(int eye, const VkRect2D& area) {
@@ -1910,6 +1928,7 @@ void XrContext::setRenderArea(int eye, const VkRect2D& area) {
   sc.area.offset = {x, y};
   sc.area.extent = {std::clamp<uint32_t>(area.extent.width, 1, static_cast<uint32_t>(sc.width - x)),
                     std::clamp<uint32_t>(area.extent.height, 1, static_cast<uint32_t>(sc.height - y))};
+  layerHeld_ = false;  // the next frame is drawn into the new area
 }
 
 bool XrContext::checkFrame(XrResult result, const char* what) {

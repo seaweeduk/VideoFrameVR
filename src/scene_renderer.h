@@ -274,7 +274,9 @@ class SceneRenderer {
 
   // Records the frame; `matrices`: the eyes' (XrContext::eye), `time`:
   // seconds, for the test pattern. Adds what the submission waits for.
-  void record(GpuContext::FrameSlot& slot, const EyeFrame& eyes, const EyeMatrices* matrices,
+  // False if the scene's picture could not be used in this frame (GL still
+  // draws into it, or a decoded frame is not ready): recorded without it.
+  bool record(GpuContext::FrameSlot& slot, const EyeFrame& eyes, const EyeMatrices* matrices,
               const FrameScene& scene, double time, std::vector<SemaphoreWait>& waits);
   // The frame recorded last was not submitted (as GlInterop's).
   void frameAbandoned() { keyMask_.frameAbandoned(); }

@@ -60,6 +60,9 @@ struct Settings {
   int sharpBins = kDefaultSharpBins;
   bool foveationRing = kDefaultFoveationRing;
   int foveationOutside = 4;
+  // Frame: a frame that would look like the last one drawn is not drawn
+  // (frame_reuse.h); elsewhere only --frame-reuse=on turns it on.
+  bool frameReuse = true;
   bool advancedSettings = false;
   // Match the room (colour_balance.h): how much of the room's measured
   // warmth and tint, and of its exposure, it applies (percent).

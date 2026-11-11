@@ -71,6 +71,13 @@ class Foveation {
   std::string report();
   FoveationDebug debug(int eye) const;
   void sharpDegrees(float& width, float& height) const;
+  // What a drawn frame's shading rates depend on (frame_reuse.h): the maps,
+  // another number once prepare() changed them, the offset update() last
+  // gave an eye's map, and its full-rate area's size in pixels (0 x 0 with
+  // SteamVR's maps: not known).
+  uint64_t mapsVersion() const { return mapsVersion_; }
+  VkOffset2D offset(int eye) const { return offset_[eye]; }
+  VkExtent2D sharpSize(int eye) const { return sharp_[eye].extent; }
 
  private:
   // Applies `level`: redraws the app's maps, or changes SteamVR's profile.
@@ -92,6 +99,7 @@ class Foveation {
   VkOffset2D anchor_[2] = {};
   VkRect2D sharp_[2] = {};
   VkOffset2D offset_[2] = {};  // the last offsets set
+  uint64_t mapsVersion_ = 0;
   FoveationGaze gaze_;
   VkExtent2D granularity_{1, 1};
   // Since the last report().

@@ -77,7 +77,7 @@ struct MenuCommand {
               SetPacking, ToggleVideoMipmaps, SetAntiShimmer, SetSharpen, SetVideoResolution,
               SetFoveation, ToggleShowFoveation, SetSharpBins, ToggleFoveationRing,
               SetFoveationOutside, ToggleAdvancedSettings, SetRefreshRate, SetFocus,
-              ToggleMotion, SetMotionDistance, ToggleResume, ToggleToneLook, Stop,
+              ToggleMotion, SetMotionDistance, ToggleResume, ToggleToneLook, ToggleFrameReuse, Stop,
               ToggleTvGamma, ToggleSeekPreview, ToggleThumbnails, ToggleShowPerformance, SetScreenDistance,
               SetScreenHeight, SetScreenCurve, ResetScreen, SetOriginForward, SetOpacity,
               SetWarmth, SetTint, SetExposure, ToggleMatchRoom, ReadRoomAgain,
@@ -215,6 +215,7 @@ struct MenuView {
   int sharpBins = kDefaultSharpBins;
   bool foveationRing = kDefaultFoveationRing;
   int foveationOutside = 4;
+  bool frameReuse = true;  // Frame: repeated frames not drawn, this run's (frame_reuse.h)
   bool advancedSettings = false;
   int refreshRate = 0;  // Frame: Hz, SteamVR's for this app (refresh_rate.h); 0: not changeable
   // What the resolution, foveation, mipmaps, anti-shimmer and sharpening

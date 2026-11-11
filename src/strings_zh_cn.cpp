@@ -181,6 +181,8 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.foveationHint = "档位越高，视线外围的细节越少，越节省 GPU 时间。";
   s.showFoveation = "显示渲染分区";
   s.showFoveationHint = "绿色：完整细节。黄色：各轴减半。无色：各轴四分之一。十字：视线。";
+  s.frameReuse = "跳过重复帧";
+  s.frameReuseHint = "仅在视频或视角变化时绘制新画面。更省电，头显也更凉爽。如果运动看起来不流畅，请关闭。";
   s.foveationFrameOnly = "仅限 Steam Frame";
   s.sharpArea = "清晰区域";
   s.sharpBins[0] = "1 分块";

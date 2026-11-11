@@ -36,6 +36,8 @@ class FrameTimer {
     if (frame > gpuMax_) gpuMax_ = frame;
     ++gpuFrames_;
   }
+  // The frame's eyes were drawn, not shown again (frame_reuse.h).
+  void drew() { ++drawn_; }
   // Vulkan device memory we allocated, in use and waiting to be freed
   // (GpuContext), as of the report.
   void memory(unsigned long long live, unsigned long long retired) {
@@ -59,8 +61,8 @@ class FrameTimer {
         std::printf(" | gpu upload %.2f glass %.2f eye0 %.2f eye1 %.2f mirror %.2f frame %.2f max %.2f ms",
                     gpu_[0] / gpuFrames_, gpu_[1] / gpuFrames_, gpu_[2] / gpuFrames_,
                     gpu_[3] / gpuFrames_, gpu_[4] / gpuFrames_, gpu_[5] / gpuFrames_, gpuMax_);
-      std::printf(" | vk memory %.0f MiB live %.0f retired\n", live_ / 1048576.0,
-                  retired_ / 1048576.0);
+      std::printf(" | vk memory %.0f MiB live %.0f retired | drawn %.1f fps\n", live_ / 1048576.0,
+                  retired_ / 1048576.0, drawn_ / elapsed);
       std::fflush(stdout);
     }
     for (double& t : totals_) t = 0;
@@ -68,6 +70,7 @@ class FrameTimer {
     gpuMax_ = 0;
     gpuFrames_ = 0;
     frames_ = 0;
+    drawn_ = 0;
     longest_ = 0;
     reportStart_ = Clock::now();
     return true;
@@ -82,6 +85,7 @@ class FrameTimer {
   double longest_ = 0;  // the longest frame since the report, from one frame's end to the next
   double totals_[kCount] = {};
   int frames_ = 0;
+  int drawn_ = 0;
   double gpu_[6] = {}, gpuMax_ = 0;
   int gpuFrames_ = 0;
   unsigned long long live_ = 0, retired_ = 0;

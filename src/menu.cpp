@@ -150,7 +150,8 @@ void Menu::update(const MenuView& view) {
       view.foveationAvailable != view_.foveationAvailable || view.foveation != view_.foveation ||
       view.showFoveation != view_.showFoveation || view.sharpBins != view_.sharpBins ||
       view.foveationRing != view_.foveationRing || view.sharpDegrees != view_.sharpDegrees ||
-      view.foveationOutside != view_.foveationOutside || view.advancedSettings != view_.advancedSettings ||
+      view.foveationOutside != view_.foveationOutside || view.frameReuse != view_.frameReuse ||
+      view.advancedSettings != view_.advancedSettings ||
       view.refreshRate != view_.refreshRate ||
       view.foveationMaps != view_.foveationMaps ||
       view.photo != view_.photo || view.slideshowSeconds != view_.slideshowSeconds ||
@@ -209,14 +210,14 @@ void Menu::update(const MenuView& view) {
        view.videoResolutionEffective != view_.videoResolutionEffective ||
        view.resolutionOverride != view_.resolutionOverride ||
        view.resolutionNotice != view_.resolutionNotice))
-    sliderChanged(MenuCommand::SetVideoResolution, kSettingStep + hintHeight(3));
+    sliderChanged(MenuCommand::SetVideoResolution, kSettingStep + hintHeight(2));
   // Its hint tells that letting go of the slider switches.
   const bool resolutionHeld =
       view.resolutionPending && draggingSlider_ == MenuCommand::SetVideoResolution;
   if (resolutionHeld != resolutionHeld_) {
     resolutionHeld_ = resolutionHeld;
     if (page_ == Page::VideoSettings)
-      sliderChanged(MenuCommand::SetVideoResolution, kSettingStep + hintHeight(3));
+      sliderChanged(MenuCommand::SetVideoResolution, kSettingStep + hintHeight(2));
   }
   // The presets: only the video settings page shows them. Which one is lit
   // changes only its row at the top (unless the list is open); a new listing
