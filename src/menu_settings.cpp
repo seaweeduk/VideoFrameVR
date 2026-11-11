@@ -108,18 +108,18 @@ void Menu::layoutSettings() {
   if (view_.accent.preset == kAccentCustom) {
     const int hue = view_.accent.hue, light = view_.accent.brightness;
     const int saturation = view_.accent.saturation;
-    addValueRow(x, row, w, 180, at.hue, std::to_string(hue) + "°", hue, 0, 355,
-                command(MenuCommand::SetAccentHue, (hue + 355) % 360),
-                command(MenuCommand::SetAccentHue, (hue + 5) % 360));
+    addValueRow(x, row, w, 180, at.hue, std::to_string(hue) + "°", hue, 0, 359,
+                command(MenuCommand::SetAccentHue, (hue + 359) % 360),
+                command(MenuCommand::SetAccentHue, (hue + 1) % 360));
     row += kSettingStep;
     addValueRow(x, row, w, 180, at.brightness, std::to_string(light) + " %", light, 0, 100,
-                command(MenuCommand::SetAccentBrightness, std::max(0, light - 5)),
-                command(MenuCommand::SetAccentBrightness, std::min(100, light + 5)), false, false,
+                command(MenuCommand::SetAccentBrightness, std::max(0, light - 1)),
+                command(MenuCommand::SetAccentBrightness, std::min(100, light + 1)), false, false,
                 at.brightnessHint);
     row += kSettingStep;
     addValueRow(x, row, w, 180, at.saturation, std::to_string(saturation) + " %", saturation, 0,
-                100, command(MenuCommand::SetAccentSaturation, std::max(0, saturation - 5)),
-                command(MenuCommand::SetAccentSaturation, std::min(100, saturation + 5)));
+                100, command(MenuCommand::SetAccentSaturation, std::max(0, saturation - 1)),
+                command(MenuCommand::SetAccentSaturation, std::min(100, saturation + 1)));
     row += kSettingStep;
   }
   const double lookBottom = row + 10;
@@ -156,11 +156,11 @@ void Menu::layoutSettings() {
     MenuCommand::Type type;
   };
   const Step steps[] = {
-      {t.subtitleSize, std::to_string(view_.subtitleSize) + " %", view_.subtitleSize, 50, 200, 10,
+      {t.subtitleSize, std::to_string(view_.subtitleSize) + " %", view_.subtitleSize, 50, 200, 1,
        MenuCommand::SetSubtitleSize},
-      {t.subtitleRaise, std::to_string(view_.subtitleRaise), view_.subtitleRaise, -100, 100, 5,
+      {t.subtitleRaise, std::to_string(view_.subtitleRaise), view_.subtitleRaise, -100, 100, 1,
        MenuCommand::SetSubtitleRaise},
-      {t.subtitleDistance, distance, view_.subtitleDistance, 25, 600, 25,
+      {t.subtitleDistance, distance, view_.subtitleDistance, 25, 600, 1,
        MenuCommand::SetSubtitleDistance}};
   for (const Step& s : steps) {
     addValueRow(x, y, w, 270, s.label, s.value, s.now, s.lo, s.hi,

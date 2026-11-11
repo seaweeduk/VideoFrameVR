@@ -905,8 +905,7 @@ Menu::Button& Menu::addToggleRow(double x, double y, double w, const std::string
 }
 
 // A number: its label, then "−", the value on a slider and "+". The buttons
-// step as `less` and `more` do; the slider goes by single units, for fine
-// adjustment.
+// and slider use the same single-unit steps for fine adjustment.
 void Menu::addValueRow(double x, double y, double w, double labelW, const std::string& label,
                        const std::string& value, int now, int lo, int hi,
                        std::function<MenuCommand()> less, std::function<MenuCommand()> more,

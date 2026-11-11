@@ -28,7 +28,7 @@ constexpr int kInstantResolution = kStandaloneHeadset ? 175 : 125;
 // outside the menu's range).
 constexpr int kMinResolution = 25, kMaxResolution = 600;
 // The desktop menu's range and step: its slider and its − and +.
-constexpr int kResolutionLow = 50, kResolutionHigh = 300, kResolutionStep = 5;
+constexpr int kResolutionLow = 50, kResolutionHigh = 300, kResolutionStep = 1;
 
 // The next multiple of the step up (direction > 0) or down, within the
 // menu's range; a value already outside it stays.

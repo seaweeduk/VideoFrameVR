@@ -79,7 +79,7 @@ enum class FocusControl { Mode, Distance, Baseline, MakeDefault, UseDefault, Min
 bool applyFocusControl(FocusControl control, double value, bool& videoOwn, FocusSettings& video,
                        FocusSettings& defaults, FocusPreferences& preferences);
 
-// The next value the menu offers for a stepped control, in its stored unit
+// One unit up or down within the control's range, in its stored unit
 // (cm, mm, hundredths, candidates, degrees); direction +1 or -1.
 int nextFocusStep(FocusControl control, int value, int direction);
 
