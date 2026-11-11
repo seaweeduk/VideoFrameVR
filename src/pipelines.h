@@ -71,7 +71,10 @@ class Pipelines {
   // only; a green screen without shrink; the packed mask read in its other
   // colours (MaskColours), fisheye only (where a packed mask comes).
   enum SurroundCut { kUncut, kPackedMask, kGreenScreen, kPackedRedBlue, kCutCount };
-  static constexpr uint32_t kMaxConstants = 5;
+  // The picture as it is; the colour balance; the tone look, then the colour
+  // balance.
+  enum SurroundFinish { kAsItIs, kBalanced, kLookBalanced, kFinishCount };
+  static constexpr uint32_t kMaxConstants = 6;
   // A pipeline's shaders (embedded SPIR-V) and fixed state.
   struct Desc {
     const uint32_t* vertex;
@@ -127,17 +130,17 @@ class Pipelines {
   // Binds the colour key's mask (KeyMask::set) as set 1 for a colour-keyed
   // pipeline of the scene's layout, or of a Q08C siting's (-1: the scene's).
   void bindKeyMask(VkCommandBuffer cmd, int q08cSiting, VkDescriptorSet set) const;
-  // A common mode's pipeline, without or with the colour balance.
+  // A common mode's pipeline, with this finish.
   VkPipeline surround(SurroundProjection projection, SurroundSource source, SurroundCut cut,
-                      bool plain, bool balance) const {
-    const VkPipeline p = surround_[balance][1][projection][source][cut];
-    return plain && p ? p : surround_[balance][0][projection][source][cut];
+                      bool plain, SurroundFinish finish) const {
+    const VkPipeline p = surround_[finish][1][projection][source][cut];
+    return plain && p ? p : surround_[finish][0][projection][source][cut];
   }
   // The colour key's common pipeline for the eye pass with its density map
-  // (180, 360 or fisheye, the colour balance always applied: none when
-  // plain needs another).
-  VkPipeline keyed(SurroundSource source, bool plain) const {
-    return plain && plainEyePass_ != eyePass_ ? VK_NULL_HANDLE : keyed_[source];
+  // (180, 360 or fisheye, the colour balance always applied, without or with
+  // the tone look: none when plain needs another).
+  VkPipeline keyed(SurroundSource source, bool plain, bool look) const {
+    return plain && plainEyePass_ != eyePass_ ? VK_NULL_HANDLE : keyed_[look][source];
   }
   // The colour key's mask passes (KeyMask): the distances from a frame of
   // this source (its own layout: the scene's, tp10Layout() or a Q08C
@@ -184,8 +187,7 @@ class Pipelines {
   static void add(std::vector<Job>& jobs, const Desc& desc, VkRenderPass pass, const char* what,
                   VkPipeline* pipeline, VkPipelineLayout layout = VK_NULL_HANDLE);
   // Adds the common modes' surround pipelines of these sources (all of one
-  // shader and layout) for the eye passes, each with and without the colour
-  // balance.
+  // shader and layout) for the eye passes, each with every finish.
   void addSurround(std::vector<Job>& jobs, std::initializer_list<SurroundSource> sources,
                    const uint32_t* fragment, size_t fragmentBytes, VkPipelineLayout layout);
   // Creates the jobs' pipelines on several threads at once; false if any
@@ -224,7 +226,7 @@ class Pipelines {
   // A layout of these set layouts and the scene's push constants.
   bool createLayout(std::initializer_list<VkDescriptorSetLayout> sets, VkPipelineLayout& layout,
                     const char* what);
-  // Adds the colour key's common pipeline and distance pass for a source
+  // Adds the colour key's common pipelines and distance pass for a source
   // (keyed(), keyDistance()).
   void addKeyed(std::vector<Job>& jobs, SurroundSource source, const uint32_t* fragment,
                 size_t fragmentBytes, const uint32_t* distance, size_t distanceBytes,
@@ -248,9 +250,11 @@ class Pipelines {
   VkPipeline tp10_[kDirectCount] = {}, tp10Plain_[kDirectCount] = {};
   VkPipelineLayout q08cLayout_[kQ08cSitings] = {}, q08cKeyLayout_[kQ08cSitings] = {};
   VkPipeline q08c_[kQ08cSitings][kDirectCount] = {}, q08cPlain_[kQ08cSitings][kDirectCount] = {};
-  // Without and with the colour balance; for the eye pass and the plain one.
-  VkPipeline surround_[2][2][kProjectionCount][kSourceCount][kCutCount] = {};
-  VkPipeline keyed_[kSourceCount] = {}, keyDistance_[kSourceCount] = {}, keyReach_ = VK_NULL_HANDLE;
+  // Per finish; for the eye pass and the plain one.
+  VkPipeline surround_[kFinishCount][2][kProjectionCount][kSourceCount][kCutCount] = {};
+  // Without and with the tone look.
+  VkPipeline keyed_[2][kSourceCount] = {};
+  VkPipeline keyDistance_[kSourceCount] = {}, keyReach_ = VK_NULL_HANDLE;
   VkSampler samplers_[kSamplerCount] = {};
   GpuImage dummyImage_;
   Texture dummy_;

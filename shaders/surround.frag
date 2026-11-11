@@ -72,6 +72,9 @@ layout(constant_id = 2) const int kSeeThrough = -1;
 layout(constant_id = 3) const bool kSharpen = false;  // general pipelines: sharpening, for a strength above 0
 // Common modes: the colour balance (general pipelines always apply it).
 layout(constant_id = 4) const bool kBalance = false;
+// Common modes: the tone look, always with kBalance (general pipelines take
+// the look from the draw).
+layout(constant_id = 5) const bool kToneLook = false;
 const bool kCommon = kProjection >= 0;
 const bool kMaskRedBlue = kSeeThrough == 3;
 const bool kMaskFirst = kSeeThrough == 1 || kMaskRedBlue;
@@ -131,9 +134,10 @@ vec3 adjustVideo(vec3 c, vec3 adjust, vec2 k, bool tv) {
 // The picture as this pixel (at fragCoord) shows it, from picture(): in a
 // general pipeline with the picture settings (a photo's as adjustPicture
 // applies them; a video's, which C++ passes only while a mask or key reads
-// the frame, as mpv does) and the tone look. A common mode has neither.
+// the frame, as mpv does) and the tone look. A common mode has no picture
+// settings, and the look only in its pipeline for it (kToneLook).
 vec3 shown(vec3 c, EyeData e, uint flags, vec2 fragCoord) {
-  if (kCommon) return c;
+  if (kCommon) return kToneLook ? clamp(toneLook(c, e, fragCoord), 0.0, 1.0) : c;
   vec3 a = pc.draw.adjust.xyz;
   if ((flags & kPhoto) != 0u) c = adjustPicture(c, a);
   else if (a != vec3(0.0)) c = adjustVideo(c, a, pc.draw.params.zw, (flags & kTvGamma) != 0u);
@@ -144,7 +148,7 @@ vec3 shown(vec3 c, EyeData e, uint flags, vec2 fragCoord) {
 // last of the picture settings, after sharpening and spill removal; before
 // the key colour's cap, which must come last. Gains of 1 (pushed as 0) leave
 // the picture as it is, so a general pipeline always applies it; a common
-// mode only in its pipeline for it (kBalanced).
+// mode only in its pipelines for it and for the look (kBalanced).
 const bool kBalanced = !kCommon || kBalance;
 vec3 balanced(vec3 c) {
   vec3 g = vec3(pc.draw.toPicture0.w, pc.draw.toPicture1.w, pc.draw.toPicture2.w);
