@@ -76,6 +76,11 @@ layout(constant_id = 4) const bool kBalance = false;
 // Common modes: the tone look, always with kBalance (general pipelines take
 // the look from the draw).
 layout(constant_id = 5) const bool kToneLook = false;
+#ifdef COLOUR_KEY
+// The colour key's common modes: its mask read first (main()), for a mask
+// that holds a shrink's reach (without one its x is 1 everywhere).
+layout(constant_id = 6) const bool kKeyFirst = false;
+#endif
 const bool kCommon = kProjection >= 0;
 const bool kMaskRedBlue = kSeeThrough == 3;
 const bool kMaskFirst = kSeeThrough == 1 || kMaskRedBlue;
@@ -218,6 +223,23 @@ float packedAlpha(vec2 uv, EyeData e, vec2 dx, vec2 dy) {
 // the key's distance (as colourAlpha() takes it) the shrink reaches here, y
 // how much of the background is near (spill removal's edge).
 layout(set = 1, binding = 0) uniform sampler2D keyMask;
+// The mask at eyeUv, kept on the part of the image the frame's mask fills.
+vec2 keyMaskAt(vec2 eyeUv, vec2 uv, bool cube, int projection, vec2 eyeOffset, vec2 eyeScale) {
+  vec2 part = pc.draw.chroma.zw;
+  vec2 faceLo = vec2(0.0), faceHi = vec2(0.0);
+  if (cube) {
+    // A cubemap's on this face, half a mask texel in (the next face's mask
+    // is elsewhere in the frame).
+    vec2 grid = projection == 3 ? vec2(3.0, 2.0) : vec2(2.0, 3.0);
+    vec2 cell = min(floor(uv * grid), grid - 1.0);
+    faceLo = (eyeOffset + cell / grid * eyeScale) * part + 0.5 / kKeyMaskSize;
+    faceHi = (eyeOffset + (cell + 1.0) / grid * eyeScale) * part - 0.5 / kKeyMaskSize;
+  }
+  return textureLod(keyMask,
+                    cube ? clamp(eyeUv * part, faceLo, faceHi)
+                         : min(eyeUv * part, part - 0.5 / kKeyMaskSize),
+                    0.0).rg;
+}
 #endif
 
 // Where the view direction dir falls in this eye's picture (pictureUv).
@@ -316,6 +338,26 @@ void main() {
     fragColor = (flags & kAlphaOut) != 0u ? vec4(0.0) : vec4(kKeyColor, 1.0);
     return;
   }
+#ifdef COLOUR_KEY
+  // The colour key's mask first too, in the pipelines for a mask that holds
+  // a shrink's reach (kKeyFirst, Shrink above 0), as the packed mask's above
+  // (no test for the plain branch below: every colour key pipeline has
+  // kSeeThrough 4). A pixel's alpha is at most what that reach gives: where
+  // it cuts everything away, or outside the picture, the output is fixed
+  // and the picture is never sampled. Exact for a soft edge above 0 alone,
+  // which the sliders always give. Without a reach the mask cuts no pixel
+  // of the picture away (its x is 1), so reading it first would only cost,
+  // and the other pipelines read it after the picture.
+  vec2 keyAt;
+  if (kKeyFirst) {
+    keyAt = keyMaskAt(eyeUv, uv, cube, projection, eyeOffset, eyeScale);
+    float keyReach = keyAt.x * keyAt.x;
+    if (!inside || (pc.draw.chroma.y > 0.0 && colourAlpha(keyReach, pc.draw.chroma) == 0.0)) {
+      fragColor = (flags & kAlphaOut) != 0u ? vec4(0.0) : vec4(kKeyColor, 1.0);
+      return;
+    }
+  }
+#endif
   // The keys compare display values. The colour key's common modes keep a
   // decoded frame's (d) beside its linear colour, from one lookup, instead
   // of bringing them back with sRGB's curve: the same values but for
@@ -373,22 +415,10 @@ void main() {
   float alpha = inside ? 1.0 : 0.0;
   vec4 chroma = pc.draw.chroma;
 #ifdef COLOUR_KEY
-  // The colour key: its colour (display values), and its mask here (kept on
-  // the part of the image the frame's mask fills).
+  // The colour key: its colour (display values), and its mask here unless
+  // read above.
   vec3 keyRgb = keyColour(pc.draw.alpha.x);
-  vec2 faceLo = vec2(0.0), faceHi = vec2(0.0);
-  if (cube) {
-    // A cubemap's on this face, half a mask texel in (the next face's mask
-    // is elsewhere in the frame).
-    vec2 grid = projection == 3 ? vec2(3.0, 2.0) : vec2(2.0, 3.0);
-    vec2 cell = min(floor(uv * grid), grid - 1.0);
-    faceLo = (eyeOffset + cell / grid * eyeScale) * chroma.zw + 0.5 / kKeyMaskSize;
-    faceHi = (eyeOffset + (cell + 1.0) / grid * eyeScale) * chroma.zw - 0.5 / kKeyMaskSize;
-  }
-  vec2 keyAt = textureLod(keyMask,
-                          cube ? clamp(eyeUv * chroma.zw, faceLo, faceHi)
-                               : min(eyeUv * chroma.zw, chroma.zw - 0.5 / kKeyMaskSize),
-                          0.0).rg;
+  if (!kKeyFirst) keyAt = keyMaskAt(eyeUv, uv, cube, projection, eyeOffset, eyeScale);
 #endif
   if (packed) {
     alpha = kMaskFirst ? maskAlpha : packedAlpha(uv, e, dx, dy);
