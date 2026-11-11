@@ -1,6 +1,7 @@
 #include "autofocus.h"
 #include "strings.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -26,6 +27,22 @@ constexpr float kEyeWindow = 4.3f * kDegree;
 // nearest video within this angle instead (ours): the gaze dot's ring, about
 // the tracker's remaining error.
 constexpr float kEyeReach = 3.0f * kDegree;
+// Measuring rate (ours). A still gaze on a still part of the picture learns
+// nothing new from 60 measurements a second: once a whole probe cycle
+// (+1, 0, -1, 0) has repeated, a measurement starts only every
+// kSettledInterval. A repeat has its probe's last status and, if Ok, an angle
+// within two candidate steps of the first of its run of repeats, so a depth
+// that drifts slowly still ends the run (the angles are candidates: the half
+// step only absorbs rounding; a step is 0.008 / accuracy radians, see
+// candidateAngle()).
+constexpr int kSettledRepeats = 4;
+constexpr float kRepeatSteps = 2.5f, kCandidateStep = 0.008f;
+constexpr double kSettledInterval = 1.0 / 15;
+// Looking elsewhere (the target turned this far since the last measurement
+// began), a measurement that does not repeat, a seek or a scene cut bring the
+// full rate back at once.
+constexpr float kSettledTurn = 0.5f * kDegree;
+constexpr double kReportInterval = 2.0;  // seconds between --timing lines
 
 Quat axisAngle(Vec3 axis, float angle) {
   const float s = std::sin(0.5f * angle);
@@ -56,7 +73,8 @@ std::string meters(float m) {
 
 }  // namespace
 
-bool Autofocus::init() {
+bool Autofocus::init(bool timing) {
+  timing_ = timing;
   ready_ = estimator_.init();
   if (!ready_) std::fprintf(stderr, "Autofocus: depth estimator unavailable\n");
   return ready_;
@@ -67,6 +85,8 @@ void Autofocus::startOver(bool newContent, const char* why) {
   if (newContent) estimator_.forgetVideo();
   controller_.clearProbes();
   reachAlpha_ = reachBeta_ = 0;
+  for (Outcome& o : outcomes_) o.known = false;
+  repeats_ = 0;
   statusAt_ = -1;
   if (!newContent) std::printf("Autofocus: new probes (%s)\n", why);
 }
@@ -118,11 +138,26 @@ FocusOutput Autofocus::update(const FocusInput& in) {
     DepthEstimate e;
     if (estimator_.poll(e) && e.tag == generation_ && !loading) {
       if (e.sceneChange > kSceneCut) startOver(false, "scene cut");
+      Outcome& last = outcomes_[requestPhase_ + 1];
+      const bool repeat =
+          last.known && e.status == last.status &&
+          (e.status != DepthStatus::Ok ||
+           std::abs(e.angle - last.angle) <= kRepeatSteps * kCandidateStep / requestAccuracy_);
+      repeats_ = repeat ? std::min(repeats_ + 1, kSettledRepeats) : 0;
+      if (!repeat) last = {true, e.status, e.angle};
       controller_.submit(e, requestPhase_);
       if (requestPhase_ == 0) reachAlpha_ = e.reachAlpha, reachBeta_ = e.reachBeta;
     }
-    // Measuring as often as the last measurement allows: one in flight.
-    if (!loading && in.headValid && in.target.usable) {
+    // The target in the video's axes; the length of the difference of unit
+    // vectors is the angle between them, for small angles.
+    const Vec3 aim = toVideo(offset(s.yawDeg * kDegree));
+    const Vec3 turn = aim - requestAim_;
+    if (dot(turn, turn) > kSettledTurn * kSettledTurn) repeats_ = 0;
+    const bool settled = repeats_ >= kSettledRepeats;
+    // Measuring as often as the last measurement allows (one in flight), or
+    // every kSettledInterval while settled.
+    if (!loading && in.headValid && in.target.usable &&
+        (!settled || in.now - requestAt_ >= kSettledInterval)) {
       const int phase = controller_.phase();
       const float spread = kSpreadScale * kSpread * 100.0f / s.sensitivity;
       DepthRequest q;
@@ -137,8 +172,15 @@ FocusOutput Autofocus::update(const FocusInput& in) {
       if (in.target.eyes) q.window = kEyeWindow, q.reach = kEyeReach;
       q.seeThrough = in.seeThrough;
       q.tag = generation_;
-      if (estimator_.request(q)) requestPhase_ = phase;
+      if (estimator_.request(q)) {
+        requestPhase_ = phase;
+        requestAccuracy_ = s.accuracy;
+        requestAim_ = aim;
+        requestAt_ = in.now;
+        ++measurements_;
+      }
     }
+    if (timing_) report(in.now, settled);
     distance = controller_.advance(s, in.now, in.target.eyes);
     out.automatic = true;
     if (!in.target.eyes) reachAlpha_ = reachBeta_ = 0;
@@ -147,7 +189,7 @@ FocusOutput Autofocus::update(const FocusInput& in) {
     // and the zoom.
     if (reachAlpha_ != 0 || reachBeta_ != 0) {
       float alpha = 0, beta = 0;
-      epipolarAngles(toVideo(offset(s.yawDeg * kDegree)), alpha, beta);
+      epipolarAngles(aim, alpha, beta);
       const Vec3 reached = epipolarDirection(alpha + reachAlpha_, beta + reachBeta_);
       const Mat4 head = rotation(in.head);
       Vec3 d = transformDir(transposedRotation(head),
@@ -155,6 +197,9 @@ FocusOutput Autofocus::update(const FocusInput& in) {
       if (d.z < 0) d = normalize(Vec3{d.x * in.zoom, d.y * in.zoom, d.z});
       out.marker = transformDir(head, d);
     }
+  } else {
+    reportAt_ = -1;
+    frames_ = settledFrames_ = measurements_ = 0;
   }
 
   float along = 1.0f;
@@ -173,6 +218,17 @@ FocusOutput Autofocus::update(const FocusInput& in) {
   out.status = status_;
   out.brief = brief_;
   return out;
+}
+
+void Autofocus::report(double now, bool settled) {
+  if (reportAt_ < 0) reportAt_ = now;
+  ++frames_;
+  if (settled) ++settledFrames_;
+  if (now - reportAt_ < kReportInterval) return;
+  std::printf("[focus] %.1f measurements/s, settled %.0f%% of frames\n",
+              measurements_ / (now - reportAt_), 100.0 * settledFrames_ / frames_);
+  reportAt_ = now;
+  frames_ = settledFrames_ = measurements_ = 0;
 }
 
 void Autofocus::describe(const FocusInput& in, bool automatic, float distance) {

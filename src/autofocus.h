@@ -54,20 +54,23 @@ struct FocusOutput {
 
 // Stereo focus for the running video: no correction, a manual distance, or
 // automatic depth where the viewer looks. Automatic mode measures the frame
-// around the target whenever the last measurement is done (DepthEstimator,
-// off the render thread's critical path), three probes in turn, and lets
-// FocusController pick and glide to the depth. A new
-// video, layout or camera baseline, a seek or a scene cut clears the probes.
-// Measurements are tagged with the content they were taken from; ones from
-// before that are dropped. Call update() once per rendered frame on the GL
-// thread, after the video frame was rendered.
+// around the target (DepthEstimator, off the render thread's critical path),
+// three probes in turn, and lets FocusController pick and glide to the depth.
+// It measures whenever the last measurement is done, but only 15 times a
+// second once a whole probe cycle has measured what it measured before with
+// the target held still. A new video, layout or camera baseline, a seek or a
+// scene cut clears the probes. Measurements are tagged with the content they
+// were taken from; ones from before that are dropped. Call update() once per
+// rendered frame on the GL thread, after the video frame was rendered.
 class Autofocus {
  public:
-  bool init();
+  // timing: print the measuring rate every two seconds (--timing).
+  bool init(bool timing = false);
   FocusOutput update(const FocusInput& in);
 
  private:
   void startOver(bool newContent, const char* why);
+  void report(double now, bool settled);
   void describe(const FocusInput& in, bool automatic, float distance);
 
   DepthEstimator estimator_;
@@ -76,6 +79,22 @@ class Autofocus {
   std::string contentKey_;
   uint64_t generation_ = 1;
   int requestPhase_ = 0;  // the probe of the measurement under way
+  int requestAccuracy_ = 8;
+  Vec3 requestAim_;       // its target in video axes, before the probe's spread
+  double requestAt_ = -1;
+  // What each probe (-1, 0, +1) last measured that differed from its
+  // measurement before, and how many measurements in a row repeated their
+  // probe's (up to kSettledRepeats).
+  struct Outcome {
+    bool known = false;
+    DepthStatus status = DepthStatus::Edge;
+    float angle = 0;
+  };
+  Outcome outcomes_[3];
+  int repeats_ = 0;
+  bool timing_ = false;
+  double reportAt_ = -1;
+  int frames_ = 0, settledFrames_ = 0, measurements_ = 0;
   // How far the last centre measurement moved off a see-through target (DepthEstimate).
   float reachAlpha_ = 0, reachBeta_ = 0;
   double lastPosition_ = -1, lastNow_ = 0;
