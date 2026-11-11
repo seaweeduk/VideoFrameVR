@@ -770,6 +770,9 @@ bool DepthEstimator::request(const DepthRequest& q) {
   int width = std::max(std::abs(low), std::abs(high)) + n + 8 + 2 * reach;
   width = std::max(width + (width & 1), kThumbW);
   const int height = n + 2 * marginRows(step, n) + 2 * reach;
+  // A cut is told from the thumbnail before it: after forgetScene(), one at once.
+  const auto now = std::chrono::steady_clock::now();
+  job.thumbnail = job.forget || now - thumbnailAt_ >= std::chrono::duration<double>(kThumbEvery);
   job.stride = width;
   job.width = width;
   job.height = height;
@@ -795,6 +798,7 @@ bool DepthEstimator::request(const DepthRequest& q) {
     DepthPatch patch;
     patch.width = width;
     patch.height = height;
+    patch.thumbnail = job.thumbnail;
     patch.start[0] = alpha - 0.5f * width * step;
     patch.start[1] = beta - 0.5f * height * step;
     patch.step = step;
@@ -815,6 +819,7 @@ bool DepthEstimator::request(const DepthRequest& q) {
       forgetVideo_ = job.forgetVideo;
       return false;
     }
+    if (job.thumbnail) thumbnailAt_ = now;
     drawer_ = q.drawer;
     pending_ = std::move(job);
     std::lock_guard<std::mutex> lock(mutex_);
@@ -858,18 +863,21 @@ bool DepthEstimator::request(const DepthRequest& q) {
     glUniform1i(uMode_, 0);
     glDrawArrays(GL_TRIANGLES, 0, 3);
   }
-  glViewport(0, 2 * height, kThumbW, kThumbH);
-  glUniform4f(uRect_, 0.0f, static_cast<float>(2 * height), kThumbW, kThumbH);
-  glUniform2f(uEyeOffset_, 0.0f, 0.0f);
-  glUniform1i(uMode_, 1);
-  glDrawArrays(GL_TRIANGLES, 0, 3);
+  if (job.thumbnail) {
+    glViewport(0, 2 * height, kThumbW, kThumbH);
+    glUniform4f(uRect_, 0.0f, static_cast<float>(2 * height), kThumbW, kThumbH);
+    glUniform2f(uEyeOffset_, 0.0f, 0.0f);
+    glUniform1i(uMode_, 1);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    thumbnailAt_ = now;
+  }
   glBindVertexArray(0);
   glBindSampler(0, 0);
 
   glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_);
   glPixelStorei(GL_PACK_ALIGNMENT, 4);
   glReadBuffer(GL_COLOR_ATTACHMENT0);
-  glReadPixels(0, 0, width, 2 * height + kThumbH, GL_RED, GL_FLOAT, nullptr);
+  glReadPixels(0, 0, width, job.rows(), GL_RED, GL_FLOAT, nullptr);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   fence_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);  // flushed with the frame
@@ -885,7 +893,7 @@ bool DepthEstimator::poll(DepthEstimate& out) {
   // are neither allocated nor cleared again.
   if (stage_ == Stage::Gpu && pending_.pixels.empty()) pending_.pixels.swap(job_.pixels);
   if (stage_ == Stage::Gpu && drawer_ && drawer_->ready()) {
-    const size_t count = static_cast<size_t>(pending_.stride) * (2 * pending_.height + kThumbH);
+    const size_t count = static_cast<size_t>(pending_.stride) * pending_.rows();
     pending_.pixels.resize(count);
     if (const float* data = drawer_->values()) std::copy_n(data, count, pending_.pixels.begin());
     else pending_.pixels.assign(count, -1.0f);
@@ -901,7 +909,7 @@ bool DepthEstimator::poll(DepthEstimate& out) {
     if (state == GL_ALREADY_SIGNALED || state == GL_CONDITION_SATISFIED) {
       glDeleteSync(fence_);
       fence_ = nullptr;
-      const size_t count = static_cast<size_t>(pending_.stride) * (2 * pending_.height + kThumbH);
+      const size_t count = static_cast<size_t>(pending_.stride) * pending_.rows();
       pending_.pixels.resize(count);
       glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_);
       if (const void* data = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, count * sizeof(float),
@@ -946,18 +954,23 @@ void DepthEstimator::work() {
       job.result.angle = candidateAngle(job.result.distance, job.baseline, job.accuracy);
       job.result.distance = 0.5f * job.baseline / std::tan(job.result.angle);
     }
-    // The whole eye against the last measurement's: a scene cut changes most of it.
-    std::vector<float> thumb(kThumbW * kThumbH);
-    for (int y = 0; y < kThumbH; ++y)
-      for (int x = 0; x < kThumbW; ++x)
-        thumb[y * kThumbW + x] = job.pixels[(2 * job.height + y) * job.stride + x];
+    // The whole eye against the thumbnail before: a scene cut changes most of it.
     if (job.forget) lastThumbnail_.clear();
-    if (lastThumbnail_.size() == thumb.size()) {
-      double sum = 0;
-      for (size_t i = 0; i < thumb.size(); ++i) sum += std::abs(thumb[i] - lastThumbnail_[i]);
-      job.result.sceneChange = static_cast<float>(sum / thumb.size());
+    if (job.thumbnail) {
+      std::vector<float> thumb(kThumbW * kThumbH);
+      for (int y = 0; y < kThumbH; ++y)
+        for (int x = 0; x < kThumbW; ++x)
+          thumb[y * kThumbW + x] = job.pixels[(2 * job.height + y) * job.stride + x];
+      // A readback that failed is all kOutside, which no thumbnail has: not
+      // one to compare, now or with the next.
+      const bool read = thumb.front() >= 0;
+      if (read && lastThumbnail_.size() == thumb.size()) {
+        double sum = 0;
+        for (size_t i = 0; i < thumb.size(); ++i) sum += std::abs(thumb[i] - lastThumbnail_[i]);
+        job.result.sceneChange = static_cast<float>(sum / thumb.size());
+      }
+      if (read) lastThumbnail_ = std::move(thumb);
     }
-    lastThumbnail_ = std::move(thumb);
 
     lock.lock();
     job_ = std::move(job);

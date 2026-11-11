@@ -33,6 +33,9 @@ struct Push {
 };
 static_assert(sizeof(Push) <= 128, "the push constants Vulkan guarantees");
 
+// Whether the patch's image ends with the thumbnail.
+bool thumbnail(const DepthPatch& patch) { return patch.thumbnail && !patch.maskProbe && !patch.keyPick; }
+
 }  // namespace
 
 DirectDepth::~DirectDepth() {
@@ -216,9 +219,8 @@ DepthPatchDrawer* DirectDepth::source(DirectFrame* frame) {
 }
 
 bool DirectDepth::draw(const DepthPatch& patch) {
-  const int rows = patch.keyPick     ? patch.height
-                   : patch.maskProbe ? 2 * patch.height
-                                     : 2 * patch.height + DepthEstimator::kThumbH;
+  const int rows = patch.keyPick ? patch.height
+                                 : 2 * patch.height + (thumbnail(patch) ? DepthEstimator::kThumbH : 0);
   if (!source_ || frame_ || patch.width > static_cast<int>(width_) || rows > static_cast<int>(rows_))
     return false;
   frame_ = source_;
@@ -240,7 +242,7 @@ void DirectDepth::submit() {
   }
   direct_->recordBarriers(cmd, frame, true);
   const int w = patch_.width, h = patch_.height;
-  const int parts = patch_.keyPick ? 1 : patch_.maskProbe ? 2 : 3;
+  const int parts = patch_.keyPick ? 1 : thumbnail(patch_) ? 3 : 2;
   const uint32_t rows =
       static_cast<uint32_t>(parts == 1 ? h : 2 * h + (parts == 3 ? DepthEstimator::kThumbH : 0));
   VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
