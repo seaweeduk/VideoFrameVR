@@ -161,6 +161,11 @@ void Menu::update(const MenuView& view) {
       view.roomMatch != view_.roomMatch || view.roomMatched != view_.roomMatched ||
       view.roomRead != view_.roomRead ||
       view.greenScreen.on != view_.greenScreen.on ||
+      view.greenScreen.source != view_.greenScreen.source ||
+      view.colourKey != view_.colourKey || view.keyColour != view_.keyColour ||
+      view.keyPicking != view_.keyPicking || view.keyPickNote != view_.keyPickNote ||
+      view.fillChecked != view_.fillChecked || view.fillChecking != view_.fillChecking ||
+      view.greenScreenFound != view_.greenScreenFound ||
       view.resume != view_.resume ||
       view.seekPreview != view_.seekPreview || view.thumbnails != view_.thumbnails ||
       view.showPerformance != view_.showPerformance || view.vibration != view_.vibration ||
@@ -187,10 +192,12 @@ void Menu::update(const MenuView& view) {
   if (view.screen.distanceCm != view_.screen.distanceCm) sliderChanged(MenuCommand::SetScreenDistance);
   if (view.screen.heightCm != view_.screen.heightCm) sliderChanged(MenuCommand::SetScreenHeight);
   if (view.screen.curvePercent != view_.screen.curvePercent) sliderChanged(MenuCommand::SetScreenCurve);
-  if (view.greenScreen.strength != view_.greenScreen.strength) sliderChanged(MenuCommand::SetKeyStrength);
-  if (view.greenScreen.softness != view_.greenScreen.softness) sliderChanged(MenuCommand::SetKeySoftness);
-  if (view.greenScreen.spill != view_.greenScreen.spill) sliderChanged(MenuCommand::SetKeySpill);
-  if (view.greenScreen.shrink != view_.greenScreen.shrink) sliderChanged(MenuCommand::SetKeyShrink);
+  const KeySliders &key = view.greenScreen.sliders(view.colourKey),
+                   &keyWas = view_.greenScreen.sliders(view_.colourKey);
+  if (key.strength != keyWas.strength) sliderChanged(MenuCommand::SetKeyStrength);
+  if (key.softness != keyWas.softness) sliderChanged(MenuCommand::SetKeySoftness);
+  if (key.spill != keyWas.spill) sliderChanged(MenuCommand::SetKeySpill);
+  if (key.shrink != keyWas.shrink) sliderChanged(MenuCommand::SetKeyShrink);
   if (view.subtitleSize != view_.subtitleSize) sliderChanged(MenuCommand::SetSubtitleSize);
   if (view.subtitleRaise != view_.subtitleRaise) sliderChanged(MenuCommand::SetSubtitleRaise);
   if (view.subtitleDistance != view_.subtitleDistance) sliderChanged(MenuCommand::SetSubtitleDistance);
@@ -333,7 +340,7 @@ bool Menu::panelShown(PanelId panel) const {
   if (setup_) return panel == kSetup;
   switch (panel) {
     case kMain: return true;
-    case kBrowser: return page_ != Page::Main || dialog_ != Dialog::None;
+    case kBrowser: return (page_ != Page::Main || dialog_ != Dialog::None) && !view_.keyPicking;
     case kSetup: return false;
   }
   return false;

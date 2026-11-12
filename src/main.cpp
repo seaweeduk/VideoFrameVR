@@ -20,6 +20,7 @@
 #include "gl_interop.h"
 #include "gl_util.h"
 #include "gpu_context.h"
+#include "key_picker.h"
 #include "library.h"
 #include "library_index.h"
 #include "mask_probe.h"
@@ -139,6 +140,13 @@ struct App {
   double nextSlideAt = 0;    // glfwGetTime() when it does
   bool recenter = false;
   bool togglePassthrough = false;  // T key; handled where the settings are
+  // Picking the background key's colour (MenuCommand::PickKeyColour): the
+  // video it is for (empty: not picking); a press to read it at keyPickUv
+  // within keyPickPart (KeyPicker::pointOf()); why the last one gave none.
+  std::string keyPickFor;
+  bool keyPickWanted = false;
+  float keyPickUv[2] = {}, keyPickPart[4] = {};
+  KeyPickNote keyPickNote = KeyPickNote::None;
   double recenterAt = 0;  // glfwGetTime() of a recenter counting down; 0 = none
   // Settings (VideoSettings::Part) of the running video changed in a run of
   // small steps (a slider, a held stick, a drag), stored at glfwGetTime()
@@ -763,6 +771,8 @@ int run(GLFWwindow* window, const Options& opts) {
   // packed mask (video_check.h).
   VideoCheck videoCheck;
   bool passthroughSettled = false;
+  bool greenCheckAsked = false;  // the green screen check was asked for, for this video
+  bool fillCheckPending = false;  // ... and its fill check hasn't answered yet
   double videoCheckAt = 0;  // glfwGetTime() the check starts, a moment after the video opens
   VideoCheck::Kind videoCheckKind = VideoCheck::Kind::GreenScreen;
   std::set<std::string> layersSeen;  // videos whose mask's second layer MaskProbe found
@@ -813,9 +823,19 @@ int run(GLFWwindow* window, const Options& opts) {
   // from frames handed out.
   MaskProbe maskProbe;
   const bool maskProbeReady = maskProbe.init();
+  // ... also the key picker's for those frames: the two never read at once
+  // (a key is used only without the mask).
   DirectDepth maskProbeDirect;
   const bool maskProbeDirectReady =
       direct.available() && maskProbeDirect.init(gpu, direct, MaskProbe::kGrid, 2 * MaskProbe::kGrid);
+  KeyPicker keyPicker;  // the background key's colour, pointed at
+  {
+    const auto start = std::chrono::steady_clock::now();
+    const bool ready = keyPicker.init();
+    std::printf("Key picker: %s (%.1f ms)\n", ready ? "ready" : "GL read unavailable",
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                    .count());
+  }
   FocusTargetSelector focusTargets;  // head direction or eye gaze
   FocusMarker focusMarker;
   if (!focusMarker.init(uploader)) return 1;
@@ -1088,17 +1108,21 @@ int run(GLFWwindow* window, const Options& opts) {
   auto passthroughByItself = [&](AutoPassthrough why) {
     if (why == AutoPassthrough::None || app.video.passthrough) return;
     app.video.passthrough = true;
-    if (why == AutoPassthrough::GreenScreen && app.video.greenScreen.isDefault())
+    if (why != AutoPassthrough::Mask && app.video.greenScreen.isDefault(app.video.colourKeyed()))
       app.video.greenScreen.on = true;
-    passthroughWhy = why == AutoPassthrough::Mask ? strings().autoPassthrough.mask
-                                                  : strings().autoPassthrough.greenScreen;
+    const AutoPassthroughStrings& t = strings().autoPassthrough;
+    passthroughWhy = why == AutoPassthrough::Mask ? t.mask
+                     : why == AutoPassthrough::Fill ? t.fill
+                                                    : t.greenScreen;
     if (!settings.passthroughNoticeSeen) {
       passthroughShownUntil = glfwGetTime() + kPassthroughNoticeShown;
       settings.passthroughNoticeSeen = true;
       saveSettings(settings);
     }
     std::printf("Passthrough: on by itself (%s)\n",
-                why == AutoPassthrough::Mask ? "mask" : "green screen");
+                why == AutoPassthrough::Mask   ? "mask"
+                : why == AutoPassthrough::Fill ? "flat background"
+                                               : "green screen");
   };  // Puts the running video's remembered settings into effect.
   auto applyVideoSettings = [&] {
     if (app.video.hasFormat) {
@@ -1168,6 +1192,8 @@ int run(GLFWwindow* window, const Options& opts) {
     awaitingResume = awaitingRecord && settings.resume && !isStream(path) && !isPhotoFile(path);
     resolvedResume = -1;
     passthroughSettled = false;
+    greenCheckAsked = false;
+    fillCheckPending = false;
     videoCheckAt = 0;
     passthroughShownUntil = 0;
     opacityTwist.cancel();  // a twist under way was the last video's
@@ -1396,6 +1422,14 @@ int run(GLFWwindow* window, const Options& opts) {
     menu.showLibrary();
     panel.open = true;
     initialRecenter = true;
+  };
+
+  // Picking the background key's colour ends; a read on its way is forgotten.
+  auto endKeyPick = [&] {
+    keyPicker.cancel();
+    app.keyPickFor.clear();
+    app.keyPickWanted = false;
+    app.keyPickNote = KeyPickNote::None;
   };
 
   auto execute = [&](const MenuCommand& c) {
@@ -1806,21 +1840,39 @@ int run(GLFWwindow* window, const Options& opts) {
       case MenuCommand::SetKeyStrength:
       case MenuCommand::SetKeySoftness:
       case MenuCommand::SetKeySpill:
-      case MenuCommand::SetKeyShrink: {
+      case MenuCommand::SetKeyShrink:
+      case MenuCommand::SetKeyBackground: {
         GreenScreen& key = app.video.greenScreen;
         const int value = static_cast<int>(c.value);
+        KeySliders& sliders = app.video.keySliders();
         if (c.type == MenuCommand::ToggleGreenScreen) key.on = !key.on;
-        else if (c.type == MenuCommand::SetKeyStrength) key.strength = value;
-        else if (c.type == MenuCommand::SetKeySoftness) key.softness = value;
-        else if (c.type == MenuCommand::SetKeyShrink) key.shrink = value;
-        else key.spill = value;
+        else if (c.type == MenuCommand::SetKeyBackground)
+          key.source = value == static_cast<int>(KeySource::GreenScreen) ? KeySource::GreenScreen
+                                                                         : KeySource::Automatic;
+        else if (c.type == MenuCommand::SetKeyStrength) sliders.strength = value;
+        else if (c.type == MenuCommand::SetKeySoftness) sliders.softness = value;
+        else if (c.type == MenuCommand::SetKeyShrink) sliders.shrink = value;
+        else sliders.spill = value;
         storeVideoSoon(VideoSettings::kGreenScreen);
         break;
       }
+      case MenuCommand::PickKeyColour:
+        // Where the key is used: passthrough on a surround video, without its own mask.
+        if (app.video.passthrough && app.video.greenScreen.on && !app.currentFile.empty() &&
+            app.format.projection != Projection::Flat &&
+            !(packedMask(app.currentFile, app.video) && maskFormat(app.format))) {
+          app.keyPickFor = app.currentFile;
+          app.keyPickNote = KeyPickNote::None;
+          std::printf("Background key: pick a colour\n");
+        }
+        break;
+      case MenuCommand::CancelKeyPick:
+        endKeyPick();
+        break;
       case MenuCommand::ResetPassthrough: {
         // What the group shows: the key's sliders only while the green
-        // screen is on (passthrough on, not the video's own mask), Match the
-        // room's strengths only while it is on.
+        // screen is on (passthrough on, not the video's own mask) and removes
+        // something, Match the room's strengths only while it is on.
         if (roomReadable && roomMatched) {
           const Settings defaults;
           settings.matchColour = defaults.matchColour;
@@ -1830,11 +1882,8 @@ int run(GLFWwindow* window, const Options& opts) {
         }
         unsigned parts = VideoSettings::kOpacity;
         const bool own = packedMask(app.currentFile, app.video) && maskFormat(app.format);
-        if (app.video.passthrough && app.video.greenScreen.on && !own) {
-          GreenScreen& key = app.video.greenScreen;
-          const bool on = key.on;
-          key = GreenScreen{};
-          key.on = on;
+        if (app.video.passthrough && app.video.greenScreen.on && !own && app.video.keyRemoves()) {
+          app.video.keySliders() = GreenScreen().sliders(app.video.colourKeyed());
           parts |= VideoSettings::kGreenScreen;
         }
         app.video.opacity = 100;
@@ -2101,6 +2150,7 @@ int run(GLFWwindow* window, const Options& opts) {
   double resolutionCycleAt = glfwGetTime() + opts.resolutionCycleSeconds;
   size_t resolutionCycleStep = 0;
   FrameScene scene;  // what each frame draws
+  EyeCorrection shownCorrection;  // the left eye's stereo correction, as last drawn
   while (!xrQuit && !app.quit && !quitSignal && !glfwWindowShouldClose(input)) {
     timer.start();
     glfwPollEvents();
@@ -2338,17 +2388,22 @@ int run(GLFWwindow* window, const Options& opts) {
     if (!passthroughSettled && knownWidth > 0 && !awaitingRecord && !app.currentFile.empty()) {
       passthroughSettled = true;
       const std::string& path = app.currentFile;
-      if (autoPassthroughOn && !isPhotoFile(path) && !isStream(path)) {
+      if (autoPassthroughOn && !isPhotoFile(path) && !isStream(path))
         passthroughByItself(autoPassthrough(path, app.format, app.video));
-        if (greenCheckWanted(path, app.format, app.video)) {
-          videoCheckAt = glfwGetTime() + 2.0;
-          videoCheckKind = VideoCheck::Kind::GreenScreen;
-        }
+      // The fill check, for the key's Automatic, also where passthrough is on by hand.
+      const bool fillWanted = fillCheckWanted(path, app.format, app.video) &&
+                              (autoPassthroughOn || app.video.passthrough);
+      if (!greenCheckAsked && !isPhotoFile(path) && !isStream(path) &&
+          ((autoPassthroughOn && greenCheckWanted(path, app.format, app.video)) || fillWanted)) {
+        greenCheckAsked = fillCheckPending = true;
+        videoCheckAt = glfwGetTime() + 2.0;
+        videoCheckKind = VideoCheck::Kind::GreenScreen;
       }
       // Whatever the setting: a mask's second layer shows whenever passthrough does.
       if (!isPhotoFile(path) && !isStream(path) && layerCheckWanted(path, app.format, app.video)) {
         videoCheckAt = glfwGetTime() + 2.0;
         videoCheckKind = VideoCheck::Kind::MaskLayers;
+        fillCheckPending = false;  // a green screen check under way is replaced
       }
     }
     if (RemovableDrives::Change change; drives.poll(change)) {
@@ -2392,18 +2447,25 @@ int run(GLFWwindow* window, const Options& opts) {
     for (const Offline::Download& d : downloaded) library.addCopy(d.path, d.oshash, d.size, d.mtime);
     if (videoCheckAt > 0 && glfwGetTime() >= videoCheckAt) {
       videoCheckAt = 0;
-      videoCheck.start(app.currentFile, app.format.stereo, videoCheckKind);
+      videoCheck.start(app.currentFile, app.format, videoCheckKind);
     }
     if (VideoCheck::Result checked; videoCheck.result(checked)) {
       // Kept for the video, even if another plays by now: it runs once.
       VideoSettings result;
       const bool current = checked.path == app.currentFile;
-      if (checked.kind == VideoCheck::Kind::GreenScreen) {
+      if (current && checked.kind == VideoCheck::Kind::GreenScreen) fillCheckPending = false;
+      if (!checked.answered) {
+        // None: it runs again next time.
+      } else if (checked.kind == VideoCheck::Kind::GreenScreen) {
         result.greenCheckVersion = VideoCheck::kGreenVersion;
         result.greenScreenFound = checked.found;
-        library.setSettings(checked.path, result, VideoSettings::kGreenCheck);
+        result.fillCheckVersion = VideoCheck::kFillVersion;
+        result.fillFound = checked.fillFound;
+        if (checked.fillFound) result.fillColour = checked.fillColour;
+        const unsigned parts = VideoSettings::kGreenCheck | VideoSettings::kFillCheck;
+        library.setSettings(checked.path, result, parts);
         if (current) {
-          app.video.take(result, VideoSettings::kGreenCheck);
+          app.video.take(result, parts);
           if (autoPassthroughOn)
             passthroughByItself(autoPassthrough(checked.path, app.format, app.video));
         }
@@ -2436,6 +2498,15 @@ int run(GLFWwindow* window, const Options& opts) {
       passthroughShownUntil = 0;
       storeVideo(VideoSettings::kPassthrough);
       std::printf("Passthrough: %s\n", app.video.passthrough ? "on" : "off");
+      // On by hand after the video settled: the fill check its key's
+      // Automatic needs, if it wasn't asked for then.
+      const std::string& path = app.currentFile;
+      if (app.video.passthrough && passthroughSettled && !greenCheckAsked && !path.empty() &&
+          !isPhotoFile(path) && !isStream(path) && fillCheckWanted(path, app.format, app.video)) {
+        greenCheckAsked = fillCheckPending = true;
+        videoCheckAt = glfwGetTime();
+        videoCheckKind = VideoCheck::Kind::GreenScreen;
+      }
       if (app.video.passthrough && kStandaloneHeadset && !xr.alphaBlendSupported())
         std::printf("Passthrough: the runtime offers no alpha blending, so the camera cannot "
                     "show\n");
@@ -2685,6 +2756,8 @@ int run(GLFWwindow* window, const Options& opts) {
         if (!panel.open) panel.placeInFrontOf(headPos, menuAt);
         panel.open = true;
         menu.showPlayedFrom();
+      } else if ((input.menuPressed || app.toggleMenu) && !app.keyPickFor.empty()) {
+        endKeyPick();  // the menu button cancels picking the key's colour, the menu stays
       } else if (input.menuPressed || app.toggleMenu) {
         panel.open = !panel.open;
         openedNow = panel.open;
@@ -2814,6 +2887,40 @@ int run(GLFWwindow* window, const Options& opts) {
         opacityShownUntil = now + kValueShown;
       }
 
+      // Picking the key's colour: the trigger away from the menu reads it
+      // where that hand's laser dot is seen, as the scene shows the left
+      // eye's picture there (from that eye, through the zoom, into the
+      // picture's axes, and onto its stereo correction's sphere, as
+      // surround.frag). The dot is where the laser below draws it.
+      if (!app.keyPickFor.empty() &&
+          (app.keyPickFor != app.currentFile || !panel.open || !app.video.passthrough ||
+           !app.video.greenScreen.on || app.format.projection == Projection::Flat ||
+           (packedMask(app.currentFile, app.video) && maskFormat(app.format))))
+        endKeyPick();
+      const bool keyPicking = !app.keyPickFor.empty();
+      for (int h = 0; h < 2 && keyPicking && !app.keyPickWanted && !keyPicker.busy() && headValid;
+           ++h) {
+        const HandState& t = input.hands[h];
+        if (h != activeHand || !t.selectPressed || !t.poseValid || onMenu[h]) continue;
+        const EyeMatrices& eye = xr.eye(0);
+        const Mat4 view = rotation(eye.orientation);
+        const Vec3 dotAt = t.aimPosition + aimDirection(t) * laserLength;
+        Vec3 d = transformDir(transposedRotation(view), normalize(dotAt - eye.position));
+        if (d.z < 0) d = normalize(Vec3{d.x / app.screen.zoom, d.y / app.screen.zoom, d.z});
+        Vec3 inPicture =
+            transformDir(transposedRotation(app.screen.rotation()), transformDir(view, d));
+        if (shownCorrection.on && shownCorrection.distance > 0) {
+          const Vec3 viewer = shownCorrection.viewer - shownCorrection.camera;
+          const float along = dot(viewer, inPicture);
+          const float reach = along * along - dot(viewer, viewer) +
+                              shownCorrection.distance * shownCorrection.distance;
+          inPicture = normalize(viewer + inPicture * (std::sqrt(std::max(reach, 0.0f)) - along));
+        }
+        app.keyPickWanted = KeyPicker::pointOf(app.format, frameAspect, app.flipVideo, inPicture,
+                                               app.keyPickUv, app.keyPickPart);
+        break;
+      }
+
       // Trigger away from the menu: drag the picture around you.
       // Releasing stops it where it is shown; what the smoothing had not caught up is dropped.
       const bool screenHeld = screenControl.holding();
@@ -2823,7 +2930,7 @@ int run(GLFWwindow* window, const Options& opts) {
       for (int h = 0; h < 2 && turnDrag.hand < 0 && headValid && !screenHeld; ++h) {
         const HandState& t = input.hands[h];
         if (!t.selectPressed || !t.poseValid || menuGrab.hand == h || onMenu[h] ||
-            volumeRoll.hand() == h)
+            volumeRoll.hand() == h || keyPicking)
           continue;
         turnDrag.hand = h;
         turnDrag.tracking = false;
@@ -3050,8 +3157,7 @@ int run(GLFWwindow* window, const Options& opts) {
       // Frame draws the video whole.
       focusIn.seeThrough = seeThrough(alphaPassthrough || keyPassthrough,
                                       packedMask(app.currentFile, app.video), app.format,
-                                      app.video.greenScreen,
-                                      maskColours(app.video));
+                                      app.video, !photo && player.tvGammaImage(), keyPicking);
       // A second layer not found yet (by the keyframe check, which may not
       // have run or answered): looked for while the video plays.
       const bool probeWanted =
@@ -3059,7 +3165,7 @@ int run(GLFWwindow* window, const Options& opts) {
           !app.video.maskLayersFound && !player.playback().paused && !player.seeking() &&
           !player.loading();
       DepthPatchDrawer* probeDrawer =
-          !photo && !videoTexture && maskProbeDirectReady
+          !photo && !videoTexture && maskProbeDirectReady && !keyPicker.busy()
               ? maskProbeDirect.source(player.directCurrent())
               : nullptr;
       if (maskProbe.update(now, app.currentFile, probeWanted, videoTexture,
@@ -3068,6 +3174,45 @@ int run(GLFWwindow* window, const Options& opts) {
         app.video.maskLayersFound = true;
         layersSeen.insert(app.currentFile);
         storeVideo(VideoSettings::kMaskLayers);
+      }
+      // The key's colour where it was pointed at: read once, then taken as
+      // the video's background, and the menu comes back. A frame that stays
+      // out of GL is read by Vulkan, if its format can be.
+      if (app.keyPickWanted && !maskProbe.drawing()) {
+        DirectFrame* direct = !photo && !videoTexture ? player.directCurrent() : nullptr;
+        DepthPatchDrawer* drawer =
+            direct && maskProbeDirectReady ? maskProbeDirect.source(direct) : nullptr;
+        const std::function<bool()> prepare =
+            photo ? focusIn.prepareRead : [&player] { return player.prepareFullSizeRead(); };
+        const KeyPicker::Read read =
+            direct && !drawer
+                ? KeyPicker::Read::Unavailable
+                : keyPicker.read(app.keyPickUv, app.keyPickPart, videoTexture,
+                                 !photo && player.tvGammaImage(), prepare, drawer);
+        if (read != KeyPicker::Read::Later) app.keyPickWanted = false;
+        if (read == KeyPicker::Read::Unavailable) {
+          app.keyPickNote = KeyPickNote::Unreadable;
+          std::printf("Background key: this picture can't be read\n");
+        }
+      }
+      // A read that crossed an edge or failed: picking goes on, for another press.
+      KeyColour picked;
+      switch (keyPicker.result(picked)) {
+        case KeyPicker::Result::Picked:
+          app.video.greenScreen.source = KeySource::Picked;
+          app.video.greenScreen.picked = picked;
+          storeVideoSoon(VideoSettings::kGreenScreen);
+          endKeyPick();
+          std::printf("Background key: picked %d, %d, %d\n", picked.r, picked.g, picked.b);
+          break;
+        case KeyPicker::Result::Uneven:
+          app.keyPickNote = KeyPickNote::Uneven;
+          std::printf("Background key: not one colour there\n");
+          break;
+        case KeyPicker::Result::Failed:
+          std::printf("Background key: the colour wasn't read back\n");
+          break;
+        case KeyPicker::Result::None: break;
       }
       focusIn.now = now;
       focusIn.target = focusTargets.update(settings.focusPrefs.eyeTracking, xr.gaze(), headRot,
@@ -3151,6 +3296,13 @@ int run(GLFWwindow* window, const Options& opts) {
       view.autoPassthrough = settings.autoPassthrough;
       view.passthrough = app.video.passthrough;
       view.greenScreen = app.video.greenScreen;
+      view.colourKey = app.video.colourKeyed();
+      view.keyColour = app.video.keyColour();
+      view.keyPicking = !app.keyPickFor.empty();
+      view.keyPickNote = app.keyPickNote;
+      view.fillChecked = app.video.fillCheckVersion > 0;
+      view.fillChecking = fillCheckPending;
+      view.greenScreenFound = app.video.greenCheckVersion > 0 && app.video.greenScreenFound;
       view.packedAlpha = packedMask(app.currentFile, app.video);
       view.maskFormat = maskFormat(app.format);
       view.maskLayers = app.video.maskLayersFound;
@@ -3370,8 +3522,9 @@ int run(GLFWwindow* window, const Options& opts) {
       video.antiShimmer = antiShimmer;
       video.look = settings.toneLook;
       video.sharpen = settings.sharpen / 100.0f;
-      video.key = app.video.greenScreen;
+      video.key = app.video.keySliders();
       video.correction = focusOut.correction;
+      shownCorrection = focusOut.correction.eyes[0];
       if (videoImage && xr.eyeCount() > 0) {
         const ScreenSurface screen(app.screen, eyeDisplayAspect(app.format, frameAspect));
         samplingLog.update(describeEyeSampling(app.format, photo ? photoWidth : player.width(),
@@ -3569,6 +3722,7 @@ int run(GLFWwindow* window, const Options& opts) {
           } else {
             interop.frameAbandoned();
             direct.frameAbandoned();
+            renderer.frameAbandoned();
           }
           timer.lap(FrameTimer::Submit);
         } else {

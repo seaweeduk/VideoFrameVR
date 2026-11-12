@@ -17,9 +17,11 @@ extern "C" {
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 #include <vector>
 
 namespace {
@@ -30,6 +32,11 @@ using Clock = std::chrono::steady_clock;
 // for the shares, cheap to look through.
 constexpr int kGreenSampleWidth = 256;
 constexpr double kGreenSamplesAt[] = {0.2, 0.4, 0.6, 0.8};
+// A flat fill: its pixels are within this many code values of its colour in
+// each of Y, U and V; a fisheye's picture is taken inside this much of its
+// circle (its rim is blurred, and outside it is black or a mask).
+constexpr int kFillTolerance = 2;
+constexpr double kFisheyeArea = 0.94;
 // The mask layer samples: points on a grid this many across the frame (a
 // mask's blue areas span a few or more), read from the keyframe as decoded.
 // Three through the video: the layered videos known have it in at least two
@@ -53,6 +60,53 @@ struct Sample {
   int width = 0, height = 0;
   std::vector<uint8_t> plane[3];
 };
+
+// A decoded frame read straight from its planes: its format if that is
+// planar YUV of 8 to 16 bits, else nullptr.
+const AVPixFmtDescriptor* planarYuv(const AVFrame* f) {
+  const AVPixFmtDescriptor* d = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(f->format));
+  const bool planar =
+      d && (d->flags & AV_PIX_FMT_FLAG_PLANAR) &&
+      !(d->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_BE | AV_PIX_FMT_FLAG_HWACCEL)) &&
+      d->nb_components >= 3 && d->comp[0].plane == 0 && d->comp[1].plane == 1 &&
+      d->comp[2].plane == 2 && d->comp[0].shift == 0 && d->comp[0].depth <= 16;
+  return planar ? d : nullptr;
+}
+
+int planeValue(const AVFrame* f, int depth, int plane, int x, int y) {
+  const uint8_t* row = f->data[plane] + static_cast<ptrdiff_t>(y) * f->linesize[plane];
+  return depth > 8 ? reinterpret_cast<const uint16_t*>(row)[x] : row[x];
+}
+
+// A frame's matrix's Kr and Kb: BT.709 (also when unknown), BT.601 or BT.2020.
+void lumaWeights(const AVFrame* f, double& kr, double& kb) {
+  kr = 0.2126, kb = 0.0722;
+  if (f->colorspace == AVCOL_SPC_BT470BG || f->colorspace == AVCOL_SPC_SMPTE170M) kr = 0.299, kb = 0.114;
+  if (f->colorspace == AVCOL_SPC_BT2020_NCL || f->colorspace == AVCOL_SPC_BT2020_CL)
+    kr = 0.2627, kb = 0.0593;
+}
+
+// An eye's part of a sample.
+struct Part {
+  int x = 0, y = 0, w = 0, h = 0;
+};
+
+// The eyes' parts of a sample: how many (one, or two).
+int eyeParts(const Sample& s, StereoLayout stereo, Part parts[2]) {
+  const int w = s.width, h = s.height;
+  if (stereo == StereoLayout::SideBySide) {
+    parts[0] = {0, 0, w / 2, h};
+    parts[1] = {w / 2, 0, w / 2, h};
+    return 2;
+  }
+  if (stereo == StereoLayout::TopBottom) {
+    parts[0] = {0, 0, w, h / 2};
+    parts[1] = {0, h / 2, w, h / 2};
+    return 2;
+  }
+  parts[0] = {0, 0, w, h};
+  return 1;
+}
 
 // An eye's part of a sample: how much of its picture is a keying green, at
 // its top and its sides, and that green's hue (degrees from Cb toward Cr's
@@ -112,17 +166,10 @@ Eye eyeOf(const Sample& s, int x0, int y0, int w, int h) {
 // top and a side (a set, not a floor), both eyes alike. `hue`: the first eye's.
 bool greenSample(const Sample& s, StereoLayout stereo, double& hue) {
   Eye eyes[2];
-  int count = 2;
-  if (stereo == StereoLayout::SideBySide) {
-    eyes[0] = eyeOf(s, 0, 0, s.width / 2, s.height);
-    eyes[1] = eyeOf(s, s.width / 2, 0, s.width / 2, s.height);
-  } else if (stereo == StereoLayout::TopBottom) {
-    eyes[0] = eyeOf(s, 0, 0, s.width, s.height / 2);
-    eyes[1] = eyeOf(s, 0, s.height / 2, s.width, s.height / 2);
-  } else {
-    eyes[0] = eyeOf(s, 0, 0, s.width, s.height);
-    count = 1;
-  }
+  Part parts[2];
+  const int count = eyeParts(s, stereo, parts);
+  for (int i = 0; i < count; ++i)
+    eyes[i] = eyeOf(s, parts[i].x, parts[i].y, parts[i].w, parts[i].h);
   for (int i = 0; i < count; ++i) {
     const Eye& e = eyes[i];
     if (!e.hasHue || e.share < 0.4 || e.top < 0.3 || e.side < 0.3 || e.hue < 40 || e.hue > 62 ||
@@ -136,6 +183,150 @@ bool greenSample(const Sample& s, StereoLayout stereo, double& hue) {
   return true;
 }
 
+// An eye's most common colour (the sample's YUV), and how much of its
+// picture, of the picture's top fifth and of its upper corners (a quarter
+// high and wide; the lesser of the two) is within kFillTolerance of it.
+struct Fill {
+  int y = 0, u = 0, v = 0;
+  double share = 0, top = 0, corner = 0;
+};
+
+bool nearFill(const Sample& s, size_t i, const Fill& f) {
+  return std::abs(s.plane[0][i] - f.y) <= kFillTolerance &&
+         std::abs(s.plane[1][i] - f.u) <= kFillTolerance &&
+         std::abs(s.plane[2][i] - f.v) <= kFillTolerance;
+}
+
+Fill fillOf(const Sample& s, const Part& eye, bool fisheye) {
+  const int x0 = eye.x, y0 = eye.y, w = eye.w, h = eye.h;
+  const std::vector<uint8_t> &luma = s.plane[0], &u = s.plane[1], &v = s.plane[2];
+  // The picture: a fisheye's circle (an ellipse in an eye that isn't square), else all.
+  auto inPicture = [&](int x, int y) {
+    if (!fisheye) return true;
+    const double dx = (x - x0 + 0.5) / w * 2 - 1, dy = (y - y0 + 0.5) / h * 2 - 1;
+    return dx * dx + dy * dy <= kFisheyeArea * kFisheyeArea;
+  };
+  auto each = [&](auto&& f) {
+    for (int y = y0; y < y0 + h; ++y)
+      for (int x = x0; x < x0 + w; ++x)
+        if (inPicture(x, y)) f(x, y, static_cast<size_t>(y) * s.width + x);
+  };
+  // Its most common value, without a sort: the fullest of 4096 bins (the
+  // top 4 bits of Y, U and V), then the most common exact value in it.
+  std::array<uint32_t, 4096> coarse{}, fine{};
+  auto high = [&](size_t i) { return (luma[i] >> 4) << 8 | (u[i] >> 4) << 4 | v[i] >> 4; };
+  auto low = [&](size_t i) { return (luma[i] & 15) << 8 | (u[i] & 15) << 4 | (v[i] & 15); };
+  long picture = 0;
+  each([&](int, int, size_t i) { ++coarse[high(i)], ++picture; });
+  Fill f;
+  if (picture == 0) return f;
+  const int bin = static_cast<int>(std::max_element(coarse.begin(), coarse.end()) - coarse.begin());
+  each([&](int, int, size_t i) {
+    if (high(i) == bin) ++fine[low(i)];
+  });
+  const int exact = static_cast<int>(std::max_element(fine.begin(), fine.end()) - fine.begin());
+  f.y = (bin >> 8) << 4 | exact >> 8;
+  f.u = (bin >> 4 & 15) << 4 | (exact >> 4 & 15);
+  f.v = (bin & 15) << 4 | (exact & 15);
+  // Its centre: the mean of what is near it.
+  long n = 0, sy = 0, su = 0, sv = 0;
+  each([&](int, int, size_t i) {
+    if (nearFill(s, i, f)) ++n, sy += luma[i], su += u[i], sv += v[i];
+  });
+  f.y = static_cast<int>(std::floor(double(sy) / n + 0.5));
+  f.u = static_cast<int>(std::floor(double(su) / n + 0.5));
+  f.v = static_cast<int>(std::floor(double(sv) / n + 0.5));
+  // The parts, in the picture's box (a fisheye's circle's).
+  const int r0 = fisheye ? static_cast<int>(std::lround(h * (1 - kFisheyeArea) / 2)) : 0;
+  const int c0 = fisheye ? static_cast<int>(std::lround(w * (1 - kFisheyeArea) / 2)) : 0;
+  const int bh = h - 2 * r0, bw = w - 2 * c0;
+  long fill = 0, top = 0, topFill = 0, left = 0, leftFill = 0, right = 0, rightFill = 0;
+  each([&](int x, int y, size_t i) {
+    const bool is = nearFill(s, i, f);
+    const int ry = y - y0, rx = x - x0;
+    const bool t = ry < r0 + bh / 5, corner = ry < r0 + bh / 4;
+    const bool l = corner && rx < c0 + bw / 4, r = corner && rx >= c0 + bw - bw / 4;
+    fill += is;
+    top += t, topFill += t && is;
+    left += l, leftFill += l && is;
+    right += r, rightFill += r && is;
+  });
+  auto ratio = [](long a, long b) { return b > 0 ? double(a) / b : 0.0; };
+  f.share = ratio(fill, picture);
+  f.top = ratio(topFill, top);
+  f.corner = std::min(ratio(leftFill, left), ratio(rightFill, right));
+  return f;
+}
+
+bool sameFill(const Fill& a, const Fill& b) {
+  return std::abs(a.y - b.y) <= 3 && std::abs(a.u - b.u) <= 3 && std::abs(a.v - b.v) <= 3;
+}
+
+// A flat fill sample: in every eye one saturated colour covering much of
+// the picture, most of its top and of both its upper corners, the same in
+// both eyes. Natural footage never comes near; flat grey, white or black
+// would (a dark studio, a smaller picture's border), so they aren't
+// taken. `fill`: the first eye's.
+bool fillSample(const Sample& s, const VideoFormat& format, Fill& fill) {
+  const bool fisheye = format.projection == Projection::Fisheye180 ||
+                       format.projection == Projection::Fisheye190 ||
+                       format.projection == Projection::Fisheye200;
+  Fill eyes[2];
+  Part parts[2];
+  const int count = eyeParts(s, format.stereo, parts);
+  for (int i = 0; i < count; ++i) {
+    eyes[i] = fillOf(s, parts[i], fisheye);
+    if (eyes[i].share < 0.35 || eyes[i].top < 0.6 || eyes[i].corner < 0.6) return false;
+  }
+  if (count == 2 && !sameFill(eyes[0], eyes[1])) return false;
+  fill = eyes[0];
+  return std::hypot(fill.u - 128, fill.v - 128) >= 24;
+}
+
+// A fill's colour as the scene shows the frame, so as the colour key
+// compares it: 8-bit display RGB of the decoded keyframe's own values (not
+// the sample's: swscale may have changed their matrix), the median of those
+// under the eye's fill pixels in its sample (at each one's middle), with the
+// frame's matrix and range (DirectVideo::computeColor's, as mpv's). False
+// for a frame not in planar YUV.
+bool fillColour(const AVFrame* f, const Sample& s, const Part& eye, const Fill& fill,
+                KeyColour& out) {
+  const AVPixFmtDescriptor* d = planarYuv(f);
+  if (!d) return false;
+  const int depth = d->comp[0].depth;
+  std::vector<int> values[3];
+  for (int y = eye.y; y < eye.y + eye.h; ++y)
+    for (int x = eye.x; x < eye.x + eye.w; ++x) {
+      if (!nearFill(s, static_cast<size_t>(y) * s.width + x, fill)) continue;
+      const int fx = static_cast<int>((2 * x + 1) * int64_t(f->width) / (2 * s.width));
+      const int fy = static_cast<int>((2 * y + 1) * int64_t(f->height) / (2 * s.height));
+      values[0].push_back(planeValue(f, depth, 0, fx, fy));
+      const int cx = fx >> d->log2_chroma_w, cy = fy >> d->log2_chroma_h;
+      for (int p = 1; p < 3; ++p) values[p].push_back(planeValue(f, depth, p, cx, cy));
+    }
+  if (values[0].empty()) return false;
+  double m[3];
+  for (int p = 0; p < 3; ++p) {
+    auto middle = values[p].begin() + values[p].size() / 2;
+    std::nth_element(values[p].begin(), middle, values[p].end());
+    m[p] = *middle;
+  }
+  const bool full = f->color_range == AVCOL_RANGE_JPEG;
+  const double unit = 1 << (depth - 8);
+  const double l = (m[0] - (full ? 0 : 16 * unit)) / ((full ? 255 : 219) * unit);
+  const double cb = (m[1] - 128 * unit) / ((full ? 254 : 224) * unit);
+  const double cr = (m[2] - 128 * unit) / ((full ? 254 : 224) * unit);
+  double kr, kb;
+  lumaWeights(f, kr, kb);
+  const double r = l + 2 * (1 - kr) * cr, b = l + 2 * (1 - kb) * cb;
+  const double g = (l - kr * r - kb * b) / (1 - kr - kb);
+  auto byte = [](double c) {
+    return static_cast<uint8_t>(std::lround(std::clamp(c, 0.0, 1.0) * 255));
+  };
+  out = {byte(r), byte(g), byte(b)};
+  return true;
+}
+
 // A mask layer sample: in each eye's packed mask (a side-by-side fisheye
 // video's, where SceneRenderer reads it: centred on the middle of the top
 // edge for the left eye, on the corners for the right one, a fifth of the
@@ -146,26 +337,17 @@ bool greenSample(const Sample& s, StereoLayout stereo, double& hue) {
 // `read` for a frame not in planar 4:2:0, 8 to 16 bits.
 bool layerSample(const AVFrame* f, bool& read) {
   constexpr int kEnough = 4;  // points in each eye
-  const AVPixFmtDescriptor* d = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(f->format));
-  read = d && (d->flags & AV_PIX_FMT_FLAG_PLANAR) &&
-         !(d->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_BE | AV_PIX_FMT_FLAG_HWACCEL)) &&
-         d->nb_components >= 3 && d->log2_chroma_w == 1 && d->log2_chroma_h == 1 &&
-         d->comp[0].plane == 0 && d->comp[1].plane == 1 && d->comp[2].plane == 2 &&
-         d->comp[0].shift == 0 && d->comp[0].depth <= 16;
+  const AVPixFmtDescriptor* d = planarYuv(f);
+  read = d && d->log2_chroma_w == 1 && d->log2_chroma_h == 1;
   if (!read) return false;
   const int depth = d->comp[0].depth;
-  auto value = [&](int plane, int x, int y) -> double {
-    const uint8_t* row = f->data[plane] + static_cast<ptrdiff_t>(y) * f->linesize[plane];
-    return depth > 8 ? reinterpret_cast<const uint16_t*>(row)[x] : row[x];
-  };
+  auto value = [&](int plane, int x, int y) -> double { return planeValue(f, depth, plane, x, y); };
   const bool full = f->color_range == AVCOL_RANGE_JPEG;
   const double unit = (1 << (depth - 8)), top = (1 << depth) - 1;
   const double lumaOffset = full ? 0 : 16 * unit, lumaScale = full ? top : 219 * unit;
   const double chromaScale = full ? top : 224 * unit;
-  double kr = 0.2126, kb = 0.0722;  // BT.709, and unknown
-  if (f->colorspace == AVCOL_SPC_BT470BG || f->colorspace == AVCOL_SPC_SMPTE170M) kr = 0.299, kb = 0.114;
-  if (f->colorspace == AVCOL_SPC_BT2020_NCL || f->colorspace == AVCOL_SPC_BT2020_CL)
-    kr = 0.2627, kb = 0.0593;
+  double kr, kb;
+  lumaWeights(f, kr, kb);
   const double step = double(f->width) / kLayerGrid;
   int found[2] = {};
   for (int j = 0; j < static_cast<int>(f->height / step); ++j) {
@@ -267,11 +449,7 @@ class Keyframes {
     av_packet_free(&packet);
     return got && frame_->width > 0 && frame_->height > 0 ? frame_ : nullptr;
   }
-  // ... shrunk to `width` pixels across into `out`, as YUV 4:4:4 planes or RGB.
-  bool at(double fraction, int width, bool rgb, Sample& out) {
-    const AVFrame* frame = at(fraction);
-    return frame && shrink(frame, width, rgb, out);
-  }
+  // A frame shrunk to `width` pixels across into `out`, as YUV 4:4:4 planes or RGB.
   bool shrink(const AVFrame* frame, int width, bool rgb, Sample& out) {
     out.width = width;
     out.height = std::max(
@@ -316,17 +494,32 @@ class Keyframes {
 
 // The green screen check: three samples of the same green hue (at most one
 // failing), so it stops at the third pass or the second failure. `looked`: the keyframes decoded; with fewer
-// than two (a file that can't be read now), there is no answer.
-bool hasGreenScreen(Keyframes& video, StereoLayout stereo, Interrupt& interrupt, int& looked) {
+// than two (a file that can't be read now), there is no answer. With it the
+// fill check: `filled` if its first two samples have a flat fill of one
+// colour, `fill` (display RGB). A fill ends the check there, with no green
+// screen: its colour key wins over the green keyer.
+bool hasGreenScreen(Keyframes& video, const VideoFormat& format, Interrupt& interrupt, int& looked,
+                    bool& filled, KeyColour& fill) {
   int passed = 0, failed = 0;
   double lowHue = 1e9, highHue = -1e9;
-  for (const double at : kGreenSamplesAt) {
+  Fill fills[2];
+  bool fillSoFar = true;
+  for (size_t i = 0; i < std::size(kGreenSamplesAt); ++i) {
     Sample sample;
     double hue = 0;
-    const bool decoded = video.at(at, kGreenSampleWidth, false, sample);
+    const AVFrame* frame = video.at(kGreenSamplesAt[i]);
+    const bool decoded = frame && video.shrink(frame, kGreenSampleWidth, false, sample);
     if (Interrupt::check(&interrupt)) break;
+    if (i < 2 && fillSoFar) {
+      Part eyes[2];
+      eyeParts(sample, format.stereo, eyes);
+      fillSoFar = decoded && fillSample(sample, format, fills[i]);
+      filled = fillSoFar && i == 1 && sameFill(fills[0], fills[1]) &&
+               fillColour(frame, sample, eyes[0], fills[1], fill);
+    }
     looked += decoded;
-    if (decoded && greenSample(sample, stereo, hue)) {
+    if (filled) break;
+    if (decoded && greenSample(sample, format.stereo, hue)) {
       ++passed;
       lowHue = std::min(lowHue, hue);
       highHue = std::max(highHue, hue);
@@ -363,10 +556,10 @@ VideoCheck::~VideoCheck() {
   if (worker_.joinable()) worker_.join();
 }
 
-void VideoCheck::start(const std::string& path, StereoLayout stereo, Kind kind) {
+void VideoCheck::start(const std::string& path, const VideoFormat& format, Kind kind) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    job_ = {path, stereo, kind, ++generation_};
+    job_ = {path, format, kind, ++generation_};
     done_ = false;
   }
   if (!worker_.joinable()) worker_ = std::thread([this] { work(); });
@@ -407,11 +600,12 @@ void VideoCheck::work() {
     const bool green = job.kind == Kind::GreenScreen;
     const char* what = green ? "Green screen check" : "Mask layer check";
     int looked = 0;
-    bool found = false;
+    bool found = false, filled = false;
+    KeyColour fill;
     {
       Keyframes video(job.path, interrupt);
       if (video.open())
-        found = green ? hasGreenScreen(video, job.stereo, interrupt, looked)
+        found = green ? hasGreenScreen(video, job.format, interrupt, looked, filled, fill)
                       : hasMaskLayers(video, interrupt, looked);
     }
     // Replaced, cancelled, too slow or unreadable: no answer, so it runs
@@ -420,13 +614,24 @@ void VideoCheck::work() {
     if (Interrupt::check(&interrupt) || looked < least) {
       if (looked < least && !Interrupt::check(&interrupt))
         std::printf("%s: could not read the video\n", what);
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (generation_.load() != job.generation) continue;  // replaced: the new one answers
+      result_ = {job.path, job.kind};
+      result_.answered = false;
+      done_ = true;
       continue;
     }
-    std::printf("%s: %s (%d keyframes, %.1f s)\n", what, found ? "found" : "none", looked,
-                std::chrono::duration<double>(Clock::now() - began).count());
+    char fillText[64] = "";
+    if (filled)
+      std::snprintf(fillText, sizeof fillText, ", flat background: found, RGB %d %d %d", fill.r,
+                    fill.g, fill.b);
+    else if (green)
+      std::snprintf(fillText, sizeof fillText, ", flat background: none");
+    std::printf("%s: %s%s (%d keyframes, %.1f s)\n", what, found ? "found" : "none", fillText,
+                looked, std::chrono::duration<double>(Clock::now() - began).count());
     std::lock_guard<std::mutex> lock(mutex_);
     if (generation_.load() != job.generation) continue;
-    result_ = {job.path, job.kind, found};
+    result_ = {job.path, job.kind, found, filled, fill};
     done_ = true;
   }
 }

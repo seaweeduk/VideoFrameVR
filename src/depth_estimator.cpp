@@ -14,6 +14,10 @@ int maskRule(const SeeThrough& s) {
   return s.maskColours == MaskColours::RedBlue ? 3 : 1;
 }
 
+// How near a flat background's colour the shaders' key leaves a pixel less
+// than half there: clear in the patch (above 0).
+float keyCut(const SeeThrough& s) { return s.keyCut + 0.5f * s.keySoft; }
+
 constexpr float kDegree = 3.14159265f / 180.0f;
 // Candidate depths: half-convergence angles (each camera's turn
 // inward from parallel) from kAngleStart in steps of kAngleRange / accuracy,
@@ -98,11 +102,18 @@ uniform int uAlphaPacked;
 uniform vec2 uAlphaCenter;
 uniform vec2 uAlphaScale;
 uniform float uGreenKey;    // > 0: a green screen, keyed above this greenness
+uniform float uKeyCut;      // > 0: a flat background of the colour uKey, keyed within this
+uniform vec3 uKey;          // (display values, as video.glsl's colourAlpha() compares them)
 const float PI = 3.14159265359;
 // The picture at p (frame coordinates) over the pixel's footprint dx, dy,
 // through the mipmaps. Linear colour.
 vec3 picture(vec2 p, vec2 dx, vec2 dy) {
   return textureGrad(uTex, p, dx, dy).rgb;
+}
+// Display values e as the colour key compares them (video.glsl).
+vec3 keySpace(vec3 e) {
+  return vec3(dot(e, vec3(0.299, 0.587, 0.114)) / 3.0, dot(e, vec3(-0.169, -0.331, 0.5)),
+              dot(e, vec3(0.5, -0.419, -0.081)));
 }
 void main() {
   vec2 p = gl_FragCoord.xy - uRect.xy;
@@ -148,6 +159,10 @@ void main() {
   } else if (uMode == 0 && uGreenKey > 0.0) {
     vec3 e = pow(max(c, 0.0), vec3(1.0 / 2.2));
     clear = (e.g - max(e.r, e.b)) / max(e.g, 0.04) > uGreenKey;
+  } else if (uMode == 0 && uKeyCut > 0.0) {
+    vec3 v = clamp(c, 0.0, 1.0);  // to display values, as the scene reads them
+    vec3 e = mix(12.92 * v, 1.055 * pow(v, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, v));
+    clear = distance(keySpace(e), keySpace(uKey)) <= uKeyCut;
   }
   fragColor = vec4(!inside ? -1.0 : clear ? -0.5 : l);
 }
@@ -484,6 +499,8 @@ bool DepthEstimator::init() {
   uAlphaCenter_ = glGetUniformLocation(program_, "uAlphaCenter");
   uAlphaScale_ = glGetUniformLocation(program_, "uAlphaScale");
   uGreenKey_ = glGetUniformLocation(program_, "uGreenKey");
+  uKeyCut_ = glGetUniformLocation(program_, "uKeyCut");
+  uKey_ = glGetUniformLocation(program_, "uKey");
   glGenVertexArrays(1, &vao_);
   // The patch is coarser than the video: it is read through the mipmaps even
   // while the video itself is shown from its full-size level (Video mipmaps off).
@@ -554,7 +571,8 @@ bool DepthEstimator::request(const DepthRequest& q) {
       std::ceil((disparityAt(alpha, nearest, q.baseline) + kSearchMargin) / step));
   // Room on every side for the window to move off a see-through target, in
   // whole coarse pixels so that they stay aligned with the window.
-  const bool masked = q.seeThrough.packedAlpha || q.seeThrough.greenKey > 0;
+  const bool masked =
+      q.seeThrough.packedAlpha || q.seeThrough.greenKey > 0 || q.seeThrough.colourKey;
   const int f = coarseFactor(n);
   const int reach =
       masked && q.reach > 0
@@ -602,6 +620,10 @@ bool DepthEstimator::request(const DepthRequest& q) {
     patch.alphaScale[0] = 0.4f * (sbs ? 0.5f : 1.0f);
     patch.alphaScale[1] = 0.4f * (sbs ? 1.0f : 0.5f);
     patch.greenKey = q.seeThrough.greenKey;
+    if (q.seeThrough.colourKey) {
+      patch.keyColour = q.seeThrough.packedKeyColour();
+      patch.keyCut = keyCut(q.seeThrough);
+    }
     if (!q.drawer->draw(patch)) {
       forgetScene_ = job.forget;
       forgetVideo_ = job.forgetVideo;
@@ -637,6 +659,8 @@ bool DepthEstimator::request(const DepthRequest& q) {
   glUniform1i(uAlphaPacked_, maskRule(q.seeThrough));
   glUniform2f(uAlphaScale_, 0.4f * (sbs ? 0.5f : 1.0f), 0.4f * (sbs ? 1.0f : 0.5f));
   glUniform1f(uGreenKey_, q.seeThrough.greenKey);
+  glUniform1f(uKeyCut_, q.seeThrough.colourKey ? keyCut(q.seeThrough) : 0.0f);
+  glUniform3fv(uKey_, 1, q.seeThrough.keyColour);
   // Both eyes over the same angles; rows 0.. left, then right, then the thumbnail.
   glUniform2f(uStart_, alpha - 0.5f * width * step, beta - 0.5f * height * step);
   for (int eye = 0; eye < 2; ++eye) {

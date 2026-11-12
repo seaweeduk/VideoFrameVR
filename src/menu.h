@@ -70,7 +70,10 @@ struct MenuCommand {
               SetAccent, SetAccentHue, SetAccentBrightness, SetAccentSaturation,
               SetSlideshow, ToggleBackground, SetSubtitleSize,
               SetSubtitleRaise, SetSubtitleDistance, TogglePassthrough, ToggleGreenScreen,
-              SetKeyStrength, SetKeySoftness, SetKeySpill, SetKeyShrink, ResetPassthrough,
+              SetKeyStrength, SetKeySoftness, SetKeySpill, SetKeyShrink,
+              SetKeyBackground,  // the key removes this KeySource (Automatic or GreenScreen)
+              PickKeyColour, CancelKeyPick,  // ... or a colour pointed at: start or cancel that
+              ResetPassthrough,
               SetPacking, ToggleVideoMipmaps, SetAntiShimmer, SetSharpen, SetVideoResolution,
               SetFoveation, ToggleShowFoveation, SetSharpBins, ToggleFoveationRing,
               SetFoveationOutside, ToggleAdvancedSettings, SetRefreshRate, SetFocus,
@@ -144,6 +147,10 @@ struct ScreenView {
   bool operator!=(const ScreenView& o) const { return !(*this == o); }
 };
 
+// Why a press while picking the background key's colour took none: the
+// patch pointed at isn't one colour, or the picture can't be read.
+enum class KeyPickNote { None, Uneven, Unreadable };
+
 // Everything the menu shows about the app.
 struct MenuView {
   PlaybackState playback;
@@ -152,6 +159,13 @@ struct MenuView {
   ScreenView screen;
   bool passthrough = false;
   GreenScreen greenScreen;   // of the running video
+  bool colourKey = false;    // ... its key is a colour key (VideoSettings::colourKeyed()) ...
+  KeyColour keyColour;       // ... on this colour
+  bool fillChecked = false;  // ... and the video was checked for a flat background
+  bool fillChecking = false;  // ... or is being, and hasn't answered yet
+  bool greenScreenFound = false;  // ... and its green screen check found one
+  bool keyPicking = false;   // a colour for it is being picked: the strip asks to point at it
+  KeyPickNote keyPickNote = KeyPickNote::None;  // ... and why the last press took none
   bool packedAlpha = false;  // the running video brings its own mask (no keying needed)
   bool maskFormat = false;   // its format is the one a packed mask comes in (maskFormat())
   bool maskLayers = false;   // its mask has a second layer (VideoSettings::maskLayersFound)
@@ -474,6 +488,7 @@ class Menu {
   // True on pages with a scrollable list (files, the library, Stash's), or
   // a settings page too tall for the browser.
   bool listOpen() const {
+    if (view_.keyPicking) return false;  // the page is hidden
     if (dialog_ == Dialog::WhatsNew) return whatsNew_.max > 0;  // its notes, over the page
     return page_ == Page::Files || page_ == Page::Library || page_ == Page::Network ||
            page_ == Page::Offline || stashListPage() || (groupedPage() && pageScrollMax_ > 0) ||
@@ -549,7 +564,8 @@ class Menu {
                       KeyRefused, HostKeyChanged, ForgetServer, ForgetOffline };
   // Small choice menus opened by their button.
   enum class Dropdown { None, Slideshow, Audio, Subtitles, Chapters, Sort, Language,
-                        Presets };  // the user's own presets (menu_presets.cpp)
+                        Presets,  // the user's own presets (menu_presets.cpp)
+                        KeyBackground };  // what the background key removes
   // File browser order (folders always come first).
   using SortMode = FolderListing::Order;
   struct Button {
@@ -595,6 +611,11 @@ class Menu {
     bool tab = false;           // a strip tab: a small icon, then the label
     bool nav = false;           // a navigation row: no background unless `on` (chosen)
     int swatch = -1;            // an accent colour to choose (Accent's preset), ringed while `on`
+    // A background key's colour (0xRRGGBB, kGreenKeySwatch: the green
+    // keyer's greens, kNoKeySwatch: nothing removed, a grey circle crossed
+    // out, kPendingKeySwatch: none yet, an empty dashed ring) in a
+    // swatch before its label.
+    int keySwatch = -1;
     bool alignLeft = false;     // its label from the left (a list of names)
     // A slider (not None): click or drag sets this command's value from the
     // pointer's x, sliderMin..sliderMax in sliderStep steps; it shows
@@ -648,11 +669,17 @@ class Menu {
   void layoutPage(bool browser);
   void layoutFilesPage();
   void layoutMain();
+  // While a key colour is picked, the strip is only a card saying so, with Cancel.
+  void layoutKeyPick();
+  void drawKeyPick(cairo_t* cr);
   // The grouped settings pages (menu_settings.cpp, menu_focus.cpp).
   void layoutSettings();
   void layoutDiagnostics(double top, int column);  // Help: Save diagnostics
   double layoutAdvancedSwitch();  // atop a page with rows it hides; returns where groups start
   void layoutVideoSettings();
+  // The background key's Background row: its swatch and state, choosing
+  // what it removes (menu_settings.cpp).
+  void layoutKeyBackground(double x, double y, double w);
   // Presets atop Video settings (menu_presets.cpp): the row (returns where
   // the groups start), the user's own in a list under its button, and a
   // name typed over the keyboard to save the settings as, or rename one to.
@@ -824,7 +851,9 @@ class Menu {
                    double x, double y, double size = 88, bool selected = false);
   // A strip of choices above the opener, on the opener's panel.
   void addDropdown(const Button& opener, std::vector<Button> entries);
-  void addDropdownBelow(const Button& opener, std::vector<Button> entries);
+  // Choices under the opener, in columns where they run out of room; with
+  // `oneColumn`, always one column: above the opener where they don't fit below.
+  void addDropdownBelow(const Button& opener, std::vector<Button> entries, bool oneColumn = false);
   bool onPopups(int panel, double px, double py) const;
   void layoutDialog();
   void drawDialog(cairo_t* cr);
@@ -1182,6 +1211,8 @@ class Menu {
   MenuCommand sliderAtPointer(const Button& slider) const;
   void drawSlider(cairo_t* cr, const Button& b) const;
   void drawSwatch(cairo_t* cr, const Button& b) const;
+  static constexpr int kGreenKeySwatch = -2, kPendingKeySwatch = -3, kNoKeySwatch = -4;
+  void drawKeySwatch(cairo_t* cr, int colour, double cx, double cy, double r) const;
   MenuCommand::Type draggingSlider_ = MenuCommand::None;
   int draggingSliderOption_ = 0;
   bool resolutionHeld_ = false;  // a new Resolution chosen, its slider still held

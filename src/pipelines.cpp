@@ -7,6 +7,9 @@
 #include "shaders/blur.frag.h"
 #include "shaders/fullscreen.vert.h"
 #include "shaders/foveation.frag.h"
+#include "shaders/key_distance.frag.h"
+#include "shaders/key_distance_tp10.frag.h"
+#include "shaders/key_reach.frag.h"
 #include "shaders/panel.frag.h"
 #include "shaders/panel.vert.h"
 #include "shaders/pointer.frag.h"
@@ -18,6 +21,8 @@
 #include "shaders/screen_sharpen.frag.h"
 #include "shaders/screen_tp10.frag.h"
 #include "shaders/surround.frag.h"
+#include "shaders/surround_colour_key.frag.h"
+#include "shaders/surround_colour_key_tp10.frag.h"
 #include "shaders/surround_tp10.frag.h"
 
 #include <algorithm>
@@ -37,11 +42,15 @@ constexpr int32_t kMaskFirstSharpened[] = {-1, -1, 1, 1};
 // ... with the mask's other colours (Pipelines::SurroundCut's values).
 constexpr int32_t kRedBlueFirst[] = {-1, -1, Pipelines::kPackedRedBlue, 0};
 constexpr int32_t kRedBlueFirstSharpened[] = {-1, -1, Pipelines::kPackedRedBlue, 1};
+// ... with the colour key (its own cut, 4), of surround.frag's COLOUR_KEY build.
+constexpr int32_t kColourKeyed[] = {-1, -1, 4, 0};
+constexpr int32_t kColourKeyedSharpened[] = {-1, -1, 4, 1};
 // The general pipelines for a Q08C frame (source 2; screen.frag reads the
 // source alone).
 constexpr int32_t kYcbcrGeneral[] = {-1, 2, -1, 0};
 constexpr int32_t kYcbcrMaskFirst[] = {-1, 2, 1, 0};
 constexpr int32_t kYcbcrRedBlueFirst[] = {-1, 2, Pipelines::kPackedRedBlue, 0};
+constexpr int32_t kYcbcrColourKeyed[] = {-1, 2, 4, 0};
 
 // A common mode's source as the shader's constant (video.glsl's kSource...).
 int32_t sourceConstant(Pipelines::SurroundSource source) {
@@ -65,11 +74,15 @@ Pipelines::~Pipelines() {
   pipelines.insert(pipelines.end(), std::begin(foveation_), std::end(foveation_));
   pipelines.insert(pipelines.end(), std::begin(tp10_), std::end(tp10_));
   pipelines.insert(pipelines.end(), std::begin(tp10Plain_), std::end(tp10Plain_));
-  std::vector<VkPipelineLayout> layouts = {layout_, tp10Layout_};
+  pipelines.insert(pipelines.end(), std::begin(keyed_), std::end(keyed_));
+  pipelines.insert(pipelines.end(), std::begin(keyDistance_), std::end(keyDistance_));
+  pipelines.push_back(keyReach_);
+  std::vector<VkPipelineLayout> layouts = {layout_, keyLayout_, tp10Layout_, tp10KeyLayout_};
   for (int s = 0; s < kQ08cSitings; ++s) {
     pipelines.insert(pipelines.end(), std::begin(q08c_[s]), std::end(q08c_[s]));
     pipelines.insert(pipelines.end(), std::begin(q08cPlain_[s]), std::end(q08cPlain_[s]));
     layouts.push_back(q08cLayout_[s]);
+    layouts.push_back(q08cKeyLayout_[s]);
   }
   for (const auto& balance : surround_)
     for (const auto& pass : balance)
@@ -77,23 +90,26 @@ Pipelines::~Pipelines() {
         for (const auto& cuts : projection)
           pipelines.insert(pipelines.end(), std::begin(cuts), std::end(cuts));
   std::vector<VkSampler> samplers(std::begin(samplers_), std::end(samplers_));
-  VkDescriptorSetLayout setLayout = setLayout_;
-  gpu_->retire([d, pipelines, samplers, layouts, setLayout] {
+  const VkDescriptorSetLayout setLayouts[2] = {setLayout_, keyMaskSetLayout_};
+  gpu_->retire([d, pipelines, samplers, layouts, setLayouts] {
     for (VkPipeline p : pipelines)
       if (p) vkDestroyPipeline(d, p, nullptr);
     for (VkSampler s : samplers)
       if (s) vkDestroySampler(d, s, nullptr);
     for (VkPipelineLayout l : layouts)
       if (l) vkDestroyPipelineLayout(d, l, nullptr);
-    if (setLayout) vkDestroyDescriptorSetLayout(d, setLayout, nullptr);
+    for (VkDescriptorSetLayout l : setLayouts)
+      if (l) vkDestroyDescriptorSetLayout(d, l, nullptr);
   });
   gpu_->retire(dummyImage_);
 }
 
-bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEyePass) {
+bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEyePass,
+                     VkRenderPass distancePass, VkRenderPass reachPass) {
   gpu_ = &gpu;
   eyePass_ = eyePass;
   plainEyePass_ = plainEyePass;
+  distancePass_ = distancePass;
   VkDevice d = gpu.device();
   VkDescriptorSetLayoutBinding bindings[2] = {};
   for (uint32_t i = 0; i < 2; ++i) {
@@ -108,16 +124,14 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
   setInfo.pBindings = bindings;
   if (!gpu.check(vkCreateDescriptorSetLayout(d, &setInfo, nullptr, &setLayout_), "set layout"))
     return false;
-  VkPushConstantRange push{};
-  push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-  push.offset = 0;
-  push.size = kPushConstantBytes;
-  VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-  layoutInfo.setLayoutCount = 1;
-  layoutInfo.pSetLayouts = &setLayout_;
-  layoutInfo.pushConstantRangeCount = 1;
-  layoutInfo.pPushConstantRanges = &push;
-  if (!gpu.check(vkCreatePipelineLayout(d, &layoutInfo, nullptr, &layout_), "pipeline layout"))
+  // The colour key's mask: one image, bound as a set of its own.
+  VkDescriptorSetLayoutCreateInfo maskInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+  maskInfo.bindingCount = 1;
+  maskInfo.pBindings = bindings;
+  if (!gpu.check(vkCreateDescriptorSetLayout(d, &maskInfo, nullptr, &keyMaskSetLayout_),
+                 "key mask set layout") ||
+      !createLayout({setLayout_}, layout_, "pipeline layout") ||
+      !createLayout({setLayout_, keyMaskSetLayout_}, keyLayout_, "colour key pipeline layout"))
     return false;
   if (!createSamplers() || !createDummy()) return false;
 
@@ -146,6 +160,12 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_frag,
        sizeof(kSpirv_surround_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false,
        kRedBlueFirstSharpened, 4},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_colour_key_frag,
+       sizeof(kSpirv_surround_colour_key_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false,
+       kColourKeyed, 4},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_colour_key_frag,
+       sizeof(kSpirv_surround_colour_key_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false,
+       kColourKeyedSharpened, 4},
   };
   static const char* names[kCount] = {"surround",
                                       "screen",
@@ -157,15 +177,25 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
                                       "surround (mask first, sharpened)",
                                       "screen (sharpened)",
                                       "surround (mask first, red and blue)",
-                                      "surround (mask first, red and blue, sharpened)"};
+                                      "surround (mask first, red and blue, sharpened)",
+                                      "surround (colour key)",
+                                      "surround (colour key, sharpened)"};
   std::vector<Job> jobs;
   for (int i = 0; i < kCount; ++i) {
     descs_[i] = descs[i];
-    add(jobs, descs[i], eyePass, names[i], &pipelines_[i]);
+    const VkPipelineLayout layout = layoutOf(static_cast<Id>(i));
+    add(jobs, descs[i], eyePass, names[i], &pipelines_[i], layout);
     // A pass with a density map is not compatible with one without.
-    if (plainEyePass != eyePass) add(jobs, descs[i], plainEyePass, names[i], &plain_[i]);
+    if (plainEyePass != eyePass) add(jobs, descs[i], plainEyePass, names[i], &plain_[i], layout);
   }
   addSurround(jobs, {kImage, kPlanes}, kSpirv_surround_frag, sizeof(kSpirv_surround_frag), layout_);
+  for (SurroundSource source : {kImage, kPlanes})
+    addKeyed(jobs, source, kSpirv_surround_colour_key_frag, sizeof(kSpirv_surround_colour_key_frag),
+             kSpirv_key_distance_frag, sizeof(kSpirv_key_distance_frag), keyLayout_, layout_);
+  add(jobs,
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_key_reach_frag,
+       sizeof(kSpirv_key_reach_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
+      reachPass, "colour key reach", &keyReach_);
   if (gpu.caps().foveation) {
     const Desc debug{kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_foveation_frag,
                      sizeof(kSpirv_foveation_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, true};
@@ -178,7 +208,8 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
 bool Pipelines::initGlass(VkRenderPass glassPass) {
   std::vector<Job> jobs;
   for (int i = 0; i < kCount; ++i)
-    add(jobs, descs_[i], glassPass, "glass backdrop pipeline", &glass_[i]);
+    add(jobs, descs_[i], glassPass, "glass backdrop pipeline", &glass_[i],
+        layoutOf(static_cast<Id>(i)));
   add(jobs,
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_blur_frag,
        sizeof(kSpirv_blur_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
@@ -186,7 +217,7 @@ bool Pipelines::initGlass(VkRenderPass glassPass) {
   return createAll(jobs);
 }
 
-bool Pipelines::initTp10(VkDescriptorSetLayout setLayout) {
+bool Pipelines::initTp10(VkDescriptorSetLayout setLayout, VkDescriptorSetLayout maskSetLayout) {
   const Desc descs[kDirectCount] = {
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_tp10_frag,
        sizeof(kSpirv_surround_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
@@ -197,14 +228,22 @@ bool Pipelines::initTp10(VkDescriptorSetLayout setLayout) {
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_tp10_frag,
        sizeof(kSpirv_surround_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kRedBlueFirst,
        4},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_colour_key_tp10_frag,
+       sizeof(kSpirv_surround_colour_key_tp10_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false,
+       kColourKeyed, 4},
   };
   static const char* names[kDirectCount] = {
       "surround (TP10)", "surround (mask first, TP10)", "screen (TP10)",
-      "surround (mask first, red and blue, TP10)"};
+      "surround (mask first, red and blue, TP10)", "surround (colour key, TP10)"};
   std::vector<Job> jobs;
-  if (!addDirect(jobs, setLayout, descs, names, tp10Layout_, tp10_, tp10Plain_)) return false;
+  if (!addDirect(jobs, setLayout, maskSetLayout, descs, names, tp10Layout_, tp10KeyLayout_, tp10_,
+                 tp10Plain_))
+    return false;
   addSurround(jobs, {kTp10}, kSpirv_surround_tp10_frag, sizeof(kSpirv_surround_tp10_frag),
               tp10Layout_);
+  addKeyed(jobs, kTp10, kSpirv_surround_colour_key_tp10_frag,
+           sizeof(kSpirv_surround_colour_key_tp10_frag), kSpirv_key_distance_tp10_frag,
+           sizeof(kSpirv_key_distance_tp10_frag), tp10KeyLayout_, tp10Layout_);
   return createAll(jobs);
 }
 
@@ -219,42 +258,73 @@ bool Pipelines::initQ08c(const VkDescriptorSetLayout* setLayouts) {
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_frag,
        sizeof(kSpirv_surround_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, kYcbcrRedBlueFirst,
        4},
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_colour_key_frag,
+       sizeof(kSpirv_surround_colour_key_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false,
+       kYcbcrColourKeyed, 4},
   };
   static const char* names[kDirectCount] = {
       "surround (Q08C)", "surround (mask first, Q08C)", "screen (Q08C)",
-      "surround (mask first, red and blue, Q08C)"};
+      "surround (mask first, red and blue, Q08C)", "surround (colour key, Q08C)"};
   // All sitings in one batch.
   std::vector<Job> jobs;
   for (int s = 0; s < kQ08cSitings; ++s) {
-    if (!addDirect(jobs, setLayouts[s], descs, names, q08cLayout_[s], q08c_[s], q08cPlain_[s]))
+    if (!addDirect(jobs, setLayouts[s], keyMaskSetLayout_, descs, names, q08cLayout_[s],
+                   q08cKeyLayout_[s], q08c_[s], q08cPlain_[s]))
       return false;
-    addSurround(jobs, {static_cast<SurroundSource>(kYcbcr + s)}, kSpirv_surround_frag,
-                sizeof(kSpirv_surround_frag), q08cLayout_[s]);
+    const auto source = static_cast<SurroundSource>(kYcbcr + s);
+    addSurround(jobs, {source}, kSpirv_surround_frag, sizeof(kSpirv_surround_frag), q08cLayout_[s]);
+    addKeyed(jobs, source, kSpirv_surround_colour_key_frag, sizeof(kSpirv_surround_colour_key_frag),
+             kSpirv_key_distance_frag, sizeof(kSpirv_key_distance_frag), q08cKeyLayout_[s],
+             q08cLayout_[s]);
   }
   return createAll(jobs);
 }
 
 bool Pipelines::addDirect(std::vector<Job>& jobs, VkDescriptorSetLayout setLayout,
-                          const Desc (&descs)[kDirectCount],
+                          VkDescriptorSetLayout maskSetLayout, const Desc (&descs)[kDirectCount],
                           const char* const (&names)[kDirectCount], VkPipelineLayout& layout,
-                          VkPipeline (&pipelines)[kDirectCount],
+                          VkPipelineLayout& keyLayout, VkPipeline (&pipelines)[kDirectCount],
                           VkPipeline (&plain)[kDirectCount]) {
+  if (!createLayout({setLayout}, layout, "decoder frames' pipeline layout") ||
+      !createLayout({setLayout, maskSetLayout}, keyLayout, "decoder frames' colour key layout"))
+    return false;
+  for (int i = 0; i < kDirectCount; ++i) {
+    const VkPipelineLayout l = i == kDirectColourKey ? keyLayout : layout;
+    add(jobs, descs[i], eyePass_, names[i], &pipelines[i], l);
+    if (plainEyePass_ != eyePass_) add(jobs, descs[i], plainEyePass_, names[i], &plain[i], l);
+  }
+  return true;
+}
+
+bool Pipelines::createLayout(std::initializer_list<VkDescriptorSetLayout> sets,
+                             VkPipelineLayout& layout, const char* what) {
   VkPushConstantRange push{};
   push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
   push.size = kPushConstantBytes;
   VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-  layoutInfo.setLayoutCount = 1;
-  layoutInfo.pSetLayouts = &setLayout;
+  layoutInfo.setLayoutCount = static_cast<uint32_t>(sets.size());
+  layoutInfo.pSetLayouts = sets.begin();
   layoutInfo.pushConstantRangeCount = 1;
   layoutInfo.pPushConstantRanges = &push;
-  if (!gpu_->check(vkCreatePipelineLayout(gpu_->device(), &layoutInfo, nullptr, &layout),
-                   "decoder frames' pipeline layout"))
-    return false;
-  for (int i = 0; i < kDirectCount; ++i) {
-    add(jobs, descs[i], eyePass_, names[i], &pipelines[i], layout);
-    if (plainEyePass_ != eyePass_) add(jobs, descs[i], plainEyePass_, names[i], &plain[i], layout);
-  }
-  return true;
+  return gpu_->check(vkCreatePipelineLayout(gpu_->device(), &layoutInfo, nullptr, &layout), what);
+}
+
+// The colour key's common pipeline: projection 3 (180, 360 or fisheye), its
+// cut (4) and the colour balance, for the eye pass with a density map alone
+// (foveation off, a cubemap and the rest take the general ones). Its
+// distance pass reads the source from the push constants.
+void Pipelines::addKeyed(std::vector<Job>& jobs, SurroundSource source, const uint32_t* fragment,
+                         size_t fragmentBytes, const uint32_t* distance, size_t distanceBytes,
+                         VkPipelineLayout keyLayout, VkPipelineLayout layout) {
+  const int32_t constants[] = {3, sourceConstant(source), 4, 0, 1};
+  add(jobs,
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment, fragmentBytes,
+       VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, 5},
+      eyePass_, "surround (colour key, common mode)", &keyed_[source], keyLayout);
+  add(jobs,
+      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), distance, distanceBytes,
+       VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
+      distancePass_, "colour key distances", &keyDistance_[source], layout);
 }
 
 void Pipelines::add(std::vector<Job>& jobs, const Desc& desc, VkRenderPass pass, const char* what,
@@ -431,7 +501,9 @@ VkPipeline Pipelines::create(const Desc& desc, VkShaderModule vertex, VkShaderMo
   info.pColorBlendState = &blend;
   info.pDynamicState = &dynamicInfo;
   info.layout = layout ? layout : layout_;
-  info.flags = layout == tp10Layout_ && layout ? VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT : 0;
+  info.flags = layout && (layout == tp10Layout_ || layout == tp10KeyLayout_)
+                   ? VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
+                   : 0;
   info.renderPass = pass;
   info.subpass = 0;
   VkPipeline pipeline = VK_NULL_HANDLE;
@@ -534,4 +606,10 @@ void Pipelines::bindQ08c(VkCommandBuffer cmd, int siting, const Texture& frame) 
   }
   gpu_->cmdPushDescriptorSet(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, q08cLayout_[siting], 0, 2,
                              writes);
+}
+
+void Pipelines::bindKeyMask(VkCommandBuffer cmd, int q08cSiting, VkDescriptorSet set) const {
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          q08cSiting >= 0 ? q08cKeyLayout_[q08cSiting] : keyLayout_, 1, 1, &set, 0,
+                          nullptr);
 }

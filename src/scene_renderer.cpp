@@ -33,7 +33,8 @@ VkClearColorValue clearColor(ClearMode mode) {
   return {{0.004f, 0.004f, 0.006f, 1.0f}};
 }
 
-// This eye's part of a stereo frame (left: left or top half).
+}  // namespace
+
 void stereoRect(StereoLayout stereo, int eye, float* rect) {
   rect[0] = rect[1] = 1.0f;
   rect[2] = rect[3] = 0.0f;
@@ -46,8 +47,6 @@ void stereoRect(StereoLayout stereo, int eye, float* rect) {
   }
 }
 
-// surround.frag's projection number for a surround format, and a fisheye's
-// field of view. eyeAspect: one eye's picture, width / height.
 int surroundProjection(const VideoFormat& format, float eyeAspect, float& fisheyeFov) {
   fisheyeFov = 0.0f;
   switch (format.projection) {
@@ -60,8 +59,6 @@ int surroundProjection(const VideoFormat& format, float eyeAspect, float& fishey
     default: return 0;
   }
 }
-
-}  // namespace
 
 EyeData eyeData(const EyeMatrices& eye, const VkRect2D& area, int index) {
   EyeData e{};
@@ -95,7 +92,10 @@ bool SceneRenderer::init(GpuContext& gpu, GlInterop& interop, Uploader& uploader
   interop_ = &interop;
   uploader_ = &uploader;
   targets_ = &targets;
-  return pipelines_.init(gpu, targets.renderPass(), targets.plainRenderPass()) && createSky();
+  return keyMask_.initPasses(gpu) &&
+         pipelines_.init(gpu, targets.renderPass(), targets.plainRenderPass(),
+                         keyMask_.distancePass(), keyMask_.reachPass()) &&
+         keyMask_.init(pipelines_) && createSky();
 }
 
 bool SceneRenderer::initGlass(const XrContext& xr) {
@@ -220,8 +220,11 @@ bool SceneRenderer::createSky() {
 
 void SceneRenderer::setDirectVideo(DirectVideo* direct) {
   direct_ = direct;
-  if (direct && direct->tp10SetLayout() && pipelines_.initTp10(direct->tp10SetLayout()))
+  if (direct && direct->tp10SetLayout() &&
+      pipelines_.initTp10(direct->tp10SetLayout(), direct->tp10MaskSetLayout())) {
+    direct->setTp10Mask(keyMask_.maskView(), pipelines_.sampler(Pipelines::kVideoBase));
     direct->enableTp10(pipelines_.sampler(Pipelines::kVideoBase));
+  }
   if (direct && direct->q08cSetLayouts() && pipelines_.initQ08c(direct->q08cSetLayouts()))
     direct->enableQ08c();
 }
@@ -276,6 +279,8 @@ void SceneRenderer::record(GpuContext::FrameSlot& slot, const EyeFrame& eyes,
   interop_->recordAcquires(cmd);
   if (direct_) direct_->recordAcquires(cmd);
   timestamp(slot, kUploaded, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+  // The colour key's mask, before any pass reads it (its time is glass's).
+  if (video && !testPattern_) drawKeyMask(cmd, *video, scene.clear);
 
   // Glass menus (desktop): what each eye shows before the first of them,
   // drawn small and blurred before the eye passes (docs/vulkan-renderer.md, 7).
@@ -351,6 +356,82 @@ void SceneRenderer::drawSky(VkCommandBuffer cmd, EyeData eye) {
   vkCmdDraw(cmd, 3, 1, 0, 0);
 }
 
+void SceneRenderer::drawKeyMask(VkCommandBuffer cmd, const VideoDraw& v, ClearMode clear) {
+  // As drawVideo() keys it.
+  const SeeThrough& see = v.seeThrough;
+  if (!v.texture || clear == ClearMode::Dark || v.format.projection == Projection::Flat ||
+      see.packedAlpha || see.greenKey > 0 || !see.colourKey)
+    return;
+  const DirectFrame* yuv = v.texture->yuv;
+  const bool tp10 = yuv && yuv->tp10() && direct_;
+  const int q08c = yuv && direct_ ? yuv->q08c() : -1;
+  const uint32_t width = v.texture->width, height = v.texture->height;
+  KeyMaskPush p{};
+  p.frame[0] = static_cast<float>(width);
+  p.frame[1] = static_cast<float>(height);
+  p.frame[2] = static_cast<float>(KeyMask::texelsPer(width, height));
+  p.frame[3] = see.packedKeyColour();
+  // The cut fades in over up to 0.3 (colourAlpha()); the shrink reaches up
+  // to 40 texels (its halo: beyond about 25 it eats into the subject), spill
+  // removal up to 64 past it.
+  p.key[0] = see.keyCut;
+  p.key[1] = see.keySoft;
+  p.key[2] = 40.0f * v.key.shrink / 100.0f;
+  p.key[3] = 64.0f * v.key.spill / 100.0f;
+  if (yuv) {
+    for (int i = 0; i < 4; ++i) {
+      p.yuv[i] = yuv->color().neutralRange[i];
+      p.matrix[i] = yuv->color().matrix[i];
+    }
+  } else {
+    p.matrix[0] = 0.2126f;  // mpv's image: BT.709
+    p.matrix[1] = 0.0722f;
+  }
+  p.mode[0] = q08c >= 0 ? 2 : yuv ? 1 : 0;  // video.glsl's kSource...
+  p.mode[1] = (yuv ? yuv->color().tvGamma : v.tvGamma) ? static_cast<uint32_t>(kTvGamma) : 0u;
+  float stereo[4], fisheyeFov;
+  stereoRect(v.format.stereo, 0, stereo);
+  p.mode[2] = stereo[0] < 1.0f ? 1 : stereo[1] < 1.0f ? 2 : 0;
+  p.mode[3] = static_cast<uint32_t>(
+      surroundProjection(v.format, v.frameAspect * stereo[0] / stereo[1], fisheyeFov));
+  // Without shrink or spill removal the mask is the same for every frame.
+  const bool distances = p.key[2] > 0.0f || p.key[3] > 0.0f;
+  const void* image = !distances ? nullptr
+                      : yuv      ? static_cast<const void*>(yuv)
+                                 : static_cast<const void*>(v.texture->shared);
+  const uint64_t generation = !distances ? 0
+                              : yuv      ? yuv->serial()
+                              : v.texture->shared ? v.texture->shared->content()
+                                                  : ++unsharedMasks_;
+  if (keyMask_.current(image, generation, p)) return;
+
+  auto push = [&] {
+    vkCmdPushConstants(cmd, pipelines_.layout(),
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof p, &p);
+  };
+  if (distances) {
+    const auto source =
+        tp10        ? Pipelines::kTp10
+        : q08c >= 0 ? static_cast<Pipelines::SurroundSource>(Pipelines::kYcbcr + q08c)
+        : yuv       ? Pipelines::kPlanes
+                    : Pipelines::kImage;
+    keyMask_.begin(cmd, 0, width, height);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_.keyDistance(source));
+    if (tp10) direct_->bindTp10(cmd, pipelines_.tp10Layout(), *yuv);
+    else if (q08c >= 0) pipelines_.bindQ08c(cmd, q08c, *v.texture);
+    else pipelines_.bindTextures(cmd, v.texture, Pipelines::kVideoBase, yuv ? &yuv->chroma() : nullptr);
+    push();
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+    keyMask_.end(cmd);
+  }
+  keyMask_.begin(cmd, 1, width, height);
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_.keyReach());
+  pipelines_.bindTextures(cmd, distances ? &keyMask_.distances() : nullptr, Pipelines::kVideoBase);
+  push();
+  vkCmdDraw(cmd, 3, 1, 0, 0);
+  keyMask_.end(cmd);
+}
+
 void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const VideoDraw& v,
                               ClearMode clear, float sharpen) {
   stereoRect(v.format.stereo, index, eye.stereo);
@@ -371,18 +452,25 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   // on, VideoPlayer::setSharpened has mpv convert frames).
   const bool tp10 = yuv && yuv->tp10() && direct_;
   const int q08c = yuv && direct_ ? yuv->q08c() : -1;
-  auto bind = [&](VkPipeline pipeline) {
+  // keyMask: with the colour key's mask (KeyMask) as set 1.
+  auto bind = [&](VkPipeline pipeline, bool keyMask = false) {
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    if (tp10) direct_->bindTp10(cmd, pipelines_.tp10Layout(), *yuv);
-    else if (q08c >= 0) pipelines_.bindQ08c(cmd, q08c, *v.texture);
+    if (tp10) {
+      direct_->bindTp10(cmd, keyMask ? pipelines_.tp10KeyLayout() : pipelines_.tp10Layout(), *yuv,
+                        keyMask);
+      return;
+    }
+    if (q08c >= 0) pipelines_.bindQ08c(cmd, q08c, *v.texture);
     else pipelines_.bindTextures(cmd, v.texture, sampler, chroma);
+    if (keyMask) pipelines_.bindKeyMask(cmd, q08c, keyMask_.set());
   };
   // The general pipelines.
   const MaskColours colours = v.seeThrough.maskColours;
-  auto general = [&](bool screen, bool maskFirst) {
-    if (tp10) return pipelines_.tp10(screen, maskFirst, colours, plainEye_);
-    if (q08c >= 0) return pipelines_.q08c(q08c, screen, maskFirst, colours, plainEye_);
-    return pipeline(Pipelines::videoPipeline(screen, maskFirst, colours, sharpen > 0.0f));
+  auto general = [&](bool screen, bool maskFirst, bool colourKey) {
+    if (tp10) return pipelines_.tp10(screen, maskFirst, colours, colourKey, plainEye_);
+    if (q08c >= 0) return pipelines_.q08c(q08c, screen, maskFirst, colours, colourKey, plainEye_);
+    return pipeline(
+        Pipelines::videoPipeline(screen, maskFirst, colours, colourKey, sharpen > 0.0f));
   };
 
   if (v.format.projection == Projection::Flat) {
@@ -409,7 +497,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
         p.yuv[i] = yuv->color().range[i];
         p.yuvMatrix[i] = yuv->color().matrix[i];
       }
-    bind(general(true, false));
+    bind(general(true, false, false));
     pushEye(cmd, eye);
     pushDraw(cmd, p);
     vkCmdDraw(cmd, 2 * 65, 1, 0, 0);
@@ -439,6 +527,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
     // The packed mask is centred on each eye's part at 40% of its size.
     if (v.seeThrough.packedAlpha) flags |= kPackedAlpha;
     else if (v.seeThrough.greenKey > 0) flags |= kChromaKey;
+    else if (v.seeThrough.colourKey) flags |= kColourKey;
     p.alpha[0] = 0.4f * eye.stereo[0];
     p.alpha[1] = 0.4f * eye.stereo[1];
     // The green screen settings (0..100) as the shader's thresholds.
@@ -446,6 +535,15 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
     p.chroma[1] = 0.005f + 0.045f * v.key.softness / 100.0f;
     p.chroma[2] = v.key.spill / 50.0f;
     p.chroma[3] = 6.0f * v.key.shrink / 100.0f;
+    if (flags & kColourKey) {
+      // A flat background: its colour in alpha.x (keyColour() in
+      // video.glsl), its cut, and the part of its mask's image the frame's
+      // mask fills (drawKeyMask()).
+      p.chroma[0] = v.seeThrough.keyCut;
+      p.chroma[1] = v.seeThrough.keySoft;
+      KeyMask::scale(v.texture->width, v.texture->height, &p.chroma[2]);
+      p.alpha[0] = v.seeThrough.packedKeyColour();
+    }
   }
   const EyeCorrection& correct = v.correction.eyes[index];
   if (index < 2 && correct.on) {
@@ -466,7 +564,8 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   // A mask or key reads the frame as it came (VideoDraw::readsFrame); the
   // picture settings are applied to what is shown (a general pipeline, as
   // they aren't neutral then), a video's as mpv does (its Kr, Kb).
-  const bool readsFrame = flags & (kPackedAlpha | kChromaKey);
+  const bool readsFrame = (flags & (kPackedAlpha | kChromaKey | kColourKey)) ||
+                          (clear != ClearMode::Dark && v.seeThrough.picking);
   if (yuv) {
     const YuvColor& c = yuv->color();
     for (int i = 0; i < 4; ++i) p.yuv[i] = readsFrame ? c.neutralRange[i] : c.range[i];
@@ -483,21 +582,34 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   // tap, no look or adjustments, no sharpening, a packed mask only with
   // transparent output, and a green screen without shrink, or with the
   // colour balance without key green (whose cap is the general ones'). The
-  // colour balance has its own.
+  // colour balance has its own. The colour key has its own pipelines: one
+  // for the common modes but cubemaps, with the colour balance, for the
+  // eye pass with a density map, else general ones.
   const bool adjusted = v.adjust[0] != 0.0f || v.adjust[1] != 0.0f || v.adjust[2] != 0.0f;
   const bool balance = v.balance[0] != 0.0f || v.balance[1] != 0.0f || v.balance[2] != 0.0f;
+  const bool commonMode = (flags & kBaseLevel) && taps == 1 && !v.look && !adjusted &&
+                          sharpen <= 0.0f && !glassPass_;
+  const auto source =
+      tp10        ? Pipelines::kTp10
+      : q08c >= 0 ? static_cast<Pipelines::SurroundSource>(Pipelines::kYcbcr + q08c)
+      : yuv       ? Pipelines::kPlanes
+                  : Pipelines::kImage;
+  if (flags & kColourKey) {
+    VkPipeline keyed = VK_NULL_HANDLE;
+    if (commonMode && projection < 3 && !(flags & kKeyGreen))
+      keyed = pipelines_.keyed(source, plainEye_);
+    bind(keyed ? keyed : general(false, false, true), true);
+    pushEye(cmd, eye);
+    pushDraw(cmd, p);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+    return;
+  }
   VkPipeline common = VK_NULL_HANDLE;
-  if ((flags & kBaseLevel) && taps == 1 && !v.look && !adjusted && sharpen <= 0.0f &&
-      !glassPass_ && !(maskFirst && (flags & kKeyGreen)) &&
+  if (commonMode && !(maskFirst && (flags & kKeyGreen)) &&
       !((flags & kChromaKey) && (p.chroma[3] > 0.0f || (balance && (flags & kKeyGreen))))) {
     const auto family = projection >= 3   ? Pipelines::kCubemap
                         : projection == 2 ? Pipelines::kFisheye
                                           : Pipelines::kEquirect;
-    const auto source =
-        tp10        ? Pipelines::kTp10
-        : q08c >= 0 ? static_cast<Pipelines::SurroundSource>(Pipelines::kYcbcr + q08c)
-        : yuv       ? Pipelines::kPlanes
-                    : Pipelines::kImage;
     const auto packed =
         colours == MaskColours::RedBlue ? Pipelines::kPackedRedBlue : Pipelines::kPackedMask;
     const auto cut = maskFirst            ? packed
@@ -506,7 +618,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
     // The other colours' cuts are made for fisheye alone: else the general one.
     common = pipelines_.surround(family, source, cut, plainEye_, balance);
   }
-  bind(common ? common : general(false, maskFirst));
+  bind(common ? common : general(false, maskFirst, false));
   pushEye(cmd, eye);
   pushDraw(cmd, p);
   vkCmdDraw(cmd, 3, 1, 0, 0);

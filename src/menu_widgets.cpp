@@ -112,11 +112,19 @@ void Menu::addDropdown(const Button& opener, std::vector<Button> entries) {
 }
 
 // Stash's sort choices below their opener, spilling into columns if needed.
-void Menu::addDropdownBelow(const Button& opener, std::vector<Button> entries) {
+void Menu::addDropdownBelow(const Button& opener, std::vector<Button> entries, bool oneColumn) {
   double w = 0;
   for (const Button& e : entries) w = std::max(w, textWidth(e.label, 26, false));
-  const double top = opener.y + opener.h + 16;
-  const int rows = std::max(1, static_cast<int>((kBrowserHeight - kPagePad - top) / 64));
+  const int count = static_cast<int>(entries.size());
+  double top = opener.y + opener.h + 16;
+  int rows = std::max(1, static_cast<int>((kBrowserHeight - kPagePad - top) / 64));
+  if (oneColumn) {
+    // The page as shown: a grouped page is laid out unscrolled, then moved up.
+    const double scrolled = groupedPage() ? pageScroll_ : 0;
+    if (top + count * 64 - 8 > kBrowserHeight - kPagePad + scrolled)
+      top = opener.y - 16 - (count * 64 - 8);
+    rows = count;
+  }
   for (size_t i = 0; i < entries.size(); ++i) {
     Button& e = entries[i];
     e.panel = opener.panel;
@@ -292,6 +300,50 @@ void Menu::drawSwatch(cairo_t* cr, const Button& b) const {
     cairo_set_line_width(cr, 3);
     cairo_stroke(cr);
   }
+}
+
+// A background key's swatch: its colour (0xRRGGBB, display values), or the
+// green keyer's greens, lit to shaded, as a green screen's are; with
+// nothing removed, a grey circle crossed out; with no colour yet, an empty
+// dashed ring.
+void Menu::drawKeySwatch(cairo_t* cr, int colour, double cx, double cy, double r) const {
+  cairo_new_path(cr);  // not joined to where the last text ended
+  cairo_arc(cr, cx, cy, r, 0, 2 * M_PI);
+  if (colour == kPendingKeySwatch) {
+    const double dash = M_PI * r / 6;  // twelve dashes around
+    setColor(cr, palette().text, 0.6);
+    cairo_set_line_width(cr, 2.5);
+    cairo_set_dash(cr, &dash, 1, 0);
+    cairo_stroke(cr);
+    cairo_set_dash(cr, nullptr, 0, 0);
+    return;
+  }
+  if (colour == kNoKeySwatch) {
+    setColor(cr, palette().text, 0.15);
+    cairo_fill_preserve(cr);
+    const double d = r * M_SQRT1_2;
+    cairo_move_to(cr, cx - d, cy + d);
+    cairo_line_to(cr, cx + d, cy - d);
+    setColor(cr, palette().text, 0.6);
+    cairo_set_line_width(cr, 2.5);
+    cairo_stroke(cr);
+    return;
+  }
+  if (colour == kGreenKeySwatch) {
+    cairo_pattern_t* greens = cairo_pattern_create_linear(cx, cy - r, cx, cy + r);
+    cairo_pattern_add_color_stop_rgb(greens, 0, 0.45, 0.92, 0.35);
+    cairo_pattern_add_color_stop_rgb(greens, 1, 0.04, 0.38, 0.1);
+    cairo_set_source(cr, greens);
+    cairo_fill_preserve(cr);
+    cairo_pattern_destroy(greens);
+  } else {
+    cairo_set_source_rgb(cr, ((colour >> 16) & 255) / 255.0, ((colour >> 8) & 255) / 255.0,
+                         (colour & 255) / 255.0);
+    cairo_fill_preserve(cr);
+  }
+  setColor(cr, palette().text, 0.5);  // an edge, so that a dark colour shows
+  cairo_set_line_width(cr, 2);
+  cairo_stroke(cr);
 }
 
 // A slider track from x0 to x1 at height y, filled blue to `fraction`, with
@@ -685,6 +737,12 @@ void Menu::drawButtonContent(cairo_t* cr, const Button& b, const double ink[4]) 
     if (b.field) {  // a search
       drawFieldText(cr, b, ink);
       return;
+    }
+    if (b.keySwatch != -1) {  // a key's colour before the label
+      const double r = b.h * 0.34;
+      drawKeySwatch(cr, b.keySwatch, textX + r, b.y + b.h / 2, r);
+      textX += 2 * r + 14;
+      textW -= 2 * r + 14;
     }
     drawText(cr, b.label, textX, b.y, textW, b.h, b.fontSize > 0 ? b.fontSize : kTextSize, false,
              center, ink[0], ink[1], ink[2]);

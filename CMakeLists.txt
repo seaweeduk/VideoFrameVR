@@ -58,6 +58,8 @@ add_executable(videoframevr
   src/gl_interop.cpp
   src/gpu_context.cpp
   src/hints.cpp
+  src/key_mask.cpp
+  src/key_picker.cpp
   src/key_share.cpp
   src/focus_settings.cpp
   src/glass_backdrop.cpp
@@ -186,6 +188,7 @@ file(MAKE_DIRECTORY ${SHADER_OUT})
 set(SHADER_INCLUDES
   ${SHADER_DIR}/common.glsl
   ${SHADER_DIR}/video.glsl
+  ${SHADER_DIR}/key_mask.glsl
   ${SHADER_DIR}/projection.glsl
   ${SHADER_DIR}/screen.glsl
   ${SHADER_DIR}/panel.glsl
@@ -196,6 +199,8 @@ set(SHADER_HEADERS)
 foreach(shader IN ITEMS
     fullscreen.vert
     foveation.frag
+    key_distance.frag
+    key_reach.frag
     depth_patch.frag
     sky.frag
     blur.frag
@@ -221,12 +226,16 @@ foreach(shader IN ITEMS
 endforeach()
 # The video shaders again as variants (name:shader:defines, defines joined
 # by +): the screen with sharpening, for Q10C decoder frames (Pipelines,
-# DirectDepth, DirectVideo's stills) and Q08C ones' depth patch (DirectDepth).
-# The other variants of surround.frag and screen.frag are specialization
-# constants (Pipelines).
+# DirectDepth, DirectVideo's stills; the colour key's distances too),
+# Q08C ones' depth patch (DirectDepth) and the surround with the colour key
+# (Pipelines). The other variants of
+# surround.frag and screen.frag are specialization constants (Pipelines).
 foreach(variant
     screen_sharpen:screen.frag:SHARPEN
     surround_tp10:surround.frag:TP10
+    surround_colour_key:surround.frag:COLOUR_KEY
+    surround_colour_key_tp10:surround.frag:COLOUR_KEY+TP10
+    key_distance_tp10:key_distance.frag:TP10
     screen_tp10:screen.frag:TP10
     depth_patch_tp10:depth_patch.frag:TP10
     depth_patch_ycbcr:depth_patch.frag:YCBCR

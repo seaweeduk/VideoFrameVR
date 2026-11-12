@@ -73,6 +73,22 @@ std::string keyOf(const std::string& location) {
   return isStream(location) ? location : normalPath(location);
 }
 
+json colourJson(const KeyColour& c) { return json::array({c.r, c.g, c.b}); }
+
+// A colour stored by colourJson(): false (and `out` as it was) if there is none.
+bool colourField(const json& object, const char* key, KeyColour& out) {
+  const auto it = object.find(key);
+  if (it == object.end() || !it->is_array() || it->size() != 3) return false;
+  uint8_t c[3];
+  for (int i = 0; i < 3; ++i) {
+    const json& v = (*it)[i];
+    if (!v.is_number_integer() || v.get<int>() < 0 || v.get<int>() > 255) return false;
+    c[i] = static_cast<uint8_t>(v.get<int>());
+  }
+  out = {c[0], c[1], c[2]};
+  return true;
+}
+
 // Per-video settings as JSON, with only what differs from the defaults (so
 // later defaults apply to the rest). "{}" means the defaults were chosen,
 // unlike no settings at all, after which videos.conf may still have some.
@@ -97,6 +113,10 @@ std::string settingsJson(const VideoSettings& s) {
   if (s.passthroughChosen) j["passthrough"] = s.passthrough;
   if (s.greenCheckVersion > 0)
     j["green_check"] = {{"version", s.greenCheckVersion}, {"found", s.greenScreenFound}};
+  if (s.fillCheckVersion > 0) {
+    j["fill_check"] = {{"version", s.fillCheckVersion}, {"found", s.fillFound}};
+    if (s.fillFound) j["fill_check"]["colour"] = colourJson(s.fillColour);
+  }
   if (s.packedMask.has_value()) j["packed_mask"] = *s.packedMask;
   if (s.maskLayersVersion > 0 || s.maskLayersFound)
     j["mask_layers"] = {{"version", s.maskLayersVersion}, {"found", s.maskLayersFound}};
@@ -104,10 +124,23 @@ std::string settingsJson(const VideoSettings& s) {
   if (s.opacity != 100) j["opacity"] = s.opacity;
   if (s.legacyTvGamma.has_value()) j["tv_gamma"] = *s.legacyTvGamma;
   if (s.volume >= 0) j["volume"] = s.volume;
-  if (!s.greenScreen.isDefault()) {
+  if (s.greenScreen != GreenScreen()) {
     const GreenScreen& g = s.greenScreen;
-    j["green_screen"] = {{"on", g.on},         {"strength", g.strength}, {"softness", g.softness},
-                         {"spill", g.spill},   {"shrink", g.shrink}};
+    const KeySliders& k = g.green;
+    json key = {{"on", g.on},         {"strength", k.strength}, {"softness", k.softness},
+                {"spill", k.spill},   {"shrink", k.shrink}};
+    if (g.source != KeySource::Automatic) key["background"] = static_cast<int>(g.source);
+    if (g.source == KeySource::Picked) key["picked"] = colourJson(g.picked);
+    // The colour key's sliders where they differ from its defaults.
+    const KeySliders& c = g.colour;
+    const KeySliders d = GreenScreen().colour;
+    json colour = json::object();
+    if (c.strength != d.strength) colour["strength"] = c.strength;
+    if (c.softness != d.softness) colour["softness"] = c.softness;
+    if (c.spill != d.spill) colour["spill"] = c.spill;
+    if (c.shrink != d.shrink) colour["shrink"] = c.shrink;
+    if (!colour.empty()) key["colour_key"] = colour;
+    j["green_screen"] = key;
   }
   if (s.hasFocus) {
     const FocusSettings& f = s.focus;
@@ -165,6 +198,12 @@ bool parseSettings(const std::string& text, VideoSettings& s) {
     const auto found = g->find("found");
     s.greenScreenFound = found != g->end() && found->is_boolean() && found->get<bool>();
   }
+  if (const auto fill = j.find("fill_check"); fill != j.end() && fill->is_object()) {
+    s.fillCheckVersion = field(*fill, "version", 0);
+    const auto found = fill->find("found");
+    s.fillFound = found != fill->end() && found->is_boolean() && found->get<bool>() &&
+                  colourField(*fill, "colour", s.fillColour);
+  }
   if (const auto mask = j.find("packed_mask"); mask != j.end() && mask->is_boolean())
     s.packedMask = mask->get<bool>();
   if (const auto layers = j.find("mask_layers"); layers != j.end() && layers->is_object()) {
@@ -182,10 +221,20 @@ bool parseSettings(const std::string& text, VideoSettings& s) {
     GreenScreen& g = s.greenScreen;
     const auto on = key->find("on");
     g.on = on != key->end() && on->is_boolean() && on->get<bool>();
-    g.strength = field(*key, "strength", g.strength);
-    g.softness = field(*key, "softness", g.softness);
-    g.spill = field(*key, "spill", g.spill);
-    g.shrink = field(*key, "shrink", g.shrink);
+    const int source = field(*key, "background", 0);
+    if (source > 0 && source < static_cast<int>(KeySource::kCount))
+      g.source = static_cast<KeySource>(source);
+    if (g.source == KeySource::Picked && !colourField(*key, "picked", g.picked))
+      g.source = KeySource::Automatic;
+    auto sliders = [](const json& object, KeySliders& k) {
+      k.strength = field(object, "strength", k.strength);
+      k.softness = field(object, "softness", k.softness);
+      k.spill = field(object, "spill", k.spill);
+      k.shrink = field(object, "shrink", k.shrink);
+    };
+    sliders(*key, g.green);
+    if (const auto c = key->find("colour_key"); c != key->end() && c->is_object())
+      sliders(*c, g.colour);
   }
   if (const auto focus = j.find("focus"); focus != j.end() && focus->is_object()) {
     FocusSettings f;

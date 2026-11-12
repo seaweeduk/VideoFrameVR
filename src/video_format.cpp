@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <initializer_list>
 
@@ -252,4 +253,17 @@ bool hasPackedAlpha(const std::string& path) {
     if (!std::isalnum(static_cast<unsigned char>(after))) return true;  // not "_alphabet"
   }
   return false;
+}
+
+float SeeThrough::packedKeyColour() const {
+  // 0.5: the colour's 24 bits take its mantissa and the exponent's lowest
+  // bit, so it stays a normal float (0.5..2).
+  uint32_t packed = 0x3f000000u;
+  for (int c = 0; c < 3; ++c) {
+    const float value = std::clamp(keyColour[c], 0.0f, 1.0f);
+    packed |= static_cast<uint32_t>(std::lround(value * 255.0f)) << (8 * c);
+  }
+  float f;
+  std::memcpy(&f, &packed, sizeof(f));
+  return f;
 }

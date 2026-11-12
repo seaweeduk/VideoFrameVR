@@ -78,4 +78,14 @@ struct SeeThrough {
   bool packedAlpha = false;  // DeoVR's packed alpha mask
   MaskColours maskColours = MaskColours::Red;  // ... read so
   float greenKey = 0;        // else a keyed green screen: the greenness cut away (0 = none)
+  // Else a flat background of this colour (display RGB), cut within keyCut of
+  // it, then fading in over keySoft (colourAlpha() in video.glsl).
+  bool colourKey = false;
+  float keyColour[3] = {0, 0, 0};
+  float keyCut = 0, keySoft = 0;
+  // Else, while the key's colour is picked: no cut, but the frame read as it
+  // came all the same, as the picker reads it.
+  bool picking = false;
+  // keyColour as the shaders take it (keyColour() in video.glsl).
+  float packedKeyColour() const;
 };

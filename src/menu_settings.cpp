@@ -11,7 +11,7 @@
 // columns on the browser's page, a label and a control per row.
 //   Settings: the menu, the view, Stash, subtitles and playback.
 //   Video settings: the running video's format and picture, the image
-//   settings for all videos, and (in passthrough) the green screen.
+//   settings for all videos, and (in passthrough) removing its background.
 // Stereo focus has its own page (menu_focus.cpp). Video settings and stereo
 // focus are tabs of the playback strip and show without the sources column.
 
@@ -21,6 +21,11 @@ std::string fixed2(double v) {
   char buf[32];
   std::snprintf(buf, sizeof(buf), "%.2f", v);
   return buf;
+}
+
+// Whether the running video's key removes anything (VideoSettings::keyRemoves()).
+bool keyRemoves(const MenuView& v) {
+  return v.greenScreen.source != KeySource::Automatic || v.colourKey || v.greenScreenFound;
 }
 
 }  // namespace
@@ -636,11 +641,11 @@ void Menu::layoutVideoSettings() {
 
   // Passthrough: the video's opacity (blended only by the headset itself,
   // with its own camera, below 100 % with passthrough off too, so shown
-  // whenever it can), then with passthrough on its own mask, on or off
-  // (side-by-side fisheye only), then unless its own mask is used keying a
-  // green screen video, on or off, and while on its settings, then Reset
-  // with Match the room's switch (the Frame), and while that is on its
-  // strengths, under the picture.
+  // wherever it applies), then with passthrough on removing its background
+  // or its own mask, on or off, and while on their settings (the key's
+  // sliders only while it removes something), then Reset with Match the
+  // room's switch (the Frame), and while that is on its strengths, under
+  // the picture. Rows that can't apply are left out.
   const double top = pictureBottom + kGap;
   x = columnX(1) + kGroupPad;
   y = firstRow(top);
@@ -652,30 +657,40 @@ void Menu::layoutVideoSettings() {
                 disabled, false, tooltip);
     y += kSettingStep;
   };
-  slider(t.opacity, MenuCommand::SetOpacity, view_.opacity, !view_.opacityApplies, t.opacityHint);
+  if (view_.opacityApplies)
+    slider(t.opacity, MenuCommand::SetOpacity, view_.opacity, false, t.opacityHint);
   const bool own = view_.passthrough && view_.packedAlpha && view_.maskFormat;
   if (view_.passthrough) {
-    addToggleRow(x, y, w, t.packedMask, view_.packedAlpha, command(MenuCommand::TogglePackedMask),
-                 !view_.maskFormat)
-        .tooltip = view_.maskFormat ? t.packedMaskHint : t.packedMaskFormatHint;
-    y += kSettingStep;
-    if (own && view_.maskLayers) {
-      addToggleRow(x, y, w, t.secondLayer, !view_.secondLayerHidden,
-                   command(MenuCommand::ToggleSecondLayer))
-          .tooltip = t.secondLayerHint;
-      y += kSettingStep;
-    }
+    // Removing the background and the video's own mask do the same, one at
+    // a time: while either is on, the other's switch is hidden. Removing's
+    // comes first, so its switch stays put as the mask's goes. The mask's
+    // shows only for its format (side-by-side fisheye).
     if (!own) {
       addToggleRow(x, y, w, t.greenScreenOn, view_.greenScreen.on,
                    command(MenuCommand::ToggleGreenScreen))
           .tooltip = t.greenScreenHint;
       y += kSettingStep;
     }
+    if (view_.maskFormat && (own || !view_.greenScreen.on)) {
+      addToggleRow(x, y, w, t.packedMask, view_.packedAlpha, command(MenuCommand::TogglePackedMask))
+          .tooltip = t.packedMaskHint;
+      y += kSettingStep;
+    }
+    if (own && view_.maskLayers) {
+      addToggleRow(x, y, w, t.secondLayer, !view_.secondLayerHidden,
+                   command(MenuCommand::ToggleSecondLayer))
+          .tooltip = t.secondLayerHint;
+      y += kSettingStep;
+    }
     if (!own && view_.greenScreen.on) {
+      layoutKeyBackground(x, y, w);
+      y += kSettingStep;
+    }
+    if (!own && view_.greenScreen.on && keyRemoves(view_)) {
       const MenuCommand::Type types[] = {MenuCommand::SetKeyStrength, MenuCommand::SetKeyShrink,
                                          MenuCommand::SetKeySoftness, MenuCommand::SetKeySpill};
-      const int values[] = {view_.greenScreen.strength, view_.greenScreen.shrink,
-                            view_.greenScreen.softness, view_.greenScreen.spill};
+      const KeySliders& key = view_.greenScreen.sliders(view_.colourKey);
+      const int values[] = {key.strength, key.shrink, key.softness, key.spill};
       const char* names[] = {t.keyStrength, t.keyShrink, t.keySoftness, t.keySpill};
       for (int i = 0; i < 4; ++i) slider(names[i], types[i], values[i], false, t.tipKey[i]);
     }
@@ -689,9 +704,12 @@ void Menu::layoutVideoSettings() {
   resetKey.h = kSettingRowH;
   resetKey.fontSize = kTextSize;
   resetKey.tooltip = t.greenScreenResetHint;
-  const bool keyShown = view_.passthrough && !own && view_.greenScreen.on;
+  const bool keyOn = view_.passthrough && !own && view_.greenScreen.on;
+  const bool keyShown = keyOn && keyRemoves(view_);
   resetKey.disabled = !keyShown && !view_.opacityApplies && !strengths;
-  buttons_.push_back(resetKey);
+  // With the key on removing nothing, Reset shows only for what else it resets.
+  const bool resetShown = !(keyOn && resetKey.disabled);
+  if (resetShown) buttons_.push_back(resetKey);
   // Match the room (the Frame), a switch, on the same row, and while it is
   // on Read again after it: then there is no room for the own mask's hint
   // (the mask's switch, on, says it). The switch's label says when it reads
@@ -717,7 +735,7 @@ void Menu::layoutVideoSettings() {
                                                     : cb.matchRoom;
     // Its label and pill, but never into Reset (a longer label is cut short).
     const double left = std::max(right - (textWidth(label, kTextSize, false) + 104),
-                                 resetKey.x + resetKey.w + 12);
+                                 resetShown ? resetKey.x + resetKey.w + 12 : x);
     Button& match = addToggleRow(left, y, right - left, label, view_.roomMatched,
                                  command(MenuCommand::ToggleMatchRoom),
                                  room == RoomMatch::Off && !view_.roomMatched && !view_.roomRead);
@@ -726,7 +744,7 @@ void Menu::layoutVideoSettings() {
   if (ownHint)
     addLabel(resetKey.x + resetKey.w + 20, y, w - resetKey.w - 20, 0, t.greenScreenOwnMask,
              kHintSize, true, 2);
-  y += ownHint ? hintHeight(2) + 6 : kSettingStep;
+  if (resetShown || room != RoomMatch::Hidden) y += ownHint ? hintHeight(2) + 6 : kSettingStep;
   if (strengths) {
     const int share[] = {view_.matchColour, view_.matchBrightness};
     const MenuCommand::Type types[] = {MenuCommand::SetMatchColour, MenuCommand::SetMatchBrightness};
@@ -735,6 +753,57 @@ void Menu::layoutVideoSettings() {
     for (int i = 0; i < 2; ++i) slider(labels[i], types[i], share[i], false, tips[i], " %");
   }
   addGroup(columnX(1), top, kColumnW, y + 10 - top, t.passthroughGroup);
+}
+
+// The background key's row: the choice, and in a swatch before it what it
+// removes now: the colour keyed, the green keyer's greens, or for Automatic
+// with nothing detected a crossed-out circle (nothing removed); pressed,
+// the choices: Automatic, Green screen, or (surround video, where it can be
+// pointed at) picking a colour (the app takes over until one is).
+void Menu::layoutKeyBackground(double x, double y, double w) {
+  const Strings& t = text();
+  const GreenScreen& key = view_.greenScreen;
+  constexpr double labelW = 230;
+  addLabel(x + 12, y, labelW - 12, kSettingRowH, t.keyBackground);
+  // Automatic: the colour the check found, else the green screen it found,
+  // else nothing; while it looks with nothing found yet, an empty swatch
+  // saying so.
+  const bool checking = !keyRemoves(view_) && !view_.fillChecked && view_.fillChecking;
+  const char* state = key.source == KeySource::Picked      ? t.keyPicked
+                      : key.source == KeySource::GreenScreen ? t.keySources[1]
+                      : checking                             ? t.keyChecking
+                                                             : t.keySources[0];
+  Button opener = textButton(std::string(state) + " ▾", Icon::None, [this] {
+    dropdown_ = dropdown_ == Dropdown::KeyBackground ? Dropdown::None : Dropdown::KeyBackground;
+    return MenuCommand{};
+  });
+  opener.panel = kBrowser;
+  opener.bare = opener.on = true;
+  opener.alignLeft = true;
+  opener.keySwatch = view_.colourKey ? (view_.keyColour.r << 16 | view_.keyColour.g << 8 |
+                                        view_.keyColour.b)
+                     : checking        ? kPendingKeySwatch
+                     : !keyRemoves(view_) ? kNoKeySwatch
+                                          : kGreenKeySwatch;
+  opener.x = x + labelW;
+  opener.y = y;
+  opener.w = w - labelW;
+  opener.h = kSettingRowH;
+  opener.tooltip = t.keyBackgroundHint;
+  buttons_.push_back(opener);
+  if (dropdown_ != Dropdown::KeyBackground) return;
+  std::vector<Button> entries;
+  const KeySource sources[] = {KeySource::Automatic, KeySource::GreenScreen, KeySource::Picked};
+  const int choices = view_.format.projection == Projection::Flat ? 2 : 3;
+  for (int i = 0; i < choices; ++i) {
+    entries.push_back(textButton(t.keySources[i], Icon::None, [this, i, sources] {
+      dropdown_ = Dropdown::None;
+      if (sources[i] == KeySource::Picked) return command(MenuCommand::PickKeyColour)();
+      return command(MenuCommand::SetKeyBackground, static_cast<int>(sources[i]))();
+    }, key.source == sources[i]));
+    entries.back().tooltip = t.keySourceHints[i];
+  }
+  addDropdownBelow(opener, std::move(entries), true);
 }
 
 void Menu::layoutScreenGroup(double top, bool disabled) {

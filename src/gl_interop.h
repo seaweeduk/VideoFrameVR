@@ -18,6 +18,9 @@ class SharedImage {
   GLuint framebuffer() const { return framebuffer_; }  // level 0
   // GL holds it since its last acquireForGl(), until the next publish().
   bool inGl() const { return inGl_; }
+  // The glDone value of the publication that brought its picture: new
+  // content when it changes (not when GL only read it, or made mipmaps).
+  uint64_t content() const { return contentAt_; }
 
  private:
   friend class GlInterop;
@@ -31,6 +34,8 @@ class SharedImage {
   // lastVulkanUse_) or GL (published at glDone value publishedAt_).
   bool vulkanLast_ = true;
   uint64_t lastVulkanUse_ = 0, publishedAt_ = 0, lastGlUse_ = 0;
+  uint64_t contentAt_ = 0;
+  bool written_ = false;  // a new picture since its last publication
   bool inFrame_ = false;  // acquired by the frame being recorded
 };
 
@@ -70,6 +75,12 @@ class GlInterop {
   // Before GL reads or writes `image`: GL waits (on the GPU) for its last
   // use by Vulkan. Nothing if GL holds it already.
   void acquireForGl(SharedImage& image);
+  // The same before GL writes a new picture into it (its content() changes
+  // at the next publication).
+  void acquireForWrite(SharedImage& image) {
+    acquireForGl(image);
+    image.written_ = true;
+  }
   // An image GL is not done with (a photo half uploaded) stays with GL at
   // publish(), out of the scene, until this is called with false.
   void keepInGl(SharedImage& image, bool keep) { image.keepInGl_ = keep; }

@@ -42,11 +42,14 @@ layout(push_constant) uniform Push {
   vec2 alphaScale;
   float step;
   float fisheyeFov;
-  int mode;        // 0: an eye's patch, 1: the whole eye scaled down, 2: MaskProbe's
+  int mode;        // 0: an eye's patch, 1: the whole eye scaled down, 2: MaskProbe's, 3: KeyPicker's
   int projection;  // 0 = 180, 2 = fisheye
   int flip;
   int alphaPacked;  // as DepthPatch's
   float greenKey;
+  int tvGamma;  // the frame's (kTvGamma)
+  float keyColour;  // as DepthPatch's
+  float keyCut;
 } u;
 
 layout(location = 0) out vec4 fragColor;
@@ -75,8 +78,40 @@ vec3 picture(vec2 p, vec2 dx, vec2 dy) {
   return sum / float(nx * ny);
 }
 
+// Display values e of the frame as the scene's colour key compares them
+// (surround.frag): linearToSrgb() of what videoTap() makes of them.
+vec3 keyed(vec3 e) { return u.tvGamma != 0 ? linearToSrgb(pow(e, vec3(2.4))) : e; }
+
+// A texel's display values as the frame came (before TV gamma).
+vec3 frameTexel(vec2 p) {
+  return clamp(yuvToRgb(lumaAt(p), chromaAt(p), u.yuvRange, u.yuvMatrix.xy), 0.0, 1.0);
+}
+
 void main() {
   vec2 p = gl_FragCoord.xy - u.rect.xy;
+  if (u.mode == 3) {
+    // KeyPicker (DepthPatch::keyPick): at x 0..2 channel x of the mean of
+    // the 5 x 5 texels around start, kept within the eye's part (eyeOffset,
+    // eyeScale), as the frame came, at 3 their spread as the key compares
+    // them.
+    vec2 size = pictureSize();
+    vec2 lo = u.eyeOffset * size + 0.5, hi = (u.eyeOffset + u.eyeScale) * size - 0.5;
+    vec2 centre = floor(u.start * size) + 0.5;
+    vec3 sum = vec3(0.0), least = vec3(1.0), most = vec3(0.0);
+    for (int j = -2; j <= 2; ++j)
+      for (int i = -2; i <= 2; ++i) {
+        vec3 e = frameTexel(clamp(centre + vec2(i, j), lo, hi) / size), t = keyed(e);
+        sum += e;
+        least = min(least, t);
+        most = max(most, t);
+      }
+    vec3 mean = sum / 25.0, spread = most - least;
+    fragColor = vec4(p.x < 1.0   ? mean.r
+                     : p.x < 2.0 ? mean.g
+                     : p.x < 3.0 ? mean.b
+                                 : max(max(spread.r, spread.g), spread.b));
+    return;
+  }
   if (u.mode == 2) {
     // MaskProbe (DepthPatch::maskProbe): VideoCheck's blue, at least 0.6 in
     // display values with red and green at most 0.2, in linear values.
@@ -130,6 +165,10 @@ void main() {
   } else if (u.mode == 0 && u.greenKey > 0.0) {
     vec3 e = pow(max(c, 0.0), vec3(1.0 / 2.2));
     clear = (e.g - max(e.r, e.b)) / max(e.g, 0.04) > u.greenKey;
+  } else if (u.mode == 0 && u.keyCut > 0.0) {
+    // A flat background's key, in display values as the scene compares them.
+    vec3 e = keyed(linearToSrgb(clamp(c, 0.0, 1.0)));
+    clear = distance(keySpace(e), keySpace(keyColour(u.keyColour))) <= u.keyCut;
   }
   fragColor = vec4(!inside ? -1.0 : clear ? -0.5 : l);
 }

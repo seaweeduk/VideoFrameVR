@@ -211,6 +211,7 @@ DirectVideo::~DirectVideo() {
   for (const Semaphore& s : semaphores_) semaphores.push_back(s.semaphore);
   std::vector<VkDescriptorSetLayout> layouts(std::begin(q08cSetLayout_), std::end(q08cSetLayout_));
   layouts.push_back(tp10SetLayout_);
+  layouts.push_back(tp10MaskSetLayout_);
   std::vector<VkSampler> samplers(std::begin(q08cSampler_), std::end(q08cSampler_));
   std::vector<VkSamplerYcbcrConversion> conversions(std::begin(q08cConversion_), std::end(q08cConversion_));
   VkBuffer buffer = tp10Buffer_;
@@ -265,7 +266,7 @@ bool DirectVideo::init(GpuContext& gpu) {
 }
 
 // The descriptor buffer of Q10C frames: a set (kTp10Bands luma bands, then
-// the chroma) for each buffer imported.
+// the chroma) for each buffer imported, then the colour key's mask's.
 bool DirectVideo::initTp10() {
   VkDevice d = gpu_->device();
   getDescriptor_ = reinterpret_cast<PFN_vkGetDescriptorEXT>(vkGetDeviceProcAddr(d, "vkGetDescriptorEXT"));
@@ -301,12 +302,22 @@ bool DirectVideo::initTp10() {
   if (!gpu_->check(vkCreateDescriptorSetLayout(d, &setInfo, nullptr, &tp10SetLayout_),
                    "TP10 set layout"))
     return false;
+  // The mask's set: one image.
+  bindings[0].descriptorCount = 1;
+  setInfo.bindingCount = 1;
+  if (!gpu_->check(vkCreateDescriptorSetLayout(d, &setInfo, nullptr, &tp10MaskSetLayout_),
+                   "TP10 key mask set layout"))
+    return false;
+  VkDeviceSize maskSetSize = 0;
   layoutSize(d, tp10SetLayout_, &tp10SetSize_);
+  layoutSize(d, tp10MaskSetLayout_, &maskSetSize);
   for (uint32_t i = 0; i < 2; ++i) bindingOffset(d, tp10SetLayout_, i, &tp10Binding_[i]);
+  bindingOffset(d, tp10MaskSetLayout_, 0, &tp10MaskBinding_);
   const VkDeviceSize align = std::max<VkDeviceSize>(props.descriptorBufferOffsetAlignment, 1);
   tp10SetSize_ = (tp10SetSize_ + align - 1) / align * align;
+  tp10MaskOffset_ = tp10SetSize_ * kMaxBuffers;
   VkBufferCreateInfo bufferInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-  bufferInfo.size = tp10SetSize_ * kMaxBuffers;
+  bufferInfo.size = tp10MaskOffset_ + maskSetSize;
   bufferInfo.usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
                      VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -332,6 +343,16 @@ bool DirectVideo::initTp10() {
   tp10Address_ = vkGetBufferDeviceAddress(d, &address);
   tp10Slots_.assign(kMaxBuffers, false);
   return tp10Address_ != 0;
+}
+
+void DirectVideo::setTp10Mask(VkImageView view, VkSampler sampler) {
+  if (!tp10Map_) return;
+  const VkDescriptorImageInfo image{sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  VkDescriptorGetInfoEXT get{VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT};
+  get.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  get.data.pCombinedImageSampler = &image;
+  getDescriptor_(gpu_->device(), &get, tp10DescriptorSize_,
+                 tp10Map_ + tp10MaskOffset_ + tp10MaskBinding_);
 }
 
 void DirectVideo::enableTp10(VkSampler sampler) {
@@ -511,15 +532,18 @@ void DirectVideo::retireStillFramebuffers() {
   }
 }
 
-void DirectVideo::bindTp10(VkCommandBuffer cmd, VkPipelineLayout layout, const DirectFrame& frame) const {
+void DirectVideo::bindTp10(VkCommandBuffer cmd, VkPipelineLayout layout, const DirectFrame& frame,
+                           bool keyMask) const {
   VkDescriptorBufferBindingInfoEXT binding{VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT};
   binding.address = tp10Address_;
   binding.usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
                   VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT;
   bindDescriptorBuffers_(cmd, 1, &binding);
-  const uint32_t index = 0;
-  const VkDeviceSize offset = tp10SetSize_ * static_cast<VkDeviceSize>(frame.buffer_->slot);
-  setDescriptorBufferOffsets_(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &index, &offset);
+  const uint32_t indices[2] = {0, 0};
+  const VkDeviceSize offsets[2] = {tp10SetSize_ * static_cast<VkDeviceSize>(frame.buffer_->slot),
+                                   tp10MaskOffset_};
+  setDescriptorBufferOffsets_(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, keyMask ? 2 : 1,
+                              indices, offsets);
 }
 
 void DirectVideo::setPicture(int brightness, int contrast, int saturation) {
@@ -938,6 +962,7 @@ DirectFrame* DirectVideo::accept(video_export& e) {
   ++b->users;
   b->lastSeen = now();
   f->id_ = e.id;
+  f->serial_ = ++serials_;
   f->fenceFd_ = fence;
   f->matrix_ = e.matrix;
   f->fullRange_ = e.full_range;
@@ -1081,6 +1106,7 @@ DirectFrame* DirectVideo::still(DirectFrame& frame) {
   s.fullRange_ = frame.fullRange_;
   s.siting_ = frame.siting_;
   s.color_ = frame.color_;
+  s.serial_ = ++serials_;
   s.held_ = false;
   for (int i = 0; i < 2; ++i) {
     Texture& t = i == 0 ? s.luma_ : s.chroma_;

@@ -23,6 +23,8 @@ class DirectFrame {
   const Texture& chroma() const { return chroma_; }
   const YuvColor& color() const { return color_; }
   uint64_t id() const { return id_; }  // mpv's
+  // A number no other frame's content had (a still's too): KeyMask's.
+  uint64_t serial() const { return serial_; }
   // A Q10C decoder buffer: sampled through its TP10 descriptors
   // (DirectVideo::bindTp10) by the pipelines for it, not as texture().
   bool tp10() const { return tp10_; }
@@ -34,7 +36,7 @@ class DirectFrame {
  private:
   friend class DirectVideo;
   DirectBuffer* buffer_ = nullptr;
-  uint64_t id_ = 0;
+  uint64_t id_ = 0, serial_ = 0;
   int fenceFd_ = -1;  // the conversion's completion, until seen signalled
   int matrix_ = 0, fullRange_ = 0, siting_ = 0;
   Texture luma_, chroma_;
@@ -85,6 +87,10 @@ class DirectVideo {
   // without), for the pipelines for them; then enableTp10() once those
   // exist, with the sampler the descriptors take (bilinear, one level).
   VkDescriptorSetLayout tp10SetLayout() const { return tp10SetLayout_; }
+  // ... and of the colour key's mask's set (KeyMask), in the same buffer;
+  // setTp10Mask() writes it once.
+  VkDescriptorSetLayout tp10MaskSetLayout() const { return tp10MaskSetLayout_; }
+  void setTp10Mask(VkImageView view, VkSampler sampler);
   void enableTp10(VkSampler sampler);
   // Whether mpv can hand out Q10C frames as the decoder wrote them.
   bool acceptsQ10c() const { return tp10Sampler_ != VK_NULL_HANDLE; }
@@ -96,8 +102,10 @@ class DirectVideo {
   void enableQ08c();
   // Whether mpv can hand out Q08C frames as the decoder wrote them.
   bool acceptsQ08c() const { return q08c_; }
-  // Binds a tp10() frame's descriptors as set 0 of layout (Pipelines::tp10Layout).
-  void bindTp10(VkCommandBuffer cmd, VkPipelineLayout layout, const DirectFrame& frame) const;
+  // Binds a tp10() frame's descriptors as set 0 of layout (Pipelines::tp10Layout),
+  // and with keyMask the colour key's mask as set 1 (Pipelines::tp10KeyLayout).
+  void bindTp10(VkCommandBuffer cmd, VkPipelineLayout layout, const DirectFrame& frame,
+                bool keyMask = false) const;
   // Work outside the frames sampling a frame (DirectDepth): it is kept from
   // pin() until unpin() with the submission's frame timeline value, which
   // takes its planes over and back as recordAcquires() and recordReleases(),
@@ -188,13 +196,14 @@ class DirectVideo {
   uint32_t foreign_ = VK_QUEUE_FAMILY_EXTERNAL;
 
   // Q10C frames: their descriptors, a set's worth for each buffer (slot).
-  VkDescriptorSetLayout tp10SetLayout_ = VK_NULL_HANDLE;
+  VkDescriptorSetLayout tp10SetLayout_ = VK_NULL_HANDLE, tp10MaskSetLayout_ = VK_NULL_HANDLE;
   VkSampler tp10Sampler_ = VK_NULL_HANDLE;
   VkBuffer tp10Buffer_ = VK_NULL_HANDLE;
   VkDeviceMemory tp10Memory_ = VK_NULL_HANDLE;
   uint8_t* tp10Map_ = nullptr;
   VkDeviceAddress tp10Address_ = 0;
   VkDeviceSize tp10SetSize_ = 0, tp10Binding_[2] = {};
+  VkDeviceSize tp10MaskOffset_ = 0, tp10MaskBinding_ = 0;  // the mask's set, after the frames' sets
   size_t tp10DescriptorSize_ = 0;
   std::vector<bool> tp10Slots_;
   PFN_vkGetDescriptorEXT getDescriptor_ = nullptr;
@@ -208,6 +217,7 @@ class DirectVideo {
   bool q08cLayouts_ = false;    // initQ08c() made them all
   bool q08c_ = false;           // enableQ08c()
 
+  uint64_t serials_ = 0;  // the last DirectFrame::serial()
   int brightness_ = 0, contrast_ = 0, saturation_ = 0;
   bool tvGamma_ = false;
   std::vector<std::unique_ptr<DirectBuffer>> buffers_;

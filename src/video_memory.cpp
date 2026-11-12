@@ -63,13 +63,15 @@ void VideoMemory::load() {
     if (!(fields >> s.volume)) s.volume = -1;  // written before volumes were remembered
     int keyOn = 0;
     GreenScreen key;
-    if (fields >> keyOn >> key.strength >> key.softness >> key.spill) {  // newer lines only
+    KeySliders& k = key.green;
+    if (fields >> keyOn >> k.strength >> k.softness >> k.spill) {  // newer lines only
       key.on = keyOn != 0;
-      if (!(fields >> key.shrink)) key.shrink = 0;
-      // A first version wrote its own defaults for every video: those mean
+      if (!(fields >> k.shrink)) k.shrink = 0;
+      // Versions wrote their own defaults for every video: those mean
       // "never set", so the video gets today's defaults.
-      const bool oldDefaults = !key.on && key.strength == 50 && key.softness == 30 &&
-                               key.spill == 50 && key.shrink == 0;
+      const bool oldDefaults = !key.on && k.shrink == 0 && k.strength == 50 &&
+                               ((k.softness == 30 && k.spill == 50) ||
+                                (k.softness == 0 && k.spill == 35));
       if (!oldDefaults) s.greenScreen = key;
     }
     if (projection < 0 || projection >= static_cast<int>(Projection::kCount) || stereo < 0 ||

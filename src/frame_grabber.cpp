@@ -215,7 +215,7 @@ bool FrameGrabber::update() {
   framePending_ = false;
 
   // After the frames that showed the last one are done with it.
-  interop_->acquireForGl(*image_);
+  interop_->acquireForWrite(*image_);
   mpv_opengl_fbo fbo{static_cast<int>(image_->framebuffer()), width_, height_, 0};
   int flipY = 0;  // texel row 0 = top of the image
   int block = 0;
