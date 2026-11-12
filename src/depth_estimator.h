@@ -5,6 +5,7 @@
 #include "video_format.h"
 #include "xmath.h"
 
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
@@ -24,10 +25,11 @@ enum class DepthStatus {
 
 // What DepthEstimator's GL program draws for a request, for a frame GL
 // cannot read: its uniforms. Rows 0.. of a `width`-wide image hold the left
-// eye's patch (height rows), then the right eye's, then a kThumbW x kThumbH
-// thumbnail of the whole left eye.
+// eye's patch (height rows), then the right eye's, then (thumbnail) a
+// kThumbW x kThumbH thumbnail of the whole left eye.
 struct DepthPatch {
   int width = 0, height = 0;
+  bool thumbnail = true;
   float start[2] = {};  // alpha, beta at the first pixel's corner
   float step = 0;
   int projection = 0;  // 0 = 180, 2 = fisheye
@@ -98,7 +100,9 @@ struct DepthEstimate {
   // How far the window was moved off the target (DepthRequest::reach), in
   // epipolar angles (radians): alpha from the baseline, beta around it.
   float reachAlpha = 0, reachBeta = 0;
-  float sceneChange = -1;   // 0..1 difference of the whole eye image to the last one; -1 unknown
+  // 0..1 difference of the whole eye image to its thumbnail before; -1 unknown
+  // (no thumbnail with this measurement, or none before).
+  float sceneChange = -1;
 };
 
 // The candidate depth nearest to `distance` (meters), as a half-convergence
@@ -129,7 +133,13 @@ class DepthEstimator {
  public:
   // The largest patch image (DepthPatch), in pixels.
   static constexpr int kMaxPatchWidth = 2048, kMaxPatchRows = 1024;
-  static constexpr int kThumbW = 64, kThumbH = 32;  // the whole left eye, for scene cuts
+  // The whole left eye, for scene cuts. Its taps are spread over the whole
+  // frame, which costs the Frame's GPU several times the patches' (0.64 ms
+  // of an 8K frame against 0.1 ms): it is drawn with a measurement only
+  // once kThumbEvery seconds have passed since the last, which still
+  // notices a cut within a few frames.
+  static constexpr int kThumbW = 64, kThumbH = 32;
+  static constexpr double kThumbEvery = 0.05;
 
   ~DepthEstimator();
   bool init();
@@ -145,7 +155,10 @@ class DepthEstimator {
 
  private:
   struct Job {
-    std::vector<float> pixels;  // left patch, right patch, then the thumbnail
+    std::vector<float> pixels;  // left patch, right patch, then the thumbnail (if any)
+    bool thumbnail = true;
+    // The rows of pixels.
+    int rows() const { return 2 * height + (thumbnail ? kThumbH : 0); }
     int stride = 0, width = 0, height = 0, window = 0, low = 0, high = 0, accuracy = 8;
     bool masked = false;  // passthrough: clear pixels are marked
     int reach = 0;        // pixels of extra patch on every side, for DepthRequest::reach
@@ -165,6 +178,7 @@ class DepthEstimator {
   DepthPatchDrawer* drawer_ = nullptr;  // drawing pending_ instead of GL
   Job pending_;  // read back on the GPU
   bool forgetScene_ = false, forgetVideo_ = false;
+  std::chrono::steady_clock::time_point thumbnailAt_{};  // the last request with one
 
   std::thread thread_;
   std::mutex mutex_;
