@@ -828,7 +828,7 @@ int run(GLFWwindow* window, const Options& opts) {
   };
   switchReadout(showPerformance);
   Autofocus autofocus;  // without it, only manual stereo focus
-  autofocus.init();
+  autofocus.init(opts.timing);
   // A packed mask's second layer showing late (mask_probe.h), from GL or
   // from frames handed out.
   MaskProbe maskProbe;
