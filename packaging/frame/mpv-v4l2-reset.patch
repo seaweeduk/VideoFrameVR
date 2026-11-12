@@ -25,7 +25,7 @@
              {"no", INT_MAX}, {"yes", 1}), M_RANGE(1, INT_MAX),
              .flags = UPDATE_HWDEC},
          {"vd-lavc-software-fallback", OPT_REPLACED("hwdec-software-fallback")},
-+        // Frame: 8-bit HEVC in the decoder's compressed layout (Q08C), for an
++        // Frame: 8-bit HEVC and H.264 in the decoder's compressed layout (Q08C), for an
 +        // app that samples it. Read as each decoder opens: no reinit.
 +        {"hwdec-v4l2-q08c", OPT_BOOL(v4l2_q08c)},
          {0}
@@ -90,7 +90,7 @@
  
      m_config_cache_update(ctx->opts_cache);
  
-@@ -750,6 +782,33 @@
+@@ -750,6 +782,34 @@
      if (!lavc_codec)
          return;
  
@@ -116,7 +116,8 @@
 +        }
 +        if (direct_main10)
 +            ctx->prefer_v4l2_ubwc = true;
-+        q08c = ctx->hwdec_opts->v4l2_q08c && lavc_codec->id == AV_CODEC_ID_HEVC &&
++        q08c = ctx->hwdec_opts->v4l2_q08c &&
++               (lavc_codec->id == AV_CODEC_ID_HEVC || lavc_codec->id == AV_CODEC_ID_H264) &&
 +               source && source->comp[0].depth == 8 && !ctx->hwdec.copying &&
 +               ctx->hwdec.pix_fmt == AV_PIX_FMT_DRM_PRIME;
 +    }
@@ -124,7 +125,7 @@
      const AVCodecDescriptor *desc = avcodec_descriptor_get(lavc_codec->id);
      ctx->intra_only = desc && (desc->props & AV_CODEC_PROP_INTRA_ONLY);
  
-@@ -765,6 +824,26 @@
+@@ -765,6 +825,26 @@
      avctx->codec_id = lavc_codec->id;
      avctx->pkt_timebase = ctx->codec_timebase;
  
@@ -151,7 +152,7 @@
      ctx->pic = av_frame_alloc();
      if (!ctx->pic)
          goto error;
-@@ -899,8 +978,20 @@
+@@ -899,8 +979,20 @@
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
  
@@ -174,7 +175,7 @@
      ctx->flushing = false;
      ctx->hwdec_request_reinit = false;
  }
-@@ -939,7 +1030,13 @@
+@@ -939,7 +1031,13 @@
      mp_free_av_packet(&ctx->avpkt);
      av_buffer_unref(&ctx->cached_hw_frames_ctx);
  
@@ -188,7 +189,7 @@
  
      av_buffer_unref(&ctx->hwdec_dev);
  
-@@ -1178,7 +1275,7 @@
+@@ -1178,7 +1276,7 @@
          reset_avctx(vd);
  }
  
@@ -197,7 +198,7 @@
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
      struct hwdec_opts *hwdec_opts = ctx->hwdec_opts;
-@@ -1187,6 +1284,15 @@
+@@ -1187,6 +1285,15 @@
              ctx->use_hwdec ? " (hardware decoding)" : "");
  
      if (ctx->use_hwdec) {
@@ -213,7 +214,7 @@
          ctx->hwdec_fail_count += 1;
          if (ctx->hwdec_fail_count >= hwdec_opts->software_fallback)
              ctx->hwdec_failed = true;
-@@ -1236,7 +1342,7 @@
+@@ -1236,7 +1343,7 @@
          if (ret == AVERROR(EAGAIN))
              return true;
          if (ret < 0 && ret != AVERROR_EOF)
@@ -222,7 +223,7 @@
          vd_mvc_pop(ctx->mvc);
      }
      return false;
-@@ -1245,6 +1351,29 @@
+@@ -1245,6 +1352,29 @@
  static int send_packet(struct mp_filter *vd, struct demux_packet *pkt)
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
@@ -252,7 +253,7 @@
  
      if (ctx->num_requeue_packets && ctx->requeue_packets[0] != pkt)
          return AVERROR(EAGAIN); // cannot consume the packet
-@@ -1274,6 +1403,7 @@
+@@ -1274,6 +1404,7 @@
          return 0;
  
      int ret;
@@ -260,7 +261,7 @@
      if (ctx->mvc) {
          if (!vd_mvc_send(ctx->mvc, pkt)) {
              // The rewrite can't take this stream: carry on in 2D, from a
-@@ -1311,7 +1441,7 @@
+@@ -1311,7 +1442,7 @@
      }
  
      if (ret < 0)
@@ -269,7 +270,7 @@
      return ret;
  }
  
-@@ -1335,6 +1465,8 @@
+@@ -1335,6 +1466,8 @@
  
      if (!avctx || ctx->force_eof)
          return AVERROR_EOF;
@@ -278,7 +279,7 @@
  
      prepare_decoding(vd);
  
-@@ -1345,9 +1477,20 @@
+@@ -1345,9 +1478,20 @@
      if (ctx->mvc)
          send_mvc_queue(vd);
  
@@ -299,7 +300,7 @@
              // If flushing was initialized earlier and has ended now, make it
              // start over in case we get new packets at some point in the future.
              // This must take the delay queue into account, so avctx returns EOF
-@@ -1357,11 +1500,23 @@
+@@ -1357,11 +1501,23 @@
          } else if (ret == AVERROR(EAGAIN)) {
              // just retry after caller writes a packet
          } else {
@@ -324,7 +325,7 @@
      mp_codec_info_from_av(avctx, ctx->codec);
  
      // If something was decoded successfully, it must return a frame with valid
-@@ -1377,7 +1532,7 @@
+@@ -1377,7 +1533,7 @@
      if (mpi->imgfmt == IMGFMT_CUDA && !mpi->planes[0]) {
          MP_ERR(vd, "CUDA frame without data. This is a FFmpeg bug.\n");
          talloc_free(mpi);
@@ -333,7 +334,7 @@
          return AVERROR_BUG;
      }
  
-@@ -1398,7 +1553,7 @@
+@@ -1398,7 +1554,7 @@
              if (!sw) {
                  MP_ERR(vd, "Could not copy back hardware decoded frame.\n");
                  ctx->hwdec_fail_count = INT_MAX - 1; // force fallback
@@ -342,7 +343,7 @@
                  return AVERROR_UNKNOWN;
              }
              mpi = sw;
-@@ -1409,6 +1564,21 @@
+@@ -1409,6 +1565,21 @@
              return ret;
      }
  
@@ -364,7 +365,7 @@
      MP_TARRAY_APPEND(ctx, ctx->delay_queue, ctx->num_delay_queue, mpi);
      return ret;
  }
-@@ -1473,7 +1643,7 @@
+@@ -1473,7 +1644,7 @@
          if (!res) {
              MP_ERR(vd, "Could not copy back hardware decoded frame.\n");
              ctx->hwdec_fail_count = INT_MAX - 1; // force fallback
@@ -373,7 +374,7 @@
              return AVERROR_UNKNOWN;
          }
      }
-@@ -1554,6 +1724,10 @@
+@@ -1554,6 +1725,10 @@
  
      flush_all(vd);
  

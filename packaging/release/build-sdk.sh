@@ -137,6 +137,7 @@ if [[ $arch == aarch64 ]]; then
   patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-drain-seek.patch
   patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-staged-start.patch
   patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-capture-interrupt.patch
+  patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-q08c-crop.patch
 fi
 cmake -S "$json_source" -B /work/json-build -DJSON_BuildTests=OFF \
   -DJSON_Install=ON -DCMAKE_INSTALL_PREFIX="$prefix" "${cmake_cross[@]}"

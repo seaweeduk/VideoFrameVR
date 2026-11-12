@@ -190,7 +190,7 @@ class VideoPlayer {
   void sendPicture();  // to mpv: picture_, or none with plainPicture_
   void releaseTarget();
   bool wantExport() const;
-  // Whether the decoder opened next writes 8-bit HEVC compressed (Q08C) for
+  // Whether the decoder opened next writes 8-bit video compressed (Q08C) for
   // the eyes to sample, or linear for mpv to draw: told to mpv on a change,
   // so a setting never reopens the one playing.
   void updateCapture();
