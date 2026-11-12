@@ -187,11 +187,16 @@ vec3 adjustPicture(vec3 c, vec3 adjust) {
 // linear light brightened by a third of a stop with a little more contrast,
 // falling off softly towards the edges of the eye image.
 // fragCoord: gl_FragCoord.xy.
-vec3 applyLook(vec3 c, EyeData e, uint flags, vec2 fragCoord) {
-  if ((flags & kLook) == 0u) return c;
+vec3 toneLook(vec3 c, EyeData e, vec2 fragCoord) {
   vec2 p = (fragCoord - e.area.xy) / e.area.zw * 2.0 - 1.0;
   float v = 1.0 / (1.0 + 0.16 * dot(p, p));
   return 1.26 * pow(max(c, 0.0), vec3(1.08)) * (v * v);
+}
+
+// The tone look where the draw's flags have it.
+vec3 applyLook(vec3 c, EyeData e, uint flags, vec2 fragCoord) {
+  if ((flags & kLook) == 0u) return c;
+  return toneLook(c, e, fragCoord);
 }
 
 // Sharpening (docs/video-sharpness.md), as the old pass over the finished eye

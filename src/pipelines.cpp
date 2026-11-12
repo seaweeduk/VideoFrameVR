@@ -74,7 +74,8 @@ Pipelines::~Pipelines() {
   pipelines.insert(pipelines.end(), std::begin(foveation_), std::end(foveation_));
   pipelines.insert(pipelines.end(), std::begin(tp10_), std::end(tp10_));
   pipelines.insert(pipelines.end(), std::begin(tp10Plain_), std::end(tp10Plain_));
-  pipelines.insert(pipelines.end(), std::begin(keyed_), std::end(keyed_));
+  for (const auto& look : keyed_)
+    pipelines.insert(pipelines.end(), std::begin(look), std::end(look));
   pipelines.insert(pipelines.end(), std::begin(keyDistance_), std::end(keyDistance_));
   pipelines.push_back(keyReach_);
   std::vector<VkPipelineLayout> layouts = {layout_, keyLayout_, tp10Layout_, tp10KeyLayout_};
@@ -84,8 +85,8 @@ Pipelines::~Pipelines() {
     layouts.push_back(q08cLayout_[s]);
     layouts.push_back(q08cKeyLayout_[s]);
   }
-  for (const auto& balance : surround_)
-    for (const auto& pass : balance)
+  for (const auto& finish : surround_)
+    for (const auto& pass : finish)
       for (const auto& projection : pass)
         for (const auto& cuts : projection)
           pipelines.insert(pipelines.end(), std::begin(cuts), std::end(cuts));
@@ -309,18 +310,21 @@ bool Pipelines::createLayout(std::initializer_list<VkDescriptorSetLayout> sets,
   return gpu_->check(vkCreatePipelineLayout(gpu_->device(), &layoutInfo, nullptr, &layout), what);
 }
 
-// The colour key's common pipeline: projection 3 (180, 360 or fisheye), its
-// cut (4) and the colour balance, for the eye pass with a density map alone
-// (foveation off, a cubemap and the rest take the general ones). Its
-// distance pass reads the source from the push constants.
+// The colour key's common pipelines: projection 3 (180, 360 or fisheye), its
+// cut (4) and the colour balance, without and with the tone look, for the eye
+// pass with a density map alone (foveation off, a cubemap and the rest take
+// the general ones). Its distance pass reads the source from the push
+// constants.
 void Pipelines::addKeyed(std::vector<Job>& jobs, SurroundSource source, const uint32_t* fragment,
                          size_t fragmentBytes, const uint32_t* distance, size_t distanceBytes,
                          VkPipelineLayout keyLayout, VkPipelineLayout layout) {
-  const int32_t constants[] = {3, sourceConstant(source), 4, 0, 1};
-  add(jobs,
-      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment, fragmentBytes,
-       VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, 5},
-      eyePass_, "surround (colour key, common mode)", &keyed_[source], keyLayout);
+  for (int look = 0; look < 2; ++look) {
+    const int32_t constants[] = {3, sourceConstant(source), 4, 0, 1, look};
+    add(jobs,
+        {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment, fragmentBytes,
+         VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, 6},
+        eyePass_, "surround (colour key, common mode)", &keyed_[look][source], keyLayout);
+  }
   add(jobs,
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), distance, distanceBytes,
        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
@@ -339,17 +343,19 @@ void Pipelines::addSurround(std::vector<Job>& jobs, std::initializer_list<Surrou
                             const uint32_t* fragment, size_t fragmentBytes,
                             VkPipelineLayout layout) {
   for (SurroundSource source : sources)
-    for (int balance = 0; balance < 2; ++balance)
+    for (int finish = 0; finish < kFinishCount; ++finish)
       for (int p = 0; p < kProjectionCount; ++p)
         for (int c = 0; c < kCutCount; ++c)
           for (int plain = 0; plain < (plainEyePass_ == eyePass_ ? 1 : 2); ++plain) {
             if (c >= kPackedRedBlue && p != kFisheye) continue;
-            const int32_t constants[] = {p, sourceConstant(source), c, 0, balance};
+            // The look's pipelines apply the colour balance too.
+            const int32_t constants[] = {p, sourceConstant(source), c, 0, finish != kAsItIs,
+                                         finish == kLookBalanced};
             add(jobs,
                 {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment, fragmentBytes,
-                 VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, 5},
+                 VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, 6},
                 plain ? plainEyePass_ : eyePass_, "surround (common mode)",
-                &surround_[balance][plain][p][source][c], layout);
+                &surround_[finish][plain][p][source][c], layout);
           }
 }
 
