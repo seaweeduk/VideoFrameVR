@@ -77,6 +77,7 @@ MenuCommand Menu::stashFolders(const std::vector<StashFolderMap>& folders) const
   c.type = MenuCommand::SetStashServer;  // as the server editor's Save and sync
   c.path = view_.stash.url + "\n" + view_.stash.apiKey;
   for (const StashFolderMap& m : folders) c.path += "\n" + m.from + "\n" + m.to;
+  c.option = view_.stash.unverified() ? 1 : 0;
   return c;
 }
 

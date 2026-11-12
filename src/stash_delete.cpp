@@ -35,14 +35,15 @@ bool remove(StashClient& client, int64_t scene, const StashFileLook& look, bool 
 
 }  // namespace
 
-StashFileLook lookUpStashFile(const std::string& url, const std::string& apiKey, int64_t scene,
-                              const std::string& oshash, const std::string& stashPath) {
-  StashClient client(url, apiKey);
+StashFileLook lookUpStashFile(const std::string& url, const std::string& apiKey, bool unverified,
+                              int64_t scene, const std::string& oshash,
+                              const std::string& stashPath) {
+  StashClient client(url, apiKey, unverified);
   return lookUp(client, scene, oshash, stashPath);
 }
 
 DeleteOutcome deleteThroughStash(const std::string& url, const std::string& apiKey,
-                                 bool sendToStash, int64_t scene, const std::string& oshash,
+                                 bool unverified, bool sendToStash, int64_t scene, const std::string& oshash,
                                  const std::string& stashPath, const std::string& here,
                                  const FileStamp& stamp, bool trashPromised) {
   DeleteOutcome r;
@@ -53,7 +54,7 @@ DeleteOutcome deleteThroughStash(const std::string& url, const std::string& apiK
     if (r.status == DeleteStatus::Ok && !(now == stamp)) r.status = DeleteStatus::Changed;
     if (r.status != DeleteStatus::Ok) return r;
   }
-  StashClient client(url, apiKey);
+  StashClient client(url, apiKey, unverified);
   client.setWriteBack(sendToStash);
   const StashFileLook look = lookUp(client, scene, oshash, stashPath);
   if (look.file && remove(client, scene, look, true)) {

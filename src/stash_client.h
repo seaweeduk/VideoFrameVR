@@ -17,8 +17,9 @@
 // none. Blocks for as long as the server takes: worker threads only.
 class StashClient {
  public:
-  // `url` as typed (StashAddress makes it whole).
-  StashClient(const std::string& url, std::string apiKey);
+  // `url` as typed (StashAddress makes it whole); `unverified`: its
+  // certificate is accepted without being verified.
+  StashClient(const std::string& url, std::string apiKey, bool unverified = false);
   // The server, without /graphql, as StashData::server has it.
   const std::string& server() const { return address_.server; }
 
@@ -95,7 +96,8 @@ class StashClient {
   // in turn: first-run setup's Connect, Settings → Stash's Save. The first
   // that answers as Stash is server() from then on. Open: it answers
   // without a login. Failed: something answers that can't be used (not
-  // Stash, too old, a certificate, …), and error() says why.
+  // Stash, too old, a certificate, …), and error() says why; problem() is
+  // Certificate when that was an untrusted certificate.
   enum class Answer { Open, NeedsSignIn, Unreached, Failed };
   Answer check();
 

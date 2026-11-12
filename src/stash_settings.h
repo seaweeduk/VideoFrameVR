@@ -83,6 +83,10 @@ struct StashSettings {
   bool enabled = false;
   std::string url;     // the server, without /graphql; empty: not set up
   std::string apiKey;  // empty: the server needs none
+  // The host (stashHost()) whose certificate the user chose to accept
+  // without verifying it, when it wasn't trusted; empty: none. It applies
+  // only while `url` names that host.
+  std::string unverifiedHost;
   // Where Stash's folders are here, a file going by the mapping with the
   // longest `from` it is in. None: the same paths on both. The first is
   // stash_path_from / stash_path_to (as older builds had one), the others
@@ -112,6 +116,9 @@ struct StashSettings {
   std::string localPath(const std::string& stashPath) const;
   // The mapping a Stash path goes by (the longest `from` it is in), or null.
   const StashFolderMap* mappingFor(const std::string& stashPath) const;
+  // Whether the server's certificate is accepted without being verified:
+  // `url` names unverifiedHost.
+  bool unverified() const;
 };
 
 // settings.conf: reads one stash_* key (false if the key is not one of

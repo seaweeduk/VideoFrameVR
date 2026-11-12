@@ -78,7 +78,7 @@ bool redirect(long status) {
 
 }  // namespace
 
-StashAddress::StashAddress(const std::string& typed) {
+StashAddress::StashAddress(const std::string& typed, bool unverified) : unverified(unverified) {
   const std::string t = trimmed(typed);
   if (t.empty()) return;
   const bool scheme = t.find("://") != std::string::npos;
@@ -153,6 +153,10 @@ void stashSetUp(CURL* curl, const StashAddress& address) {
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
   curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
   if (address.privateHost()) curl_easy_setopt(curl, CURLOPT_PROXY, "");
+  if (address.unverified) {
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+  }
 }
 
 StashReply stashPerform(CURL* curl, const StashAddress& address, const std::string& path,
@@ -214,4 +218,12 @@ std::string stashUnreachable(CURLcode code) {
       return t.badAddress;
     default: return t.unreachable;
   }
+}
+
+bool stashUntrusted(CURLcode code) {
+  return code == CURLE_PEER_FAILED_VERIFICATION || code == CURLE_SSL_ISSUER_ERROR;
+}
+
+std::string stashHost(const std::string& typed) {
+  return lower(urlHost(StashAddress(typed).server));
 }

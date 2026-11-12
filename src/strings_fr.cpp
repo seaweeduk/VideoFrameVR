@@ -1031,6 +1031,14 @@ Strings frenchStrings(const Strings& english) {
   s.stashSetup.httpError = "Stash a répondu par une erreur (HTTP %d).";
   s.stashSetup.elsewhere = "Cette adresse redirige vers un autre serveur. Saisissez plutôt l'adresse de ce serveur.";
   s.stashSetup.stashSaid = "Stash : %s";
+  s.stashSetup.untrustedTitle = "Impossible de vérifier %s";
+  s.stashSetup.untrusted = "Son certificat n'est pas approuvé. C'est normal pour votre propre serveur avec un certificat auto-signé.";
+  s.stashSetup.untrustedRisk = "Quiconque se ferait passer pour ce serveur pourrait obtenir votre connexion Stash.";
+  s.stashSetup.connectUnverified = "Se connecter sans vérification";
+  s.stashSetup.unverified = "Le certificat de %s n'est pas vérifié.";
+  s.stashSetup.verify = "Vérifier le certificat";
+  s.stashSetup.untrustedStatus = "Certificat non approuvé";
+  s.stashSetup.untrustedTip = "Le certificat de Stash n'est pas approuvé. Choisissez de vous connecter quand même ou non.";
   s.setup.putOnHeadset = "Mettez votre casque";
   s.setup.startsWhenWorn = "La configuration commence dès que vous le portez.";
   s.setup.setUpLater = "Configurer plus tard";

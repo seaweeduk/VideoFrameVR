@@ -97,7 +97,8 @@ struct MenuCommand {
               SetKeyboardLayout,
               EndSetup,  // first-run setup ended: value 1 finished, 0 Set up later
               SetupPlaces,  // ... the places ticked so far, one per line in path
-              SetupStash,   // ... Stash connected: its address, then its API key, in path
+              SetupStash,   // ... Stash connected: its address, then its API key, in path;
+                            // option 1: its certificate accepted unverified
               StashCard,  // the menu's "Use Stash?" card: value 1 used, 0 dismissed
               DismissSetupBanner,  // the Library's "You're all set" after setup
               ToggleShowWhatsNew };  // What's new opens by itself after updates
@@ -114,7 +115,8 @@ struct MenuCommand {
   // RequestDelete: the strip's delete button, the dialog open (the app
   // looks the file up and calls askDelete()); DeleteFile: confirmed;
   // CancelDelete: not. SetStashServer: the URL, the API
-  // key, Stash's folder and this computer's, one per line. SetStashSections:
+  // key, Stash's folder and this computer's, one per line (option 1: the
+  // server's certificate accepted unverified). SetStashSections:
   // the Scenes rail's sections and subgroups as stash_filters= keeps them.
   // SetStash*Sort: the stable sort name, with its direction in value
   // (1 = descending).
@@ -123,7 +125,7 @@ struct MenuCommand {
   // MoveUserPreset: its file (value: places, -1 up).
   // SetKeyboardLayout: the layout and the other one, one per line.
   std::string path;
-  int option = 0;  // SetFocus: the FocusControl; SeekTo: 1 = from the seek bar
+  int option = 0;  // SetFocus: the FocusControl; SeekTo: 1 = from the seek bar; SetupStash, SetStashServer
 };
 
 // The flat screen's size (ScreenSize) as the menu shows it.
@@ -538,6 +540,9 @@ class Menu {
                       SaveTo, NoRoom, RemoveDownload,  // offline downloads' (menu_offline.cpp)
                       Update,  // a newer release (menu_settings.cpp)
                       WhatsNew,  // the release notes (menu_whats_new.cpp)
+                      // Stash's certificate isn't trusted: connect without
+                      // verifying it? (menu_stash_settings.cpp)
+                      StashCertificate,
                       // An SFTP server's (menu_network.cpp): signed in with the
                       // password as its key was refused, its key changed, and
                       // Forget for a key login (and with the server not answering).

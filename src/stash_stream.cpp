@@ -334,14 +334,14 @@ int openMpv(void* data, char* uri, mpv_stream_cb_info* info) {
 }
 }  // namespace
 
-void stashServe(const std::string& url, const std::string& apiKey) {
+void stashServe(const std::string& url, const std::string& apiKey, bool unverified) {
   std::lock_guard lock(servedMutex);
   knownFiles.clear();
   if (url.empty()) {
     served = Server();
     return;
   }
-  const StashAddress address(url);
+  const StashAddress address(url, unverified);
   int& number = serverNumbers[address.server];
   if (!number) number = static_cast<int>(serverNumbers.size());
   uint64_t hash = 14695981039346656037ull;  // FNV-1a, as StashOutbox's

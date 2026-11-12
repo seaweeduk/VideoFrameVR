@@ -1031,6 +1031,14 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.stashSetup.httpError = "Stash 返回错误（HTTP %d）。";
   s.stashSetup.elsewhere = "此地址重定向到了其他服务器。请直接输入目标服务器的地址。";
   s.stashSetup.stashSaid = "Stash：%s";
+  s.stashSetup.untrustedTitle = "无法验证 %s";
+  s.stashSetup.untrusted = "它的证书不受信任。如果是你自己使用自签名证书的服务器，这没有问题。";
+  s.stashSetup.untrustedRisk = "冒充此服务器的人可能获取你的 Stash 登录信息。";
+  s.stashSetup.connectUnverified = "不验证直接连接";
+  s.stashSetup.unverified = "%s 的证书未经验证。";
+  s.stashSetup.verify = "验证证书";
+  s.stashSetup.untrustedStatus = "证书不受信任";
+  s.stashSetup.untrustedTip = "Stash 的证书不受信任。选择是否仍要连接。";
   s.setup.putOnHeadset = "请戴上头显";
   s.setup.startsWhenWorn = "戴上后即开始设置。";
   s.setup.setUpLater = "稍后设置";

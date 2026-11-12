@@ -1031,6 +1031,14 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.stashSetup.httpError = "O Stash respondeu com um erro (HTTP %d).";
   s.stashSetup.elsewhere = "Este endereço redireciona para outro servidor. Digite o endereço desse servidor.";
   s.stashSetup.stashSaid = "Stash: %s";
+  s.stashSetup.untrustedTitle = "Não foi possível verificar %s";
+  s.stashSetup.untrusted = "O certificado não é confiável. Isso é normal no seu próprio servidor com certificado autoassinado.";
+  s.stashSetup.untrustedRisk = "Quem se passar por este servidor poderá obter seu login do Stash.";
+  s.stashSetup.connectUnverified = "Conectar sem verificar";
+  s.stashSetup.unverified = "O certificado de %s não é verificado.";
+  s.stashSetup.verify = "Verificar certificado";
+  s.stashSetup.untrustedStatus = "Certificado inseguro";
+  s.stashSetup.untrustedTip = "O certificado do Stash não é confiável. Escolha se quer conectar mesmo assim.";
   s.setup.putOnHeadset = "Coloque o headset";
   s.setup.startsWhenWorn = "A configuração começa assim que você colocá-lo.";
   s.setup.setUpLater = "Configurar depois";

@@ -1031,6 +1031,14 @@ Strings spanishStrings(const Strings& english) {
   s.stashSetup.httpError = "Stash respondió con un error (HTTP %d).";
   s.stashSetup.elsewhere = "Esta dirección redirige a otro servidor. Escribe la dirección de ese servidor.";
   s.stashSetup.stashSaid = "Stash: %s";
+  s.stashSetup.untrustedTitle = "No se puede verificar %s";
+  s.stashSetup.untrusted = "Su certificado no es de confianza. Es normal en tu propio servidor con un certificado autofirmado.";
+  s.stashSetup.untrustedRisk = "Quien se haga pasar por este servidor podría obtener tu inicio de sesión de Stash.";
+  s.stashSetup.connectUnverified = "Conectar sin verificar";
+  s.stashSetup.unverified = "El certificado de %s no se verifica.";
+  s.stashSetup.verify = "Verificar certificado";
+  s.stashSetup.untrustedStatus = "Certificado no fiable";
+  s.stashSetup.untrustedTip = "El certificado de Stash no es de confianza. Elige si quieres conectar de todos modos.";
   s.setup.putOnHeadset = "Ponte el visor";
   s.setup.startsWhenWorn = "La configuración empieza en cuanto te lo pongas.";
   s.setup.setUpLater = "Configurar más tarde";

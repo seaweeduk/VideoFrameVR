@@ -176,6 +176,7 @@ void StashPages::editServer(Menu& m, int field, const std::string& folder) {
   const StashFolderMap draft = st.draftFolder >= 0 ? now.folders[st.draftFolder]
                                                    : StashFolderMap{folder, ""};
   st.draft = {now.url, now.apiKey, draft.from, draft.to, "", ""};
+  st.draftUnverified = now.unverified() ? now.unverifiedHost : std::string();
   st.showPassword = false;
   st.signingIn = {};
   st.signInError.clear();
@@ -321,6 +322,28 @@ void StashPages::layoutSettingsGroup(Menu& m, double top) {
   sync.disabled = status.syncing;
   sync.tooltip = t.tipSync;
   m.buttons_.push_back(sync);
+  // Its certificate isn't trusted: in place of the reason, a warning that
+  // says so in a few words (its tooltip the rest) and asks whether to
+  // connect anyway.
+  if (status.problem == StashProblem::Certificate && !status.syncing) {
+    const StashSetupStrings& ts = strings().stashSetup;
+    Button warning = m.textButton(ts.untrustedStatus, Menu::Icon::None, [&m] {
+      m.openDialog(Menu::Dialog::StashCertificate, stashHost(m.view_.stash.url));
+      return MenuCommand{};
+    });
+    warning.panel = Menu::kBrowser;
+    warning.stashLook = static_cast<int>(StashLook::Warning);
+    warning.x = x;
+    warning.y = y + 4;
+    warning.w = std::min(m.textWidth(ts.untrustedStatus, Menu::kTextSize, false) + 82, sync.x - kGap - x);
+    warning.h = kSettingRowH;
+    warning.fontSize = Menu::kTextSize;
+    warning.tooltip = ts.untrustedTip;
+    m.buttons_.push_back(warning);
+    y += kSettingRowH + 18;
+    m.addGroup(columnX(2), top, kColumnW, y - top, t.group);
+    return;
+  }
   double stateW = w - sync.w - 28;
   // Stash has a login the app hasn't signed in to: Sign in, beside it.
   if (!status.syncing && (status.problem == StashProblem::NeedsSignIn ||
@@ -438,9 +461,60 @@ void StashPages::layoutServerEditor(Menu& m) {
   cancel.y = y;
   cancel.h = h;
   m.buttons_.push_back(cancel);
+  // One accepted unverified: Verify certificate, with a warning sign (its
+  // tooltip says which), which Save then checks.
+  if (draftUnverified(m)) {
+    const StashSetupStrings& ts = strings().stashSetup;
+    Button verify = m.textButton(ts.verify, Menu::Icon::None, [&m] {
+      state(m).draftUnverified.clear();
+      m.dirty_ = true;
+      return MenuCommand{};
+    });
+    verify.panel = Menu::kBrowser;
+    verify.stashLook = static_cast<int>(StashLook::Warning);
+    verify.x = x;
+    verify.y = y;
+    verify.w = std::min(m.textWidth(ts.verify, Menu::kTextSize, false) + 82, cancel.x - kGap - x);
+    verify.h = h;
+    verify.tooltip = stashPrinted(ts.unverified, st.draftUnverified);
+    m.buttons_.push_back(verify);
+  }
   y += h + 16;
   m.addGroup(x0, kPagePad, w, y - kPagePad, t.editTitle);
   m.layoutKeyboard();
+}
+
+// Like an SFTP server's changed key: Don't connect is the one selected.
+// Connecting anyway saves the server's fields as they are (or as typed, in
+// the editor) with its certificate accepted unverified, and syncs.
+void StashPages::layoutCertificateDialog(Menu& m, std::vector<Menu::Button>& row) {
+  row.push_back(m.textButton(strings().network.dontConnect, Menu::Icon::None, [&m] {
+    m.dialog_ = Menu::Dialog::None;
+    return MenuCommand{};
+  }, true));
+  Menu::Button connect = m.textButton(strings().stashSetup.connectUnverified, Menu::Icon::None, [&m] {
+    const std::string host = m.dialogPath_;
+    m.dialog_ = Menu::Dialog::None;
+    const bool editing = m.editing_;
+    if (!editing) editServer(m, 0);
+    state(m).draftUnverified = host;
+    return editing ? saveServer(m) : serverCommand(m);
+  });
+  connect.danger = true;
+  row.push_back(connect);
+}
+
+void StashPages::drawCertificateDialog(Menu& m, cairo_t* cr, double textX, double boxY) {
+  const StashSetupStrings& t = strings().stashSetup;
+  const double textW = kDialogW - 100, dim[4] = {0.75, 0.75, 0.8, 1}, red[4] = {1.0, 0.45, 0.4, 1};
+  const std::string title = stashPrinted(t.untrustedTitle, m.dialogPath_);
+  const double titleW = std::min(m.textWidth(title, 38, true), textW - 60);
+  const double iconX = Menu::kPageCenterX - (titleW + 60) / 2;
+  Menu::drawIcon(cr, Menu::Icon::Warning, iconX + 22, boxY + 60, 44, red[0], red[1], red[2]);
+  m.drawText(cr, title, iconX + 60, boxY + 30, titleW + 4, 60, 38, true, false, 1, 1, 1);
+  m.drawTextLines(cr, t.untrusted, textX, boxY + 110, textW, 26, 3, dim, true);
+  const int lines = m.wrappedLines(t.untrusted, textW, 26, 3);
+  m.drawTextLines(cr, t.untrustedRisk, textX, boxY + 130 + lines * 26 * 1.36, textW, 26, 2, red, true, 0, true);
 }
 
 bool StashPages::layoutSettingsPanel(Menu& m) {

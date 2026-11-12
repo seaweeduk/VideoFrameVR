@@ -1,5 +1,7 @@
 #include "stash_settings.h"
 
+#include "stash_http.h"
+
 #include <algorithm>
 #include <cctype>
 #include <sstream>
@@ -180,10 +182,15 @@ std::string StashSettings::localPath(const std::string& stashPath) const {
   return m ? stashMapped(*m, stashPath) : std::string();
 }
 
+bool StashSettings::unverified() const {
+  return !unverifiedHost.empty() && stashHost(url) == unverifiedHost;
+}
+
 bool readStashSetting(const std::string& key, const std::string& value, StashSettings& s) {
   if (key == "stash") s.enabled = value == "1";
   else if (key == "stash_url") s.url = value;
   else if (key == "stash_api_key") s.apiKey = value;
+  else if (key == "stash_unverified_host") s.unverifiedHost = value;
   else if (key == "stash_path_from" || key == "stash_path_to") {
     if (s.folders.empty()) s.folders.emplace_back();
     (key == "stash_path_from" ? s.folders[0].from : s.folders[0].to) = value;
@@ -245,6 +252,7 @@ std::string stashSettingLines(const StashSettings& s) {
       << "\nstash_path_to=" << first.to << "\n";
   for (size_t i = 1; i < folders.size(); ++i)
     out << "stash_folder=" << folders[i].from << '\t' << folders[i].to << "\n";
+  if (!s.unverifiedHost.empty()) out << "stash_unverified_host=" << s.unverifiedHost << "\n";
   out << "stash_covers=" << (s.covers ? 1 : 0)
       << "\nstash_titles=" << (s.titles ? 1 : 0)
       << "\nstash_male_performers=" << (s.malePerformers ? 1 : 0)

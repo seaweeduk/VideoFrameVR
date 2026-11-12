@@ -332,6 +332,12 @@ void StashPages::drawButton(const Menu& m, cairo_t* cr, const Button& b, const d
                  ink[0], ink[1], ink[2]);
       return;
     }
+    case StashLook::Warning: {
+      Menu::drawIcon(cr, Menu::Icon::Warning, b.x + 20 + 14, b.y + b.h / 2, 28, 1.0, 0.45, 0.4);
+      m.drawText(cr, b.label, b.x + 62, b.y, b.w - 62 - 20, b.h, b.fontSize > 0 ? b.fontSize : Menu::kTextSize,
+                 false, false, ink[0], ink[1], ink[2]);
+      return;
+    }
     case StashLook::Nav: {  // as the navigation's own rows
       const double iconSize = kIconSize * 0.75;
       drawIcon(cr, static_cast<StashIcon>(b.stashIcon), b.x + 35 + iconSize / 2, b.y + b.h / 2,

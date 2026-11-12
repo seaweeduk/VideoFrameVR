@@ -24,8 +24,9 @@ struct mpv_stream_cb_info;
 // Stash is on with that server, and is never saved.
 
 // The server scenes are read from: the Stash facade's while it runs, none
-// with an empty url. Any thread.
-void stashServe(const std::string& url, const std::string& apiKey);
+// with an empty url; `unverified`: its certificate is accepted unverified.
+// Any thread.
+void stashServe(const std::string& url, const std::string& apiKey, bool unverified);
 // Scene `id`'s locator on the server served now; empty if none.
 std::string stashSceneLocator(int64_t id, std::string_view fileName);
 bool isStashScene(std::string_view location);

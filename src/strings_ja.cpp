@@ -1031,6 +1031,14 @@ Strings japaneseStrings(const Strings& english) {
   s.stashSetup.httpError = "Stashがエラーを返しました (HTTP %d)。";
   s.stashSetup.elsewhere = "このアドレスは別のサーバーに転送されています。転送先のサーバーのアドレスを入力してください。";
   s.stashSetup.stashSaid = "Stash：%s";
+  s.stashSetup.untrustedTitle = "%s を検証できません";
+  s.stashSetup.untrusted = "証明書が信頼されていません。自己署名の自分のサーバーなら問題ありません。";
+  s.stashSetup.untrustedRisk = "このサーバーになりすました相手にStashのログイン情報を知られるおそれがあります。";
+  s.stashSetup.connectUnverified = "検証せずに接続";
+  s.stashSetup.unverified = "%s の証明書は検証されていません。";
+  s.stashSetup.verify = "証明書を検証";
+  s.stashSetup.untrustedStatus = "未信頼の証明書";
+  s.stashSetup.untrustedTip = "Stashの証明書が信頼されていません。それでも接続するかを選べます。";
   s.setup.putOnHeadset = "ヘッドセットを装着してください";
   s.setup.startsWhenWorn = "装着するとすぐにセットアップが始まります。";
   s.setup.setUpLater = "あとで設定";

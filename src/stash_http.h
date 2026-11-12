@@ -13,6 +13,7 @@ enum class StashProblem {
   TooOld,       // below 0.31.0: nothing else is asked
   NeedsSignIn,  // a login, and no API key
   KeyRefused,   // the API key isn't Stash's (any more)
+  Certificate,  // its certificate isn't trusted, and may be accepted anyway
   Other,
 };
 
@@ -20,11 +21,13 @@ enum class StashProblem {
 // spaces trimmed, http:// when no scheme was typed, no trailing slash or
 // /graphql. Typed with neither a scheme nor a port ("192.168.1.20"), Stash's
 // own port 9999 is tried as well when nothing, or something else than
-// Stash, answers on port 80.
+// Stash, answers on port 80. `unverified`: its certificate is accepted
+// without being verified, as the user chose for its host.
 struct StashAddress {
-  explicit StashAddress(const std::string& typed = std::string());
+  explicit StashAddress(const std::string& typed = std::string(), bool unverified = false);
   std::string server;    // "http://host[:port][/sub-path]": the server's identity
   std::string fallback;  // "http://host:9999", or empty
+  bool unverified = false;
 
   // Where the server answered last in this run: the fallback, or the
   // address a redirect took a request to (http → https), else `server`.
@@ -63,9 +66,15 @@ StashReply stashPerform(CURL* curl, const StashAddress& address, const std::stri
                         const std::function<CURLcode(CURL*)>& perform = {});
 // stashPerform()'s setup alone, for a request to address.base() that runs
 // elsewhere (a curl multi's): no redirects followed, http and https only, no
-// proxy for a private address.
+// proxy for a private address, the certificate not verified if `unverified`.
 void stashSetUp(CURL* curl, const StashAddress& address);
 
 // A failed transfer in a few words (strings().stashSetup), not libcurl's:
 // nothing answers, no such host, no answer in time, the certificate.
 std::string stashUnreachable(CURLcode code);
+// Whether a transfer failed on the server's certificate alone (self-signed,
+// another issuer, expired, another name), which the user may accept.
+bool stashUntrusted(CURLcode code);
+// The host a typed address names, in lower case: what a certificate
+// accepted unverified is kept for (StashSettings::unverifiedHost).
+std::string stashHost(const std::string& typed);

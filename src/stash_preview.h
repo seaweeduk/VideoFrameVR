@@ -12,8 +12,9 @@ typedef struct _cairo_surface cairo_surface_t;
 // No disk cache or playback/history changes. Main thread only, except stop().
 class StashPreview {
  public:
-  // `url`: Stash's address as typed.
-  StashPreview(const std::string& url, std::string apiKey);
+  // `url`: Stash's address as typed; `unverified`: its certificate is
+  // accepted unverified.
+  StashPreview(const std::string& url, std::string apiKey, bool unverified);
   ~StashPreview();
   StashPreview(const StashPreview&) = delete;
   StashPreview& operator=(const StashPreview&) = delete;

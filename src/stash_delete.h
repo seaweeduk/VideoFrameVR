@@ -19,8 +19,9 @@ struct StashFileLook {
   std::string trash;           // Stash's trash folder; empty: it deletes for good
   std::string error;
 };
-StashFileLook lookUpStashFile(const std::string& url, const std::string& apiKey, int64_t scene,
-                              const std::string& oshash, const std::string& stashPath);
+StashFileLook lookUpStashFile(const std::string& url, const std::string& apiKey, bool unverified,
+                              int64_t scene, const std::string& oshash,
+                              const std::string& stashPath);
 
 // How a deletion went.
 struct DeleteOutcome {
@@ -40,6 +41,6 @@ struct DeleteOutcome {
 // its trash folder). `sendToStash` false (Send to Stash off): the client
 // sends no change.
 DeleteOutcome deleteThroughStash(const std::string& url, const std::string& apiKey,
-                                 bool sendToStash, int64_t scene, const std::string& oshash,
+                                 bool unverified, bool sendToStash, int64_t scene, const std::string& oshash,
                                  const std::string& stashPath, const std::string& here,
                                  const FileStamp& stamp, bool trashPromised);

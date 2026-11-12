@@ -696,6 +696,18 @@ struct StashSetupStrings {
   const char* httpError;      // printf: the HTTP status
   const char* elsewhere;      // a redirect to another server
   const char* stashSaid;      // printf: Stash's own error message
+  // A certificate that isn't trusted: the title (printf: the server's
+  // name), what that means, the risk of connecting anyway, and the button to;
+  // that server's while it isn't verified, and the button to verify it
+  // again; Settings' status, a button to the first, and its tooltip.
+  const char* untrustedTitle;
+  const char* untrusted;
+  const char* untrustedRisk;
+  const char* connectUnverified;
+  const char* unverified;
+  const char* verify;
+  const char* untrustedStatus;
+  const char* untrustedTip;
 };
 
 // First-run setup (docs/alpha/first-run.md, menu_setup.cpp).
