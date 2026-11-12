@@ -710,7 +710,7 @@ void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
       drawPanel(cmd, *panel, scene.clear, backdrop);
     } else if (const QuadsItem* quads = std::get_if<QuadsItem>(&item)) {
       bind(Pipelines::kPointer);
-      for (const Quad& q : quads->quads) drawPointer(cmd, q, false);
+      for (const Quad& q : quads->quads) drawPointer(cmd, q);
     } else if (const LaserItem* laser = std::get_if<LaserItem>(&item)) {
       bind(Pipelines::kPointer);
       const Vec3 from = laser->from, to = laser->to;
@@ -719,7 +719,7 @@ void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
       const Vec3 side = cross(dir, normalize(matrices.position - from));
       if (length(side) >= 1e-4f) {
         const Vec3 offset = normalize(side) * 0.001f;  // 2 mm wide
-        drawPointer(cmd, {from - offset, from + offset, to - offset, to + offset}, false);
+        drawPointer(cmd, {from - offset, from + offset, to - offset, to + offset}, kPointerBeam);
       }
       // The dot: a disc facing the eye, which an unlit sphere looks like.
       const Vec3 toEye = matrices.position - to;
@@ -729,7 +729,7 @@ void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
         const Vec3 up = std::abs(n.y) < 0.9f ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
         const Vec3 a = normalize(cross(up, n)) * laser->dotRadius;
         const Vec3 b = normalize(cross(n, a)) * laser->dotRadius;
-        drawPointer(cmd, {to - a - b, to + a - b, to - a + b, to + a + b}, true);
+        drawPointer(cmd, {to - a - b, to + a - b, to - a + b, to + a + b}, kPointerDot);
       }
     } else if (const PreviewItem* preview = std::get_if<PreviewItem>(&item)) {
       // Not one GL still holds (record() did not acquire it).
@@ -788,7 +788,7 @@ void SceneRenderer::drawPanel(VkCommandBuffer cmd, const PanelItem& panel, Clear
   vkCmdDraw(cmd, panel.curved ? 2 * 65 : 4, 1, 0, 0);
 }
 
-void SceneRenderer::drawPointer(VkCommandBuffer cmd, const Quad& corners, bool dot) {
+void SceneRenderer::drawPointer(VkCommandBuffer cmd, const Quad& corners, uint32_t flags) {
   PointerPush p{};
   for (int i = 0; i < 4; ++i) {
     p.corners[i][0] = corners[i].x;
@@ -796,11 +796,11 @@ void SceneRenderer::drawPointer(VkCommandBuffer cmd, const Quad& corners, bool d
     p.corners[i][2] = corners[i].z;
     p.corners[i][3] = 1.0f;
   }
-  // Orange corner handle, unlit and opaque (linear).
+  // Orange pointer and corner handles, unlit (premultiplied, linear).
   p.color[0] = 1.0f;
   p.color[1] = 0.25f;
   p.color[3] = 1.0f;
-  p.mode[0] = dot ? 1 : 0;
+  p.mode[0] = flags;
   pushDraw(cmd, p);
   vkCmdDraw(cmd, 4, 1, 0, 0);
 }
