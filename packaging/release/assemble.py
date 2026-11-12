@@ -172,8 +172,8 @@ def assemble(bundle, app, work, sdk, cache, supplement, metadata, source_name):
                 "mpv-v4l2-hardware-only.patch, mpv-v4l2-interrupt.patch, mpv-export-release.patch and dmabuf_ubwc sources"),
         "ffmpeg": ("upstream LGPL-2.1-or-later fork. Desktop build: unmodified, LGPL-2.1-or-later. "
                    "Frame build: modified by ffmpeg-iris.patch, ffmpeg-main10.patch, ffmpeg-capture-pool.patch, "
-                   "ffmpeg-drain-seek.patch, ffmpeg-staged-start.patch and ffmpeg-capture-interrupt.patch "
-                   "(GPL-3.0), so this "
+                   "ffmpeg-drain-seek.patch, ffmpeg-staged-start.patch, ffmpeg-capture-interrupt.patch and "
+                   "ffmpeg-q08c-crop.patch (GPL-3.0), so this "
                    "modified FFmpeg is distributed under GPL-3.0-or-later as a whole (LGPL-2.1 section 3; "
                    "configured with --enable-gpl --enable-version3)"),
         "nv-codec-headers": "MIT (in each header); desktop build only, compiled into FFmpeg's NVIDIA decoding, unmodified",
