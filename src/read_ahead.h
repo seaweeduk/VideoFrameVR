@@ -29,6 +29,10 @@ struct ReadAhead {
   uint64_t position = 0, generation = 0, windowIds = 0;
   std::list<Block> blocks;
   std::vector<Window> windows;  // least recently read first
+  // A retired block's bytes, kept for the next block: every byte of a block
+  // is written before it is read, so a fresh buffer, mapped and cleared, is
+  // wasted work.
+  std::vector<uint8_t> spare;
 
   // Moves to offset, in the window that already covers it if there is one.
   void seek(uint64_t offset);
@@ -41,4 +45,6 @@ struct ReadAhead {
   // Copies up to `count` bytes at position from a done block and moves past
   // them; 0 if none has them yet.
   size_t take(void* out, uint64_t count);
+  // Whether queue() would add a block now.
+  bool wantsBlocks(uint64_t length) const;
 };

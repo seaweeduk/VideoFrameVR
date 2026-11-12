@@ -15,6 +15,8 @@
 #include <cstring>
 #include <map>
 #include <fcntl.h>
+#include <poll.h>
+#include <sys/socket.h>
 
 // SMB2/3 shares through libsmb2 (remote.h): smb://host/share/path.
 namespace remote {
@@ -69,25 +71,6 @@ struct Result {
     static_cast<Result*>(opaque)->nt = status;
   }
 };
-
-void readDone(smb2_context* ctx, int status, void*, void* opaque) {
-  auto& b = *static_cast<ReadAhead::Block*>(opaque);
-  auto& s = static_cast<Stream&>(*b.owner);
-  std::lock_guard lock(s.mutex);
-  b.pending = false;
-  if (s.reconnecting || s.closed) return;
-  if (b.generation != s.generation) {
-    b.done = true;
-  } else if (status <= 0) {
-    s.broke(connectionLost(status, smb2_get_nterror(ctx)));
-    return;
-  } else {
-    s.retryUntil = {};
-    b.filled += status;
-    b.done = b.filled == b.bytes.size();
-  }
-  s.cv.notify_all();
-}
 
 Entry entry(const std::string& name, const smb2_stat_64& st) {
   return {name, st.smb2_type == SMB2_TYPE_DIRECTORY, st.smb2_size,
@@ -259,12 +242,22 @@ class Smb : public Backend {
   void read(Stream& s, ReadAhead::Block& b) override {
     smb2_select_tree_id(ctx_, s.handle.tree);
     b.pending = true;
-    const int rc = smb2_pread_async(ctx_, fh(s.handle), b.bytes.data() + b.filled,
-                                    b.bytes.size() - b.filled, b.offset + b.filled, readDone, &b);
+    const size_t count = b.bytes.size() - b.filled;
+    const int rc = smb2_pread_async(ctx_, fh(s.handle), b.bytes.data() + b.filled, count,
+                                    b.offset + b.filled, readDone, &b);
     if (rc < 0) {
       b.pending = false;
       s.broke(connectionLost(rc));
+      return;
     }
+    // The only reply awaited, as each block's is while a video plays: the
+    // socket reports it once it is nearly all there, not as each part of it
+    // arrives (dozens of wake-ups a block). Its last 64 KiB is not waited
+    // for: a server may hold that tail back until the rest is acknowledged
+    // (Nagle's algorithm), and it is small.
+    const bool alone = ++awaited_ == 1 && wholeReplies_ && count > 4 * kReplyEnd;
+    lowWater(alone ? static_cast<int>(count - kReplyEnd) : 1);  // count: a block at most
+    if (alone) patientUntil_ = Clock::now() + kPatience;
   }
 
   void closeStream(Stream& s) override {
@@ -284,6 +277,8 @@ class Smb : public Backend {
     ctx_ = nullptr;
     trees_.clear();
     serviceTree_ = 0;
+    awaited_ = 0;
+    lowWater_ = 1;
   }
 
   int fd() const override { return ctx_ ? smb2_get_fd(ctx_) : -1; }
@@ -292,6 +287,9 @@ class Smb : public Backend {
   bool service(short revents) override {
     // Directory/RPC callbacks can enqueue another request on their tree.
     if (ctx_ && serviceTree_) smb2_select_tree_id(ctx_, serviceTree_);
+    // What follows a block's first part is read as it arrives; so is a reply
+    // that is late, or shorter than what was asked for (an error).
+    if (lowWater_ > 1 && ((revents & POLLIN) || Clock::now() >= patientUntil_)) lowWater(1);
     return !ctx_ || smb2_service(ctx_, revents) >= 0;
   }
 
@@ -300,6 +298,37 @@ class Smb : public Backend {
  private:
   static smb2fh* fh(const Handle& h) { return static_cast<smb2fh*>(h.file); }
 
+  static void readDone(smb2_context* ctx, int status, void*, void* opaque) {
+    auto& b = *static_cast<ReadAhead::Block*>(opaque);
+    auto& s = static_cast<Stream&>(*b.owner);
+    auto& smb = *static_cast<Smb*>(smb2_get_opaque(ctx));
+    --smb.awaited_;
+    std::lock_guard lock(s.mutex);
+    b.pending = false;
+    if (s.reconnecting || s.closed) return;
+    if (b.generation != s.generation) {
+      b.done = true;
+    } else if (status <= 0) {
+      s.broke(connectionLost(status, smb2_get_nterror(ctx)));
+      return;
+    } else {
+      s.retryUntil = {};
+      b.filled += status;
+      b.done = b.filled == b.bytes.size();
+      // A server that answers with less than a block is never waited on for
+      // a whole one again.
+      if (!b.done) smb.wholeReplies_ = false;
+    }
+    s.cv.notify_all();
+  }
+
+  // Has the socket report what arrived only from `bytes` on (1: any).
+  void lowWater(int bytes) {
+    if (bytes == lowWater_) return;
+    lowWater_ = bytes;
+    setsockopt(smb2_get_fd(ctx_), SOL_SOCKET, SO_RCVLOWAT, &bytes, sizeof(bytes));
+  }
+
   int wait(Result& r, int rc) {
     if (rc < 0) {
       if (connectionLost(rc)) c.destroy(true);
@@ -307,9 +336,12 @@ class Smb : public Backend {
     }
     auto until = Clock::now() + std::chrono::seconds(5);
     if (c.deadline != Clock::time_point{}) until = std::min(until, c.deadline);
+    ++awaited_;
+    if (ctx_) lowWater(1);
     while (rc >= 0 && !r.done && Clock::now() < until) {
       if (!c.pump()) { rc = -EIO; break; }
     }
+    --awaited_;
     if (rc < 0 || !r.done) {
       c.destroy(true);
       return rc < 0 ? rc : -ETIMEDOUT;
@@ -344,6 +376,8 @@ class Smb : public Backend {
       smb2_set_password(ctx_, login.password.c_str());
       smb2_set_security_mode(ctx_, SMB2_NEGOTIATE_SIGNING_ENABLED);
       smb2_set_timeout(ctx_, 5);
+      smb2_set_opaque(ctx_, this);
+      wholeReplies_ = true;
       // Authenticate once; a refused share below is Denied, not NeedsLogin.
       Result r;
       const int rc = wait(r, smb2_connect_share_async(ctx_, server.c_str(), "IPC$",
@@ -385,9 +419,18 @@ class Smb : public Backend {
     return Status::Ok;
   }
 
+  // A block's reply waited for whole (read()): all but its end, and for so
+  // long.
+  static constexpr int kReplyEnd = 64 * 1024;
+  static constexpr std::chrono::milliseconds kPatience{200};
+
   smb2_context* ctx_ = nullptr;
   uint32_t serviceTree_ = 0;
   std::map<std::string, uint32_t> trees_;
+  int awaited_ = 0;  // replies awaited: blocks' and a job's
+  int lowWater_ = 1;  // the socket's (lowWater())
+  bool wholeReplies_ = true;
+  Clock::time_point patientUntil_{};
 };
 
 }  // namespace
