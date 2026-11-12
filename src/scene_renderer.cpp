@@ -5,6 +5,7 @@
 #include "gl_interop.h"
 #include "mirror_window.h"
 #include "uploader.h"
+#include "visible_part.h"
 #include "vr_space.h"
 #include "xr_context.h"
 
@@ -81,6 +82,32 @@ EyeData eyeData(const EyeMatrices& eye, const VkRect2D& area, int index) {
   e.stereo[0] = e.stereo[1] = 1.0f;
   return e;
 }
+
+namespace {
+
+// Video v's turn as the surround shader takes it: local space into the
+// picture's axes, the transpose of its rotation (columns).
+void toPicture(const VideoDraw& v, float (*columns)[4]) {
+  const Mat4 r = v.screen.rotation();
+  for (int c = 0; c < 3; ++c)
+    for (int k = 0; k < 3; ++k) columns[c][k] = r.m[k * 4 + c];
+}
+
+// The stereo correction for eye `index` into eye, if on.
+bool correctEye(const VideoDraw& v, int index, EyeData& eye) {
+  if (index >= 2 || !v.correction.eyes[index].on) return false;
+  const EyeCorrection& correct = v.correction.eyes[index];
+  eye.viewer[0] = correct.viewer.x;
+  eye.viewer[1] = correct.viewer.y;
+  eye.viewer[2] = correct.viewer.z;
+  eye.viewer[3] = correct.distance;
+  eye.camera[0] = correct.camera.x;
+  eye.camera[1] = correct.camera.y;
+  eye.camera[2] = correct.camera.z;
+  return true;
+}
+
+}  // namespace
 
 SceneRenderer::~SceneRenderer() {
   if (gpu_) gpu_->retire(skyImage_);
@@ -280,7 +307,7 @@ bool SceneRenderer::record(GpuContext::FrameSlot& slot, const EyeFrame& eyes,
   if (direct_) direct_->recordAcquires(cmd);
   timestamp(slot, kUploaded, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
   // The colour key's mask, before any pass reads it (its time is glass's).
-  if (video && !testPattern_) drawKeyMask(cmd, *video, scene.clear);
+  if (video && !testPattern_) drawKeyMask(cmd, *video, scene.clear, eyes, matrices);
 
   // Glass menus (desktop): what each eye shows before the first of them,
   // drawn small and blurred before the eye passes (docs/vulkan-renderer.md, 7).
@@ -357,7 +384,8 @@ void SceneRenderer::drawSky(VkCommandBuffer cmd, EyeData eye) {
   vkCmdDraw(cmd, 3, 1, 0, 0);
 }
 
-void SceneRenderer::drawKeyMask(VkCommandBuffer cmd, const VideoDraw& v, ClearMode clear) {
+void SceneRenderer::drawKeyMask(VkCommandBuffer cmd, const VideoDraw& v, ClearMode clear,
+                                const EyeFrame& eyes, const EyeMatrices* matrices) {
   // As drawVideo() keys it.
   const SeeThrough& see = v.seeThrough;
   if (!v.texture || clear == ClearMode::Dark || v.format.projection == Projection::Flat ||
@@ -404,7 +432,48 @@ void SceneRenderer::drawKeyMask(VkCommandBuffer cmd, const VideoDraw& v, ClearMo
                               : yuv      ? yuv->serial()
                               : v.texture->shared ? v.texture->shared->content()
                                                   : ++unsharedMasks_;
-  if (keyMask_.current(image, generation, p)) return;
+  // What the eyes can read of a frame that changes the mask (none: the
+  // whole part): a rectangle per eye's part, one for both of a mono video.
+  KeyMask::Rect needs[2];
+  int count = 0;
+  if (distances && matrices && (p.mode[3] == 0 || p.mode[3] == 2)) {
+    for (int i = 0; i < eyes.count && i < 2; ++i) {
+      // As drawVideo() draws this eye.
+      EyeData eye = eyeData(matrices[i], eyes.eyes[i].area, i);
+      stereoRect(v.format.stereo, i, eye.stereo);
+      VisibleView view;
+      for (int k = 0; k < 4; ++k) {
+        view.tangents[k] = eye.tangents[k];
+        view.orientation[k] = eye.orientation[k];
+      }
+      float columns[3][4];
+      toPicture(v, columns);
+      for (int c = 0; c < 3; ++c)
+        for (int k = 0; k < 3; ++k) view.toPicture[c][k] = columns[c][k];
+      view.zoom = v.screen.zoom;
+      view.correct = correctEye(v, i, eye) && eye.viewer[3] > 0.0f;
+      for (int k = 0; k < 3; ++k) {
+        view.viewer[k] = eye.viewer[k];
+        view.camera[k] = eye.camera[k];
+      }
+      view.distance = eye.viewer[3];
+      view.projection = surroundProjection(
+          v.format, v.frameAspect * eye.stereo[0] / eye.stereo[1], view.fisheyeFov);
+      view.flip = v.flip;
+      UvBounds bounds;
+      if (!visiblePart(view, bounds)) {
+        count = 0;
+        break;
+      }
+      const KeyMask::Rect r = KeyMask::needed(eye.stereo, bounds, width, height);
+      if (count == 1 && p.mode[2] == 0)
+        needs[0] = {std::min(needs[0].x0, r.x0), std::min(needs[0].y0, r.y0),
+                    std::max(needs[0].x1, r.x1), std::max(needs[0].y1, r.y1)};
+      else
+        needs[count++] = r;
+    }
+  }
+  if (keyMask_.current(image, generation, p, needs, count, width, height)) return;
 
   auto push = [&] {
     vkCmdPushConstants(cmd, pipelines_.layout(),
@@ -416,21 +485,25 @@ void SceneRenderer::drawKeyMask(VkCommandBuffer cmd, const VideoDraw& v, ClearMo
         : q08c >= 0 ? static_cast<Pipelines::SurroundSource>(Pipelines::kYcbcr + q08c)
         : yuv       ? Pipelines::kPlanes
                     : Pipelines::kImage;
-    keyMask_.begin(cmd, 0, width, height);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_.keyDistance(source));
-    if (tp10) direct_->bindTp10(cmd, pipelines_.tp10Layout(), *yuv);
-    else if (q08c >= 0) pipelines_.bindQ08c(cmd, q08c, *v.texture);
-    else pipelines_.bindTextures(cmd, v.texture, Pipelines::kVideoBase, yuv ? &yuv->chroma() : nullptr);
+    for (int i = 0; i < keyMask_.distanceCount(); ++i) {
+      keyMask_.begin(cmd, 0, width, height, keyMask_.distance(i));
+      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_.keyDistance(source));
+      if (tp10) direct_->bindTp10(cmd, pipelines_.tp10Layout(), *yuv);
+      else if (q08c >= 0) pipelines_.bindQ08c(cmd, q08c, *v.texture);
+      else pipelines_.bindTextures(cmd, v.texture, Pipelines::kVideoBase, yuv ? &yuv->chroma() : nullptr);
+      push();
+      vkCmdDraw(cmd, 3, 1, 0, 0);
+      keyMask_.end(cmd);
+    }
+  }
+  for (int i = 0; i < keyMask_.madeCount(); ++i) {
+    keyMask_.begin(cmd, 1, width, height, keyMask_.made(i));
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_.keyReach());
+    pipelines_.bindTextures(cmd, distances ? &keyMask_.distances() : nullptr, Pipelines::kVideoBase);
     push();
     vkCmdDraw(cmd, 3, 1, 0, 0);
     keyMask_.end(cmd);
   }
-  keyMask_.begin(cmd, 1, width, height);
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_.keyReach());
-  pipelines_.bindTextures(cmd, distances ? &keyMask_.distances() : nullptr, Pipelines::kVideoBase);
-  push();
-  vkCmdDraw(cmd, 3, 1, 0, 0);
-  keyMask_.end(cmd);
 }
 
 void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const VideoDraw& v,
@@ -510,11 +583,8 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   // Turned with the screen (head translation only through the correction's
   // motion emulation, stereo_correction.h): local space into the picture's
   // axes, the transpose of its rotation.
-  const Mat4 r = v.screen.rotation();
-  for (int c = 0; c < 3; ++c) {
-    for (int k = 0; k < 3; ++k) p.toPicture[c][k] = r.m[k * 4 + c];
-    p.toPicture[c][3] = v.balance[c];
-  }
+  toPicture(v, p.toPicture);
+  for (int c = 0; c < 3; ++c) p.toPicture[c][3] = v.balance[c];
   float fisheyeFov = 0.0f;
   const int projection =
       surroundProjection(v.format, v.frameAspect * eye.stereo[0] / eye.stereo[1], fisheyeFov);
@@ -546,17 +616,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
       p.alpha[0] = v.seeThrough.packedKeyColour();
     }
   }
-  const EyeCorrection& correct = v.correction.eyes[index];
-  if (index < 2 && correct.on) {
-    flags |= kCorrect;
-    eye.viewer[0] = correct.viewer.x;
-    eye.viewer[1] = correct.viewer.y;
-    eye.viewer[2] = correct.viewer.z;
-    eye.viewer[3] = correct.distance;
-    eye.camera[0] = correct.camera.x;
-    eye.camera[1] = correct.camera.y;
-    eye.camera[2] = correct.camera.z;
-  }
+  if (correctEye(v, index, eye)) flags |= kCorrect;
   p.mode[0] = static_cast<uint32_t>(projection);
   p.mode[1] = flags;
   const int taps = antiShimmerTaps(v.antiShimmer);
