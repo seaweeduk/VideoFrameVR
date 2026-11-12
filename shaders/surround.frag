@@ -80,6 +80,15 @@ const bool kCommon = kProjection >= 0;
 const bool kMaskRedBlue = kSeeThrough == 3;
 const bool kMaskFirst = kSeeThrough == 1 || kMaskRedBlue;
 const bool kShrink = kSeeThrough == 5;
+// The colour key's common modes, whose key reads a decoded frame's display
+// values as they came (main()). The green screen's key does not: its spill
+// removal converts the same picture with linearToSrgb() anyway, and the key
+// shares that.
+#ifdef COLOUR_KEY
+const bool kKeyDisplay = kCommon;
+#else
+const bool kKeyDisplay = false;
+#endif
 
 #ifdef TP10
 #define tex tp10Bands[0]  // a Q10C frame's luma (video.glsl), always kYuv
@@ -101,6 +110,18 @@ float opacity() { return float(pc.draw.mode.w) * 0.01; }
 vec4 yuvMatrix() { return vec4(pc.draw.params.zw, pc.draw.alpha.zw); }
 // The picture at p (texture coordinates), full-size level, linear colour.
 vec3 tap(vec2 p) { return videoTap(tex, chromaTex, p, source(), pc.draw.yuv, yuvMatrix()); }
+// A decoded frame's display values at p (videoDisplay), and those values in
+// linear colour, as videoTap makes them. The curve's constants come from the
+// TV gamma bit, not a test of it: in a branch on that test the compiler would
+// fold them and round mix() other than videoTap does.
+mediump vec3 display(vec2 p) {
+  return videoDisplay(tex, chromaTex, p, source(), pc.draw.yuv, yuvMatrix());
+}
+vec3 displayLinear(mediump vec3 e) {
+  float srgb = float(1u - (drawFlags() / kTvGamma & 1u));
+  float a = 0.055 * srgb, toe = 0.04045 * srgb;
+  return mix(e / 12.92, pow((e + a) / (1.0 + a), vec3(2.4)), step(vec3(toe), e));
+}
 
 layout(location = 0) in vec2 vNdc;
 layout(location = 0) out vec4 fragColor;
@@ -295,7 +316,20 @@ void main() {
     fragColor = (flags & kAlphaOut) != 0u ? vec4(0.0) : vec4(kKeyColor, 1.0);
     return;
   }
-  vec3 c = inside ? picture(uv, lo, hi, dx, dy, e, flags) : vec3(0.0);
+  // The keys compare display values. The colour key's common modes keep a
+  // decoded frame's (d) beside its linear colour, from one lookup, instead
+  // of bringing them back with sRGB's curve: the same values but for
+  // rounding. Not with TV gamma, whose linear colour sRGB's curve does not
+  // bring back to them; the key's input there stays what it was.
+  vec3 c;
+  vec3 d = vec3(0.0);
+  if (kKeyDisplay && isYuv()) {
+    d = inside ? display(eyeOffset + clamp(uv, lo, hi) * eyeScale) : vec3(0.0);
+    c = inside ? clamp(displayLinear(d), 0.0, 1.0) : vec3(0.0);
+    if ((flags & kTvGamma) != 0u) d = linearToSrgb(c);
+  } else {
+    c = inside ? picture(uv, lo, hi, dx, dy, e, flags) : vec3(0.0);
+  }
 
   // Sharpening: the picture one eye pixel to each side, as those pixels
   // would sample it. Taps stay on this eye's part, a cubemap's face, or wrap
@@ -361,17 +395,26 @@ void main() {
   } else if (keyed) {
 #ifdef COLOUR_KEY
     // This pixel's own distance, or the shrink's from the mask.
-    alpha = colourAlpha(min(sqrt(keyDistance2(linearToSrgb(c), keyRgb)), keyAt.x * keyAt.x),
-                        chroma);
+    vec3 s = kKeyDisplay && isYuv() ? d : linearToSrgb(c);
+    alpha = colourAlpha(min(sqrt(keyDistance2(s, keyRgb)), keyAt.x * keyAt.x), chroma);
 #else
     alpha = chromaAlpha(linearToSrgb(c), chroma);
     if (kShrink && alpha > 0.0) {
       // Shrink in its common mode: as below, a tap at a time (a loop: four
-      // taps live at once took twice the registers).
+      // taps live at once took twice the registers). A decoded frame's taps
+      // are its display values as they came, not taken to linear colour and
+      // back (the same but for rounding), except with TV gamma (main()).
       vec2 texel = chroma.w / videoSize(tex, chromaTex);
       [[dont_unroll]] for (int i = 0; i < 4; ++i) {
         vec2 o = texel * vec2(i == 0 ? 1.0 : i == 1 ? -1.0 : 0.0, i == 2 ? 1.0 : i == 3 ? -1.0 : 0.0);
-        alpha = min(alpha, chromaAlpha(linearToSrgb(clamp(tap(eyeUv + o), 0.0, 1.0)), chroma));
+        vec3 s;
+        if (isYuv()) {
+          s = display(eyeUv + o);
+          if ((flags & kTvGamma) != 0u) s = linearToSrgb(clamp(displayLinear(s), 0.0, 1.0));
+        } else {
+          s = linearToSrgb(clamp(tap(eyeUv + o), 0.0, 1.0));
+        }
+        alpha = min(alpha, chromaAlpha(s, chroma));
       }
     }
     if (!kCommon && chroma.w > 0.0 && alpha > 0.0) {
