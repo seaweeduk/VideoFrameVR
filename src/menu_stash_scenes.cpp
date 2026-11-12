@@ -1202,7 +1202,6 @@ void StashPages::layoutHeader(Menu& m, double x0) {
         m, t.shuffle, StashIcon::Shuffle, [&m] { return open(m, "", true); }, 0, y, h));
     m.buttons_.back().tooltip = t.tipShuffle;
   }
-  st.fullTitleRight = right;
 }
 
 // The tool row: list or tiles, All / VR / 2D, the order, the search and to
@@ -1858,6 +1857,26 @@ void StashPages::layoutList(Menu& m, double x0, double top) {
   m.addScrollbar();
 }
 
+namespace {
+
+std::string fullTitle(const StashMenu& st, bool cards) {
+  const StashStrings& t = strings().stash;
+  if (st.full == StashFull::Pins) return t.pins;
+  const int kind = st.full == StashFull::Performers ? 0
+                   : st.full == StashFull::Tags     ? 1
+                   : st.full == StashFull::Studios  ? 2
+                                                    : -1;
+  const std::string what = kind >= 0 ? t.sections[kind]
+                           : st.full == StashFull::Look
+                               ? stashLookHeading(static_cast<int>(st.fullLook))
+                               : t.released;
+  int n = 0;
+  for (const auto& r : st.fullRows) n += r.state != 2;
+  return stashPrinted(cards ? t.fullTitlePerformers : t.fullTitle, what, stashNumber(n));
+}
+
+}  // namespace
+
 // A full list in place of the results: Back, its order and search, a row of
 // letters while A–Z, then its rows in two columns.
 void StashPages::layoutFull(Menu& m, double x0, double top) {
@@ -1881,9 +1900,58 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
       x0, top, h);
   m.buttons_.push_back(back);
   st.fullTitleX = back.x + back.w + 20;
-  double x = right;
+  double listTop = top + h + 10;
   const bool searchable = st.full != StashFull::Pins;
+  st.fullTitleRight = right;
   if (searchable) {
+    // Most first or A–Z; years: one button, newest or oldest first, that flips.
+    const bool years = st.full == StashFull::Years;
+    std::vector<Button> sorts;
+    double sortW = 0;
+    for (int byName = years ? 1 : 0; byName <= 1; ++byName) {
+      const char* label = years ? t.yearOrder[st.fullByName ? 1 : 0]
+                          : byName ? t.alphabetical
+                                   : t.byCount;
+      Button b = m.textButton(
+          label, Menu::Icon::None,
+          [&m, byName, years] {
+            StashMenu& s = state(m);
+            s.fullByName = years ? !s.fullByName : byName == 1;
+            s.fullStale = true;
+            m.scrollOffset_ = 0;
+            m.scrollFraction_ = 0;
+            return MenuCommand{};
+          },
+          !years && st.fullByName == (byName == 1));
+      b.panel = Menu::kBrowser;
+      b.w = m.textWidth(label, Menu::kTextSize, false) + 40;
+      b.h = h;
+      b.radius = h / 2;
+      b.tooltip = years ? t.tipYearSort : t.tipFullSort[byName];
+      if (!sorts.empty()) sortW += 6;
+      sortW += b.w;
+      sorts.push_back(std::move(b));
+    }
+    double x = right - 420 - 16 - sortW;
+    double toolsY = top;
+    st.fullTitleRight = x - 18;
+    // Allow long titles to ellipsize, but reserve enough space to read one.
+    // On a narrow pane, the tools lead a second row and search fills it.
+    const double titleW = std::min(240.0, m.textWidth(fullTitle(st, cards), 27, true));
+    if (st.fullTitleRight - st.fullTitleX < titleW) {
+      x = x0;
+      toolsY = listTop;
+      listTop += h + 10;
+      st.fullTitleRight = right;
+    }
+    double sortX = x;
+    for (Button& b : sorts) {
+      b.x = sortX;
+      b.y = toolsY;
+      sortX += b.w + 6;
+      m.buttons_.push_back(std::move(b));
+    }
+
     const int kind = st.full == StashFull::Performers ? 0
                      : st.full == StashFull::Tags     ? 1
                      : st.full == StashFull::Studios  ? 2
@@ -1901,9 +1969,9 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
           return MenuCommand{};
         });
     search.panel = Menu::kBrowser;
-    search.w = 420;
-    search.x = right - search.w;
-    search.y = top;
+    search.x = x + sortW + 16;
+    search.w = right - search.x;
+    search.y = toolsY;
     search.h = h;
     search.field = true;
     search.on = editing;
@@ -1912,7 +1980,6 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
     search.tooltip = hint;
     search.radius = 12;
     m.buttons_.push_back(search);
-    x = search.x - 16;
     if (!text.empty()) {
       Button clear = m.textButton(strings().clear, Menu::Icon::None, [&m] {
         StashMenu& s = state(m);
@@ -1926,42 +1993,12 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
       clear.fontSize = 26;
       clear.w = m.textWidth(strings().clear, 26, false) + 40;
       clear.x = right - clear.w - 6;
-      clear.y = top + 4;
+      clear.y = toolsY + 4;
       clear.h = h - 8;
       clear.radius = clear.h / 2;
       m.buttons_.push_back(clear);
     }
-    // Most first or A–Z; years: one button, newest or oldest first, that flips.
-    const bool years = st.full == StashFull::Years;
-    for (int byName = 1; byName >= (years ? 1 : 0); --byName) {
-      const char* label = years ? t.yearOrder[st.fullByName ? 1 : 0]
-                          : byName ? t.alphabetical
-                                   : t.byCount;
-      Button b = m.textButton(
-          label, Menu::Icon::None,
-          [&m, byName, years] {
-            StashMenu& s = state(m);
-            s.fullByName = years ? !s.fullByName : byName == 1;
-            s.fullStale = true;
-            m.scrollOffset_ = 0;
-            m.scrollFraction_ = 0;
-            return MenuCommand{};
-          },
-          !years && st.fullByName == (byName == 1));
-      b.panel = Menu::kBrowser;
-      b.w = m.textWidth(label, Menu::kTextSize, false) + 40;
-      b.x = x - b.w;
-      b.y = top;
-      b.h = h;
-      b.radius = h / 2;
-      b.tooltip = years ? t.tipYearSort : t.tipFullSort[byName];
-      m.buttons_.push_back(b);
-      x = b.x - 6;
-    }
   }
-  st.fullTitleRight = x - 12;
-
-  double listTop = top + h + 10;
   const int columns = 2;
   // A–Z: a row of the letters the list has; one scrolls to its first row.
   if (st.fullByName && st.full != StashFull::Years && st.full != StashFull::Pins) {
@@ -2164,24 +2201,7 @@ void StashPages::drawFullHeading(const Menu& m, cairo_t* cr) {
   if (!catalog(m) || st.full == StashFull::None) return;
   const StashStrings& t = strings().stash;
   const Palette& pal = m.palette();
-  const int kind = st.full == StashFull::Performers ? 0
-                   : st.full == StashFull::Tags     ? 1
-                   : st.full == StashFull::Studios  ? 2
-                                                    : -1;
-  std::string title;
-  if (st.full == StashFull::Pins) {
-    title = t.pins;
-  } else {
-    std::string what = t.released;
-    if (kind >= 0)
-      what = t.sections[kind];
-    else if (st.full == StashFull::Look)
-      what = stashLookHeading(static_cast<int>(st.fullLook));
-    int n = 0;
-    for (const auto& r : st.fullRows) n += r.state != 2;
-    const bool cards = m.page_ == Menu::Page::StashPerformers;
-    title = stashPrinted(cards ? t.fullTitlePerformers : t.fullTitle, what, stashNumber(n));
-  }
+  const std::string title = fullTitle(st, m.page_ == Menu::Page::StashPerformers);
   m.drawText(cr, title, st.fullTitleX, st.resultsTop, st.fullTitleRight - st.fullTitleX, 56, 27,
              true, false, pal.text.r, pal.text.g, pal.text.b);
   if (st.fullRows.empty() && !st.fullSearch.empty())
