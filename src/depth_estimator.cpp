@@ -175,26 +175,37 @@ struct Image {
   float at(int x, int y) const { return data[y * stride + x]; }
 };
 
-// The patch reduced f times (f×f averages of what is not clear; outside if
-// any is, clear if all are).
-std::vector<float> shrink(const Image& im, int f, int& w, int& h) {
-  w = im.width / f;
-  h = im.height / f;
-  std::vector<float> out(static_cast<size_t>(w) * h);
-  for (int y = 0; y < h; ++y)
-    for (int x = 0; x < w; ++x) {
-      float sum = 0;
-      int count = 0;
-      bool outside = false;
-      for (int j = 0; j < f; ++j)
-        for (int i = 0; i < f; ++i) {
-          const float v = im.at(f * x + i, f * y + j);
-          outside = outside || v == kOutside;
-          if (v >= 0) sum += v, ++count;
+// The patch reduced F times (F×F averages of what is not clear; outside if
+// any is, clear if all are). A row of the result at a time, each of its
+// pixels adding up its F×F values in the same order as one on its own would,
+// which lets the compiler work on several pixels with one instruction.
+template <int F>
+void shrinkBy(const Image& im, std::vector<float>& out, std::vector<float>& sums,
+              std::vector<int>& counts, std::vector<int>& outside) {
+  const int w = im.width / F, h = im.height / F;
+  out.resize(static_cast<size_t>(w) * h);
+  sums.resize(w);
+  counts.resize(w);
+  outside.resize(w);
+  float* sum = sums.data();
+  int* count = counts.data();
+  int* any = outside.data();
+  for (int y = 0; y < h; ++y) {
+    std::fill(sums.begin(), sums.end(), 0.0f);
+    std::fill(counts.begin(), counts.end(), 0);
+    std::fill(outside.begin(), outside.end(), 0);
+    for (int j = 0; j < F; ++j)
+      for (int i = 0; i < F; ++i) {
+        const float* v = im.data + (F * y + j) * im.stride + i;
+        for (int x = 0; x < w; ++x) {
+          sum[x] += v[F * x] >= 0 ? v[F * x] : 0.0f;
+          count[x] += v[F * x] >= 0;
+          any[x] |= v[F * x] == kOutside;
         }
-      out[y * w + x] = outside ? kOutside : count ? sum / count : kClear;
-    }
-  return out;
+      }
+    float* to = out.data() + static_cast<size_t>(y) * w;
+    for (int x = 0; x < w; ++x) to[x] = any[x] ? kOutside : count[x] ? sum[x] / count[x] : kClear;
+  }
 }
 
 struct Correlation {
@@ -246,6 +257,182 @@ Correlation correlate(const Image& l, const Image& r, int lx, int ly, int rx, in
 int leftCorner(int width, int d, int n, int sx = 0) { return width / 2 - (d >> 1) - n / 2 + sx; }
 int rightCorner(int width, int d, int n, int sx = 0) {
   return width / 2 + (d - (d >> 1)) - n / 2 + sx;
+}
+
+// A pass of the match: every disparity dLow..dHigh at every row offset
+// dyLow..dyHigh of the right window, as correlate() pairs them (the left
+// window's top row is y0, both are moved across by sx).
+struct Pass {
+  int n, y0, sx, dLow, dHigh, dyLow, dyHigh;
+};
+
+// The matcher's buffers, kept from one measurement to the next (the worker's).
+struct Scratch {
+  std::vector<float> scores, fine, spreads;  // a pass's results, by disparity and row offset
+  std::vector<int> summed, leftExcluded, rightExcluded;
+  std::vector<double> leftMean, leftVariance, rightMean, rightVariance, products;
+  std::vector<float> leftRows, rightRows;  // the windows' rows laid out by disparity
+  std::vector<float> left, right, rowSums;  // the patches reduced for the coarse pass
+  std::vector<int> rowCounts, rowOutside;
+};
+
+// f is coarseFactor()'s.
+Image shrink(const Image& im, int f, std::vector<float>& out, Scratch& s) {
+  if (f == 4) shrinkBy<4>(im, out, s.rowSums, s.rowCounts, s.rowOutside);
+  else shrinkBy<2>(im, out, s.rowSums, s.rowCounts, s.rowOutside);
+  return {out.data(), im.width / f, im.width / f, im.height / f};
+}
+
+// How many windows' sums are added to for one pixel before the next one's
+// turn: with only a few, each addition would wait for the last one to the
+// same sum.
+constexpr int kTogether = 256;
+
+// How many pixels of each n×n window a match leaves out (clear ones), for the
+// windows with top-left corners (x0 + k, y0 + j), k below `count` and j below
+// `rows`, by summed counts. A pixel outside the picture counts as more than a
+// whole window.
+void excluded(const Image& im, int n, int x0, int count, int y0, int rows, std::vector<int>& sums,
+              std::vector<int>& out) {
+  const int width = count + n - 1, height = rows + n - 1, row = width + 1;
+  out.assign(static_cast<size_t>(rows) * count, 0);
+  // Most patches have nothing to leave out.
+  bool any = false;
+  for (int y = 0; y < height; ++y) {
+    const float* v = im.data + (y0 + y) * im.stride + x0;
+    for (int x = 0; x < width; ++x) any |= v[x] < 0;
+  }
+  if (!any) return;
+  sums.assign(static_cast<size_t>(height + 1) * row, 0);
+  for (int y = 0; y < height; ++y)
+    for (int x = 0; x < width; ++x) {
+      const float v = im.at(x0 + x, y0 + y);
+      const size_t i = static_cast<size_t>(y + 1) * row + x + 1;
+      sums[i] = (v == kOutside ? n * n + 1 : v < 0) + sums[i - 1] + sums[i - row] -
+                sums[i - row - 1];
+    }
+  for (int j = 0; j < rows; ++j)
+    for (int k = 0; k < count; ++k)
+      out[j * count + k] = sums[(j + n) * row + k + n] - sums[j * row + k + n] -
+                           sums[(j + n) * row + k] + sums[j * row + k];
+}
+
+// The mean and variance of each of those windows, as correlate() has them for
+// a pair with nothing left out: the same sums, added up in the same order
+// (row by row), but a pixel at a time for every window, which lets the
+// compiler add to several windows' sums with one instruction.
+void windowStats(const Image& im, int n, int x0, int count, int y0, int rows,
+                 std::vector<double>& mean, std::vector<double>& variance) {
+  mean.assign(static_cast<size_t>(rows) * count, 0.0);      // first the sums
+  variance.assign(static_cast<size_t>(rows) * count, 0.0);  // and the sums of squares
+  const int together = std::max(1, kTogether / count);
+  for (int first = 0; first < rows; first += together) {
+    const int last = std::min(rows, first + together);
+    for (int y = 0; y < n; ++y)
+      for (int x = 0; x < n; ++x)
+        for (int j = first; j < last; ++j) {
+          const float* v = im.data + (y0 + j + y) * im.stride + x0 + x;
+          double* sum = mean.data() + static_cast<size_t>(j) * count;
+          double* squares = variance.data() + static_cast<size_t>(j) * count;
+          for (int k = 0; k < count; ++k) sum[k] += v[k];
+          for (int k = 0; k < count; ++k) squares[k] += v[k] * v[k];
+        }
+  }
+  const double pixels = static_cast<double>(n) * n;
+  for (size_t i = 0; i < mean.size(); ++i) {
+    mean[i] = mean[i] / pixels;
+    variance[i] = std::max(0.0, variance[i] / pixels - mean[i] * mean[i]);
+  }
+}
+
+// correlate() for every pair of a pass: its score in `scores` (-2: no valid
+// window) and, if asked, its spread in `spreads` (-1: no valid window), at
+// (d - dLow) * (dyHigh - dyLow + 1) + dy - dyLow. The same values, from the
+// same sums added up in the same order. A pair with nothing left out, as
+// nearly all are, needs only the sum of its products: its windows' means and
+// variances are shared with the other pairs they are part of. One with clear
+// pixels is left to correlate().
+void correlateAll(const Image& l, const Image& r, const Pass& p, Scratch& s,
+                  std::vector<float>& scores, std::vector<float>* spreads) {
+  const int n = p.n, rows = p.dyHigh - p.dyLow + 1;
+  scores.assign(static_cast<size_t>(std::max(0, p.dHigh - p.dLow + 1)) * std::max(0, rows), -2.0f);
+  if (spreads) spreads->assign(scores.size(), -1.0f);
+  // The pairs inside the patch: disparities dA..dB at row offsets dyA..dyB.
+  auto inside = [&](int d) {
+    const int lx = leftCorner(l.width, d, n, p.sx), rx = rightCorner(l.width, d, n, p.sx);
+    return lx >= 0 && rx >= 0 && lx + n <= l.width && rx + n <= r.width;
+  };
+  int dA = p.dLow, dB = p.dHigh;
+  while (dA <= dB && !inside(dA)) ++dA;
+  while (dB >= dA && !inside(dB)) --dB;
+  const int dyA = std::max(p.dyLow, -p.y0), dyB = std::min(p.dyHigh, r.height - n - p.y0);
+  if (dA > dB || dyA > dyB || p.y0 < 0 || p.y0 + n > l.height) return;
+  const int count = dB - dA + 1, ry0 = p.y0 + dyA, ryCount = dyB - dyA + 1;
+  // The left windows move left as the disparity grows, the right ones right.
+  const int lx0 = leftCorner(l.width, dB, n, p.sx),
+            lxCount = leftCorner(l.width, dA, n, p.sx) - lx0 + 1;
+  const int rx0 = rightCorner(l.width, dA, n, p.sx),
+            rxCount = rightCorner(l.width, dB, n, p.sx) - rx0 + 1;
+  excluded(l, n, lx0, lxCount, p.y0, 1, s.summed, s.leftExcluded);
+  excluded(r, n, rx0, rxCount, ry0, ryCount, s.summed, s.rightExcluded);
+  windowStats(l, n, lx0, lxCount, p.y0, 1, s.leftMean, s.leftVariance);
+  windowStats(r, n, rx0, rxCount, ry0, ryCount, s.rightMean, s.rightVariance);
+
+  // The sums of products. Every row is laid out by disparity first, each of
+  // its pixels twice: pixel x of disparity (dA + i)'s window is element
+  // i - 2x of the left window's row (from its end) and i + 2x of the right
+  // one's, so one run over the elements adds that pixel's product to every
+  // disparity's sum.
+  const int centre = l.width / 2 - n / 2 + p.sx, back = 2 * (n - 1), length = count + back;
+  s.leftRows.resize(static_cast<size_t>(n) * length);
+  for (int y = 0; y < n; ++y)
+    for (int i = 0; i < length; ++i)
+      s.leftRows[y * length + i] = l.at(centre - ((dA + i - back) >> 1), p.y0 + y);
+  s.rightRows.resize(static_cast<size_t>(ryCount + n - 1) * length);
+  for (int y = 0; y < ryCount + n - 1; ++y)
+    for (int i = 0; i < length; ++i)
+      s.rightRows[y * length + i] = r.at(centre + ((dA + i + 1) >> 1), ry0 + y);
+  s.products.assign(static_cast<size_t>(ryCount) * count, 0.0);
+  const int together = std::max(1, kTogether / count);
+  for (int first = 0; first < ryCount; first += together) {
+    const int last = std::min(ryCount, first + together);
+    for (int y = 0; y < n; ++y)
+      for (int x = 0; x < n; ++x) {
+        const float* a = s.leftRows.data() + static_cast<size_t>(y) * length + back - 2 * x;
+        for (int j = first; j < last; ++j) {
+          const float* b = s.rightRows.data() + static_cast<size_t>(j + y) * length + 2 * x;
+          double* sum = s.products.data() + static_cast<size_t>(j) * count;
+          for (int i = 0; i < count; ++i) sum[i] += a[i] * b[i];
+        }
+      }
+  }
+
+  const double pixels = static_cast<double>(n) * n;
+  for (int j = 0; j < ryCount; ++j)
+    for (int i = 0; i < count; ++i) {
+      const int d = dA + i;
+      const int lx = leftCorner(l.width, d, n, p.sx), rx = rightCorner(l.width, d, n, p.sx);
+      const size_t left = lx - lx0, right = static_cast<size_t>(j) * rxCount + rx - rx0;
+      const size_t at = static_cast<size_t>(d - p.dLow) * rows + dyA + j - p.dyLow;
+      const int out = std::max(s.leftExcluded[left], s.rightExcluded[right]);
+      if (out == 0) {
+        // As correlate() ends.
+        const double vl = s.leftVariance[left], vr = s.rightVariance[right];
+        const double denominator = std::sqrt(vl * vr);
+        scores[at] = denominator > 1e-10
+                         ? static_cast<float>((s.products[static_cast<size_t>(j) * count + i] / pixels -
+                                               s.leftMean[left] * s.rightMean[right]) /
+                                              denominator)
+                         : 0.0f;
+        if (spreads) (*spreads)[at] = static_cast<float>(std::sqrt(std::min(vl, vr)));
+      } else if (2 * out <= n * n) {  // else one is outside the picture, or mostly clear
+        const Correlation c = correlate(l, r, lx, p.y0, rx, ry0 + j, n);
+        if (c.valid) {
+          scores[at] = c.score;
+          if (spreads) (*spreads)[at] = c.spread;
+        }
+      }
+    }
 }
 
 // Passthrough: where the match sees video. A near object is seen half its
@@ -334,7 +521,7 @@ Curve bestPerDisparity(const std::vector<float>& table, int disparities, int row
 
 DepthEstimate match(const Image& l, const Image& r, int window, int low, int high, float step,
                     float alpha, float beta, float baseline, bool masked, int reach,
-                    VerticalOffset& vertical) {
+                    VerticalOffset& vertical, Scratch& s) {
   DepthEstimate e;
   const int f = coarseFactor(window);
   // Passthrough shows the room through most of the target's window: the
@@ -353,20 +540,13 @@ DepthEstimate match(const Image& l, const Image& r, int window, int low, int hig
   }
   // Coarse: every disparity and vertical offset, at half resolution or, for
   // fine patches, a quarter (the vertical search would cost too much there).
-  int cw = 0, ch = 0;
-  const std::vector<float> lc = shrink(l, f, cw, ch), rc = shrink(r, f, cw, ch);
-  const Image cl{lc.data(), cw, cw, ch}, cr{rc.data(), cw, cw, ch};
-  const int cn = window / f, cy = (ch - cn) / 2 + sy / f, csx = sx / f;
+  const Image cl = shrink(l, f, s.left, s), cr = shrink(r, f, s.right, s);
+  const int cn = window / f, cy = (cl.height - cn) / 2 + sy / f, csx = sx / f;
   const int slack = ((l.height - 2 * reach - window) / 2 - f) / f;
   const int cLow = low >= 0 ? low / f : -((-low + f - 1) / f), cHigh = (high + f - 1) / f;
   const int disparities = cHigh - cLow + 1, rows = 2 * slack + 1;
-  std::vector<float> table(static_cast<size_t>(disparities) * rows, -2.0f);
-  for (int d = cLow; d <= cHigh; ++d)
-    for (int dy = -slack; dy <= slack; ++dy) {
-      const Correlation c = correlate(cl, cr, leftCorner(cw, d, cn, csx), cy,
-                                      rightCorner(cw, d, cn, csx), cy + dy, cn);
-      if (c.valid) table[(d - cLow) * rows + dy + slack] = c.score;
-    }
+  const std::vector<float>& table = s.scores;
+  correlateAll(cl, cr, {cn, cy, csx, cLow, cHigh, -slack, slack}, s, s.scores, nullptr);
   // The whole vertical range finds the video's offset; once it is known, only
   // a band around it is searched (along a straight edge, a free vertical
   // offset matches at many disparities).
@@ -393,19 +573,25 @@ DepthEstimate match(const Image& l, const Image& r, int window, int low, int hig
   int fineD = 0, fineDy = 0;
   float spread = 0;
   const int around = f * (best + cLow);
-  for (int d = std::max(low, around - f - 1); d <= std::min(high, around + f + 1); ++d)
-    for (int dy = f * bestDy - f; dy <= f * bestDy + f; ++dy) {
-      const Correlation c = correlate(l, r, leftCorner(l.width, d, n, sx), y0,
-                                      rightCorner(l.width, d, n, sx), y0 + dy, n);
-      if (c.valid && c.score > fineBest) {
-        fineBest = c.score;
+  const int dLow = std::max(low, around - f - 1), dHigh = std::min(high, around + f + 1);
+  const int dyLow = f * bestDy - f, dyHigh = f * bestDy + f, fineRows = dyHigh - dyLow + 1;
+  correlateAll(l, r, {n, y0, sx, dLow, dHigh, dyLow, dyHigh}, s, s.fine, &s.spreads);
+  for (int d = dLow; d <= dHigh; ++d)
+    for (int dy = dyLow; dy <= dyHigh; ++dy) {
+      const size_t at = static_cast<size_t>(d - dLow) * fineRows + dy - dyLow;
+      if (s.spreads[at] >= 0 && s.fine[at] > fineBest) {
+        fineBest = s.fine[at];
         fineD = d;
         fineDy = dy;
-        spread = c.spread;
+        spread = s.spreads[at];
       }
     }
   if (fineBest < -1) return e;  // Edge
   auto scoreAt = [&](int d) {
+    if (d >= dLow && d <= dHigh) {
+      const size_t at = static_cast<size_t>(d - dLow) * fineRows + fineDy - dyLow;
+      return s.spreads[at] >= 0 ? s.fine[at] : std::numeric_limits<float>::quiet_NaN();
+    }
     const Correlation c = correlate(l, r, leftCorner(l.width, d, n, sx), y0,
                                     rightCorner(l.width, d, n, sx), y0 + fineDy, n);
     return c.valid ? c.score : std::numeric_limits<float>::quiet_NaN();
@@ -695,6 +881,9 @@ bool DepthEstimator::request(const DepthRequest& q) {
 
 bool DepthEstimator::poll(DepthEstimate& out) {
   std::unique_lock<std::mutex> lock(mutex_);
+  // The readback goes into the last measurement's pixels: sized already, they
+  // are neither allocated nor cleared again.
+  if (stage_ == Stage::Gpu && pending_.pixels.empty()) pending_.pixels.swap(job_.pixels);
   if (stage_ == Stage::Gpu && drawer_ && drawer_->ready()) {
     const size_t count = static_cast<size_t>(pending_.stride) * (2 * pending_.height + kThumbH);
     pending_.pixels.resize(count);
@@ -737,6 +926,7 @@ bool DepthEstimator::poll(DepthEstimate& out) {
 }
 
 void DepthEstimator::work() {
+  Scratch scratch;
   std::unique_lock<std::mutex> lock(mutex_);
   for (;;) {
     wake_.wait(lock, [this] { return quit_ || stage_ == Stage::Working; });
@@ -750,7 +940,7 @@ void DepthEstimator::work() {
     const uint64_t tag = job.result.tag;
     if (job.forgetVideo) vertical_ = VerticalOffset{};
     job.result = match(left, right, job.window, job.low, job.high, job.step, job.alpha,
-                       job.beta, job.baseline, job.masked, job.reach, vertical_);
+                       job.beta, job.baseline, job.masked, job.reach, vertical_, scratch);
     job.result.tag = tag;
     if (job.result.status == DepthStatus::Ok) {
       job.result.angle = candidateAngle(job.result.distance, job.baseline, job.accuracy);
