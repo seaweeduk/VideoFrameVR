@@ -15,6 +15,19 @@ Sections, each only if it has lines, in this order: New, Improved, Fixed,
 Removed. Every line starts "- ", then optionally "[Frame] " or "[Desktop] ".
 -->
 
+## 0.4.0 · 2026-11-12
+### New
+- Remove background handles solid-colour backgrounds too, found automatically or picked by you
+- [Frame] Skip repeated frames saves power and keeps the headset cooler; it's on by default
+- Connect to Stash servers that use a self-signed certificate
+- [Desktop] Experimental hardware video decoding on AMD graphics cards
+### Improved
+- Automatic focus, Tone look and green screens use less power
+- [Frame] 8-bit H.264 videos use less power
+### Fixed
+- [Frame] Some cropped or full-range 8K videos still would not play after waking from sleep
+- The + and − buttons beside sliders changed values in steps too large for fine adjustments
+
 ## 0.3.0 · 2026-11-08
 ### New
 - Support for a newer passthrough video format with two masked layers
