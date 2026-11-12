@@ -106,7 +106,10 @@ struct Registry {
       v = {{"user", saved.login.user}, {"password", saved.login.password}, {"name", saved.name}};
       if (saved.login.key) v["key"] = true;
     }
-    queueConfigWork([contents = j.dump(), path = file(scheme)] {
+    // A name found on the network may not be UTF-8; it is only shown, so its bad bytes are
+    // replaced rather than ending the app.
+    queueConfigWork([contents = j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace),
+                     path = file(scheme)] {
       const auto dir = path.parent_path();
       std::error_code ec;
       std::filesystem::create_directories(dir, ec);

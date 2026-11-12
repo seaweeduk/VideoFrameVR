@@ -61,9 +61,12 @@ bool binOrLost(const std::string& name) {
          lower == ".recycle" || lower == "#recycle" || lower == "@recycle";
 }
 
+bool validUtf8(const std::string& s) {
+  return g_utf8_validate(s.data(), static_cast<gssize>(s.size()), nullptr);
+}
+
 std::string foldFileName(const std::string& name) {
-  if (g_utf8_validate(name.data(), static_cast<gssize>(name.size()), nullptr))
-    return stashFold(name);
+  if (validUtf8(name)) return stashFold(name);
   std::string folded = name;
   for (char& c : folded)
     if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
@@ -71,7 +74,7 @@ std::string foldFileName(const std::string& name) {
 }
 
 std::string fileNameSortKey(const std::string& folded) {
-  if (!g_utf8_validate(folded.data(), static_cast<gssize>(folded.size()), nullptr)) return folded;
+  if (!validUtf8(folded)) return folded;
   // Use the user's collation without changing the render thread's locale.
   static const locale_t locale = newlocale(LC_COLLATE_MASK | LC_CTYPE_MASK, "", nullptr);
   static const std::string collation = locale ? nl_langinfo_l(_NL_LOCALE_NAME(LC_COLLATE), locale) : "C";

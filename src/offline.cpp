@@ -186,7 +186,11 @@ void Offline::Shared::save() {
   fs::create_directories(dir, ec);
   {
     std::ofstream out(temp);
-    out << json{{"paused", paused}, {"downloads", list}}.dump(1) << '\n';
+    // Its strings are UTF-8: add() checks a source and its drive, and paths and subtitles are
+    // made of those and of names checked in copy() or parsed from JSON (Stash's, or this file
+    // read back). replace is the last guard, as an exception here would end the app.
+    const json all{{"paused", paused}, {"downloads", list}};
+    out << all.dump(1, ' ', false, json::error_handler_t::replace) << '\n';
     if (!out) return;
   }
   fs::rename(temp, file, ec);
@@ -554,9 +558,14 @@ void Offline::Shared::copy(Download d) {
     if (file) subtitles.push_back(target);
   };
   for (const std::string& sub : beside) {
-    const std::string name = fileName(sub);
+    const std::string name = fileName(sub),
+                      kept = copyStem + name.substr(std::min(sourceStem.size(), name.size()));
+    if (!validUtf8(kept)) {  // offline.json holds UTF-8 only
+      std::printf("Offline: a subtitle's name isn't UTF-8; not downloaded\n");
+      continue;
+    }
     std::string bytes;
-    if (readWhole(sub, bytes)) keep(copyStem + name.substr(std::min(sourceStem.size(), name.size())), bytes);
+    if (readWhole(sub, bytes)) keep(kept, bytes);
   }
   if (stash)
     for (const StashCaption& c : stashCaptions(d.source))
@@ -751,6 +760,11 @@ void Offline::add(const std::string& location, uint64_t size, const std::string&
                   const std::string& root) {
   const std::string source = isStashScene(location) ? stashSource(location) : location;
   if (source.empty() || find(source, oshash)) return;
+  // offline.json keeps the source and the copy's path exactly, as UTF-8.
+  if (!validUtf8(source) || !validUtf8(root)) {
+    std::printf("Offline: a video's name or its drive's path isn't UTF-8; not queued\n");
+    return;
+  }
   Shared& sh = *shared_;
   {
     std::lock_guard lock(sh.mutex);
