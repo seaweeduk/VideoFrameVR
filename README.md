@@ -25,7 +25,7 @@
 </p>
 
 **Runs natively on the Steam Frame and on Linux PCs** with SteamVR and any headset.
-Hardware decoding on a PC needs an NVIDIA GPU.
+PC hardware decoding supports NVIDIA, with experimental AMD support on Mesa 26.1+.
 
 - **Hardware decoding** on the Steam Frame: 8K 60 fps HEVC (8-bit and 10-bit)
   and H.264 without dropped frames, tested up to 150 Mbit/s over SMB.
@@ -52,7 +52,7 @@ Hardware decoding on a PC needs an NVIDIA GPU.
   Scenes stream straight from Stash, and ratings and play counts sync back.
 
 Native C++ with Vulkan rendering straight into OpenXR, mpv and FFmpeg for
-decoding (the Steam Frame's hardware decoder, or NVDEC on NVIDIA), and Cairo
+decoding (the Steam Frame's hardware decoder, NVDEC on NVIDIA, or VA-API on AMD), and Cairo
 and Pango for the menus.
 
 <table>
@@ -85,7 +85,9 @@ There's one file for each device:
 ### Desktop PC
 
 You need Steam (not the Flatpak version), SteamVR and zenity. Video decoding uses
-the GPU on NVIDIA cards; other cards decode on the CPU.
+NVDEC on NVIDIA cards. AMD support is experimental and has not been verified on
+AMD hardware. It requires Mesa 26.1+ with radeonsi, RADV and the Mesa VA-API driver.
+Supported codecs and resolutions depend on the GPU. Other cards decode on the CPU.
 
 1. Download the installer and open it.
 2. Choose **Install**.

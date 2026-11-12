@@ -15,8 +15,9 @@ namespace {
 constexpr std::chrono::seconds kDecoderIdle{5};
 }  // namespace
 
-bool SeekPreview::init(GlInterop& interop, const std::string& hwdec, Uploader& uploader) {
-  ready_ = grabber_.init(interop, hwdec, 640, 640);
+bool SeekPreview::init(GlInterop& interop, const std::string& hwdec, Uploader& uploader,
+                       const MpvGlContext& glContext) {
+  ready_ = grabber_.init(interop, hwdec, 640, 640, glContext);
   if (!time_.init(uploader) || !placeholder_.init(uploader, 320, 180)) return false;
   cairo_set_source_rgba(placeholder_.cr(), 0.12, 0.12, 0.15, 1.0);
   cairo_paint(placeholder_.cr());

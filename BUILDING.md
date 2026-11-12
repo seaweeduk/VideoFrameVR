@@ -7,7 +7,7 @@ every dependency itself.
 ## Dependencies (Ubuntu 26.04)
 
 ```sh
-sudo apt install build-essential cmake pkg-config curl libopenxr-dev libmpv-dev libglfw3-dev libgl-dev \
+sudo apt install build-essential cmake pkg-config curl libopenxr-dev libmpv-dev libglfw3-dev libgl-dev libegl-dev \
   libvulkan-dev libpango1.0-dev libcairo2-dev libcurl4-openssl-dev libgdk-pixbuf-2.0-dev \
   nlohmann-json3-dev libglib2.0-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
   libsqlite3-dev librsvg2-dev glslang-tools libudfread-dev libbluray-dev fonts-noto-extra libssl-dev
@@ -66,4 +66,10 @@ If you install them somewhere else, point `PKG_CONFIG_PATH` at their
 ```
 
 You need OpenGL 4.5, Vulkan 1.2 and an active OpenXR runtime. Desktop hardware
-decoding uses NVIDIA's NVDEC; other GPUs decode in software.
+decoding uses NVDEC on NVIDIA. AMD support is experimental and unverified on
+hardware: use Mesa 26.1 or newer with radeonsi, RADV and the Mesa VA-API driver,
+and a libmpv/FFmpeg build with VA-API enabled. Playback requests `vaapi,vaapi-copy`;
+seek previews use `vaapi-copy`. Hardware codec and resolution limits depend on
+the GPU. `--hwdec=vaapi-copy` selects copy-back decoding for troubleshooting;
+`--hwdec=no` disables hardware decoding for playback and previews. AMD library
+thumbnails currently use software decoding.

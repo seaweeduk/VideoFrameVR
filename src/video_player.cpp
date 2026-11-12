@@ -1,5 +1,6 @@
 #include "video_player.h"
 #include "bluray.h"
+#include "mpv_gl_context.h"
 #include "remote.h"
 #include "stash_stream.h"
 
@@ -10,8 +11,6 @@
 
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <chrono>
@@ -44,10 +43,6 @@ constexpr double kCloseTimeout = 10.0;
 void setProperty(mpv_handle* mpv, const char* name, const std::string& value) {
   const char* text = value.c_str();
   mpv_set_property_async(mpv, 0, name, MPV_FORMAT_STRING, &text);
-}
-
-void* getProcAddress(void*, const char* name) {
-  return reinterpret_cast<void*>(glfwGetProcAddress(name));
 }
 
 void replaceAll(std::string& text, const std::string& from, const std::string& to) {
@@ -153,8 +148,8 @@ VideoPlayer::~VideoPlayer() {
   if (mpv_) mpv_terminate_destroy(mpv_);
 }
 
-bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, bool timing,
-                       bool decoderQueue) {
+bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, const MpvGlContext& glContext,
+                        bool timing, bool decoderQueue) {
   timing_ = timing;
   counting_ = timing;
   interop_ = &interop;
@@ -170,6 +165,7 @@ bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, bool timing
     std::fprintf(stderr, "mpv_create failed\n");
     return false;
   }
+  if (!glContext.configure(mpv_)) return false;
   mpv_set_option_string(mpv_, "vo", "libmpv");
   mpv_set_option_string(mpv_, "hwdec", hwdec.c_str());
   v4l2_ = hwdec == "v4l2m2m";
@@ -308,13 +304,7 @@ bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, bool timing
     mpv_observe_property(mpv_, 1, "seeking", MPV_FORMAT_FLAG);
   }
 
-  mpv_opengl_init_params glInit{getProcAddress, nullptr};
-  mpv_render_param params[] = {
-      {MPV_RENDER_PARAM_API_TYPE, const_cast<char*>(MPV_RENDER_API_TYPE_OPENGL)},
-      {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &glInit},
-      {MPV_RENDER_PARAM_INVALID, nullptr},
-  };
-  if (mpv_render_context_create(&render_, mpv_, params) < 0) {
+  if (!glContext.createRenderContext(mpv_, &render_)) {
     std::fprintf(stderr, "mpv_render_context_create failed\n");
     return false;
   }

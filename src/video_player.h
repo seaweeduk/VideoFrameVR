@@ -17,6 +17,7 @@ struct mpv_node;
 struct mpv_render_context;
 class DirectFrame;
 class DirectVideo;
+class MpvGlContext;
 
 struct Track {
   int64_t id = 0;
@@ -63,8 +64,8 @@ class VideoPlayer {
  public:
   ~VideoPlayer();
 
-  bool init(const std::string& hwdec, GlInterop& interop, bool timing = false,
-            bool decoderQueue = true);
+  bool init(const std::string& hwdec, GlInterop& interop, const MpvGlContext& glContext,
+            bool timing = false, bool decoderQueue = true);
   // Frame: mpv hands out decoded frames for the eyes to sample instead of
   // drawing them, where they allow it (docs/vulkan-renderer.md 11).
   void setDirectVideo(DirectVideo* direct);

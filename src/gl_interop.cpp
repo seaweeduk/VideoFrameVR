@@ -72,7 +72,11 @@ bool GlInterop::loadGl() {
   for (const char* ext : {"GL_EXT_memory_object", "GL_EXT_memory_object_fd", "GL_EXT_semaphore",
                           "GL_EXT_semaphore_fd", "GL_NV_timeline_semaphore"}) {
     if (!hasGlExtension(ext)) {
-      std::fprintf(stderr, "OpenGL: %s is missing\n", ext);
+      std::fprintf(stderr, "OpenGL: %s is missing (%s, %s)\n", ext,
+                   reinterpret_cast<const char*>(glGetString(GL_RENDERER)),
+                   reinterpret_cast<const char*>(glGetString(GL_VERSION)));
+      if (gpu_->caps().vendorId == 0x1002)
+        std::fprintf(stderr, "AMD requires Mesa 26.1+ radeonsi with timeline semaphore support\n");
       return false;
     }
   }

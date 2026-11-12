@@ -1,26 +1,17 @@
 #include "frame_grabber.h"
 #include "bluray.h"
+#include "mpv_gl_context.h"
 #include "remote.h"
 #include "stash_stream.h"
 
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <clocale>
 #include <cstdint>
 #include <cstdio>
 #include <utility>
-
-namespace {
-
-void* getProcAddress(void*, const char* name) {
-  return reinterpret_cast<void*>(glfwGetProcAddress(name));
-}
-
-}  // namespace
 
 FrameGrabber::~FrameGrabber() {
   if (render_) mpv_render_context_free(render_);
@@ -29,13 +20,14 @@ FrameGrabber::~FrameGrabber() {
 }
 
 bool FrameGrabber::init(GlInterop& interop, const std::string& hwdec, int maxWidth,
-                        int maxHeight) {
+                        int maxHeight, const MpvGlContext& glContext) {
   std::setlocale(LC_NUMERIC, "C");
   interop_ = &interop;
   maxWidth_ = maxWidth;
   maxHeight_ = maxHeight;
   mpv_ = mpv_create();
   if (!mpv_) return false;
+  if (!glContext.configure(mpv_)) return false;
   mpv_set_option_string(mpv_, "vo", "libmpv");
   mpv_set_option_string(mpv_, "hwdec", hwdec.c_str());
   mpv_set_option_string(mpv_, "pause", "yes");
@@ -80,13 +72,7 @@ bool FrameGrabber::init(GlInterop& interop, const std::string& hwdec, int maxWid
   mpv_observe_property(mpv_, 0, "dwidth", MPV_FORMAT_INT64);
   mpv_observe_property(mpv_, 0, "dheight", MPV_FORMAT_INT64);
   mpv_observe_property(mpv_, 0, "video-out-params/rotate", MPV_FORMAT_INT64);
-  mpv_opengl_init_params glInit{getProcAddress, nullptr};
-  mpv_render_param params[] = {
-      {MPV_RENDER_PARAM_API_TYPE, const_cast<char*>(MPV_RENDER_API_TYPE_OPENGL)},
-      {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &glInit},
-      {MPV_RENDER_PARAM_INVALID, nullptr},
-  };
-  if (mpv_render_context_create(&render_, mpv_, params) < 0) {
+  if (!glContext.createRenderContext(mpv_, &render_)) {
     std::fprintf(stderr, "Frame grabber: mpv_render_context_create failed\n");
     return false;
   }

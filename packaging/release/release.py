@@ -222,7 +222,8 @@ def build(args):
                                           for path in [work / "app/src/video_export.h"] +
                                           sorted((work / "app/packaging/frame/mpv").glob("dmabuf_ubwc.*"))],
                     "runtime_execution": "unverified; requires matching SLR and OpenXR hardware",
-                    "desktop_hardware_decode": "not enabled by this initial source recipe"}
+                     "desktop_hardware_decode": ("NVDEC; experimental VA-API" if args.arch == "x86_64"
+                                                 else "not applicable")}
         metadata["patches"] += [{"path": str(path.relative_to(work / "app")), "sha256": sha256(path),
                                  "applied": True}
                                 for path in sorted((work / "app/packaging/libsmb2").glob("*.patch"))]

@@ -24,7 +24,7 @@ pkg_check_modules(UDFREAD REQUIRED IMPORTED_TARGET libudfread>=1.2)
 pkg_check_modules(BLURAY REQUIRED IMPORTED_TARGET libbluray>=1.4)
 find_package(nlohmann_json REQUIRED)
 find_package(Threads REQUIRED)
-find_package(OpenGL REQUIRED COMPONENTS OpenGL)
+find_package(OpenGL REQUIRED COMPONENTS OpenGL EGL)
 find_package(Vulkan REQUIRED)
 
 add_executable(videoframevr
@@ -104,6 +104,7 @@ add_executable(videoframevr
   src/menu_stash_folders.cpp
   src/menu_stash_studios.cpp
   src/motion.cpp
+  src/mpv_gl_context.cpp
   src/offline.cpp
   src/oshash.cpp
   src/performance_readout.cpp
@@ -304,6 +305,7 @@ target_link_libraries(videoframevr PRIVATE
   nlohmann_json::nlohmann_json
   Threads::Threads
   OpenGL::OpenGL
+  OpenGL::EGL
   Vulkan::Vulkan
 )
 
