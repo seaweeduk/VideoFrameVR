@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <limits>
 
 namespace {
@@ -271,6 +273,7 @@ struct Scratch {
   std::vector<float> scores, fine, spreads;  // a pass's results, by disparity and row offset
   std::vector<int> summed, leftExcluded, rightExcluded;
   std::vector<double> leftMean, leftVariance, rightMean, rightVariance, products;
+  std::vector<double> columns, columnSquares;  // slidingSums()' sums over a column of n pixels
   std::vector<float> leftRows, rightRows;  // the windows' rows laid out by disparity
   std::vector<float> left, right, rowSums;  // the patches reduced for the coarse pass
   std::vector<int> rowCounts, rowOutside;
@@ -317,14 +320,43 @@ void excluded(const Image& im, int n, int x0, int count, int y0, int rows, std::
                            sums[(j + n) * row + k] + sums[j * row + k];
 }
 
-// The mean and variance of each of those windows, as correlate() has them for
-// a pair with nothing left out: the same sums, added up in the same order
-// (row by row), but a pixel at a time for every window, which lets the
-// compiler add to several windows' sums with one instruction.
-void windowStats(const Image& im, int n, int x0, int count, int y0, int rows,
+// Whether every sum of up to `terms` of the pixels x0 .. x0 + width - 1,
+// y0 .. y0 + height - 1 of the image, or of their float squares, is exact in a
+// double, and so the same in whatever order it is added up: addition and
+// subtraction round only what a double cannot hold. With nonzero magnitudes in
+// [2^lo, 2^(lo + spread)), between 2^-63 and 2^32 (where no square leaves the
+// floats' normal range, and no value is infinite or NaN), their float squares
+// are whole steps of 2^(2 lo - 23), up to 2^(2 lo + 2 spread). With b the bits
+// `terms` needs, a sum of up to `terms` squares is at most
+// 2^(b + 2 spread + 23) steps, and a double holds any whole number of steps up
+// to 2^53: hence b + 2 spread <= 30. Plain sums need less. The exponents are
+// read from the bits as integers, which the compiler compares several at a
+// time.
+bool sumsExact(const Image& im, int x0, int width, int y0, int height, int terms) {
+  uint32_t most = 0, least = 0xffffffffu;
+  for (int y = 0; y < height; ++y) {
+    const float* v = im.data + (y0 + y) * im.stride + x0;
+    for (int x = 0; x < width; ++x) {
+      uint32_t u;
+      std::memcpy(&u, v + x, sizeof(u));
+      u &= 0x7fffffffu;
+      most = std::max(most, u);
+      least = std::min(least, u - 1);  // a zero wraps around, and so is never the least
+    }
+  }
+  if (least == 0xffffffffu) return true;  // all zero
+  const int maxE = static_cast<int>(most >> 23), minE = static_cast<int>((least + 1) >> 23);
+  int bits = 0;
+  while ((1 << bits) < terms) ++bits;
+  return minE >= 64 && maxE <= 158 && bits + 2 * (maxE + 1 - minE) <= 30;
+}
+
+// The sums and sums of squares of those windows, into mean and variance, in
+// the same order as correlate() adds them up (row by row), but a pixel at a
+// time for every window, which lets the compiler add to several windows' sums
+// with one instruction.
+void orderedSums(const Image& im, int n, int x0, int count, int y0, int rows,
                  std::vector<double>& mean, std::vector<double>& variance) {
-  mean.assign(static_cast<size_t>(rows) * count, 0.0);      // first the sums
-  variance.assign(static_cast<size_t>(rows) * count, 0.0);  // and the sums of squares
   const int together = std::max(1, kTogether / count);
   for (int first = 0; first < rows; first += together) {
     const int last = std::min(rows, first + together);
@@ -338,6 +370,63 @@ void windowStats(const Image& im, int n, int x0, int count, int y0, int rows,
           for (int k = 0; k < count; ++k) squares[k] += v[k] * v[k];
         }
   }
+}
+
+// The same sums, slid along: sums over n pixels of each column gain the row
+// that enters and lose the row that leaves, and each window's sum does the
+// same with columns. Each is made of at most n * n + n values or squares on
+// the way.
+void slidingSums(const Image& im, int n, int x0, int count, int y0, int rows, Scratch& s,
+                 std::vector<double>& mean, std::vector<double>& variance) {
+  const int width = count + n - 1;
+  s.columns.assign(width, 0.0);
+  s.columnSquares.assign(width, 0.0);
+  double* column = s.columns.data();
+  double* columnSquares = s.columnSquares.data();
+  for (int y = 0; y < n; ++y) {
+    const float* v = im.data + (y0 + y) * im.stride + x0;
+    for (int x = 0; x < width; ++x) column[x] += v[x];
+    for (int x = 0; x < width; ++x) columnSquares[x] += v[x] * v[x];
+  }
+  for (int j = 0; j < rows; ++j) {
+    if (j > 0) {  // each value on its own: in - out as floats would round
+      const float* in = im.data + (y0 + j + n - 1) * im.stride + x0;
+      const float* out = im.data + (y0 + j - 1) * im.stride + x0;
+      for (int x = 0; x < width; ++x) column[x] = column[x] + in[x] - out[x];
+      for (int x = 0; x < width; ++x)
+        columnSquares[x] = columnSquares[x] + in[x] * in[x] - out[x] * out[x];
+    }
+    double* sum = mean.data() + static_cast<size_t>(j) * count;
+    double* squares = variance.data() + static_cast<size_t>(j) * count;
+    double window = 0, windowSquares = 0;
+    for (int x = 0; x < n; ++x) {
+      window += column[x];
+      windowSquares += columnSquares[x];
+    }
+    sum[0] = window;
+    squares[0] = windowSquares;
+    for (int k = 1; k < count; ++k) {
+      window = window + column[k + n - 1] - column[k - 1];
+      windowSquares = windowSquares + columnSquares[k + n - 1] - columnSquares[k - 1];
+      sum[k] = window;
+      squares[k] = windowSquares;
+    }
+  }
+}
+
+// The mean and variance of each of those windows, as correlate() has them for
+// a pair with nothing left out: from sliding sums when they cannot round,
+// else from ordered ones.
+void windowStats(const Image& im, int n, int x0, int count, int y0, int rows, Scratch& s,
+                 std::vector<double>& mean, std::vector<double>& variance) {
+  mean.assign(static_cast<size_t>(rows) * count, 0.0);      // first the sums
+  variance.assign(static_cast<size_t>(rows) * count, 0.0);  // and the sums of squares
+  if (sumsExact(im, x0, count + n - 1, y0, rows + n - 1, n * n + n))
+    slidingSums(im, n, x0, count, y0, rows, s, mean, variance);
+  else
+    orderedSums(im, n, x0, count, y0, rows, mean, variance);
+  // One copy for both, so both get the same instructions (on ARM64 the
+  // compiler may fuse the multiply and subtract).
   const double pixels = static_cast<double>(n) * n;
   for (size_t i = 0; i < mean.size(); ++i) {
     mean[i] = mean[i] / pixels;
@@ -347,11 +436,11 @@ void windowStats(const Image& im, int n, int x0, int count, int y0, int rows,
 
 // correlate() for every pair of a pass: its score in `scores` (-2: no valid
 // window) and, if asked, its spread in `spreads` (-1: no valid window), at
-// (d - dLow) * (dyHigh - dyLow + 1) + dy - dyLow. The same values, from the
-// same sums added up in the same order. A pair with nothing left out, as
-// nearly all are, needs only the sum of its products: its windows' means and
-// variances are shared with the other pairs they are part of. One with clear
-// pixels is left to correlate().
+// (d - dLow) * (dyHigh - dyLow + 1) + dy - dyLow. The same values, because
+// each sum is either added up in the same order or cannot round. A pair with
+// nothing left out, as nearly all are, needs only the sum of its products: its
+// windows' means and variances are shared with the other pairs they are part
+// of. One with clear pixels is left to correlate().
 void correlateAll(const Image& l, const Image& r, const Pass& p, Scratch& s,
                   std::vector<float>& scores, std::vector<float>* spreads) {
   const int n = p.n, rows = p.dyHigh - p.dyLow + 1;
@@ -375,8 +464,8 @@ void correlateAll(const Image& l, const Image& r, const Pass& p, Scratch& s,
             rxCount = rightCorner(l.width, dB, n, p.sx) - rx0 + 1;
   excluded(l, n, lx0, lxCount, p.y0, 1, s.summed, s.leftExcluded);
   excluded(r, n, rx0, rxCount, ry0, ryCount, s.summed, s.rightExcluded);
-  windowStats(l, n, lx0, lxCount, p.y0, 1, s.leftMean, s.leftVariance);
-  windowStats(r, n, rx0, rxCount, ry0, ryCount, s.rightMean, s.rightVariance);
+  windowStats(l, n, lx0, lxCount, p.y0, 1, s, s.leftMean, s.leftVariance);
+  windowStats(r, n, rx0, rxCount, ry0, ryCount, s, s.rightMean, s.rightVariance);
 
   // The sums of products. Every row is laid out by disparity first, each of
   // its pixels twice: pixel x of disparity (dA + i)'s window is element
