@@ -181,6 +181,8 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.foveationHint = "Níveis altos poupam GPU ao reduzir detalhes fora do olhar.";
   s.showFoveation = "Mostrar foveation";
   s.showFoveationHint = "Verde: detalhe total. Amarelo: metade por eixo. Sem cor: um quarto. Cruz: olhar.";
+  s.frameReuse = "Pular quadros repetidos";
+  s.frameReuseHint = "Desenha uma imagem nova só quando o vídeo ou o seu ponto de vista muda. Gasta menos energia e mantém o headset mais frio. Desative se o movimento parecer irregular.";
   s.foveationFrameOnly = "Só no Steam Frame";
   s.sharpArea = "Área nítida";
   s.sharpBins[0] = "1 bin";

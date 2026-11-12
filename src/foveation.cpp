@@ -169,6 +169,7 @@ void Foveation::prepare() {
   if (requested_ != applied_ || resized ||
       (xr_->appDensityMaps() && (sharpBins_ != drawnSharpBins_ || ring_ != drawnRing_ || outside_ != drawnOutside_)) ||
       (!xr_->appDensityMaps() && applied_ != xr_->foveationLevel())) {
+    ++mapsVersion_;
     if (!apply(requested_)) {
       std::fprintf(stderr, "Foveation: could not change to %s, still %s\n",
                    foveationLevelName(requested_), foveationLevelName(applied_));

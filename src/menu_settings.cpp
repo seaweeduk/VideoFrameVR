@@ -528,8 +528,8 @@ void Menu::layoutVideoSettings() {
     std::snprintf(hint, sizeof(hint), t.resolutionHint, kPanelWidth, kInstantResolution * kPanelWidth / 100);
   else
     std::snprintf(hint, sizeof(hint), "%s", t.resolutionSteamVr);
-  addLabel(x + 12, y, w - 12, 0, hint, kHintSize, true, 3);
-  y += hintHeight(3) + 6;
+  addLabel(x + 12, y, w - 12, 0, hint, kHintSize, true, 2);
+  y += hintHeight(2) + 6;
   if (view_.refreshRate > 0) {
     std::vector<std::string> rates;
     for (const int hz : kRefreshRates) {
@@ -546,6 +546,11 @@ void Menu::layoutVideoSettings() {
                    c.value = kRefreshRates[i];
                    return c;
                  }, false, t.tipRefreshRate);
+    y += kSettingStep;
+  }
+  if (kStandaloneHeadset && view_.advancedSettings) {
+    addToggleRow(x, y, w, t.frameReuse, view_.frameReuse, command(MenuCommand::ToggleFrameReuse))
+        .tooltip = t.frameReuseHint;
     y += kSettingStep;
   }
   if (kStandaloneHeadset && view_.foveationAvailable) {

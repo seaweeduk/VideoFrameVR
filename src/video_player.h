@@ -171,6 +171,9 @@ class VideoPlayer {
   }
   // The current frame for the scene, nullptr before the first one.
   const Texture* texture();
+  // Another number whenever texture() shows another picture: the next frame,
+  // one drawn again, or none.
+  uint64_t pictureVersion() const { return pictureVersion_; }
   // ... and for GL (depth estimation), after prepareRead(); 0 if none,
   // also for a frame mpv handed out (directCurrent()), which stays out of GL
   // (DirectDepth reads it).
@@ -232,6 +235,7 @@ class VideoPlayer {
   // video_ slots have them).
   DirectFrame* directCurrent_ = nullptr;
   DirectFrame* directPending_ = nullptr;
+  uint64_t pictureVersion_ = 0;
   bool exportRefused_ = false;  // this video's colour is not one the shaders reproduce
   bool compressedRefused_ = false;  // its frames cannot be sampled as the decoder wrote them (Q10C, Q08C)
   bool v4l2_ = false;               // hwdec v4l2m2m: the Frame's decoder, frames left in its buffers

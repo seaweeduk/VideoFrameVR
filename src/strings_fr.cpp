@@ -181,6 +181,8 @@ Strings frenchStrings(const Strings& english) {
   s.foveationHint = "Un niveau élevé réduit les détails hors du regard pour alléger le GPU.";
   s.showFoveation = "Afficher la fovéation";
   s.showFoveationHint = "Vert : tous les détails. Jaune : moitié par axe. Sans teinte : quart. Croix : regard.";
+  s.frameReuse = "Ignorer les images répétées";
+  s.frameReuseHint = "Ne dessine une nouvelle image que si la vidéo ou votre vue change. Consomme moins d'énergie et garde le casque plus frais. Désactivez-le si les mouvements paraissent irréguliers.";
   s.foveationFrameOnly = "Steam Frame seulement";
   s.sharpArea = "Zone nette";
   s.sharpBins[0] = "1 bin";

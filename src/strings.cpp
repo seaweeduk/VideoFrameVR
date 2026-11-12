@@ -160,6 +160,9 @@ const Strings kEnglish = {
     "Higher levels save GPU time by reducing detail outside your gaze.",
     "Show foveation",
     "Green: full detail. Yellow: half per axis. Untinted: quarter. Cross: gaze.",
+    "Skip repeated frames",
+    "Draws a new picture only when the video or your view changes. Uses less power and keeps "
+    "the headset cooler. Turn off if movement looks uneven.",
     "Steam Frame only",
     "Sharp area",
     {"1 bin", "3 bins"},

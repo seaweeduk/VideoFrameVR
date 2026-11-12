@@ -1082,6 +1082,8 @@ struct Strings {
   const char* foveationHint;
   const char* showFoveation;
   const char* showFoveationHint;
+  const char* frameReuse;  // toggle (Frame): frames that would look like the last one are not drawn
+  const char* frameReuseHint;
   const char* foveationFrameOnly;
   const char* sharpArea;
   const char* sharpBins[2];

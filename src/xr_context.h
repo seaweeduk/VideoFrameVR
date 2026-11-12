@@ -217,6 +217,14 @@ class XrContext {
   // Ends the frame begun, with the eyes if `drawn` (released after a
   // successful submission), else without any layer.
   void endFrame(bool drawn);
+  // Whether the runtime still holds the eye images of the frame before, to
+  // show again: that frame ended with them, and nothing replaced or acquired
+  // them since.
+  bool canShowAgain() const;
+  // Ends the frame begun with the eye images of the frame before, as they
+  // were drawn (their poses, fields of view and areas): the runtime
+  // reprojects them to where the head is now. Only while canShowAgain().
+  void endFrameShownAgain();
 
   // Native passthrough: the eye images' alpha blends them over the camera
   // (XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND), if the runtime offers it.
@@ -295,6 +303,8 @@ class XrContext {
   void queryBlendModes();
   // Records a lost session or instance (failed()).
   bool checkFrame(XrResult result, const char* what);
+  // xrEndFrame for the frame begun: with projViews_ as its layer, or none.
+  void submitFrame(bool layerReady);
   // The largest scale up to `scale` whose images fit the runtime and the GPU.
   float fittingScale(float scale, int baseWidth, int baseHeight, bool& runtimeLimited) const;
   int scaledSize(int base, int recommended, float scale) const;
@@ -357,6 +367,7 @@ class XrContext {
   // Native SteamVR launch only: one dismissal before first focus, never rearmed.
   bool launchDashboardPending_ = false;
   bool sceneSubmitted_ = false;
+  bool layerHeld_ = false;  // the last frame ended with the eyes, still the swapchains' newest
   std::future<void> launchDashboard_;
   bool frameBegun_ = false;
   bool viewsValid_ = false;  // this frame's eyes are located and should be drawn

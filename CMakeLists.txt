@@ -54,6 +54,7 @@ add_executable(videoframevr
   src/focus_marker.cpp
   src/focus_target.cpp
   src/foveation.cpp
+  src/frame_reuse.cpp
   src/frame_grabber.cpp
   src/gl_interop.cpp
   src/gpu_context.cpp

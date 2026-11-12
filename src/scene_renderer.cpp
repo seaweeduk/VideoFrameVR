@@ -247,7 +247,7 @@ void SceneRenderer::pushDraw(VkCommandBuffer cmd, const T& draw) {
                      kDrawPushOffset, sizeof(T), &draw);
 }
 
-void SceneRenderer::record(GpuContext::FrameSlot& slot, const EyeFrame& eyes,
+bool SceneRenderer::record(GpuContext::FrameSlot& slot, const EyeFrame& eyes,
                            const EyeMatrices* matrices, const FrameScene& scene, double time,
                            std::vector<SemaphoreWait>& waits) {
   VkCommandBuffer cmd = slot.cmd;
@@ -340,6 +340,7 @@ void SceneRenderer::record(GpuContext::FrameSlot& slot, const EyeFrame& eyes,
   if (direct_) direct_->recordReleases(cmd);
   if (mirror_ && eyes.count > 0) mirror_->record(cmd, eyes.eyes[0], waits);
   timestamp(slot, kEnd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+  return !scene.video || !scene.video->texture || video->texture;
 }
 
 // Room-fixed: the eye's own orientation alone turns it.

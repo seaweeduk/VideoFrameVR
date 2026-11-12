@@ -181,6 +181,8 @@ Strings germanStrings(const Strings& english) {
   s.foveationHint = "Höhere Stufen sparen GPU-Zeit durch weniger Details abseits des Blicks.";
   s.showFoveation = "Foveation anzeigen";
   s.showFoveationHint = "Grün: volle Details. Gelb: halb je Achse. Ungefärbt: Viertel. Kreuz: Blick.";
+  s.frameReuse = "Wiederholte Bilder überspringen";
+  s.frameReuseHint = "Zeichnet nur dann ein neues Bild, wenn sich Video oder Blickrichtung ändern. Braucht weniger Strom und hält das Headset kühler. Ausschalten, wenn Bewegungen ungleichmäßig wirken.";
   s.foveationFrameOnly = "Nur Steam Frame";
   s.sharpArea = "Scharfer Bereich";
   s.sharpBins[0] = "1 Bin";
