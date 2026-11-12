@@ -69,22 +69,6 @@ bool CurvedPanel::hit(Vec3 origin, Vec3 dir, float& u, float& v, float& distance
   return false;
 }
 
-std::vector<Vec3> CurvedPanel::outline(int columns) const {
-  // As the renderer bends it (drawCurvedPanel): the shown columns' arc at
-  // the shown rows' top and bottom.
-  std::vector<Vec3> points;
-  const Mat4 m = model();
-  const float width = right - left, height = top - bottom;
-  for (int i = 0; i <= columns; ++i) {
-    const float u = u0 + (u1 - u0) * static_cast<float>(i) / columns;
-    const float angle = (left + u * width) / radius;
-    for (const float v : {v0, v1})
-      points.push_back(transformPoint(
-          m, {radius * std::sin(angle), top - v * height, -radius * std::cos(angle)}));
-  }
-  return points;
-}
-
 void MenuPanels::placeInFrontOf(Vec3 headPosition, const Mat4& frame) {
   anchor = headPosition + transformDir(frame, {0.0f, 0.0f, mg::kAxisBehind});
   orientation = frame;

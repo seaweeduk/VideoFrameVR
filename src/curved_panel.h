@@ -2,8 +2,6 @@
 
 #include "xmath.h"
 
-#include <vector>
-
 // Part of an upright cylinder around the viewer, facing its axis: a menu
 // panel. A texture is drawn on it with u across (left to right) and v down.
 struct CurvedPanel {
@@ -19,7 +17,4 @@ struct CurvedPanel {
   Mat4 model() const { return translation(axis) * orientation; }
   // Intersects a ray with the shown part; u/v in 0..1 of the whole texture.
   bool hit(Vec3 origin, Vec3 dir, float& u, float& v, float& distance) const;
-  // Points along the shown part's top and bottom edge (local space), at
-  // columns + 1 places across: its outline, for finding where it shows.
-  std::vector<Vec3> outline(int columns) const;
 };

@@ -148,8 +148,6 @@ class DepthEstimator {
   bool request(const DepthRequest& request);
   // A finished measurement (each once).
   bool poll(DepthEstimate& out);
-  // The next estimate has no earlier picture to compare with (sceneChange -1).
-  void forgetScene();
   // Another video: also its eyes' vertical offset is learned anew.
   void forgetVideo();
 

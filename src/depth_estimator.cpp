@@ -714,8 +714,6 @@ bool DepthEstimator::init() {
   return true;
 }
 
-void DepthEstimator::forgetScene() { forgetScene_ = true; }
-
 void DepthEstimator::forgetVideo() {
   forgetScene_ = true;
   forgetVideo_ = true;
@@ -770,7 +768,7 @@ bool DepthEstimator::request(const DepthRequest& q) {
   int width = std::max(std::abs(low), std::abs(high)) + n + 8 + 2 * reach;
   width = std::max(width + (width & 1), kThumbW);
   const int height = n + 2 * marginRows(step, n) + 2 * reach;
-  // A cut is told from the thumbnail before it: after forgetScene(), one at once.
+  // A cut is told from the thumbnail before it: after forgetVideo(), one at once.
   const auto now = std::chrono::steady_clock::now();
   job.thumbnail = job.forget || now - thumbnailAt_ >= std::chrono::duration<double>(kThumbEvery);
   job.stride = width;

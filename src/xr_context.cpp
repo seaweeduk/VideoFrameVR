@@ -1405,7 +1405,7 @@ bool XrContext::createEyeImages(GpuContext& gpu, int baseWidth, int baseHeight, 
   if (activeScale_ < videoScale - 0.005f)
     std::printf("  scale %.2f requested, limited to %.2f by the %s\n", videoScale, activeScale_,
                 runtimeLimited ? "runtime's maximum image size" : "GPU's maximum texture size");
-  // The eye images are drawn at 1 sample, 1 mip; whole until setRenderArea().
+  // The eye images are drawn at 1 sample, 1 mip, all of the size in use.
   for (size_t i = 0; i < configViews_.size(); ++i) {
     const XrViewConfigurationView& cv = configViews_[i];
     std::printf("  eye %zu: recommended %ux%u (%u samples), max %ux%u; requested %dx%d, "
@@ -1919,16 +1919,6 @@ void XrContext::submitFrame(bool layerReady) {
   endInfo.layers = layerReady ? layers : nullptr;
   layerHeld_ = checkFrame(xrEndFrame(session_, &endInfo), "xrEndFrame") && layerReady;
   if (layerHeld_) sceneSubmitted_ = true;
-}
-
-void XrContext::setRenderArea(int eye, const VkRect2D& area) {
-  Swapchain& sc = swapchains_[eye];
-  const int32_t x = std::clamp(area.offset.x, 0, sc.width - 1);
-  const int32_t y = std::clamp(area.offset.y, 0, sc.height - 1);
-  sc.area.offset = {x, y};
-  sc.area.extent = {std::clamp<uint32_t>(area.extent.width, 1, static_cast<uint32_t>(sc.width - x)),
-                    std::clamp<uint32_t>(area.extent.height, 1, static_cast<uint32_t>(sc.height - y))};
-  layerHeld_ = false;  // the next frame is drawn into the new area
 }
 
 bool XrContext::checkFrame(XrResult result, const char* what) {

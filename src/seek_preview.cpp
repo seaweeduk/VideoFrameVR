@@ -107,15 +107,6 @@ void SeekPreview::place(double fraction, float aspect, const CurvedPanel& strip)
   timeModel_ = base * translation({0.0f, y - h / 2 + lh / 2, -r + 0.002f}) * scaling(lw, lh, 1);
 }
 
-std::vector<Vec3> SeekPreview::corners() const {
-  std::vector<Vec3> points;
-  if (!shown_) return points;
-  for (const Mat4* model : {&model_, &timeModel_})
-    for (float x : {-0.5f, 0.5f})
-      for (float y : {-0.5f, 0.5f}) points.push_back(transformPoint(*model, {x, y, 0.0f}));
-  return points;
-}
-
 void SeekPreview::addTo(std::vector<OverlayDraw>& overlays) {
   if (!shown_) return;
   if (const Texture* image = grabber_.image()) {

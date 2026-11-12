@@ -151,8 +151,6 @@ class DirectVideo {
   DirectFrame* still(DirectFrame& frame);
   // Frees the still's images (stop, another file), unless something samples it.
   void dropStill();
-  // Whether frames not shown are still to go back to mpv (release()).
-  bool returning() const;
   // Whether release() would hand a frame back now: one not shown whose GPU
   // uses have finished. The timeline is read only when there is one, into
   // completed (else 0), for release().

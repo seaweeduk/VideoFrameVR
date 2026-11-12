@@ -130,7 +130,6 @@ class VideoPlayer {
   // its decoding, conversion and mpv render on the GPU. The sound is delayed
   // by frameSeconds (one headset frame) to match.
   void setPipelined(bool enabled, double frameSeconds);
-  bool pipelined() const { return pipelined_; }
   // Pipelined: the frame render() drew last is texture() from now on.
   void showRendered();
   // --timing: video submissions/drops, separate from the XR-loop frame rate.
@@ -160,7 +159,6 @@ class VideoPlayer {
   // ... acquires it for GL alone, to be read at its full size (MaskProbe).
   bool prepareFullSizeRead();
 
-  bool hasVideo() const { return video_.valid(); }
   // True from load() until the new file's first frame is in texture(); the
   // texture still holds the previous video meanwhile.
   bool loading() const { return loading_; }

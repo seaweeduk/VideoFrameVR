@@ -903,9 +903,6 @@ class Menu {
   MenuCommand clickField(const Button& b);
   bool keyboardShown_ = false;
   double keyboardRect_[4] = {0, 0, 0, 0};  // its panel: x, y, w, h
-  // Centred on x = cx (default: the strip's and the former menu's middle).
-  void addCenteredRow(double y, double h, std::vector<Button> items, double cx = kMainWidth / 2.0);
-  void addRow(double y, double h, std::vector<Button> items, double x0);
   // Grouped settings, on the browser's page (menu_widgets.cpp): a titled box,
   // and rows of kSettingRowH in it, a label on the left and the control on
   // the right from x + labelW.
