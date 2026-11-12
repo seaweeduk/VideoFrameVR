@@ -641,12 +641,12 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   const bool maskFirst = (flags & kPackedAlpha) && (flags & (kKeyGreen | kAlphaOut));
   // A common mode has a pipeline of its own: the full-size level with one
   // tap, no adjustments, no sharpening, a packed mask only with transparent
-  // output, and a green screen without shrink, or with the colour balance or
-  // the tone look without key green (whose cap is the general ones'). The
-  // colour balance has its own, and the look its own with the balance. The
-  // colour key has its own pipelines: for the common modes but cubemaps,
-  // with the colour balance, without and with the look, for the eye pass
-  // with a density map, else general ones.
+  // output, and a green screen (with shrink its own), with the colour
+  // balance or the tone look without key green (whose cap is the general
+  // ones'). The colour balance has its own, and the look its own with the
+  // balance. The colour key has its own pipelines: for the common modes but
+  // cubemaps, with the colour balance, without and with the look, for the
+  // eye pass with a density map, else general ones.
   const bool adjusted = v.adjust[0] != 0.0f || v.adjust[1] != 0.0f || v.adjust[2] != 0.0f;
   const bool balance = v.balance[0] != 0.0f || v.balance[1] != 0.0f || v.balance[2] != 0.0f;
   const bool commonMode =
@@ -668,20 +668,21 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   }
   VkPipeline common = VK_NULL_HANDLE;
   if (commonMode && !(maskFirst && (flags & kKeyGreen)) &&
-      !((flags & kChromaKey) &&
-        (p.chroma[3] > 0.0f || ((balance || v.look) && (flags & kKeyGreen))))) {
+      !((flags & kChromaKey) && (balance || v.look) && (flags & kKeyGreen))) {
     const auto family = projection >= 3   ? Pipelines::kCubemap
                         : projection == 2 ? Pipelines::kFisheye
                                           : Pipelines::kEquirect;
     const auto packed =
         colours == MaskColours::RedBlue ? Pipelines::kPackedRedBlue : Pipelines::kPackedMask;
     const auto cut = maskFirst            ? packed
-                     : flags & kChromaKey ? Pipelines::kGreenScreen
+                     : flags & kChromaKey ? (p.chroma[3] > 0.0f ? Pipelines::kGreenScreenShrink
+                                                                : Pipelines::kGreenScreen)
                                           : Pipelines::kUncut;
     const auto finish = v.look  ? Pipelines::kLookBalanced
                         : balance ? Pipelines::kBalanced
                                   : Pipelines::kAsItIs;
-    // The other colours' cuts are made for fisheye alone: else the general one.
+    // The other colours' cuts are made for fisheye alone, and shrink's not
+    // for cubemaps or with the look: else the general one.
     common = pipelines_.surround(family, source, cut, plainEye_, finish);
   }
   bind(common ? common : general(false, maskFirst, false));
