@@ -168,12 +168,13 @@ def assemble(bundle, app, work, sdk, cache, supplement, metadata, source_name):
                       "BD-J (Java), tools, FreeType, fontconfig and libxml2 disabled; no AACS or BD+ library bundled"),
         "json": "MIT; compiled-in header library, unmodified",
         "mpv": ("upstream GPL-2.0-or-later, combined under GPLv3; both builds modified by mpv-mvc.patch and the "
-                "packaging/mpv/mvc sources (3D Blu-ray, GPL-3.0); Frame build also by mpv-v4l2-reset.patch, "
+                "packaging/mpv/mvc sources (3D Blu-ray, GPL-3.0) and by mpv-ffmpeg9.patch; Frame build also by mpv-v4l2-reset.patch, "
                 "mpv-v4l2-hardware-only.patch, mpv-v4l2-interrupt.patch, mpv-export-release.patch and dmabuf_ubwc sources"),
-        "ffmpeg": ("upstream LGPL-2.1-or-later fork. Desktop build: unmodified, LGPL-2.1-or-later. "
-                   "Frame build: modified by ffmpeg-iris.patch, ffmpeg-main10.patch, ffmpeg-capture-pool.patch, "
-                   "ffmpeg-drain-seek.patch, ffmpeg-staged-start.patch, ffmpeg-capture-interrupt.patch and "
-                   "ffmpeg-q08c-crop.patch (GPL-3.0), so this "
+        "ffmpeg": ("upstream LGPL-2.1-or-later. Desktop build: unmodified, LGPL-2.1-or-later. "
+                   "Frame build: its V4L2 decoder replaced by the packaging/frame/ffmpeg sources, which are FFmpeg's "
+                   "decoder as rewritten by John Cox in rpi-ffmpeg (https://github.com/jc-kynesim/rpi-ffmpeg, commit "
+                   "d0fe46c27ff128e6263ceb3251cbc9d0ed3d3932; LGPL-2.1-or-later, five files MIT) with this project's "
+                   "changes (GPL-3.0-or-later), and modified by ffmpeg-v4l2.patch, so this "
                    "modified FFmpeg is distributed under GPL-3.0-or-later as a whole (LGPL-2.1 section 3; "
                    "configured with --enable-gpl --enable-version3)"),
         "nv-codec-headers": "MIT (in each header); desktop build only, compiled into FFmpeg's NVIDIA decoding, unmodified",

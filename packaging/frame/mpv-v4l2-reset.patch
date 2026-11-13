@@ -290,7 +290,7 @@
      if (ret < 0) {
          if (ret == AVERROR_EOF) {
 +            // Do not call receive again on a drained V4L2 device, even while
-+            // mpv still has delayed frames to return. FFmpeg 7 polls the
++            // mpv still has delayed frames to return. FFmpeg polls the
 +            // drained device again instead of returning EOF a second time.
 +            const char *wrapper = avctx->codec->wrapper_name;
 +            if (wrapper && strcmp(wrapper, "v4l2m2m") == 0) {
@@ -350,8 +350,8 @@
 +    // V4L2's CPU frames still own capture buffers. Detach so an old displayed
 +    // frame cannot retain the decoder across a seek. Reuse the software pool:
 +    // allocating and first-touching a fresh 8K buffer every frame is too slow.
-+    // DRM PRIME frames have independently exported DMA-BUFs: the private
-+    // FFmpeg fork closes the decoder without waiting for those GPU references.
++    // DRM PRIME frames have independently exported DMA-BUFs: the Frame's
++    // FFmpeg decoder closes without waiting for those GPU references.
 +    // MVC's joined frame is already a copy.
 +    if (wrapper && strcmp(wrapper, "v4l2m2m") == 0 && !ctx->mvc &&
 +        mpi->imgfmt != IMGFMT_DRMPRIME) {

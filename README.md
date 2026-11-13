@@ -150,6 +150,12 @@ The Steam client helper includes adaptations from
 [Frame Control](https://github.com/saphid/frame-control) by saphid, under MIT.
 See [Frame Control provenance and license](packaging/frame-control/README.md).
 
+The Steam Frame build's hardware video decoder is FFmpeg's V4L2 decoder as
+rewritten by John Cox in [rpi-ffmpeg](https://github.com/jc-kynesim/rpi-ffmpeg),
+under LGPL-2.1-or-later with five files under MIT, with VideoFrameVR's changes
+for the headset.
+See [decoder provenance and changes](packaging/frame/ffmpeg/README.md).
+
 Third-party components bundled with a release, and their licences, are listed in
 the `THIRD-PARTY-NOTICES` file inside it and under `share/licenses/`.
 

@@ -64,7 +64,7 @@ export CXXFLAGS="$CFLAGS"
 
 json_source=/work/source/json
 mpv_source=/work/source/mpv-0.40.0
-ffmpeg_source=/work/source/rpi-ffmpeg-d0fe46c27ff128e6263ceb3251cbc9d0ed3d3932
+ffmpeg_source=/work/source/ffmpeg-9.0.2
 smb2_source=/work/source/libsmb2-2bcb014b23a8c8cccf534eea8bda2fe5df453cfd
 ssh_source=/work/source/libssh-0.12.2
 udfread_source=/work/source/libudfread-1.2.0
@@ -123,6 +123,7 @@ cp /work/libbluray-build/meson-info/intro-buildoptions.json /work/config/libblur
 mkdir -p "$mpv_source/video/decode/mvc"
 cp /src/packaging/mpv/mvc/*.[ch] "$mpv_source/video/decode/mvc/"
 patch -d "$mpv_source" -p1 < /src/packaging/mpv/mpv-mvc.patch
+patch -d "$mpv_source" -p1 < /src/packaging/mpv/mpv-ffmpeg9.patch
 if [[ $arch == aarch64 ]]; then
   patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-reset.patch
   patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-hardware-only.patch
@@ -131,13 +132,9 @@ if [[ $arch == aarch64 ]]; then
   cp /src/packaging/frame/mpv/dmabuf_ubwc.{c,h} /src/src/video_export.h "$mpv_source/video/out/hwdec/"
   glslangValidator -V --target-env vulkan1.2 --vn dmabuf_ubwc_spv /src/packaging/frame/mpv/dmabuf_ubwc.comp \
     -o "$mpv_source/video/out/hwdec/dmabuf_ubwc.spv.h"
-  patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-iris.patch
-  patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-main10.patch
-  patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-capture-pool.patch
-  patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-drain-seek.patch
-  patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-staged-start.patch
-  patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-capture-interrupt.patch
-  patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-q08c-crop.patch
+  # The Frame's V4L2 decoder replaces FFmpeg's own (packaging/frame/ffmpeg).
+  cp /src/packaging/frame/ffmpeg/libavcodec/*.[ch] "$ffmpeg_source/libavcodec/"
+  patch -d "$ffmpeg_source" -p1 < /src/packaging/frame/ffmpeg-v4l2.patch
 fi
 cmake -S "$json_source" -B /work/json-build -DJSON_BuildTests=OFF \
   -DJSON_Install=ON -DCMAKE_INSTALL_PREFIX="$prefix" "${cmake_cross[@]}"
@@ -147,12 +144,14 @@ cmake --install /work/json-build
 # VA-API libraries come from the Platform, its vendor driver from the host.
 ffmpeg_desktop=()
 mpv_desktop=()
-# The Frame's FFmpeg carries this repository's GPL-3.0 patches, so it is built
-# as GPLv3 as a whole (LGPL-2.1 section 3). The desktop's is unmodified LGPL.
+# The Frame's FFmpeg carries this repository's GPL-3.0 V4L2 decoder, so it is
+# built as GPLv3 as a whole (LGPL-2.1 section 3). The desktop's is unmodified
+# LGPL. FFmpeg's V4L2 encoders don't build against that decoder, and are unused.
 ffmpeg_licence=()
 expected=(GPL=0 VERSION3=0 NONFREE=0)
 if [[ $arch == aarch64 ]]; then
-  ffmpeg_licence=(--enable-gpl --enable-version3 --disable-postproc)
+  ffmpeg_licence=(--enable-gpl --enable-version3
+                  --disable-encoder=h263_v4l2m2m,h264_v4l2m2m,hevc_v4l2m2m,mpeg4_v4l2m2m,vp8_v4l2m2m)
   expected=(GPL=1 VERSION3=1 NONFREE=0)
 fi
 if [[ $arch == x86_64 ]]; then

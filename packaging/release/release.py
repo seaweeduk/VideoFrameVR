@@ -134,6 +134,7 @@ def dependency_key(app, architecture):
     paths = [app / "packaging/release/build-sdk.sh", app / "packaging/release/sources.json",
              app / "packaging/release/debian.json", app / "src/video_export.h"]
     paths += sorted((app / "packaging/frame").glob("*.patch"))
+    paths += sorted((app / "packaging/frame/ffmpeg/libavcodec").glob("*.[ch]"))
     paths += sorted((app / "packaging/mpv").glob("*.patch"))
     paths += sorted((app / "packaging/mpv/mvc").glob("*.[ch]"))
     paths += sorted((app / "packaging/libsmb2").glob("*.patch"))
@@ -218,6 +219,9 @@ def build(args):
                     "patches": [{"path": str(path.relative_to(work / "app")), "sha256": sha256(path),
                                  "applied": args.arch == "aarch64"}
                                 for path in sorted((work / "app/packaging/frame").glob("*.patch"))],
+                    "decoder_sources": [{"path": str(path.relative_to(work / "app")), "sha256": sha256(path),
+                                         "applied": args.arch == "aarch64"}
+                                        for path in sorted((work / "app/packaging/frame/ffmpeg/libavcodec").glob("*.[ch]"))],
                     "converter_sources": [{"path": str(path.relative_to(work / "app")), "sha256": sha256(path)}
                                           for path in [work / "app/src/video_export.h"] +
                                           sorted((work / "app/packaging/frame/mpv").glob("dmabuf_ubwc.*"))],
