@@ -702,7 +702,7 @@ Strings spanishStrings(const Strings& english) {
   s.focus.tuningLabels[5] = "Enfoque vertical";
   s.focus.tuningLabels[6] = "Enfoque horizontal";
   s.focus.tuningHints[0] = "Distancia mínima permitida al enfoque automático.";
-  s.focus.tuningHints[1] = "Distancia máxima permitida al enfoque automático.";
+  s.focus.tuningHints[1] = "Distancia máxima del enfoque automático. Lo más lejano se enfoca aquí.";
   s.focus.tuningHints[2] = "Rapidez con la que el enfoque cambia de distancia.";
   s.focus.tuningHints[3] = "Valores altos concentran las muestras cerca del objetivo.";
   s.focus.tuningHints[4] = "Valores altos prueban más profundidades y tardan más.";
@@ -751,7 +751,7 @@ Strings spanishStrings(const Strings& english) {
   s.focusStatus.reasons[3] = "fuera de la imagen";
   s.focusStatus.reasons[4] = "transparente";
   s.focusStatus.reasons[5] = "las muestras no coinciden";
-  s.focusStatus.reasons[6] = "fuera del rango de distancias";
+  s.focusStatus.reasons[6] = "más cerca que la distancia mínima";
   s.focusStatus.targets[0] = "El objetivo sigue la dirección de la cabeza";
   s.focusStatus.targets[1] = "Seguimiento ocular activo";
   s.focusStatus.targets[2] = "Seguimiento ocular: manteniendo durante una pausa breve";

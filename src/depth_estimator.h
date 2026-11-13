@@ -87,6 +87,10 @@ struct DepthRequest {
   // spot within this angle (radians) that is mostly video is measured
   // instead; 0 = none (status Clear).
   float reach = 0;
+  // The focus now held, as a half-convergence angle (radians; 0 = none). A
+  // match that several depths fit (Ambiguous) is still Ok if it is farther
+  // than this and the picture rules this depth out.
+  float held = 0;
   uint64_t tag = 0;  // handed back with the estimate
 };
 
@@ -119,14 +123,22 @@ struct VerticalOffset {
   int samples = 0;
   void add(float u, float v);
   float predict(float u) const;
+  // Videos shot with converged cameras show far things beyond the infinity
+  // of parallel ones, at disparities below 0. beyond: how far below (radians)
+  // the video is known to reach, from two clear matches in a row within 1°
+  // of each other; pending: the last clear match beyond it. Until then such
+  // a match is more likely a mistake.
+  float beyond = 0, pending = 0;
+  void addBeyond(float disparity);
 };
 
 // Measures the depth of a stereo video around a target direction: a small
 // patch of each eye, resampled along epipolar lines (so matching points only
 // differ horizontally) at a reduced resolution set by the accuracy, is drawn
 // on the GPU and read back asynchronously; a worker thread matches the
-// patches over the whole candidate range (coarse, then refined, sub-pixel),
-// judges the match and rounds it to the nearest candidate depth. The render
+// patches over the whole candidate range (coarse, then its best few peaks
+// refined, sub-pixel), judges the match and rounds it to the nearest
+// candidate depth. The render
 // thread only issues one small draw and one asynchronous copy per request.
 // All methods are called on the GL thread.
 class DepthEstimator {
@@ -162,7 +174,7 @@ class DepthEstimator {
     int stride = 0, width = 0, height = 0, window = 0, low = 0, high = 0, accuracy = 8;
     bool masked = false;  // passthrough: clear pixels are marked
     int reach = 0;        // pixels of extra patch on every side, for DepthRequest::reach
-    float step = 0, alpha = 0, beta = 0, baseline = 0;
+    float step = 0, alpha = 0, beta = 0, baseline = 0, held = 0;
     bool forget = false, forgetVideo = false;
     DepthEstimate result;
   };

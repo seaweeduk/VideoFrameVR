@@ -702,7 +702,7 @@ Strings japaneseStrings(const Strings& english) {
   s.focus.tuningLabels[5] = "照準の上下";
   s.focus.tuningLabels[6] = "照準の左右";
   s.focus.tuningHints[0] = "自動フォーカスで使う最短距離。";
-  s.focus.tuningHints[1] = "自動フォーカスで使う最長距離。";
+  s.focus.tuningHints[1] = "自動フォーカスで使う最長距離。これより遠いものはこの距離に合わせます。";
   s.focus.tuningHints[2] = "新しい距離にフォーカスが移る速度。";
   s.focus.tuningHints[3] = "上げると照準に近い範囲で測定。";
   s.focus.tuningHints[4] = "上げるとより多くの深度を調べ、処理時間が増加。";
@@ -751,7 +751,7 @@ Strings japaneseStrings(const Strings& english) {
   s.focusStatus.reasons[3] = "映像の範囲外";
   s.focusStatus.reasons[4] = "透過領域";
   s.focusStatus.reasons[5] = "測定結果が不一致";
-  s.focusStatus.reasons[6] = "距離の範囲外";
+  s.focusStatus.reasons[6] = "最小距離より近い";
   s.focusStatus.targets[0] = "頭の向きで照準";
   s.focusStatus.targets[1] = "視線追跡中";
   s.focusStatus.targets[2] = "視線追跡：短い欠落を補間中";

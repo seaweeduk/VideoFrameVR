@@ -563,7 +563,8 @@ const Strings kEnglish = {
         "Needs 3D 180° or fisheye video. 2D, flat and 360° stay unchanged.",
         {"Minimum distance", "Maximum distance", "Transition speed", "Sensitivity", "Accuracy",
          "Focus pitch", "Focus yaw"},
-        {"Nearest distance automatic focus accepts.", "Farthest distance automatic focus accepts.",
+        {"Nearest distance automatic focus accepts.",
+         "Farthest distance automatic focus uses. Anything farther focuses here.",
          "How quickly focus moves to a new distance.",
          "Higher values keep focus probes closer to your aim.",
          "Higher values check more candidate depths and take longer.",
@@ -599,7 +600,7 @@ const Strings kEnglish = {
     "Applies now. Automatic uses your system language.",
     {
         {"plain area", "repeating pattern", "the eyes disagree", "outside the picture",
-         "see-through", "the probes disagree", "outside the distance range"},
+         "see-through", "the probes disagree", "nearer than Minimum distance"},
         {"Aimed by head direction", "Eye tracking active", "Eye tracking: holding through a short gap",
          "Eye tracking lost: using head direction until it is back",
          "Eye tracking not delivering (permission or tracker off): using head direction",

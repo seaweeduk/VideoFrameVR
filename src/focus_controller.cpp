@@ -47,9 +47,15 @@ void FocusController::submit(const DepthEstimate& e, int phase) {
   phase_ += phaseStep_;
 
   const float minus = probes_[0], center = probes_[1], plus = probes_[2];
-  if (minus <= 0 || center <= 0 || plus <= 0) return;
-  const float d = std::min(std::abs(center - minus), std::abs(center - plus));
-  if (d < kAgreement && std::abs(minus - accepted_) > d && std::abs(plus - accepted_) > d) {
+  // A side probe without a depth (ours): the other one decides with the
+  // centre, so that a plain or repeating spot beside the target does not
+  // keep the focus where it was.
+  if (center <= 0 || (minus <= 0 && plus <= 0)) return;
+  const float none = 2 * kAgreement;
+  const float d = std::min(minus > 0 ? std::abs(center - minus) : none,
+                           plus > 0 ? std::abs(center - plus) : none);
+  if (d < kAgreement && (minus <= 0 || std::abs(minus - accepted_) > d) &&
+      (plus <= 0 || std::abs(plus - accepted_) > d)) {
     accepted_ = center;
     state_.locked = true;
   } else if (phase == 0 && ok && d >= kAgreement) {
@@ -62,12 +68,16 @@ float FocusController::advance(const FocusSettings& s, double now, bool eyes) {
   lastAdvance_ = now;
   const float halfBaseline = 0.5f * s.baselineMm / 1000.0f;
   const float candidate = halfBaseline / std::tan(accepted_);
-  state_.holding = !(candidate >= s.minCm / 100.0f && candidate <= s.maxCm / 100.0f);
+  // Nearer than the range: the focus holds. Farther (ours): it goes to the
+  // farthest distance, so that looking from a near object to a far
+  // background does not leave the near focus on it.
+  state_.holding = candidate < s.minCm / 100.0f;
+  const float goal = std::max(accepted_, std::atan(halfBaseline / (s.maxCm / 100.0f)));
   // The exponential form approximates 4 × speed × dt for small steps
   // and stays stable for long frames.
   float rate = kRate * s.speed / 100.0f;
-  if (eyes) rate *= std::clamp(kPursuit / std::abs(accepted_ - shown_), 1.0f, kMaxPursuitGain);
-  if (!state_.holding) shown_ += (accepted_ - shown_) * (1.0f - std::exp(-rate * dt));
+  if (eyes) rate *= std::clamp(kPursuit / std::abs(goal - shown_), 1.0f, kMaxPursuitGain);
+  if (!state_.holding) shown_ += (goal - shown_) * (1.0f - std::exp(-rate * dt));
   state_.distance = std::max(kMinDistance, halfBaseline / std::tan(shown_));
   return state_.distance;
 }

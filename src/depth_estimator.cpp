@@ -29,7 +29,10 @@ constexpr float kAngleRange = 0.008f;
 constexpr float kMinStep = 0.04f * kDegree, kMaxStep = 0.16f * kDegree;
 constexpr float kWindowAngle = 2.88f * kDegree;
 constexpr int kMaxWindow = 72;
-constexpr float kSearchMargin = 0.3f * kDegree;  // beyond infinity, for miscalibrated eyes
+constexpr float kSearchMargin = 0.3f * kDegree;  // nearer than the nearest candidate
+// Beyond the infinity of parallel cameras: videos shot with converged
+// cameras have their backgrounds up to about 2.5° there.
+constexpr float kFarMargin = 3.0f * kDegree;
 constexpr int kMaxWidth = 2048;
 // Real stereo video is not perfectly aligned vertically: its eyes often
 // differ by up to about 1.6° (one camera pitched or rolled against the
@@ -67,7 +70,33 @@ constexpr float kMinSinAlpha = 0.34f;  // 20°
 // the luminance spread of the patch, 0..1 perceptual).
 constexpr float kMinCorrelation = 0.55f;
 constexpr float kUniqueMargin = 0.08f;  // a second peak this close: ambiguous
-constexpr float kMinSpread = 0.01f;
+// Below this spread, sampling noise decides the match. Plain walls, ceilings
+// and dark rooms are a few times above it and match on their faint shading.
+constexpr float kMinSpread = 0.0015f;
+// The coarse pass's peaks within kRivalMargin of its best one are measured
+// again at full resolution, at most kMaxPeaks of them.
+constexpr float kRivalMargin = 0.15f;
+constexpr int kMaxPeaks = 4;
+// A disparity too large for either eye's window to be on the target itself
+// (anchoredScore()'s kTooNear: nearer than about twice the nearest candidate)
+// has only the two windows half of it away: it scores this much less.
+constexpr float kUnanchored = 0.3f;
+// Two peaks are the same depth, not rivals, within kSameAngle of disparity or
+// kSameShare of it, or with no dip of kValley in the coarse curve between
+// them (one broad peak).
+constexpr float kSameAngle = 1.5f * kDegree, kSameShare = 0.2f, kValley = 0.08f;
+// Farther than the infinity of parallel cameras by more than kBeyondFree, a
+// match scores kBeyondCost less, until the video is known to reach that far
+// (VerticalOffset::beyond).
+constexpr float kBeyondFree = 0.5f * kDegree, kBeyondCost = 0.1f;
+// An ambiguous match is still taken if it is farther than the held focus,
+// scores kHeldCorrelation and the held depth fits worse by kHeldMargin
+// (DepthRequest::held).
+constexpr float kHeldCorrelation = 0.8f, kHeldMargin = 0.08f;
+// A coarse score this far below the best one changes nothing, however much
+// lower it really is: it is no peak to measure again, a dip between two
+// peaks, and no fit for the held focus.
+constexpr float kNoMatter = kRivalMargin + std::max(kValley, kHeldMargin);
 // Patch values other than luminance: outside the picture, and (passthrough)
 // showing the room, which is left out of the match.
 constexpr float kOutside = -1.0f, kClear = -0.5f;
@@ -259,6 +288,25 @@ int rightCorner(int width, int d, int n, int sx = 0) {
   return width / 2 + (d - (d >> 1)) - n / 2 + sx;
 }
 
+// How well disparity d holds with one eye's window on the target itself
+// (corner x) and the other eye's a whole disparity away, for the better of
+// both eyes (rows ly and ry). kTooNear: neither pair fits the patch, which
+// ends where the nearest candidates' windows do. kNoAnchor: none to judge by
+// (see-through, or off the picture).
+constexpr float kTooNear = -2.0f, kNoAnchor = 2.0f;
+float anchoredScore(const Image& l, const Image& r, int x, int ly, int ry, int d, int n) {
+  float score = kTooNear;
+  bool fits = false;
+  for (int eye = 0; eye < 2; ++eye) {
+    const int lx = eye ? x - d : x, rx = eye ? x : x + d;
+    if (lx < 0 || rx < 0 || lx + n > l.width || rx + n > r.width) continue;
+    fits = true;
+    const Correlation c = correlate(l, r, lx, ly, rx, ry, n);
+    if (c.valid) score = std::max(score, c.score);
+  }
+  return score > kTooNear || !fits ? score : kNoAnchor;
+}
+
 // A pass of the match: every disparity dLow..dHigh at every row offset
 // dyLow..dyHigh of the right window, as correlate() pairs them (the left
 // window's top row is y0, both are moved across by sx).
@@ -274,6 +322,8 @@ struct Scratch {
   std::vector<float> leftRows, rightRows;  // the windows' rows laid out by disparity
   std::vector<float> left, right, rowSums;  // the patches reduced for the coarse pass
   std::vector<int> rowCounts, rowOutside;
+  std::vector<float> curve;  // match()'s coarse score per disparity
+  std::vector<int> order;    // and its disparities, best first
 };
 
 // f is coarseFactor()'s.
@@ -521,7 +571,7 @@ Curve bestPerDisparity(const std::vector<float>& table, int disparities, int row
 
 DepthEstimate match(const Image& l, const Image& r, int window, int low, int high, float step,
                     float alpha, float beta, float baseline, bool masked, int reach,
-                    VerticalOffset& vertical, Scratch& s) {
+                    VerticalOffset& vertical, Scratch& s, float held = 0) {
   DepthEstimate e;
   const int f = coarseFactor(window);
   // Passthrough shows the room through most of the target's window: the
@@ -563,61 +613,187 @@ DepthEstimate match(const Image& l, const Image& r, int window, int low, int hig
     narrow = bestPerDisparity(table, disparities, rows, centre - band, centre + band, slack);
   }
   const Curve& use = narrow.best >= 0 ? narrow : wide;
-  const std::vector<float>& curve = use.score;
-  const int best = use.best, bestDy = use.dy[best];
-  const float second = use.second;
-
-  // Fine: full resolution around the coarse peak.
-  const int n = window, y0 = (l.height - n) / 2 + sy;
-  float fineBest = -2;
-  int fineD = 0, fineDy = 0;
-  float spread = 0;
-  const int around = f * (best + cLow);
-  const int dLow = std::max(low, around - f - 1), dHigh = std::min(high, around + f + 1);
-  const int dyLow = f * bestDy - f, dyHigh = f * bestDy + f, fineRows = dyHigh - dyLow + 1;
-  correlateAll(l, r, {n, y0, sx, dLow, dHigh, dyLow, dyHigh}, s, s.fine, &s.spreads);
-  for (int d = dLow; d <= dHigh; ++d)
-    for (int dy = dyLow; dy <= dyHigh; ++dy) {
-      const size_t at = static_cast<size_t>(d - dLow) * fineRows + dy - dyLow;
-      if (s.spreads[at] >= 0 && s.fine[at] > fineBest) {
-        fineBest = s.fine[at];
-        fineD = d;
-        fineDy = dy;
-        spread = s.spreads[at];
-      }
-    }
-  if (fineBest < -1) return e;  // Edge
-  auto scoreAt = [&](int d) {
-    if (d >= dLow && d <= dHigh) {
-      const size_t at = static_cast<size_t>(d - dLow) * fineRows + fineDy - dyLow;
-      return s.spreads[at] >= 0 ? s.fine[at] : std::numeric_limits<float>::quiet_NaN();
-    }
-    const Correlation c = correlate(l, r, leftCorner(l.width, d, n, sx), y0,
-                                    rightCorner(l.width, d, n, sx), y0 + fineDy, n);
-    return c.valid ? c.score : std::numeric_limits<float>::quiet_NaN();
+  // Windows half a disparity to either side of the target often agree by
+  // chance where the picture is smooth, wherever the target is. So each
+  // disparity must also hold with one eye's window on the target itself (the
+  // other one a whole disparity away), for the better of both eyes: the
+  // lower of both scores counts.
+  auto cost = [&](float disparity) {
+    return disparity < vertical.beyond - kBeyondFree ? kBeyondCost : 0.0f;
   };
-  float sub = 0;
-  const float before = scoreAt(fineD - 1), after = scoreAt(fineD + 1);
-  if (!std::isnan(before) && !std::isnan(after)) {
-    const float curvature = before - 2 * fineBest + after;
-    if (curvature < -1e-6f) sub = std::clamp(0.5f * (before - after) / curvature, -0.5f, 0.5f);
+  // That can only lower a score, so the disparities are taken best first,
+  // and those too far below the best one to matter (kNoMatter) keep theirs.
+  std::vector<float>& curve = s.curve;
+  std::vector<int>& order = s.order;
+  curve.assign(disparities, -2.0f);
+  order.clear();
+  for (int i = 0; i < disparities; ++i) {
+    if (use.score[i] <= -2.0f) continue;
+    curve[i] = use.score[i] - cost((i + cLow) * f * step);
+    order.push_back(i);
   }
+  auto above = [&](int a, int b) { return curve[a] > curve[b] || (curve[a] == curve[b] && a < b); };
+  std::sort(order.begin(), order.end(), above);
+  int best = -1;
+  const int cCentre = cl.width / 2 - cn / 2 + csx;
+  for (int i : order) {
+    if (best >= 0 && curve[i] < curve[best] - kNoMatter) break;
+    const int d = i + cLow;
+    const float anchor = anchoredScore(cl, cr, cCentre, cy, cy + use.dy[i], d, cn);
+    curve[i] = anchor == kTooNear ? curve[i] - kUnanchored
+                                  : std::min(curve[i], anchor - cost(d * f * step));
+    if (best < 0 || above(i, best)) best = i;
+  }
+
+  // The coarse curve's peaks that come near its best one, best first. Its
+  // small windows often score unrelated places as high as the right one: each
+  // is measured again at full resolution, which tells them apart.
+  int peaks[kMaxPeaks];
+  int peakCount = 0;
+  peaks[peakCount++] = best;
+  while (peakCount < kMaxPeaks) {
+    int next = -1;
+    for (int i = 1; i + 1 < disparities; ++i) {
+      if (curve[i] < curve[i - 1] || curve[i] < curve[i + 1]) continue;
+      if (curve[i] < curve[best] - kRivalMargin) continue;
+      bool apart = true;
+      for (int k = 0; k < peakCount; ++k) apart &= std::abs(i - peaks[k]) > 2;
+      if (apart && (next < 0 || curve[i] > curve[next])) next = i;
+    }
+    if (next < 0) break;
+    peaks[peakCount++] = next;
+  }
+
+  // Fine: full resolution around a coarse peak.
+  const int n = window, y0 = (l.height - n) / 2 + sy;
+  struct Fine {
+    float score = -2, spread = 0, sub = 0;
+    int d = 0, dy = 0;
+  };
+  auto refine = [&](int peak) {
+    Fine fine;
+    const int around = f * (peak + cLow);
+    const int dLow = std::max(low, around - f - 1), dHigh = std::min(high, around + f + 1);
+    const int dyLow = f * use.dy[peak] - f, dyHigh = f * use.dy[peak] + f,
+              fineRows = dyHigh - dyLow + 1;
+    correlateAll(l, r, {n, y0, sx, dLow, dHigh, dyLow, dyHigh}, s, s.fine, &s.spreads);
+    for (int d = dLow; d <= dHigh; ++d)
+      for (int dy = dyLow; dy <= dyHigh; ++dy) {
+        const size_t at = static_cast<size_t>(d - dLow) * fineRows + dy - dyLow;
+        if (s.spreads[at] >= 0 && s.fine[at] > fine.score) {
+          fine.score = s.fine[at];
+          fine.d = d;
+          fine.dy = dy;
+          fine.spread = s.spreads[at];
+        }
+      }
+    if (fine.score < -1) return fine;
+    auto scoreAt = [&](int d) {
+      if (d >= dLow && d <= dHigh) {
+        const size_t at = static_cast<size_t>(d - dLow) * fineRows + fine.dy - dyLow;
+        return s.spreads[at] >= 0 ? s.fine[at] : std::numeric_limits<float>::quiet_NaN();
+      }
+      const Correlation c = correlate(l, r, leftCorner(l.width, d, n, sx), y0,
+                                      rightCorner(l.width, d, n, sx), y0 + fine.dy, n);
+      return c.valid ? c.score : std::numeric_limits<float>::quiet_NaN();
+    };
+    const float before = scoreAt(fine.d - 1), after = scoreAt(fine.d + 1);
+    if (!std::isnan(before) && !std::isnan(after)) {
+      const float curvature = before - 2 * fine.score + after;
+      if (curvature < -1e-6f)
+        fine.sub = std::clamp(0.5f * (before - after) / curvature, -0.5f, 0.5f);
+    }
+    return fine;
+  };
+  // As the coarse curve: one eye's window on the target itself, within a
+  // pixel of the disparity.
+  auto anchored = [&](const Fine& fine) {
+    float score = kTooNear;
+    bool none = false;
+    const int centre = l.width / 2 - n / 2 + sx;
+    for (int o = -1; o <= 1; ++o) {
+      const float at = anchoredScore(l, r, centre, y0, y0 + fine.dy, fine.d + o, n);
+      if (at == kNoAnchor) none = true;
+      else score = std::max(score, at);
+    }
+    return score > kTooNear || !none ? score : kNoAnchor;
+  };
+  // matched: how well the windows either side of the target match there
+  // (kUnanchored less where no anchored pair fits: matches that near are
+  // mostly chance ones); score: that and the anchored match, which chooses
+  // between peaks.
+  struct Found {
+    Fine fine;
+    float matched = -2, score = -2;
+    int peak = 0;
+  };
+  Found found[kMaxPeaks], chosen;
+  int foundCount = 0;
+  for (int k = 0; k < peakCount; ++k) {
+    Found at{refine(peaks[k]), -2, -2, peaks[k]};
+    if (at.fine.score < -1) continue;
+    const float anchor = anchored(at.fine), less = cost(at.fine.d * step);
+    at.matched = at.fine.score - less - (anchor == kTooNear ? kUnanchored : 0.0f);
+    at.score = anchor == kTooNear ? at.matched : std::min(at.matched, anchor - less);
+    found[foundCount++] = at;
+    if (at.score > chosen.score) chosen = at;
+  }
+  if (foundCount == 0) return e;  // Edge
+  // The best other peak, at full resolution. Another depth only: not one
+  // near the chosen peak, nor one the coarse curve reaches without a dip
+  // (the same broad peak of something with no fine detail).
+  float second = -1;
+  for (int k = 0; k < foundCount; ++k) {
+    const float apart = std::abs(found[k].fine.d - chosen.fine.d) * step;
+    if (apart <= std::max({2 * f * step, kSameAngle,
+                           kSameShare * std::abs(chosen.fine.d * step)}))
+      continue;
+    float dip = 2;
+    for (int i = std::min(found[k].peak, chosen.peak); i <= std::max(found[k].peak, chosen.peak);
+         ++i)
+      dip = std::min(dip, curve[i]);
+    if (curve[chosen.peak] - dip < kValley) continue;
+    second = std::max(second, found[k].score);
+  }
+  const float fineBest = chosen.score, spread = chosen.fine.spread, sub = chosen.fine.sub;
+  const int fineD = chosen.fine.d;
   e.distance = distanceFromDisparity(alpha, (fineD + sub) * step, baseline);
 
   if (spread < kMinSpread) {
     e.status = DepthStatus::Blank;
     return e;
   }
-  if (fineBest < kMinCorrelation) {
+  // A thing nearer than the background beside it can match well without
+  // the anchored windows, which then look past it.
+  if (chosen.matched < kMinCorrelation) {
     e.status = DepthStatus::Mismatch;
     return e;
   }
-  if (second > curve[best] - kUniqueMargin) {
-    e.status = DepthStatus::Ambiguous;
-    return e;
+  if (second > fineBest - kUniqueMargin) {
+    // Several depths fit, which keeps the focus where it is. But if where it
+    // is (held) is not one of them, and nearer than the best fit, staying is
+    // the one answer known to be wrong: the best fit is taken. Only towards
+    // far: a wrong far focus on a near thing is the lesser mistake.
+    const float at = held > 0 ? disparityAt(alpha, 0.5f * baseline / std::tan(held), baseline) : 0;
+    bool ruledOut = false;
+    if (held > 0 && fineBest >= kHeldCorrelation && fineD * step < at) {
+      const float same = std::max(kSameAngle, kSameShare * at);
+      const int from = static_cast<int>(std::floor((at - same) / (f * step))) - cLow,
+                to = static_cast<int>(std::ceil((at + same) / (f * step))) - cLow;
+      float fits = -2;
+      for (int i = std::max(from, 0); i <= std::min(to, disparities - 1); ++i)
+        fits = std::max(fits, curve[i]);
+      ruledOut = fits < curve[chosen.peak] - kHeldMargin;
+    }
+    if (!ruledOut) {
+      e.status = DepthStatus::Ambiguous;
+      return e;
+    }
   }
+  if (fineBest >= kLearnCorrelation && fineBest - second >= kLearnMargin)
+    vertical.addBeyond((fineD + sub) * step);
   e.confidence = std::clamp((fineBest - kMinCorrelation) / 0.4f, 0.0f, 1.0f) *
-                 std::clamp((curve[best] - second) / 0.3f, 0.0f, 1.0f) *
+                 std::clamp((fineBest - second) / 0.3f, 0.0f, 1.0f) *
                  std::clamp(spread / 0.04f, 0.0f, 1.0f);
   e.status = DepthStatus::Ok;
   return e;
@@ -632,6 +808,13 @@ void VerticalOffset::add(float su, float sv) {
   uu = uu * kLearnDecay + su * su;
   uv = uv * kLearnDecay + su * sv;
   ++samples;
+}
+
+void VerticalOffset::addBeyond(float disparity) {
+  if (disparity >= beyond) return;
+  if (pending < 0 && std::abs(disparity - pending) < kDegree)
+    beyond = std::max(disparity, pending);
+  pending = disparity;
 }
 
 float VerticalOffset::predict(float at) const {
@@ -747,12 +930,12 @@ bool DepthEstimator::request(const DepthRequest& q) {
   const float window = q.window > 0 ? q.window : kWindowAngle;
   const float step = std::clamp(2 * angleStep, kMinStep, kMaxStep) * window / kWindowAngle;
   const int n = std::min(kMaxWindow, 2 * static_cast<int>(std::lround(0.5f * window / step)));
-  // All candidate depths: from infinity to the nearest one (6 cm at
+  // All candidate depths: from beyond infinity to the nearest one (6 cm at
   // a 65 mm baseline), so that depths outside the accepted range are told
   // apart from no match.
   const float nearest =
       0.5f * q.baseline / std::tan(kAngleStart + (64 * accuracy - 1) * angleStep);
-  int low = static_cast<int>(std::floor(-kSearchMargin / step));
+  int low = static_cast<int>(std::floor(-kFarMargin / step));
   int high = static_cast<int>(
       std::ceil((disparityAt(alpha, nearest, q.baseline) + kSearchMargin) / step));
   // Room on every side for the window to move off a see-through target, in
@@ -785,6 +968,7 @@ bool DepthEstimator::request(const DepthRequest& q) {
   job.alpha = alpha;
   job.beta = beta;
   job.baseline = q.baseline;
+  job.held = q.held;
   job.accuracy = accuracy;
 
   int projection = 0;
@@ -948,7 +1132,8 @@ void DepthEstimator::work() {
     const uint64_t tag = job.result.tag;
     if (job.forgetVideo) vertical_ = VerticalOffset{};
     job.result = match(left, right, job.window, job.low, job.high, job.step, job.alpha,
-                       job.beta, job.baseline, job.masked, job.reach, vertical_, scratch);
+                       job.beta, job.baseline, job.masked, job.reach, vertical_, scratch,
+                       job.held);
     job.result.tag = tag;
     if (job.result.status == DepthStatus::Ok) {
       job.result.angle = candidateAngle(job.result.distance, job.baseline, job.accuracy);

@@ -14,7 +14,7 @@ struct FocusSettings {
   int distanceCm = 200;  // manual focal distance, from the camera
   int baselineMm = 65;   // camera separation (calibration)
   // Automatic only.
-  int minCm = 10, maxCm = 1000;  // accepted depth range; estimates outside it are held, not taken
+  int minCm = 10, maxCm = 1000;  // depth range: a nearer estimate is held, a farther one shown at maxCm
   int speed = 100;        // transition speed in hundredths (1.00 = an angle filter of 4 per second)
   int sensitivity = 100;  // hundredths, 0.50..2.00: closer probes, so switching near edges
   int accuracy = 8;       // 1..128: 64 × accuracy candidate depths
