@@ -19,7 +19,9 @@
 class RoomLight {
  public:
   struct Reading {
-    bool colour = false;  // false: the cameras see no colour (grey, perhaps tinted)
+    // false: the cameras see no colour (grey, perhaps tinted), or the room is
+    // too dark to tell its light's
+    bool colour = false;
     float light[3] = {1, 1, 1};  // the light's colour, linear red, green and blue (any scale)
     float white = 1;  // where the room's white sits, linear (1 = the display's)
   };

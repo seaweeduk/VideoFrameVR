@@ -811,10 +811,10 @@ int run(Options opts) {
   double roomFailedUntil = 0;  // glfwGetTime() Match the room stops saying it failed
   // Match the room, a switch: on, the room's reading (the run's first, or
   // Read again's) times the strengths, from the video's own balance (grey
-  // cameras leave its warmth and tint). Moved by hand while on, the sliders
-  // stay as moved until the match is applied again (a strength, Read again).
-  // A reading is kept when it ends, but applied only if they were not moved
-  // by hand or reset after it was asked for.
+  // cameras and a dark room leave the warmth and tint as they are). Moved by
+  // hand while on, the sliders stay as moved until the match is applied again
+  // (a strength, Read again). A reading is kept when it ends, but applied
+  // only if they were not moved by hand or reset after it was asked for.
   ColourBalance roomBalance;
   std::optional<RoomLight::Reading> roomReading;  // this run's latest
   bool roomMatched = false;
@@ -2592,15 +2592,15 @@ int run(Options opts) {
     const bool blended = canBlend && (app.video.passthrough || app.video.opacity < 100);
     // A room reading that ended: kept for the run and matched while the
     // switch is on (unless the sliders were moved or reset since it was asked
-    // for), or a moment saying it failed (the switch going off again, nothing
-    // matched yet, if there is no earlier reading to use).
+    // for), or a moment saying it failed. The switch stays as it was set:
+    // with no earlier reading to use nothing is matched yet, and Read again
+    // tries once more.
     if (std::optional<RoomLight::Reading> reading; roomLight.take(reading)) {
       if (reading) {
         roomReading = reading;
         if (roomAsked == balanceEdits) applyRoomMatch();
       } else {
         roomFailedUntil = glfwGetTime() + 4;
-        if (!roomReading) roomMatched = false;  // the video's own balance again
       }
     }
     // Saved on every change of folder, so even a killed player reopens there.
