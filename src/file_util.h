@@ -18,6 +18,8 @@ bool fileNameLess(const std::string& a, const std::string& b);
 // folders never looked into for videos.
 bool binOrLost(const std::string& name);
 
+// Whether a name (from a drive or a server: any bytes) is valid UTF-8.
+bool validUtf8(const std::string& s);
 // Browser names: Stash's case folding, but invalid UTF-8 keeps its bytes.
 std::string foldFileName(const std::string& name);
 // A collation key for an already folded name. Cache it before sorting.

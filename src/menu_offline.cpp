@@ -105,10 +105,11 @@ const Offline::Download* Menu::downloadOf(const std::string& path) const {
 }
 
 // A video file here, on a share or Stash's stream that answers, not
-// downloaded or queued.
+// downloaded or queued; its name UTF-8, as the list of downloads keeps it.
 bool Menu::downloadable(const std::string& path) const {
   if (!offline_ || path.empty() || !isVideoFile(path)) return false;
   if (!remote::isRemote(path) && !isStashScene(path) && path[0] != '/') return false;
+  if (!validUtf8(path)) return false;
   return !offline_->serverDown(path) && !downloadOf(path);
 }
 
