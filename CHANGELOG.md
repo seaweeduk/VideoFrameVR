@@ -15,6 +15,22 @@ Sections, each only if it has lines, in this order: New, Improved, Fixed,
 Removed. Every line starts "- ", then optionally "[Frame] " or "[Desktop] ".
 -->
 
+## 0.5.0 · 2026-11-14
+### New
+- The next video plays when one ends; a new button by Next has Shuffle and Repeat this video
+- Stereo focus aimed with eye tracking learns where you really look from your menu clicks
+- [Frame] Foveation uses the same learned eye tracking to stay sharp where you look
+### Improved
+- Stereo focus settings are simpler: one Show focus target switch and no State group
+- Automatic focus, Remove background and videos from network shares use less power
+- Controller beams fade out towards the pointer dot
+### Fixed
+- Automatic focus often read plain walls, ceilings and backgrounds as near
+- [Frame] Match the room switched itself off in a dark room
+- Cancelled downloads could leave files behind, and odd characters in names crashed the app
+- In Stash, Scenes kept a pinned list's filters, and some expanded filter lists overlapped
+- A Stash address you only tried in setup or Settings could appear in saved diagnostics
+
 ## 0.4.0 · 2026-11-12
 ### New
 - Remove background handles solid-colour backgrounds too, found automatically or picked by you
