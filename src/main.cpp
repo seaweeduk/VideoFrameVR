@@ -2623,7 +2623,8 @@ int run(Options opts) {
       if (!eyeTargets.update()) break;
     }
     const bool shouldRender = xr.beginFrame();
-    if (pipelineVideo && std::abs(xr.displayPeriod() - pipelinePeriod) > 0.0005) {
+    if (pipelineVideo && xr.displayPeriod() > 0 &&
+        std::abs(xr.displayPeriod() - pipelinePeriod) > 0.0005) {
       pipelinePeriod = xr.displayPeriod();
       player.setPipelined(true, pipelinePeriod);
     }
