@@ -909,6 +909,11 @@ void StashPages::showScenes(Menu& m) {
   st.placePending = true;
 }
 
+void StashPages::showOwnScenes(Menu& m) {
+  showScenes(m);
+  leavePin(m);
+}
+
 void StashPages::leaveScenes(Menu& m) {
   StashMenu& st = state(m);
   if (st.full == StashFull::None) {
@@ -937,6 +942,7 @@ ListPlace StashPages::resultsPlace(Menu& m) {
 void StashPages::openScenes(Menu& m, const StashList& list) {
   StashMenu& st = state(m);
   if (m.page_ != Menu::Page::StashScenes) showScenes(m);
+  leavePin(m);
   st.full = StashFull::None;
   if (st.list != list) {
     st.undo = st.list;
@@ -1007,8 +1013,10 @@ void StashPages::showFull(Menu& m, StashFull full, StashLookKind look) {
   if (m.page_ != Menu::Page::StashScenes && m.page_ != Menu::Page::StashPerformer &&
       m.page_ != Menu::Page::StashStudio && !cards)
     showScenes(m);
-  if (st.full == StashFull::None)
+  if (st.full == StashFull::None) {
     (cards ? st.performers.scroll : st.scroll) = m.scrollOffset_ + m.scrollFraction_;
+    if (!cards && !st.placePending) st.place = resultsPlace(m);  // else as left, not laid out yet
+  }
   st.full = full;
   st.fullLook = look;
   st.fullSearch.clear();
@@ -1027,10 +1035,65 @@ int StashPages::pinOfList(Menu& m) {
   return -1;
 }
 
+// While it is changed, the pin it was opened as; one it then matches wins.
+int StashPages::shownPin(Menu& m) {
+  StashMenu& st = state(m);
+  if (m.page_ != Menu::Page::StashScenes || !st.ownScenes) return -1;
+  const int pin = pinOfList(m);
+  return pin >= 0 ? pin : st.pin;
+}
+
+// A pinned list as it was pinned, in the Scenes page's place: the page's
+// own list is put aside until its row in the navigation brings it back, or
+// another list opens there (openScenes()).
 void StashPages::openPin(Menu& m, int pin) {
   StashMenu& st = state(m);
   if (pin < 0 || pin >= static_cast<int>(st.pins.size())) return;
-  openScenes(m, st.pins[pin].list);
+  const bool here = m.page_ == Menu::Page::StashScenes;
+  const bool listed = here && st.full == StashFull::None && !st.placePending;
+  if (!here) showScenes(m);
+  if (!st.ownScenes)
+    st.ownScenes = StashSavedList{st.list,
+                                  st.undo,
+                                  listed ? m.scrollOffset_ + m.scrollFraction_ : st.scroll,
+                                  m.side_.position,
+                                  st.fullByName,
+                                  0,
+                                  listed ? resultsPlace(m) : st.place};
+  st.pin = pin;
+  st.list = st.pins[pin].list;
+  st.undo.reset();
+  st.full = StashFull::None;
+  st.fullSearch.clear();
+  st.stale = true;
+  st.placePending = false;
+  m.editing_ = false;
+  m.scrollOffset_ = 0;
+  m.scrollFraction_ = 0;
+  m.side_.position = 0;
+  m.dirty_ = true;
+}
+
+void StashPages::leavePin(Menu& m) {
+  StashMenu& st = state(m);
+  if (!st.ownScenes) return;
+  const StashSavedList own = std::move(*st.ownScenes);
+  st.ownScenes.reset();
+  st.pin = -1;
+  st.list = own.list;
+  st.undo = own.undo;
+  st.scroll = own.scroll;
+  st.place = own.place;
+  st.fullByName = own.fullByName;
+  st.full = StashFull::None;
+  st.fullSearch.clear();
+  st.stale = true;
+  st.placePending = true;
+  m.editing_ = false;
+  m.scrollOffset_ = static_cast<int>(std::floor(own.scroll));
+  m.scrollFraction_ = own.scroll - m.scrollOffset_;
+  m.side_.position = own.rail;
+  m.dirty_ = true;
 }
 
 // Plays a scene's file, with the results as the list Previous and Next go
@@ -1169,8 +1232,13 @@ void StashPages::layoutHeader(Menu& m, double x0) {
         m, t.unpin, StashIcon::Pin,
         [&m, pin] {
           StashMenu& s = state(m);
+          const bool shown = shownPin(m) == pin;
           s.pins.erase(s.pins.begin() + pin);
           saveStashPins(s.pins);
+          if (shown || s.pin == pin)  // stays shown, unpinned: Pin takes it back
+            s.pin = -1;
+          else if (s.pin > pin)
+            --s.pin;
           return MenuCommand{};
         },
         0, y, h));
@@ -1192,6 +1260,10 @@ void StashPages::layoutHeader(Menu& m, double x0) {
           const StashList list = scopedList(m);
           s.pins.push_back({stashListName(list, catalog(m)), list});
           saveStashPins(s.pins);
+          // A pinned list changed and pinned anew shows as the new pin; the
+          // Scenes page's own list pinned stays the Scenes page.
+          if (s.ownScenes && m.page_ == Menu::Page::StashScenes)
+            s.pin = static_cast<int>(s.pins.size()) - 1;
           return MenuCommand{};
         },
         0, y, h));
@@ -2161,8 +2233,16 @@ void StashPages::drawScenesHeading(const Menu& m, cairo_t* cr) {
   const int studio = c && fixedStudio(m) ? c->studioById(fixedStudio(m)) : -1;
   if (studio >= 0) heading = c->studios()[studio].name;
   const StashList list = scopedList(m);
+  bool pinned = false;
   for (const StashPin& p : st.pins)
-    if (p.list == list) heading = p.name;
+    if (p.list == list) {
+      heading = p.name;
+      pinned = true;
+    }
+  // A pinned list keeps its name while changed.
+  if (!pinned && m.page_ == Menu::Page::StashScenes && st.ownScenes && st.pin >= 0 &&
+      st.pin < static_cast<int>(st.pins.size()))
+    heading = st.pins[st.pin].name;
   if (m.editing_ && st.typing == StashMenu::Typing::PinName)  // being renamed
     heading.insert(heading == m.filterText() ? m.cursorAt() : heading.size(), "▏");
   const double x = st.titleX;
