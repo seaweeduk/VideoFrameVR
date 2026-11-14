@@ -86,6 +86,7 @@ std::string allLines(const Settings& s) {
   if (s.resolutionNotice) out << "resolution_notice=1\n";
   out << "foveation=" << foveationLevelName(s.foveation) << "\n";
   out << "show_foveation=" << s.showFoveation << "\n";
+  out << "foveation_learned=" << s.foveationLearned << "\n";
   out << "sharp_bins=" << s.sharpBins << "\n";
   out << "foveation_ring=" << s.foveationRing << "\n";
   out << "foveation_outside=" << s.foveationOutside << "\n";
@@ -96,6 +97,7 @@ std::string allLines(const Settings& s) {
   out << "refresh_rate=" << s.refreshRate << "\n";
   out << "performance_preset=" << performancePresetName(s.performancePreset) << "\n";
   out << focusSettingLines(s.focus, s.focusPrefs);
+  out << "gaze_correction_learned=" << s.gazeLearned << "\n";
   out << "motion_emulation=" << (s.motionEmulation ? 1 : 0) << "\n";
   out << "motion_distance_cm=" << s.motionDistance << "\n";
   out << "resume=" << (s.resume ? 1 : 0) << "\n";
@@ -230,6 +232,7 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "accent_saturation")
       s.accent.saturation = std::clamp(std::atoi(value.c_str()), 0, 100);
     else if (key == "language") s.language = value;
+    else if (key == "gaze_correction_learned") s.gazeLearned = value;
     else if (key == "keyboard_layout") s.keyboardLayout = value;
     else if (key == "keyboard_layout_other") s.keyboardOther = value;
     else if (key == "floating_subtitles_2d") s.floatingSubtitles = value == "1";
@@ -258,6 +261,7 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "resolution_notice") s.resolutionNotice = value == "1";
     else if (key == "foveation") parseFoveationLevel(value, s.foveation);
     else if (key == "show_foveation") s.showFoveation = std::atoi(value.c_str()) > 0;
+    else if (key == "foveation_learned") s.foveationLearned = value == "1";
     else if (key == "sharp_bins") s.sharpBins = value == "1" ? 1 : 3;
     else if (key == "foveation_ring" || key == "ring") s.foveationRing = value != "0" && value != "off";
     else if (key == "foveation_outside") s.foveationOutside = value == "2" ? 2 : 4;

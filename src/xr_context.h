@@ -196,6 +196,8 @@ class XrContext {
   // Whether someone wears the headset (XR_EXT_user_presence): 1 yes, 0 no,
   // -1 not known (the runtime or the headset can't tell, or hasn't yet).
   int userPresence() const { return userPresence_; }
+  // The OpenXR runtime's version, as it packs it.
+  uint64_t runtimeVersion() const { return runtimeVersion_; }
   // The session or instance was lost, or the runtime hung: the app stops.
   bool failed() const { return failed_; }
 
@@ -351,6 +353,7 @@ class XrContext {
   bool triggerThreshold_ = false;  // ... and XR_VALVE_analog_threshold, for its trigger
   bool presenceExtension_ = false;  // XR_EXT_user_presence enabled
   int userPresence_ = -1;
+  uint64_t runtimeVersion_ = 0;
   XrAction gazeAction_ = XR_NULL_HANDLE;
   XrSpace gazeSpace_ = XR_NULL_HANDLE;
   GazeState gaze_;

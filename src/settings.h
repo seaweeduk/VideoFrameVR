@@ -57,6 +57,7 @@ struct Settings {
   bool resolutionNotice = false;  // Frame: say that 1× now means the panel, until the size is changed
   FoveationLevel foveation = FoveationLevel::High;  // Frame: the eye images' (foveation.h)
   bool showFoveation = false;
+  bool foveationLearned = true;  // apply the learned gaze correction, independent of stereo focus
   int sharpBins = kDefaultSharpBins;
   bool foveationRing = kDefaultFoveationRing;
   int foveationOutside = 4;
@@ -74,6 +75,7 @@ struct Settings {
   PerformancePreset performancePreset = PerformancePreset::Custom;
   FocusSettings focus;            // stereo focus of videos without their own
   FocusPreferences focusPrefs;
+  std::string gazeLearned;        // what the eye tracker was off by in earlier sittings (gaze_correction.h)
   bool motionEmulation = true;    // surround video: head translation shown as parallax (motion.h)
   int motionDistance = 200;       // ... of things this far away, cm
   bool resume = true;             // videos start where they were left (library.h)

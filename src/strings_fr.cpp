@@ -673,8 +673,8 @@ Strings frenchStrings(const Strings& english) {
   s.focus.distance = "Distance de focus";
   s.focus.distanceHint = "Distance à laquelle les images stéréo s'alignent.";
   s.focus.gazeDot = "Afficher le point regardé";
-  s.focus.gazeCorrect = "Corriger le décalage du suivi oculaire";
-  s.focus.gazeCorrectHint = "Compenser l'erreur de visée mesurée du suivi oculaire.";
+  s.focus.gazeCorrect = "Utiliser le suivi oculaire appris";
+  s.focus.gazeCorrectHint = "Utiliser les corrections apprises des clics dans les menus pour la mise au point stéréo et son point de regard. Désactivé, utilise le regard du système. L'apprentissage continue en arrière-plan.";
   s.focus.baseline = "Écart des caméras";
   s.focus.baselineHint = "Distance entre les caméras ayant filmé cette vidéo.";
   s.focus.autoIpd = "IPD automatique";
@@ -758,25 +758,14 @@ Strings frenchStrings(const Strings& english) {
   s.focusStatus.targets[3] = "Suivi oculaire perdu : direction de la tête en attendant son retour";
   s.focusStatus.targets[4] = "Suivi oculaire sans données (autorisation ou capteur désactivé) : direction de la tête";
   s.focusStatus.targets[5] = "Suivi oculaire non pris en charge par le runtime ou le casque : direction de la tête";
-  s.focusStatus.targetTags[0] = "tête";
-  s.focusStatus.targetTags[1] = "yeux";
-  s.focusStatus.targetTags[2] = "yeux : maintenu";
-  s.focusStatus.targetTags[3] = "tête (yeux perdus)";
-  s.focusStatus.targetTags[4] = "tête (yeux inactifs)";
-  s.focusStatus.targetTags[5] = "tête (sans suivi oculaire)";
   s.focusStatus.far = "loin";
   s.focusStatus.nothing = "rien";
-  s.focusStatus.unavailableBrief = "indisponible";
   s.focusStatus.unavailable = "Mode auto indisponible (échec du démarrage de l'estimation de profondeur)";
-  s.focusStatus.offBrief = "désactivé";
   s.focusStatus.off = "Désactivé : stéréo d'origine de la vidéo, inchangée";
-  s.focusStatus.manualBrief = "%s manuel";
   s.focusStatus.manual = "Aligné à %s selon vos yeux (IPD %.1f mm) et la pose de la tête";
   s.focusStatus.nearest = "image vidéo la plus proche à %.1f°";
   s.focusStatus.measuring = "Mesure … (à %s en attendant%s)";
-  s.focusStatus.measuringBrief = "mesure%s";
   s.focusStatus.holding = "Maintien à %s : profondeur mesurée hors des distances minimale et maximale";
-  s.focusStatus.heldBrief = "%s maintenu : hors plage";
   s.focusStatus.following = "Suit le regard à %s (dernière mesure %s, concordance %s%s)";
   s.releaseUpdate.downloading = "Téléchargement de %s …";
   s.releaseUpdate.ready = "Redémarrer l'app pour utiliser %s";
@@ -1244,5 +1233,6 @@ Strings frenchStrings(const Strings& english) {
   s.whatsNew.close = "Fermer";
   s.whatsNew.showAfterUpdates = "Afficher après les mises à jour";
   s.whatsNew.updatedFrom = "Mis à jour de %s vers %s";
+  s.foveationLearnedHint = "Déplacer la zone nette avec la correction apprise des clics dans les menus. Désactivé, utilise le regard du système. Indépendant de la mise au point stéréo.";
   return s;
 }

@@ -673,8 +673,8 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.focus.distance = "Distância do foco";
   s.focus.distanceHint = "Distância em que as imagens estéreo coincidem.";
   s.focus.gazeDot = "Mostrar alvo do olhar";
-  s.focus.gazeCorrect = "Corrigir eye tracking";
-  s.focus.gazeCorrectHint = "Compensar o desvio medido do eye tracking.";
+  s.focus.gazeCorrect = "Usar rastreamento ocular aprendido";
+  s.focus.gazeCorrectHint = "Usar correções aprendidas com cliques nos menus para foco estéreo e seu ponto de olhar. Desativado usa o olhar do sistema. O aprendizado continua em segundo plano.";
   s.focus.baseline = "Distância entre câmeras";
   s.focus.baselineHint = "Distância entre as câmeras que gravaram este vídeo.";
   s.focus.autoIpd = "IPD automática";
@@ -758,25 +758,14 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.focusStatus.targets[3] = "Eye tracking perdido: usando a cabeça até voltar";
   s.focusStatus.targets[4] = "Eye tracking sem dados (sem permissão ou desligado): usando a cabeça";
   s.focusStatus.targets[5] = "Eye tracking não suportado pelo runtime ou headset: usando a cabeça";
-  s.focusStatus.targetTags[0] = "cabeça";
-  s.focusStatus.targetTags[1] = "olhos";
-  s.focusStatus.targetTags[2] = "olhos: mantido";
-  s.focusStatus.targetTags[3] = "cabeça (olhar perdido)";
-  s.focusStatus.targetTags[4] = "cabeça (olhar inativo)";
-  s.focusStatus.targetTags[5] = "cabeça (sem eye tracking)";
   s.focusStatus.far = "longe";
   s.focusStatus.nothing = "nada";
-  s.focusStatus.unavailableBrief = "indisponível";
   s.focusStatus.unavailable = "Automático indisponível (falha ao iniciar estimativa de profundidade)";
-  s.focusStatus.offBrief = "desligado";
   s.focusStatus.off = "Desligado: estéreo original do vídeo preservado";
-  s.focusStatus.manualBrief = "%s manual";
   s.focusStatus.manual = "Alinhado a %s para seus olhos (IPD %.1f mm) e orientação da cabeça";
   s.focusStatus.nearest = "imagem mais próxima a %.1f°";
   s.focusStatus.measuring = "Medindo … (mantendo %s%s por enquanto)";
-  s.focusStatus.measuringBrief = "medindo%s";
   s.focusStatus.holding = "Mantendo %s: profundidade medida fora da distância mínima ou máxima";
-  s.focusStatus.heldBrief = "%s mantido: fora do intervalo";
   s.focusStatus.following = "Seguindo olhar a %s (última medida: %s, concordância %s%s)";
   s.releaseUpdate.downloading = "Baixando %s …";
   s.releaseUpdate.ready = "Reinicie o app para usar %s";
@@ -1244,5 +1233,6 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.whatsNew.close = "Fechar";
   s.whatsNew.showAfterUpdates = "Mostrar após atualizações";
   s.whatsNew.updatedFrom = "Atualizado de %s para %s";
+  s.foveationLearnedHint = "Mover a área nítida com a correção aprendida com cliques nos menus. Desativado usa o olhar do sistema. Independente do foco estéreo.";
   return s;
 }

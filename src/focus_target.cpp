@@ -14,12 +14,6 @@ constexpr float kMinForward = 0.2f;  // gaze more than ~78° off the head's axis
 // One Euro filter (ours): cutoff 1.5 Hz at rest plus 12 Hz per rad/s of eye
 // speed, the speed itself filtered at 1 Hz. Quiet fixations, quick saccades.
 constexpr float kMinCutoff = 1.5f, kBeta = 12.0f, kSpeedCutoff = 1.0f;
-// The eye tracker's error in head axes, degrees, +right/+up, as a function of
-// the true direction: c + a·yaw + b·pitch. Fitted to 13 rounds of Steam Frame
-// gaze checks (head-fixed targets, ±15° yaw, ±12° pitch), 2026-10-23.
-constexpr float kErrorYaw[3] = {1.168f, -0.050f, -0.041f};
-constexpr float kErrorPitch[3] = {-3.344f, 0.074f, 0.117f};
-
 constexpr float kPi = 3.14159265f;
 const Vec3 kForward = {0.0f, 0.0f, -1.0f};
 
@@ -27,22 +21,6 @@ Vec3 blend(Vec3 from, Vec3 to, double t) {
   const float s = static_cast<float>(std::clamp(t, 0.0, 1.0));
   const float k = s * s * (3 - 2 * s);
   return normalize(from * (1 - k) + to * k);
-}
-
-// The direction the eyes really look at, solving measured = true + error(true).
-Vec3 corrected(Vec3 d) {
-  const float yaw = std::atan2(d.x, -d.z) * 180 / kPi;
-  const float pitch = std::asin(std::clamp(d.y, -1.0f, 1.0f)) * 180 / kPi;
-  float y = yaw, p = pitch;
-  for (int i = 0; i < 4; ++i) {
-    const float ey = kErrorYaw[0] + kErrorYaw[1] * y + kErrorYaw[2] * p;
-    const float ep = kErrorPitch[0] + kErrorPitch[1] * y + kErrorPitch[2] * p;
-    y = yaw - ey;
-    p = pitch - ep;
-  }
-  y *= kPi / 180;
-  p *= kPi / 180;
-  return {std::sin(y) * std::cos(p), std::sin(p), -std::cos(y) * std::cos(p)};
 }
 
 }  // namespace
@@ -64,7 +42,7 @@ void FocusTargetSelector::smooth(Vec3 g, double time) {
 }
 
 FocusTarget FocusTargetSelector::update(bool eyeTracking, const GazeState& gaze, Quat head,
-                                        double now, bool correct) {
+                                        double now, const GazeFit& fit) {
   const float dt = last_ < 0 ? 0.0f : static_cast<float>(std::clamp(now - last_, 0.0, 0.1));
   last_ = now;
   FocusTarget t;
@@ -76,10 +54,12 @@ FocusTarget FocusTargetSelector::update(bool eyeTracking, const GazeState& gaze,
     const Vec3 local = normalize(transformDir(rotation(conjugate(head)), world));
     good = local.z < -kMinForward;
     if (good) {
-      smooth(correct ? corrected(local) : local, gaze.ageKnown ? gaze.sampleSeconds : now);
+      trackerGaze_ = local;
+      smooth(applyGazeFit(local, fit), gaze.ageKnown ? gaze.sampleSeconds : now);
       goodAt_ = now;
     }
   }
+  trackerGood_ = good;
   gazeKnown_ = gaze.available && goodAt_ >= 0 && now - goodAt_ <= kHold;
   if (!eyeTracking || !gaze.available) {
     phase_ = Phase::Head;
@@ -158,19 +138,6 @@ const char* targetStatusText(TargetStatus status) {
       return t.targets[4];
     case TargetStatus::EyesUnsupported:
       return t.targets[5];
-  }
-  return "";
-}
-
-const char* targetStatusTag(TargetStatus status) {
-  const auto& t = strings().focusStatus;
-  switch (status) {
-    case TargetStatus::Head: return t.targetTags[0];
-    case TargetStatus::Eyes: return t.targetTags[1];
-    case TargetStatus::EyesHolding: return t.targetTags[2];
-    case TargetStatus::EyesFallback: return t.targetTags[3];
-    case TargetStatus::EyesInactive: return t.targetTags[4];
-    case TargetStatus::EyesUnsupported: return t.targetTags[5];
   }
   return "";
 }

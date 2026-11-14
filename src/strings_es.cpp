@@ -673,8 +673,8 @@ Strings spanishStrings(const Strings& english) {
   s.focus.distance = "Distancia de enfoque";
   s.focus.distanceHint = "Distancia donde coinciden las imágenes estéreo.";
   s.focus.gazeDot = "Mostrar punto de mira";
-  s.focus.gazeCorrect = "Corregir desviación ocular";
-  s.focus.gazeCorrectHint = "Compensar la desviación medida del seguimiento ocular.";
+  s.focus.gazeCorrect = "Usar seguimiento ocular aprendido";
+  s.focus.gazeCorrectHint = "Usar las correcciones aprendidas de los clics en menús para el enfoque estéreo y su punto de mirada. Desactivado usa la mirada del sistema. El aprendizaje continúa en segundo plano.";
   s.focus.baseline = "Separación de cámaras";
   s.focus.baselineHint = "Distancia entre las cámaras que grabaron este vídeo.";
   s.focus.autoIpd = "IPD automática";
@@ -758,25 +758,14 @@ Strings spanishStrings(const Strings& english) {
   s.focusStatus.targets[3] = "Seguimiento ocular perdido: se usa la cabeza hasta que vuelva";
   s.focusStatus.targets[4] = "Seguimiento ocular sin datos, sin permiso o desactivado: se usa la cabeza";
   s.focusStatus.targets[5] = "Seguimiento ocular no compatible con el runtime o visor: se usa la cabeza";
-  s.focusStatus.targetTags[0] = "cabeza";
-  s.focusStatus.targetTags[1] = "ojos";
-  s.focusStatus.targetTags[2] = "ojos: retenido";
-  s.focusStatus.targetTags[3] = "cabeza (ojos perdidos)";
-  s.focusStatus.targetTags[4] = "cabeza (ojos inactivos)";
-  s.focusStatus.targetTags[5] = "cabeza (sin seguimiento ocular)";
   s.focusStatus.far = "lejos";
   s.focusStatus.nothing = "nada";
-  s.focusStatus.unavailableBrief = "no disponible";
   s.focusStatus.unavailable = "Auto no disponible, no se pudo iniciar la estimación de profundidad";
-  s.focusStatus.offBrief = "desactivado";
   s.focusStatus.off = "Desactivado: se conserva el estéreo original del vídeo";
-  s.focusStatus.manualBrief = "%s manual";
   s.focusStatus.manual = "Alineado a %s para tus ojos (IPD %.1f mm) y postura de la cabeza";
   s.focusStatus.nearest = "imagen del vídeo más cercana a %.1f°";
   s.focusStatus.measuring = "Midiendo … (por ahora a %s%s)";
-  s.focusStatus.measuringBrief = "midiendo%s";
   s.focusStatus.holding = "Se mantiene %s: profundidad fuera del rango mínimo a máximo";
-  s.focusStatus.heldBrief = "%s retenido: fuera de rango";
   s.focusStatus.following = "Sigue la mirada a %s (última medida: %s, coincidencia %s%s)";
   s.releaseUpdate.downloading = "Descargando %s …";
   s.releaseUpdate.ready = "Reinicia la app para usar %s";
@@ -1244,5 +1233,6 @@ Strings spanishStrings(const Strings& english) {
   s.whatsNew.close = "Cerrar";
   s.whatsNew.showAfterUpdates = "Mostrar tras actualizar";
   s.whatsNew.updatedFrom = "Actualizado de %s a %s";
+  s.foveationLearnedHint = "Mover la zona nítida con la corrección aprendida de los clics en menús. Desactivado usa la mirada del sistema. Independiente del enfoque estéreo.";
   return s;
 }

@@ -341,20 +341,14 @@ struct FocusStrings {
 struct FocusStatusStrings {
   const char* reasons[7];  // FocusReason, except None
   const char* targets[6];  // TargetStatus
-  const char* targetTags[6];
   const char* far;
   const char* nothing;
-  const char* unavailableBrief;
   const char* unavailable;
-  const char* offBrief;
   const char* off;
-  const char* manualBrief;  // printf: distance
   const char* manual;       // printf: distance, IPD in mm
   const char* nearest;      // printf: degrees
   const char* measuring;    // printf: distance, optional reason
-  const char* measuringBrief;  // printf: optional reason
   const char* holding;      // printf: distance
-  const char* heldBrief;    // printf: distance
   const char* following;    // printf: distance, measured distance, confidence, optional reason
 };
 
@@ -1230,6 +1224,7 @@ struct Strings {
   DeleteStrings deletion;
   ColourBalanceStrings colourBalance;
   WhatsNewStrings whatsNew;
+  const char* foveationLearnedHint;
 };
 
 const Strings& strings();

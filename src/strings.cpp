@@ -549,8 +549,9 @@ const Strings kEnglish = {
          "Align stereo at the measured distance where you look."},
         "Aim with", {"Head direction", "Eye tracking"}, "Choose what aims automatic focus.",
         "Focal distance", "Distance where the stereo images align.",
-        "Show where the eyes look", "Correct eye tracking offset",
-        "Compensate for the eye tracker's measured aiming error.",
+        "Show where the eyes look", "Use learned eye tracking",
+        "Use corrections learned from menu clicks for stereo focus and its gaze dot. "
+        "Off uses the runtime's gaze. Learning continues in the background.",
         "Camera separation", "Distance between the cameras that recorded this video.",
         "Automatic IPD", "Use the headset's measured distance between your eyes.",
         "Diagnostics", "Show the focus target and measured distance.",
@@ -604,21 +605,14 @@ const Strings kEnglish = {
          "Eye tracking lost: using head direction until it is back",
          "Eye tracking not delivering (permission or tracker off): using head direction",
          "Eye tracking unsupported by this runtime or headset: using head direction"},
-        {"head", "eyes", "eyes: held", "head (eyes lost)", "head (eyes inactive)",
-         "head (no eye tracking)"},
         "far",
         "nothing",
-        "unavailable",
         "Automatic is unavailable (the depth estimator could not start)",
-        "off",
         "Off: the video's own stereo, unchanged",
-        "%s manual",
         "Lined up at %s for your eyes (IPD %.1f mm) and head pose",
         "nearest video %.1f° off",
         "Measuring … (at %s until then%s)",
-        "measuring%s",
         "Holding %s: the measured depth is outside Minimum to Maximum distance",
-        "%s held: out of range",
         "Following %s where you look (last measured %s, match %s%s)",
     },
     {
@@ -1124,6 +1118,7 @@ const Strings kEnglish = {
         "Show after updates",
         "Updated from %s to %s",
     },
+    "Move the sharp area using the correction learned from menu clicks. Off uses the runtime's gaze. Independent of stereo focus.",
 };
 
 const Strings kGerman = germanStrings(kEnglish);
