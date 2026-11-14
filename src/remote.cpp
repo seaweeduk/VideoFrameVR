@@ -344,7 +344,7 @@ int64_t readStream(Connection& c, Stream& s, void* out, uint64_t count) {
   while (!s.cancelled && !s.failed) {
     if (s.position >= s.handle.length) return 0;
     if (const size_t n = s.take(out, count)) {
-      c.notify();
+      if (s.wantsBlocks(s.handle.length)) c.notify();  // the worker has a block to ask for
       return n;
     }
     s.cv.wait_for(lock, std::chrono::milliseconds(50));
