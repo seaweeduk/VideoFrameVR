@@ -74,8 +74,9 @@ Pipelines::~Pipelines() {
   pipelines.insert(pipelines.end(), std::begin(foveation_), std::end(foveation_));
   pipelines.insert(pipelines.end(), std::begin(tp10_), std::end(tp10_));
   pipelines.insert(pipelines.end(), std::begin(tp10Plain_), std::end(tp10Plain_));
-  for (const auto& look : keyed_)
-    pipelines.insert(pipelines.end(), std::begin(look), std::end(look));
+  for (const auto& order : keyed_)
+    for (const auto& look : order)
+      pipelines.insert(pipelines.end(), std::begin(look), std::end(look));
   pipelines.insert(pipelines.end(), std::begin(keyDistance_), std::end(keyDistance_));
   pipelines.push_back(keyReach_);
   std::vector<VkPipelineLayout> layouts = {layout_, keyLayout_, tp10Layout_, tp10KeyLayout_};
@@ -313,18 +314,20 @@ bool Pipelines::createLayout(std::initializer_list<VkDescriptorSetLayout> sets,
 // The colour key's common pipelines: projection 3 (180, 360 or fisheye), its
 // cut (4) and the colour balance, without and with the tone look, for the eye
 // pass with a density map alone (foveation off, a cubemap and the rest take
-// the general ones). Its distance pass reads the source from the push
-// constants.
+// the general ones). Each again with its mask read first (constant 6), for a
+// mask that holds a shrink's reach. Its distance pass reads the source from
+// the push constants.
 void Pipelines::addKeyed(std::vector<Job>& jobs, SurroundSource source, const uint32_t* fragment,
                          size_t fragmentBytes, const uint32_t* distance, size_t distanceBytes,
                          VkPipelineLayout keyLayout, VkPipelineLayout layout) {
-  for (int look = 0; look < 2; ++look) {
-    const int32_t constants[] = {3, sourceConstant(source), 4, 0, 1, look};
-    add(jobs,
-        {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment, fragmentBytes,
-         VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, 6},
-        eyePass_, "surround (colour key, common mode)", &keyed_[look][source], keyLayout);
-  }
+  for (int first = 0; first < 2; ++first)
+    for (int look = 0; look < 2; ++look) {
+      const int32_t constants[] = {3, sourceConstant(source), 4, 0, 1, look, first};
+      add(jobs,
+          {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), fragment, fragmentBytes,
+           VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, constants, first ? 7u : 6u},
+          eyePass_, "surround (colour key, common mode)", &keyed_[first][look][source], keyLayout);
+    }
   add(jobs,
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), distance, distanceBytes,
        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},

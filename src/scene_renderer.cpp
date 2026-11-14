@@ -646,7 +646,8 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   // ones'). The colour balance has its own, and the look its own with the
   // balance. The colour key has its own pipelines: for the common modes but
   // cubemaps, with the colour balance, without and with the look, for the
-  // eye pass with a density map, else general ones.
+  // eye pass with a density map (each again with the mask read first, for a
+  // mask that holds a shrink's reach), else general ones.
   const bool adjusted = v.adjust[0] != 0.0f || v.adjust[1] != 0.0f || v.adjust[2] != 0.0f;
   const bool balance = v.balance[0] != 0.0f || v.balance[1] != 0.0f || v.balance[2] != 0.0f;
   const bool commonMode =
@@ -659,7 +660,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   if (flags & kColourKey) {
     VkPipeline keyed = VK_NULL_HANDLE;
     if (commonMode && projection < 3 && !(flags & kKeyGreen))
-      keyed = pipelines_.keyed(source, plainEye_, v.look);
+      keyed = pipelines_.keyed(source, plainEye_, v.look, v.key.shrink > 0);
     bind(keyed ? keyed : general(false, false, true), true);
     pushEye(cmd, eye);
     pushDraw(cmd, p);

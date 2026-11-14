@@ -83,7 +83,7 @@ class Pipelines {
   // The picture as it is; the colour balance; the tone look, then the colour
   // balance.
   enum SurroundFinish { kAsItIs, kBalanced, kLookBalanced, kFinishCount };
-  static constexpr uint32_t kMaxConstants = 6;
+  static constexpr uint32_t kMaxConstants = 7;
   // A pipeline's shaders (embedded SPIR-V) and fixed state.
   struct Desc {
     const uint32_t* vertex;
@@ -147,9 +147,10 @@ class Pipelines {
   }
   // The colour key's common pipeline for the eye pass with its density map
   // (180, 360 or fisheye, the colour balance always applied, without or with
-  // the tone look: none when plain needs another).
-  VkPipeline keyed(SurroundSource source, bool plain, bool look) const {
-    return plain && plainEyePass_ != eyePass_ ? VK_NULL_HANDLE : keyed_[look][source];
+  // the tone look: none when plain needs another); keyFirst: for a mask that
+  // holds a shrink's reach, read before the picture.
+  VkPipeline keyed(SurroundSource source, bool plain, bool look, bool keyFirst) const {
+    return plain && plainEyePass_ != eyePass_ ? VK_NULL_HANDLE : keyed_[keyFirst][look][source];
   }
   // The colour key's mask passes (KeyMask): the distances from a frame of
   // this source (its own layout: the scene's, tp10Layout() or a Q08C
@@ -261,8 +262,8 @@ class Pipelines {
   VkPipeline q08c_[kQ08cSitings][kDirectCount] = {}, q08cPlain_[kQ08cSitings][kDirectCount] = {};
   // Per finish; for the eye pass and the plain one.
   VkPipeline surround_[kFinishCount][2][kProjectionCount][kSourceCount][kCutCount] = {};
-  // Without and with the tone look.
-  VkPipeline keyed_[2][kSourceCount] = {};
+  // Mask read after or before the picture; without and with the tone look.
+  VkPipeline keyed_[2][2][kSourceCount] = {};
   VkPipeline keyDistance_[kSourceCount] = {}, keyReach_ = VK_NULL_HANDLE;
   VkSampler samplers_[kSamplerCount] = {};
   GpuImage dummyImage_;
