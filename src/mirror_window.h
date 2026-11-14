@@ -60,7 +60,6 @@ class MirrorWindow {
   GpuContext* gpu_ = nullptr;
   GLFWwindow* window_ = nullptr;
   const Texture* cover_ = nullptr;
-  VkFormat eyeFormat_ = VK_FORMAT_UNDEFINED;
   VkSurfaceKHR surface_ = VK_NULL_HANDLE;
   bool stopped_ = false;
   VkSurfaceFormatKHR format_{};

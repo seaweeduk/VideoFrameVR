@@ -1036,11 +1036,6 @@ bool DirectVideo::returnable(uint64_t& completed) {
   return !rejected_.empty() || (oldest != UINT64_MAX && oldest <= completed);
 }
 
-bool DirectVideo::returning() const {
-  return !rejected_.empty() ||
-         std::any_of(frames_.begin(), frames_.end(), [](auto& f) { return !f->held_; });
-}
-
 void DirectVideo::dropUnused() {
   for (auto it = buffers_.begin(); it != buffers_.end();) {
     if (!(*it)->users) {

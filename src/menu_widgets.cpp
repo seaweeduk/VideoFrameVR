@@ -60,33 +60,6 @@ Menu::Button& Menu::addRound(Icon icon, const std::string& tooltip,
   return buttons_.back();
 }
 
-// Lays out buttons with their own widths, centered on the main panel.
-void Menu::addCenteredRow(double y, double h, std::vector<Button> items, double cx) {
-  double total = 0;
-  for (size_t i = 0; i < items.size(); ++i) total += items[i].w + (i ? kGap : 0);
-  double x = cx - total / 2;
-  for (size_t i = 0; i < items.size(); ++i) {
-    if (i) x += kGap;
-    items[i].x = x;
-    items[i].y = y;
-    items[i].h = h;
-    buttons_.push_back(items[i]);
-    x += items[i].w;
-  }
-}
-
-// Lays out equally wide buttons from x0 to the right margin of the main panel.
-void Menu::addRow(double y, double h, std::vector<Button> items, double x0) {
-  const double w = (kMainWidth - kMargin - x0 - kGap * (items.size() - 1)) / items.size();
-  for (size_t i = 0; i < items.size(); ++i) {
-    items[i].x = x0 + i * (w + kGap);
-    items[i].y = y;
-    items[i].w = w;
-    items[i].h = h;
-    buttons_.push_back(items[i]);
-  }
-}
-
 // The choices as a strip of buttons just above their opener, centred on it
 // where there is room, drawn on top of everything else.
 void Menu::addDropdown(const Button& opener, std::vector<Button> entries) {

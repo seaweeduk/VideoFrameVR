@@ -54,8 +54,6 @@ class SeekPreview {
   void show(double fraction, const Playing& playing, const CurvedPanel& strip);
   // ... or shows nothing.
   void hide() { shown_ = false; }
-  // The corners of what it shows (local space), none while hidden.
-  std::vector<Vec3> corners() const;
   // What is shown this frame, added to the scene's overlays: the frame (or
   // its placeholder) and the time.
   void addTo(std::vector<OverlayDraw>& overlays);

@@ -22,7 +22,6 @@ class HoldRepeat {
     }
     if (!held_) {
       held_ = true;
-      start_ = now;
       next_ = now + delay_;
       return true;
     }
@@ -32,12 +31,11 @@ class HoldRepeat {
     }
     return false;
   }
-  double heldSeconds(double now) const { return held_ ? now - start_ : 0.0; }
 
  private:
   double delay_, interval_;
   bool held_ = false;
-  double start_ = 0, next_ = 0;
+  double next_ = 0;
 };
 
 // Which way a thumbstick is pushed, counting only its dominant axis.

@@ -68,7 +68,7 @@ struct EyeImage {
   VkImageView view = VK_NULL_HANDLE;
   uint32_t index = 0;  // in the eye's swapchain
   int width = 0, height = 0;
-  VkRect2D area{};  // what is drawn and submitted (XrContext::setRenderArea)
+  VkRect2D area{};  // what is drawn and submitted: the size in use, at the origin
   // Foveated eye images: the density map drawn with (none while foveation
   // is off), and where its sharp area is moved to, in pixels
   // (XrContext::setDensityOffset).
@@ -118,9 +118,6 @@ class XrContext {
   // capScale are drawn in images of that scale (requestEyeScale). `gpu`
   // retires what a size change replaces.
   bool createEyeImages(GpuContext& gpu, int baseWidth, int baseHeight, float videoScale, float capScale);
-  // The scale in use (below the requested one if it did not fit, or while
-  // larger images are being made).
-  float effectiveVideoScale() const { return activeScale_; }
   // A new eye size, as a scale like createEyeImages', from the next
   // updateEyeSize() on (docs/vulkan-renderer.md, 5.5): at once where the
   // images hold it, drawn in a rectangle at their origin; otherwise once a
@@ -145,9 +142,6 @@ class XrContext {
   int eyeImageWidth(int eye) const { return swapchains_[eye].imageWidth; }
   int eyeImageHeight(int eye) const { return swapchains_[eye].imageHeight; }
   const std::vector<VkImageView>& eyeViews(int eye) const { return swapchains_[eye].views; }
-  // The part of an eye's size in use drawn and submitted from the next frame
-  // on; all of it until set, and again after a size change.
-  void setRenderArea(int eye, const VkRect2D& area);
 
   // Foveation (docs/vulkan-renderer.md, 5): the eye images have the
   // runtime's density maps (XR_FB_foveation_vulkan), one per swapchain image,

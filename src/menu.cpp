@@ -946,7 +946,7 @@ void Menu::layoutDialog() {
     go.danger = true;
     row.push_back(go);
   }
-  // Centred like addCenteredRow, but marked as part of the modal dialog.
+  // Centred on the page, and marked as part of the modal dialog.
   double total = 0;
   for (const Button& b : row) total += b.w;
   total += kGap * 3 * (row.size() - 1);

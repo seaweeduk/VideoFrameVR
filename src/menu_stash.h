@@ -68,8 +68,6 @@ struct StashList {
 
   bool operator==(const StashList& o) const;
   bool operator!=(const StashList& o) const { return !(*this == o); }
-  // Without the format, text and order: what the chips and Clear all show.
-  bool filters() const;
 };
 
 struct StashPin {

@@ -114,13 +114,6 @@ bool StashList::operator==(const StashList& o) const {
          history == o.history && text == o.text && sort == o.sort && descending == o.descending;
 }
 
-bool StashList::filters() const {
-  return !tags.empty() || !tagsOut.empty() || !performers.empty() || !performersOut.empty() ||
-         !studios.empty() || !studiosOut.empty() || women || men || looks.active() || year ||
-         addedDays || resolutions || durations || frameRates || codecs || sizes || history ||
-         !text.empty();
-}
-
 namespace {
 
 // The looks' keys: names included, left out (with "_out"); buckets.

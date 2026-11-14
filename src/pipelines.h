@@ -170,8 +170,6 @@ class Pipelines {
   VkPipeline foveation(bool plain) const { return foveation_[plain ? 1 : 0]; }
   VkPipelineLayout layout() const { return layout_; }
   VkSampler sampler(SamplerId id) const { return samplers_[id]; }
-  // A 1x1 transparent image for bindings a draw does not use.
-  const Texture& dummy() const { return dummy_; }
 
   // Pushes a draw's textures: binding 0 (the dummy if none) and the glass
   // backdrop at binding 1 (the dummy if none).

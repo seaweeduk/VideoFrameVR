@@ -50,7 +50,6 @@ MirrorWindow::~MirrorWindow() {
 bool MirrorWindow::init(GpuContext& gpu, GLFWwindow* window, VkFormat eyeFormat) {
   gpu_ = &gpu;
   window_ = window;
-  eyeFormat_ = eyeFormat;
   if (!gpu.caps().mirror) return false;  // XrContext said why
   const VkResult result = glfwCreateWindowSurface(gpu.instance(), window, nullptr, &surface_);
   if (result != VK_SUCCESS) {
