@@ -163,7 +163,9 @@ struct Offline::Shared {
   void watch();
   void scan();
   void save();
-  void copy(Download d);
+  void copy(Download& d);
+  bool removeQueued();
+  void settle();
 };
 
 // offline.json: what a download needs to continue, nothing about its progress
@@ -173,7 +175,10 @@ void Offline::Shared::save() {
   bool paused;
   {
     std::lock_guard lock(mutex);
-    if (!dirty) return;
+    // Not while files of downloads no longer listed are still to be deleted: a kill then leaves a
+    // cancelled download listed, not its files with nothing naming them. A deletion that fails
+    // is not tried again.
+    if (!dirty || !deleting.empty() || (current != 0 && stopCurrent)) return;
     dirty = false;
     paused = pausedAll;
     for (const Download& d : items)
@@ -190,6 +195,24 @@ void Offline::Shared::save() {
     if (!out) return;
   }
   fs::rename(temp, file, ec);
+}
+
+// Deletes the files in `deleting`; whether there were any.
+bool Offline::Shared::removeQueued() {
+  std::vector<std::string> doomed;
+  {
+    std::lock_guard lock(mutex);
+    doomed.swap(deleting);
+  }
+  std::error_code ec;
+  for (const std::string& path : doomed) fs::remove(path, ec);
+  return !doomed.empty();
+}
+
+// Deletes the files waiting for it, then saves the list: in this order, as save() waits for them.
+void Offline::Shared::settle() {
+  if (removeQueued()) scan();
+  save();
 }
 
 // The drives, their space, and which copies are there.
@@ -242,19 +265,15 @@ void Offline::Shared::work() {
   std::map<int64_t, Clock::time_point> retryAt;
   auto scanned = Clock::time_point{};
   for (;;) {
-    std::vector<std::string> doomed;
+    bool stop, rescanNow;
     {
       std::lock_guard lock(mutex);
-      if (quit) break;
-      doomed.swap(deleting);
+      stop = quit;
+      rescanNow = std::exchange(rescan, false);
     }
-    std::error_code ec;
-    for (const std::string& path : doomed) fs::remove(path, ec);
-    bool rescanNow;
-    {
-      std::lock_guard lock(mutex);
-      rescanNow = std::exchange(rescan, false) || !doomed.empty();
-    }
+    // Also when closing: offline.json no longer lists these, so nothing would remove them later.
+    if (removeQueued()) rescanNow = true;
+    if (stop) break;
     if (rescanNow || Clock::now() - scanned > std::chrono::seconds(5)) {
       scan();
       scanned = Clock::now();
@@ -294,14 +313,17 @@ void Offline::Shared::work() {
     copy(next);
     std::lock_guard lock(mutex);
     current = 0;
+    // Cancelled while it was copied, at whatever step: its .part is of no use.
+    if (stopCurrent && !next.path.empty()) deleting.push_back(next.path + ".part");
     if (const Download* d = item(next.id); d && d->state == State::Waiting)
       retryAt[next.id] = Clock::now() + std::chrono::seconds(10);
   }
 }
 
 // Copies one download as far as it gets: done, paused (a video plays, Pause
-// all), cancelled, or waiting for its server or drive.
-void Offline::Shared::copy(Download d) {
+// all), cancelled, or waiting for its server or drive. d.path is left as the
+// copy's path once it has one.
+void Offline::Shared::copy(Download& d) {
   auto update = [&](auto change) {
     std::lock_guard lock(mutex);
     Download* item = this->item(d.id);
@@ -366,9 +388,19 @@ void Offline::Shared::copy(Download d) {
     for (int n = 1;; ++n) {
       const std::string path =
           (folder / (n == 1 ? name : base + " (" + std::to_string(n) + ")" + ext)).string();
+      // A path still to be deleted is taken as well: its deletion would hit this copy's file.
+      // Without regard to case, as an exFAT, FAT or NTFS drive holds names.
+      const std::string folded = foldFileName(path);
+      auto other = [&](const Download& x) {
+        return x.id != d.id && foldFileName(x.path) == folded;
+      };
+      auto doomed = [&](const std::string& x) {
+        const std::string queued = foldFileName(x);
+        return queued == folded || queued == folded + ".part";
+      };
       const bool taken = exists(path) || exists(path + ".part") ||
-                         std::any_of(items.begin(), items.end(),
-                                     [&](const Download& x) { return x.id != d.id && x.path == path; });
+                         std::any_of(items.begin(), items.end(), other) ||
+                         std::any_of(deleting.begin(), deleting.end(), doomed);
       if (!taken) {
         d.path = path;
         break;
@@ -409,7 +441,7 @@ void Offline::Shared::copy(Download d) {
     ::close(out);
     return;
   }
-  save();
+  settle();
   std::printf("Offline: %s a download\n", offset ? "continuing" : "starting");
 
   std::unique_ptr<remote::Reader> remote;
@@ -481,6 +513,9 @@ void Offline::Shared::copy(Download d) {
         item.copied = offset;
         item.speed = speed;
       });
+      // Changes made meanwhile take effect now, not after this copy: the files of downloads
+      // removed or cancelled are deleted, and the list is saved (if it changed).
+      settle();
     }
   }
   {
@@ -498,11 +533,7 @@ void Offline::Shared::copy(Download d) {
   if (outcome == Cancelled || failed || outcome == Stopped || offset < source.size) {
     ::fdatasync(out);
     ::close(out);
-    if (outcome == Cancelled) {
-      std::lock_guard lock(mutex);
-      if (stopCurrent) deleting.push_back(part);
-      return;
-    }
+    if (outcome == Cancelled) return;
     if (outcome == Stopped) {
       update([&](Download& item) {
         item.copied = offset;
