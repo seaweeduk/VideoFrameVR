@@ -303,6 +303,10 @@ struct StashMenu {
   // StashSettings::unverifiedHost).
   std::string draftUnverified;
   std::vector<StashPin> pins;
+  // A pinned list shown in the Scenes page's place (openPin()): the page's
+  // own list meanwhile, and which pin it is (-1 once unpinned).
+  std::optional<StashSavedList> ownScenes;
+  int pin = -1;
   bool pinsLoaded = false;
   std::future<std::vector<StashPin>> pendingPins;
   uint64_t seed = 1;  // Random's order
@@ -476,11 +480,14 @@ struct StashPages {
   static double layoutFolders(Menu& m, double x, double y, double w, double labelW);
   static bool layoutNotHere(Menu& m, double x, double& y, double w);
   static void showScenes(Menu& m);
+  // The Scenes page with its own list, in place of a pinned list's.
+  static void showOwnScenes(Menu& m);
   static void leaveScenes(Menu& m);
   // The results' locations, and where they were left.
   static std::vector<std::string> resultPaths(Menu& m);
   static ListPlace resultsPlace(Menu& m);
-  // The Scenes page showing `list` (Undo goes back to the one before).
+  // The Scenes page showing `list` (Undo goes back to the one before), its
+  // own list back first if a pinned list showed.
   static void openScenes(Menu& m, const StashList& list);
   static void layoutScenes(Menu& m);
   static void drawScenesHeading(const Menu& m, cairo_t* cr);
@@ -540,7 +547,11 @@ struct StashPages {
   static MenuCommand play(Menu& m, const std::vector<int>& scenes, const std::string& path,
                           bool shuffled);
   static int pinOfList(Menu& m);
+  // The pinned list the Scenes page shows in place of its own, else -1.
+  static int shownPin(Menu& m);
   static void openPin(Menu& m, int pin);
+  // The Scenes page's own list back where it was left (the page shows).
+  static void leavePin(Menu& m);
   static void showFull(Menu& m, StashFull full, StashLookKind look = StashLookKind::Hair);
   static Button facetButton(Menu& m, const std::string& label, const std::string& count, int state,
                             std::function<void()> include, double x, double y, double w, double h);

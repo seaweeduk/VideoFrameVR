@@ -324,7 +324,7 @@ void StashPages::layoutHome(Menu& m) {
   // (Without any, its heading leads to the Scenes page, where they are made.)
   heading(0, t.pins, "", st.pins.empty() ? "" : seeAll(st.pins.size()), [&m] {
     if (state(m).pins.empty())
-      showScenes(m);
+      showOwnScenes(m);
     else
       showFull(m, StashFull::Pins);
   });
@@ -345,7 +345,7 @@ void StashPages::layoutHome(Menu& m) {
       Button b = actionButton(
           m, t.pinFromScenes, StashIcon::Pin,
           [&m] {
-            showScenes(m);
+            showOwnScenes(m);
             return MenuCommand{};
           },
           at.x, top + pinsTop + at.y, kPinH);

@@ -71,7 +71,8 @@ void StashPages::layoutNavigation(Menu& m, double x, double w, double y, double 
   StashMenu& st = state(m);
   const StashStrings& t = strings().stash;
   const bool scenes = m.page_ == Menu::Page::StashScenes;
-  const int pin = scenes && st.full == StashFull::None ? pinOfList(m) : -1;
+  const bool allPins = scenes && st.full == StashFull::Pins;
+  const int pin = allPins ? -1 : shownPin(m);
   auto row = [&](const std::string& label, StashIcon icon, bool chosen, double top, double h,
                  int size, double indent, std::function<void()> open) {
     Button b;
@@ -103,8 +104,8 @@ void StashPages::layoutNavigation(Menu& m, double x, double w, double y, double 
   row(t.group, StashIcon::Stash, false, y, kNavRowH, 27, 0, [&m] { showHome(m); });
   y += kNavRowH + 4;
   place(t.navHome, StashIcon::Home, page == Menu::Page::StashHome, [&m] { showHome(m); });
-  place(t.navScenes, StashIcon::Scenes, scenes && pin < 0 && st.full != StashFull::Pins,
-        [&m] { showScenes(m); });
+  place(t.navScenes, StashIcon::Scenes, scenes && !allPins && !st.ownScenes,
+        [&m] { showOwnScenes(m); });
   place(t.navPerformers, StashIcon::Performers,
         page == Menu::Page::StashPerformers || page == Menu::Page::StashPerformer,
         [&m] { showPerformers(m); });
@@ -117,7 +118,7 @@ void StashPages::layoutNavigation(Menu& m, double x, double w, double y, double 
   for (int i = 0; i < shown; ++i)
     place(st.pins[i].name, StashIcon::Pin, pin == i, [&m, i] { openPin(m, i); });
   if (shown < count && fit > 0)
-    place(stashPrinted(t.allPins, count), StashIcon::Pin, scenes && st.full == StashFull::Pins,
+    place(stashPrinted(t.allPins, count), StashIcon::Pin, allPins || pin >= shown,
           [&m] { showFull(m, StashFull::Pins); });
 }
 
