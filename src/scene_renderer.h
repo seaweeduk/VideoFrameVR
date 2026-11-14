@@ -211,10 +211,14 @@ static_assert(sizeof(PanelPush) == 144 && offsetof(PanelPush, flags) == 120,
 static_assert(kDrawPushOffset + sizeof(PanelPush) <= kPushConstantBytes, "push constants");
 
 // shaders/pointer.glsl, PointerDraw.
+enum PointerFlag : uint32_t {
+  kPointerDot = 1,
+  kPointerBeam = 2,
+};
 struct PointerPush {
   float corners[4][4];
   float color[4];
-  uint32_t mode[4];  // x: a round dot
+  uint32_t mode[4];  // x: PointerFlag
 };
 static_assert(sizeof(PointerPush) == 96 && offsetof(PointerPush, mode) == 80,
               "PointerPush must match shaders/pointer.glsl");
@@ -305,7 +309,7 @@ class SceneRenderer {
   VkPipeline pipeline(Pipelines::Id id) const {
     return glassPass_ ? pipelines_.glass(id) : pipelines_.get(id, plainEye_);
   }
-  void drawPointer(VkCommandBuffer cmd, const Quad& corners, bool dot);
+  void drawPointer(VkCommandBuffer cmd, const Quad& corners, uint32_t flags = 0);
   void drawPreview(VkCommandBuffer cmd, const PreviewItem& preview);
   void pushEye(VkCommandBuffer cmd, const EyeData& eye);
   template <typename T>
