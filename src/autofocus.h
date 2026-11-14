@@ -49,7 +49,7 @@ struct FocusOutput {
   bool automatic = false;
   Vec3 marker;         // the measured direction (local space), for the diagnostics
   std::string status;  // one line for the menu
-  std::string brief;   // short, for the diagnostics next to the marker
+  std::string distanceText;  // corrected distance, centred on the diagnostic marker
 };
 
 // Stereo focus for the running video: no correction, a manual distance, or
@@ -99,5 +99,5 @@ class Autofocus {
   float reachAlpha_ = 0, reachBeta_ = 0;
   double lastPosition_ = -1, lastNow_ = 0;
   double statusAt_ = -1;
-  std::string status_, brief_;
+  std::string status_, distanceText_;
 };

@@ -215,6 +215,10 @@ bool FocusSettingsReader::read(const std::string& key, const std::string& value)
     preferences_.gazeDot = value == "1";
     return true;
   }
+  if (key == "gaze_correction") {
+    preferences_.gazeCorrect = value != "0";
+    return true;
+  }
   if (key == "user_ipd_auto") {
     preferences_.autoIpd = value != "0";
     return true;
@@ -274,6 +278,7 @@ std::string focusSettingLines(const FocusSettings& f, const FocusPreferences& p)
       << "\nfocus_diagnostics=" << (p.diagnostics ? 1 : 0)
       << "\nfocus_target=" << (p.eyeTracking ? "eyes" : "head")
       << "\nfocus_gaze_dot=" << (p.gazeDot ? 1 : 0)
+      << "\ngaze_correction=" << (p.gazeCorrect ? 1 : 0)
       << "\nuser_ipd_auto=" << (p.autoIpd ? 1 : 0) << "\nuser_ipd_tenth_mm=" << p.ipdTenthMm
       << "\n";
   return out.str();

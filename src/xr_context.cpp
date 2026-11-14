@@ -200,6 +200,7 @@ bool XrContext::init(const GpuRequirements& gpu) {
   XrInstanceProperties props{XR_TYPE_INSTANCE_PROPERTIES};
   if (XR_SUCCEEDED(xrGetInstanceProperties(instance_, &props))) {
     std::printf("OpenXR runtime: %s\n", props.runtimeName);
+    runtimeVersion_ = props.runtimeVersion;
     const char* appId = g_getenv("SteamAppId");
     launchDashboardPending_ = kStandaloneHeadset &&
         std::strncmp(props.runtimeName, "SteamVR", 7) == 0 && appId && *appId &&

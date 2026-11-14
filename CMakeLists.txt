@@ -53,6 +53,7 @@ add_executable(videoframevr
   src/focus_controller.cpp
   src/focus_marker.cpp
   src/focus_target.cpp
+  src/gaze_correction.cpp
   src/foveation.cpp
   src/frame_reuse.cpp
   src/frame_grabber.cpp

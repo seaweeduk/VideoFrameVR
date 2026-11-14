@@ -24,8 +24,8 @@ constexpr float kSpread = 0.003f, kSpreadScale = 4.0f;
 // than the head direction, about 2° after correction.
 constexpr float kEyeWindow = 4.3f * kDegree;
 // With passthrough, a gaze that lands on see-through room measures the
-// nearest video within this angle instead (ours): the gaze dot's ring, about
-// the tracker's remaining error.
+// nearest video within this angle instead (ours): about the tracker's
+// remaining error.
 constexpr float kEyeReach = 3.0f * kDegree;
 // Measuring rate (ours). A still gaze on a still part of the picture learns
 // nothing new from 60 measurements a second: once a whole probe cycle
@@ -216,7 +216,7 @@ FocusOutput Autofocus::update(const FocusInput& in) {
     describe(in, automatic, distance);
   }
   out.status = status_;
-  out.brief = brief_;
+  out.distanceText = distanceText_;
   return out;
 }
 
@@ -235,20 +235,17 @@ void Autofocus::describe(const FocusInput& in, bool automatic, float distance) {
   const FocusSettings& s = in.settings;
   const auto& t = strings().focusStatus;
   char buf[512];
+  distanceText_ = distance > 0 ? meters(distance) : "";
   if (s.mode == FocusMode::Automatic && !automatic) {
-    brief_ = t.unavailableBrief;
     status_ = t.unavailable;
     return;
   }
   if (distance <= 0) {
-    brief_ = t.offBrief;
     status_ = t.off;
     return;
   }
   const float ipd = 1000.0f * (in.viewerIpd > 0 ? in.viewerIpd : length(in.rightEye - in.leftEye));
   if (!automatic) {
-    std::snprintf(buf, sizeof(buf), t.manualBrief, meters(distance).c_str());
-    brief_ = buf;
     std::snprintf(buf, sizeof(buf), t.manual, meters(distance).c_str(), ipd);
     status_ = buf;
     return;
@@ -264,13 +261,9 @@ void Autofocus::describe(const FocusInput& in, bool automatic, float distance) {
     std::snprintf(buf, sizeof(buf), t.measuring, meters(distance).c_str(),
                   (why.empty() ? "" : "; " + why).c_str());
     status_ = buf;
-    std::snprintf(buf, sizeof(buf), t.measuringBrief, (why.empty() ? "" : ": " + why).c_str());
-    brief_ = buf;
   } else if (st.holding) {
     std::snprintf(buf, sizeof(buf), t.holding, meters(distance).c_str());
     status_ = buf;
-    std::snprintf(buf, sizeof(buf), t.heldBrief, meters(distance).c_str());
-    brief_ = buf;
   } else {
     char confidence[32];
     std::snprintf(confidence, sizeof(confidence), "%.0f%%", 100.0f * st.confidence);
@@ -278,6 +271,5 @@ void Autofocus::describe(const FocusInput& in, bool automatic, float distance) {
                   (st.measured > 0 ? meters(st.measured) : t.nothing).c_str(), confidence,
                   (why.empty() ? "" : ", " + why).c_str());
     status_ = buf;
-    brief_ = meters(distance) + "  " + confidence + (why.empty() ? "" : "  " + why);
   }
 }

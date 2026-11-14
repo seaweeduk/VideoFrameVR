@@ -673,8 +673,8 @@ Strings japaneseStrings(const Strings& english) {
   s.focus.distance = "焦点距離";
   s.focus.distanceHint = "左右の映像が一致する距離。";
   s.focus.gazeDot = "視線位置を表示";
-  s.focus.gazeCorrect = "視線のずれを補正";
-  s.focus.gazeCorrectHint = "視線追跡の測定済み照準誤差を補正。";
+  s.focus.gazeCorrect = "学習した視線追跡を使用";
+  s.focus.gazeCorrectHint = "メニューのクリックから学習した補正をステレオフォーカスと視線ドットに使用。オフではランタイムの視線を使用します。学習はバックグラウンドで継続します。";
   s.focus.baseline = "カメラ間隔";
   s.focus.baselineHint = "撮影時の左右カメラの距離。";
   s.focus.autoIpd = "自動IPD";
@@ -758,25 +758,14 @@ Strings japaneseStrings(const Strings& english) {
   s.focusStatus.targets[3] = "視線を見失いました。復帰まで頭の向きを使用";
   s.focusStatus.targets[4] = "視線データなし（権限不足か追跡オフ）。頭の向きを使用";
   s.focusStatus.targets[5] = "ランタイムかヘッドセットが視線追跡非対応。頭の向きを使用";
-  s.focusStatus.targetTags[0] = "頭";
-  s.focusStatus.targetTags[1] = "視線";
-  s.focusStatus.targetTags[2] = "視線保持";
-  s.focusStatus.targetTags[3] = "頭（視線喪失）";
-  s.focusStatus.targetTags[4] = "頭（視線休止）";
-  s.focusStatus.targetTags[5] = "頭（視線非対応）";
   s.focusStatus.far = "遠方";
   s.focusStatus.nothing = "なし";
-  s.focusStatus.unavailableBrief = "利用不可";
   s.focusStatus.unavailable = "自動調整不可（深度推定を開始できませんでした）";
-  s.focusStatus.offBrief = "オフ";
   s.focusStatus.off = "オフ：動画の元の立体映像を維持";
-  s.focusStatus.manualBrief = "%s 手動";
   s.focusStatus.manual = "%sで眼の間隔 (IPD %.1f mm) と頭の姿勢に合わせて調整";
   s.focusStatus.nearest = "最寄りの映像まで%.1f°";
   s.focusStatus.measuring = "測定中…（完了まで%sを使用%s）";
-  s.focusStatus.measuringBrief = "測定中%s";
   s.focusStatus.holding = "%sを保持：測定深度が最小～最大距離の範囲外";
-  s.focusStatus.heldBrief = "%sを保持：範囲外";
   s.focusStatus.following = "視線先の%sに追従（最終測定%s、一致度%s%s）";
   s.releaseUpdate.downloading = "%sをダウンロード中…";
   s.releaseUpdate.ready = "%sを使うにはアプリを再起動してください";
@@ -1244,5 +1233,6 @@ Strings japaneseStrings(const Strings& english) {
   s.whatsNew.close = "閉じる";
   s.whatsNew.showAfterUpdates = "アップデート後に表示";
   s.whatsNew.updatedFrom = "%s から %s にアップデートしました";
+  s.foveationLearnedHint = "メニューのクリックから学習した補正で高精細領域を移動。オフではランタイムの視線を使用します。ステレオフォーカスとは独立した設定です。";
   return s;
 }

@@ -514,6 +514,7 @@ void Menu::layoutVideoSettings() {
     y += kSettingStep;
   }
   char hint[192];
+  bool resolutionStatus = true;
   if (resolutionHeld_)
     std::snprintf(hint, sizeof(hint), "%s", t.resolutionPending);
   else if (view_.resolutionOverride > 0)
@@ -524,12 +525,12 @@ void Menu::layoutVideoSettings() {
     std::snprintf(hint, sizeof(hint), t.resolutionChanged, view_.resolutionBase,
                   view_.resolutionStops ? view_.videoResolution / double(view_.resolutionBase)
                                         : view_.videoResolution / 100.0);
-  else if (kStandaloneHeadset && view_.panelBase)
-    std::snprintf(hint, sizeof(hint), t.resolutionHint, kPanelWidth, kInstantResolution * kPanelWidth / 100);
   else
-    std::snprintf(hint, sizeof(hint), "%s", t.resolutionSteamVr);
-  addLabel(x + 12, y, w - 12, 0, hint, kHintSize, true, 2);
-  y += hintHeight(2) + 6;
+    resolutionStatus = false;
+  if (resolutionStatus) {
+    addLabel(x + 12, y, w - 12, 0, hint, kHintSize, true, 2);
+    y += hintHeight(2) + 6;
+  }
   if (view_.refreshRate > 0) {
     std::vector<std::string> rates;
     for (const int hz : kRefreshRates) {
@@ -637,6 +638,9 @@ void Menu::layoutVideoSettings() {
     y += kSettingStep;
     addToggleRow(x, y, w, t.showFoveation, view_.showFoveation,
                  command(MenuCommand::ToggleShowFoveation)).tooltip = t.showFoveationHint;
+    y += kSettingStep;
+    addToggleRow(x, y, w, t.focus.gazeCorrect, view_.foveationLearned,
+                 command(MenuCommand::ToggleFoveationLearned), off).tooltip = t.foveationLearnedHint;
     y += kSettingStep;
   }
   const double imageBottom = y;

@@ -1,6 +1,7 @@
 #include "foveation.h"
 
 #include "density_map.h"
+#include "gaze_correction.h"
 #include "xr_context.h"
 
 #include <algorithm>
@@ -28,6 +29,26 @@ VkOffset2D offsetFor(const float centre[2], int width, int height, VkOffset2D an
   };
   return {snap((centre[0] + 1) * width * 0.5f - anchor.x, granularity.width),
           snap((centre[1] + 1) * height * 0.5f - anchor.y, granularity.height)};
+}
+
+// SteamVR's centres are per-eye NDC, +y down. Correct each ray in head axes,
+// through its asymmetric FOV and eye orientation, then project back. Keep
+// the runtime's separate eye rays, not the combined stereo-focus gaze.
+void correctCentre(float centre[2], const EyeMatrices& eye, Quat head, const GazeFit& fit) {
+  const float width = eye.tanRight - eye.tanLeft, height = eye.tanDown - eye.tanUp;
+  if (std::abs(width) < 1e-5f || std::abs(height) < 1e-5f) return;
+  const Quat toHead = conjugate(head) * eye.orientation;
+  const Vec3 ray = normalize(Vec3{eye.tanLeft + (centre[0] + 1) * 0.5f * width,
+                                 eye.tanUp + (centre[1] + 1) * 0.5f * height, -1});
+  const Vec3 corrected = transformDir(rotation(conjugate(toHead)),
+                                      applyGazeFit(transformDir(rotation(toHead), ray), fit));
+  if (corrected.z >= -0.01f) return;
+  const float x = 2 * (corrected.x / -corrected.z - eye.tanLeft) / width - 1;
+  const float y = 2 * (corrected.y / -corrected.z - eye.tanUp) / height - 1;
+  if (std::isfinite(x) && std::isfinite(y)) {
+    centre[0] = std::clamp(x, -1.0f, 1.0f);
+    centre[1] = std::clamp(y, -1.0f, 1.0f);
+  }
 }
 
 }  // namespace
@@ -184,7 +205,7 @@ void Foveation::prepare() {
   if (!xr_->foveated()) xr_ = nullptr;  // given up on (XrContext::setFoveationLevel)
 }
 
-void Foveation::update() {
+void Foveation::update(const GazeFit& correction, Quat head) {
   if (!xr_) return;
   const auto start = std::chrono::steady_clock::now();
 
@@ -203,11 +224,19 @@ void Foveation::update() {
         ++failures_;
         centres[0][0] = centres[0][1] = centres[1][0] = centres[1][1] = 0;
       }
-      for (auto& c : centres) {
+      bool nonzero = false;
+      for (int k = 0; k < 3; ++k)
+        nonzero = nonzero || correction.yaw[k] != 0 || correction.pitch[k] != 0;
+      // Preserve the runtime's blink/loss fallback and the exact off path.
+      const bool correct = ok && valid && nonzero;
+      for (int i = 0; i < 2; ++i) {
+        auto& c = centres[i];
         if (!std::isfinite(c[0]) || !std::isfinite(c[1]) || std::abs(c[0]) > 1.5f ||
             std::abs(c[1]) > 1.5f) {
           ++malformed_;
           c[0] = c[1] = 0;
+        } else if (correct && i < xr_->eyeCount()) {
+          correctCentre(c, xr_->eye(i), head, correction);
         }
       }
     } else if (gaze_.mode == FoveationGaze::Fixed) {

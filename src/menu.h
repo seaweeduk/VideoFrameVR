@@ -75,7 +75,7 @@ struct MenuCommand {
               PickKeyColour, CancelKeyPick,  // ... or a colour pointed at: start or cancel that
               ResetPassthrough,
               SetPacking, ToggleVideoMipmaps, SetAntiShimmer, SetSharpen, SetVideoResolution,
-              SetFoveation, ToggleShowFoveation, SetSharpBins, ToggleFoveationRing,
+              SetFoveation, ToggleShowFoveation, ToggleFoveationLearned, SetSharpBins, ToggleFoveationRing,
               SetFoveationOutside, ToggleAdvancedSettings, SetRefreshRate, SetFocus,
               ToggleMotion, SetMotionDistance, ToggleResume, ToggleToneLook, ToggleFrameReuse, Stop,
               ToggleTvGamma, ToggleSeekPreview, ToggleThumbnails, ToggleShowPerformance, SetScreenDistance,
@@ -212,6 +212,7 @@ struct MenuView {
   bool foveationAvailable = false;
   FoveationLevel foveation = FoveationLevel::High;
   bool showFoveation = false;
+  bool foveationLearned = false;
   int sharpBins = kDefaultSharpBins;
   bool foveationRing = kDefaultFoveationRing;
   int foveationOutside = 4;
@@ -380,6 +381,9 @@ class Menu {
   void cancelDrag();
   // The slider click() grabbed, while it is held; else None.
   MenuCommand::Type draggingSlider() const { return draggingSlider_; }
+  // Whether a press is being dragged: a slider, a list or page by its
+  // content (also while it glides on), a rating.
+  bool dragging() const;
   // Scrolls a list page by (fractions of) rows, positive = down (the stick).
   void scroll(double rows);
   // While the pointer is over the strip's seek bar: where it points,
@@ -532,6 +536,9 @@ class Menu {
   // (highlighted red), for the shader, and the edges of the list it scrolls
   // in, where the highlight is cut off. False if there is none.
   bool hoverRect(PanelId panel, float rect[4], float& radius, bool& danger, float clip[4]) const;
+  // Whether the pointer is on such a button that is not a rating (its stars
+  // are pointed at one by one, and on a tile the whole tile lights up).
+  bool pointedButton() const;
   bool glass() const { return view_.theme == Theme::Glass; }
   // The theme's colours with the chosen accent (menu_style.h), and the accent.
   Palette palette() const;
@@ -1295,7 +1302,6 @@ class Menu {
   HoverSpot hoverSpot_;
   bool hoverQuiet_ = false;  // something dragged or moved: the next spot is taken without a feel
   void feelHover(int hovered);
-  bool dragging() const;
   // The dragged slider's, volume's or seek bar's value at the last frame, and
   // the feel of moving it to `value` (fraction: where a value is along its track).
   double trackValue_ = 0;

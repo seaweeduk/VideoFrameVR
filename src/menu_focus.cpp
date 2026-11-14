@@ -104,6 +104,9 @@ void Menu::layoutFocus() {
   y += kSettingStep;
   addToggleRow(x, y, rowW, t.gazeDot, p.gazeDot, toggle(FocusControl::GazeDot, p.gazeDot));
   y += kSettingStep;
+  addToggleRow(x, y, rowW, t.gazeCorrect, p.gazeCorrect,
+               toggle(FocusControl::GazeCorrect, p.gazeCorrect)).tooltip = t.gazeCorrectHint;
+  y += kSettingStep;
   if (advanced) {
     // The viewer's IPD: the headset's, or a value of its own.
     addToggleRow(x, y, rowW, t.autoIpd, p.autoIpd, toggle(FocusControl::AutoIpd, p.autoIpd), !on)

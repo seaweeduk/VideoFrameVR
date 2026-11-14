@@ -10,6 +10,7 @@
 #include "first_run.h"
 #include "focus_marker.h"
 #include "focus_target.h"
+#include "gaze_correction.h"
 #include "foveation.h"
 #include "frame_reuse.h"
 #include "frame_timer.h"
@@ -861,6 +862,20 @@ int run(Options opts) {
                     .count());
   }
   FocusTargetSelector focusTargets;  // head direction or eye gaze
+  GazeCorrection gazeCorrection;     // what the eye tracker is off by, from the menu's clicks
+  gazeCorrection.load(settings.gazeLearned, xr.runtimeVersion());
+  bool gazeSitting = false;          // worn with input focus
+  // The headset came off or the input focus went: what the sitting's clicks
+  // said is remembered.
+  auto endGazeSitting = [&] {
+    if (!gazeSitting) return;
+    gazeSitting = false;
+    gazeCorrection.endSitting();
+    if (gazeCorrection.takeChanged()) {
+      settings.gazeLearned = gazeCorrection.saved();
+      saveSettings(settings);
+    }
+  };
   FocusMarker focusMarker;
   if (!focusMarker.init(uploader)) return 1;
   Thumbnailer thumbnailer;
@@ -1785,6 +1800,11 @@ int run(Options opts) {
         settings.showFoveation = showFoveation = !showFoveation;
         saveSettings(settings);
         break;
+      case MenuCommand::ToggleFoveationLearned:
+        if (!foveation.active()) break;
+        settings.foveationLearned = !settings.foveationLearned;
+        saveSettings(settings);
+        break;
       case MenuCommand::SetSharpBins: {
         const int bins = c.value == 1 ? 1 : 3;
         if (bins == sharpBins) break;
@@ -2214,6 +2234,9 @@ int run(Options opts) {
     }
     timer.lap(FrameTimer::Events);
     if (player.shutdownRequested()) break;
+    // Also while nothing is drawn. The input focus here is the last drawn
+    // frame's: a frame checks its own before the gaze correction sees its input.
+    if (!xr.isRunning() || !xr.controllers().focused || xr.userPresence() == 0) endGazeSitting();
 
     // A Stash scene's file on a server that doesn't play plays from Stash's
     // stream instead (once: the stream is no server's file), if that serves it.
@@ -2676,6 +2699,8 @@ int run(Options opts) {
     };
     choosePicture();
 
+    Quat headRot;
+    bool headValid = false;
     if (shouldRender) {
       const double now = glfwGetTime();
       const double shownAt = xr.displayTime();
@@ -2691,8 +2716,7 @@ int run(Options opts) {
       }
       if (showPerformance) readout.frameDrawn(shownAt);
       Vec3 headPos;
-      Quat headRot;
-      const bool headValid = xr.headPose(headPos, headRot);
+      headValid = xr.headPose(headPos, headRot);
       const Mat4 frame = headFrame(headRot);
       const Mat4 menuAt = menuFrame(headRot);
       if (app.recenterAt > 0 && now >= app.recenterAt) {  // the menu's countdown is over
@@ -3263,15 +3287,13 @@ int run(Options opts) {
         case KeyPicker::Result::None: break;
       }
       focusIn.now = now;
-      focusIn.target = focusTargets.update(settings.focusPrefs.eyeTracking, xr.gaze(), headRot,
-                                           now, settings.focusPrefs.gazeCorrect);
+      focusIn.target = focusTargets.update(
+          settings.focusPrefs.eyeTracking, xr.gaze(), headRot, now,
+          settings.focusPrefs.gazeCorrect ? gazeCorrection.fit() : GazeFit{});
       const FocusOutput focusOut = autofocus.update(focusIn);
-      const bool aimed = focusOut.automatic;  // the target only matters for automatic focus
       focusMarker.update(settings.focusPrefs.diagnostics,
                          (focusIn.leftEye + focusIn.rightEye) * 0.5f, headRot, focusOut.marker,
-                         focusOut.markerDistance,
-                         aimed ? focusOut.brief + "  " + targetStatusTag(focusTargets.status())
-                               : focusOut.brief);
+                         focusOut.markerDistance, focusOut.distanceText);
       // The dot hangs on the line of sight from between the eyes.
       focusMarker.updateGaze(
           settings.focusPrefs.gazeDot && focusTargets.gazeKnown() && focusIn.headValid,
@@ -3400,6 +3422,7 @@ int run(Options opts) {
       view.foveationAvailable = foveation.active();
       view.foveation = foveation.level();
       view.showFoveation = showFoveation;
+      view.foveationLearned = settings.foveationLearned;
       view.sharpBins = sharpBins;
       view.foveationRing = foveationRing;
       view.foveationOutside = foveationOutside;
@@ -3466,7 +3489,29 @@ int run(Options opts) {
       app.submit = false;
       app.stopTyping = false;
       // Trigger on the panel clicks it (anywhere else it drags the picture).
-      if (panel.open && hand.selectPressed && !openedNow && hitPanel) execute(menu.click());
+      const bool clicked = panel.open && hand.selectPressed && !openedNow && hitPanel;
+      {
+        // The eye tracker's error, learned from where the eyes are at a
+        // click; before the click, which may change the page.
+        GazeCorrection::Input gaze;
+        gaze.now = now;
+        gaze.gazeGood = focusTargets.trackerGazeGood();
+        gaze.gaze = focusTargets.trackerGaze();
+        gaze.pointing = hitPanel && headValid;
+        gaze.held = hand.select;
+        gaze.dragged = menu.dragging();
+        if (gaze.pointing) {
+          const Mat4 toHead = rotation(conjugate(headRot));
+          gaze.dot = normalize(transformDir(toHead, hitPoint - headPos));
+          gaze.pressed = clicked && menu.pointedButton();
+        }
+        if (input.focused && xr.userPresence() != 0)
+          gazeSitting = true;
+        else
+          endGazeSitting();
+        gazeCorrection.update(gaze);  // learn also while the correction is not applied
+      }
+      if (clicked) execute(menu.click());
       // Sliders and lists follow the pointer while the trigger stays down; a
       // list's row is clicked on letting go, if the list was not dragged.
       if (!input.focused) menu.cancelDrag();
@@ -3587,13 +3632,12 @@ int run(Options opts) {
       if (menu.setupRunning() && !videoImage) scene.video.reset();  // setup floats in the sky
 
       // Over the video, in drawing order: the screen's corner handles, the
-      // focus marker, subtitles, loading text, the performance readout, the
-      // menu's panels (browser, then strip), the seek preview, the pointer and
-      // the messages in front of the eyes (GazeNotice).
+      // subtitles, loading text, the performance readout, the menu's panels
+      // (browser, then strip), the seek preview, the pointer, the focus markers
+      // and the messages in front of the eyes (GazeNotice).
       std::vector<OverlayDraw>& overlays = scene.overlays;
       const std::vector<Quad>& handles = screenControl.handle();
       if (!handles.empty()) overlays.push_back(QuadsItem{handles});
-      focusMarker.addTo(overlays);
       auto addText = [&](SubtitleOverlay& text, const Mat4& model) {
         PanelItem item;
         item.texture = text.texture();
@@ -3670,6 +3714,8 @@ int run(Options opts) {
         if (menu.glass()) item.glassAlpha = Menu::kGlassAlpha;
         overlays.push_back(item);
       }
+      // Keep the gaze dot and focus diagnostics visible over the menus.
+      focusMarker.addTo(overlays);
       // Messages in front of the eyes, last, over everything: the recenter
       // countdown, and the viewpoint as the stick moves it (or Recenter puts
       // it back) or the opacity as a twist changes it, redrawn only as its
@@ -3740,7 +3786,8 @@ int run(Options opts) {
                     xr.eyeHeight(0), xr.eyeImageWidth(0), xr.eyeImageHeight(0),
                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - switchStart)
                         .count());
-      foveation.update();  // the density maps' offsets for the images acquired now
+      foveation.update(headValid && settings.foveationLearned ? gazeCorrection.fit() : GazeFit{},
+                       headRot);
       // Not over the room while Match the room reads it.
       scene.showFoveation = !roomBlank && showFoveation && foveation.active();
       if (scene.showFoveation)
@@ -3834,6 +3881,11 @@ int run(Options opts) {
   saveUnsaved();
   keepVolume();
   keepResume();
+  gazeCorrection.endSitting();
+  if (gazeCorrection.takeChanged()) {
+    settings.gazeLearned = gazeCorrection.saved();
+    saveSettings(settings);
+  }
   gpu.savePipelineCache();
   return gpu.lost() || xr.failed() ? 1 : 0;
 }

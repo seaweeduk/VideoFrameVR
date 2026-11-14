@@ -97,6 +97,14 @@ bool Menu::hoverRect(PanelId panel, float rect[4], float& radius, bool& danger, 
   return true;
 }
 
+bool Menu::pointedButton() const {
+  float rect[4], radius, clip[4];
+  bool danger;
+  return pointerPanel_ >= 0 &&
+         hoverRect(static_cast<PanelId>(pointerPanel_), rect, radius, danger, clip) &&
+         buttons_[hovered_].ratingPath.empty();
+}
+
 void Menu::languageChanged() {
   dirty_ = true;
   if (setup_) setup_->cuesDrawn = false;
@@ -149,6 +157,7 @@ void Menu::update(const MenuView& view) {
       view.toneLook != view_.toneLook ||
       view.foveationAvailable != view_.foveationAvailable || view.foveation != view_.foveation ||
       view.showFoveation != view_.showFoveation || view.sharpBins != view_.sharpBins ||
+      view.foveationLearned != view_.foveationLearned ||
       view.foveationRing != view_.foveationRing || view.sharpDegrees != view_.sharpDegrees ||
       view.foveationOutside != view_.foveationOutside || view.frameReuse != view_.frameReuse ||
       view.advancedSettings != view_.advancedSettings ||

@@ -673,8 +673,8 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.focus.distance = "对焦距离";
   s.focus.distanceHint = "左右眼画面对齐处的距离。";
   s.focus.gazeDot = "显示视线位置";
-  s.focus.gazeCorrect = "校正眼动追踪偏移";
-  s.focus.gazeCorrectHint = "补偿眼动追踪测得的指向误差。";
+  s.focus.gazeCorrect = "使用学习的眼动追踪";
+  s.focus.gazeCorrectHint = "将从菜单点击中学到的校正用于立体对焦及其视线点。关闭时使用运行时的视线数据。学习会在后台继续。";
   s.focus.baseline = "相机间距";
   s.focus.baselineHint = "拍摄此视频时两台相机的间距。";
   s.focus.autoIpd = "自动瞳距";
@@ -758,25 +758,14 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.focusStatus.targets[3] = "眼动追踪丢失，恢复前使用头部朝向";
   s.focusStatus.targets[4] = "眼动追踪无数据，可能未授权或已关闭，改用头部朝向";
   s.focusStatus.targets[5] = "运行时或头显不支持眼动追踪，改用头部朝向";
-  s.focusStatus.targetTags[0] = "头部";
-  s.focusStatus.targetTags[1] = "眼动";
-  s.focusStatus.targetTags[2] = "眼动：保持";
-  s.focusStatus.targetTags[3] = "头部（眼动丢失）";
-  s.focusStatus.targetTags[4] = "头部（眼动未启用）";
-  s.focusStatus.targetTags[5] = "头部（无眼动追踪）";
   s.focusStatus.far = "远处";
   s.focusStatus.nothing = "无";
-  s.focusStatus.unavailableBrief = "不可用";
   s.focusStatus.unavailable = "自动对焦不可用，深度估算器未能启动";
-  s.focusStatus.offBrief = "关闭";
   s.focusStatus.off = "已关闭，保留视频原始立体效果";
-  s.focusStatus.manualBrief = "手动 %s";
   s.focusStatus.manual = "在 %s 处按双眼瞳距 %.1f 毫米及头部姿态对齐";
   s.focusStatus.nearest = "距最近视频画面 %.1f°";
   s.focusStatus.measuring = "正在测量…暂时保持 %s%s";
-  s.focusStatus.measuringBrief = "正在测量%s";
   s.focusStatus.holding = "保持 %s，测量深度超出最近至最远距离范围";
-  s.focusStatus.heldBrief = "保持 %s，超出范围";
   s.focusStatus.following = "跟随视线 %s，最近测得 %s，匹配度 %s%s";
   s.releaseUpdate.downloading = "正在下载 %s…";
   s.releaseUpdate.ready = "重启应用以使用 %s";
@@ -1244,5 +1233,6 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.whatsNew.close = "关闭";
   s.whatsNew.showAfterUpdates = "更新后显示";
   s.whatsNew.updatedFrom = "已从 %s 更新到 %s";
+  s.foveationLearnedHint = "使用从菜单点击中学到的校正移动清晰区域。关闭时使用运行时的视线数据。此设置独立于立体对焦。";
   return s;
 }

@@ -35,9 +35,9 @@ struct FocusPreferences {
   bool diagnostics = false;  // target marker and the estimate's state in the view
   bool eyeTracking = false;  // aim automatic focus with the eyes (else the head direction)
   bool gazeDot = false;      // a dot where the eyes look, for checking eye tracking
-  // Undo the eye tracker's measured error. Off, not saved and not in the menu
-  // for now: the fixed fit is to be replaced by a calibration.
-  bool gazeCorrect = false;
+  // Apply the correction learned from menu clicks to focus and its gaze dot.
+  // Off uses the runtime's gaze unchanged; learning continues in the background.
+  bool gazeCorrect = true;
   // The viewer's IPD for the correction: the
   // headset's eye separation, or this value (tenths of a mm, 40-90 mm).
   bool autoIpd = true;

@@ -6,6 +6,8 @@
 #include <string>
 
 class XrContext;
+struct GazeFit;
+struct Quat;
 
 // How much the eye images are foveated on the Steam Frame
 // (docs/vulkan-renderer.md, 5): full detail where you look, coarser shading
@@ -63,8 +65,9 @@ class Foveation {
   void prepare();
   // Once per drawn frame, after XrContext::beginFrame and before
   // acquireEyes(): asks SteamVR for the latest pattern, reads the foveation
-  // centres and sets each eye's density map offset.
-  void update();
+  // centres and sets each eye's density map offset. An optional head-space
+  // learned correction moves the centres without filtering the gaze itself.
+  void update(const GazeFit& correction, Quat head);
 
   // For --timing, since the last call: "level=high map=app grid=... sharp=...
   // gaze_valid=100% ..." with the calls' CPU time and failures.
