@@ -63,7 +63,7 @@ export CFLAGS="-O2 -ffile-prefix-map=/work=. -ffile-prefix-map=/src=."
 export CXXFLAGS="$CFLAGS"
 
 json_source=/work/source/json
-mpv_source=/work/source/mpv-0.40.0
+mpv_source=/work/source/mpv-0.41.0
 ffmpeg_source=/work/source/ffmpeg-9.0.2
 smb2_source=/work/source/libsmb2-2bcb014b23a8c8cccf534eea8bda2fe5df453cfd
 ssh_source=/work/source/libssh-0.12.2
@@ -123,7 +123,6 @@ cp /work/libbluray-build/meson-info/intro-buildoptions.json /work/config/libblur
 mkdir -p "$mpv_source/video/decode/mvc"
 cp /src/packaging/mpv/mvc/*.[ch] "$mpv_source/video/decode/mvc/"
 patch -d "$mpv_source" -p1 < /src/packaging/mpv/mpv-mvc.patch
-patch -d "$mpv_source" -p1 < /src/packaging/mpv/mpv-ffmpeg9.patch
 if [[ $arch == aarch64 ]]; then
   patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-reset.patch
   patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-hardware-only.patch

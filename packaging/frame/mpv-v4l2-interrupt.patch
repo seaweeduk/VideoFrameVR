@@ -2,7 +2,7 @@
 # for frames that only the locking thread returns. Apply after mpv-v4l2-reset.patch.
 --- a/filters/f_decoder_wrapper.c
 +++ b/filters/f_decoder_wrapper.c
-@@ -224,6 +224,12 @@ struct priv {
+@@ -225,6 +225,12 @@ struct priv {
      bool dec_thread_valid;
      mp_mutex cache_lock;
  
@@ -15,7 +15,7 @@
      // --- Protected by cache_lock.
      char *cur_hwdec;
      bool try_spdif;
-@@ -289,8 +295,26 @@ static void thread_unlock(struct priv *p)
+@@ -290,8 +296,26 @@ static void thread_unlock(struct priv *p
      mp_assert(p->dec_thread_lock);
      p->dec_thread_lock = false;
  
@@ -43,7 +43,7 @@
  }
  
  // This resets only the decoder. Unlike a full reset(), this doesn't imply a
-@@ -370,8 +394,9 @@ static void decf_destroy(struct mp_filter *f)
+@@ -371,8 +395,9 @@ static void decf_destroy(struct mp_filte
  
      if (p->decoder) {
          MP_DBG(f, "Uninit decoder.\n");
@@ -55,7 +55,7 @@
          p->codec->decoder = NULL;
          p->codec->decoder_desc = NULL;
      }
-@@ -396,9 +421,10 @@ struct mp_decoder_list *audio_decoder_list(void)
+@@ -397,9 +422,10 @@ struct mp_decoder_list *audio_decoder_li
  
  static bool reinit_decoder(struct priv *p)
  {
@@ -69,7 +69,7 @@
  
      reset_decoder(p);
      p->has_broken_packet_pts = -10; // needs 10 packets to reach decision
-@@ -452,7 +478,7 @@ static bool reinit_decoder(struct priv *p)
+@@ -453,7 +479,7 @@ static bool reinit_decoder(struct priv *
          struct mp_decoder_entry *sel = &list->entries[n];
          MP_VERBOSE(p, "Opening decoder %s\n", sel->decoder);
  
@@ -78,7 +78,7 @@
          if (p->decoder) {
              p->codec->decoder = talloc_strdup(p, sel->decoder);
              p->codec->decoder_desc = talloc_strdup(p, sel->desc && sel->desc[0] ? sel->desc : NULL);
-@@ -1182,6 +1208,7 @@ static void public_f_destroy(struct mp_filter *f)
+@@ -1183,6 +1209,7 @@ static void public_f_destroy(struct mp_f
      talloc_free(p->dec_root_filter);
      talloc_free(p->queue);
      mp_mutex_destroy(&p->cache_lock);
@@ -86,7 +86,7 @@
  }
  
  static const struct mp_filter_info decf_filter = {
-@@ -1210,6 +1237,14 @@ static void onlock_dec_thread(void *ptr)
+@@ -1211,6 +1238,14 @@ static void onlock_dec_thread(void *ptr)
      struct priv *p = ptr;
  
      mp_filter_graph_interrupt(p->dec_root_filter);
@@ -101,7 +101,7 @@
  }
  
  struct mp_decoder_wrapper *mp_decoder_wrapper_create(struct mp_filter *parent,
-@@ -1223,6 +1258,7 @@ struct mp_decoder_wrapper *mp_decoder_wrapper_create(struct mp_filter *parent,
+@@ -1224,6 +1259,7 @@ struct mp_decoder_wrapper *mp_decoder_wr
      p->public.f = public_f;
  
      mp_mutex_init(&p->cache_lock);
@@ -143,7 +143,7 @@
  static void init_avctx(struct mp_filter *vd);
  static void uninit_avctx(struct mp_filter *vd);
  
-@@ -273,6 +277,12 @@ typedef struct lavc_ctx {
+@@ -276,6 +280,12 @@ typedef struct lavc_ctx {
      struct mp_image_pool *dr_pool;
      int dr_imgfmt, dr_w, dr_h, dr_stride_align;
  
@@ -156,7 +156,7 @@
      struct mp_decoder public;
  } vd_ffmpeg_ctx;
  
-@@ -967,6 +977,12 @@ static void init_avctx(struct mp_filter *vd)
+@@ -986,6 +996,12 @@ static void init_avctx(struct mp_filter
      if (avcodec_open2(avctx, lavc_codec, NULL) < 0)
          goto error;
  
@@ -169,7 +169,7 @@
      // Sometimes, the first packet contains information required for correct
      // decoding of the rest of the stream. The only currently known case is the
      // x264 build number (encoded in a SEI element), needed to enable a
-@@ -1044,6 +1060,9 @@ static void uninit_avctx(struct mp_filter *vd)
+@@ -1063,6 +1079,9 @@ static void uninit_avctx(struct mp_filte
  
      const char *wrapper = ctx->avctx && ctx->avctx->codec ? ctx->avctx->codec->wrapper_name : NULL;
      bool v4l2 = wrapper && strcmp(wrapper, "v4l2m2m") == 0;
@@ -179,7 +179,7 @@
      avcodec_free_context(&ctx->avctx);
      // Before a new session allocates its capture buffers (a seek reopens
      // the decoder), so the old ones are not still kept by the converter.
-@@ -1637,6 +1656,12 @@ static int receive_frame(struct mp_filter *vd, struct mp_frame *out_frame)
+@@ -1655,6 +1674,12 @@ static int receive_frame(struct mp_filte
      if (ret == AVERROR(EAGAIN) && ctx->mvc && vd_mvc_next(ctx->mvc, &mvc_pkt))
          return 0; // force retry, so send_mvc_queue() gets called
  
@@ -192,7 +192,7 @@
      if (ctx->num_delay_queue <= ctx->max_delay_queue && ret != AVERROR_EOF)
          return ret;
  
-@@ -1746,6 +1771,17 @@ static void vd_lavc_reset(struct mp_filter *vd)
+@@ -1764,6 +1789,17 @@ static void vd_lavc_reset(struct mp_filt
      ctx->framedrop_flags = 0;
  }
  
@@ -210,7 +210,7 @@
  static void vd_lavc_destroy(struct mp_filter *vd)
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
-@@ -1753,6 +1789,7 @@ static void vd_lavc_destroy(struct mp_filter *vd)
+@@ -1771,6 +1807,7 @@ static void vd_lavc_destroy(struct mp_fi
      uninit_avctx(vd);
  
      mp_mutex_destroy(&ctx->dr_lock);
@@ -218,7 +218,7 @@
  }
  
  static const struct mp_filter_info vd_lavc_filter = {
-@@ -1789,8 +1826,11 @@ static struct mp_decoder *create(struct mp_filter *parent,
+@@ -1807,8 +1844,11 @@ static struct mp_decoder *create(struct
  
      ctx->public.f = vd;
      ctx->public.control = control;

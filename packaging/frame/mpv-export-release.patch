@@ -2,7 +2,7 @@
 # as its frames are done with. Apply after mpv-v4l2-interrupt.patch.
 --- a/video/out/gpu/libmpv_gpu.c
 +++ b/video/out/gpu/libmpv_gpu.c
-@@ -152,10 +152,26 @@ static bool check_format(struct render_backend *ctx, int imgfmt)
+@@ -152,10 +152,26 @@ static bool check_format(struct render_b
      return gl_video_check_format(p->renderer, imgfmt);
  }
  

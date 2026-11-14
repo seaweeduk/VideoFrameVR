@@ -1,7 +1,7 @@
 # Do not start a software decoder after V4L2 fails on large VR video.
 --- a/video/decode/vd_lavc.c
 +++ b/video/decode/vd_lavc.c
-@@ -662,10 +662,19 @@
+@@ -669,10 +669,19 @@ static void select_and_set_hwdec(struct
              MP_VERBOSE(vd, "Using underlying hw-decoder '%s'\n",
                         ctx->hwdec.codec->name);
      } else {
@@ -23,7 +23,7 @@
              ctx->force_eof = true;
          } else {
              MP_VERBOSE(vd, "Using software decoding.\n");
-@@ -748,10 +757,10 @@
+@@ -755,10 +764,10 @@ static void reinit(struct mp_filter *vd)
  
      bool use_hwdec = ctx->use_hwdec;
      init_avctx(vd);
@@ -36,7 +36,7 @@
      }
  }
  
-@@ -767,6 +776,9 @@
+@@ -774,6 +783,9 @@ static void init_avctx(struct mp_filter
      m_config_cache_update(ctx->opts_cache);
  
      mp_assert(!ctx->avctx);
@@ -46,7 +46,7 @@
  
      const AVCodec *lavc_codec = NULL;
  
-@@ -1343,6 +1355,8 @@
+@@ -1369,6 +1381,8 @@ static bool send_mvc_queue(struct mp_fil
  static int send_packet(struct mp_filter *vd, struct demux_packet *pkt)
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
@@ -55,7 +55,7 @@
      if (ctx->reopen_v4l2) {
          if (!pkt)
              return AVERROR_EOF;
-@@ -1581,7 +1595,7 @@
+@@ -1607,7 +1621,7 @@ static int receive_frame(struct mp_filte
  
      int ret = decode_frame(vd);
  
@@ -64,7 +64,7 @@
          // Failed hardware decoding? Try the next one, and eventually software.
          struct demux_packet **pkts = ctx->sent_packets;
          int num_pkts = ctx->num_sent_packets;
-@@ -1600,7 +1614,7 @@
+@@ -1626,7 +1640,7 @@ static int receive_frame(struct mp_filte
           */
          do {
              force_fallback(vd);

@@ -168,7 +168,7 @@ def assemble(bundle, app, work, sdk, cache, supplement, metadata, source_name):
                       "BD-J (Java), tools, FreeType, fontconfig and libxml2 disabled; no AACS or BD+ library bundled"),
         "json": "MIT; compiled-in header library, unmodified",
         "mpv": ("upstream GPL-2.0-or-later, combined under GPLv3; both builds modified by mpv-mvc.patch and the "
-                "packaging/mpv/mvc sources (3D Blu-ray, GPL-3.0) and by mpv-ffmpeg9.patch; Frame build also by mpv-v4l2-reset.patch, "
+                "packaging/mpv/mvc sources (3D Blu-ray, GPL-3.0); Frame build also by mpv-v4l2-reset.patch, "
                 "mpv-v4l2-hardware-only.patch, mpv-v4l2-interrupt.patch, mpv-export-release.patch and dmabuf_ubwc sources"),
         "ffmpeg": ("upstream LGPL-2.1-or-later. Desktop build: unmodified, LGPL-2.1-or-later. "
                    "Frame build: its V4L2 decoder replaced by the packaging/frame/ffmpeg sources, which are FFmpeg's "
