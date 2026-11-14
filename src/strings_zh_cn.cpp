@@ -655,10 +655,8 @@ Strings simplifiedChineseStrings(const Strings& english) {
 
   s.focus.allTitle = "对焦（所有视频）";
   s.focus.videoTitle = "对焦（此视频）";
-  s.focus.stateTitle = "状态";
   s.focus.enabled = "立体对焦";
   s.focus.enabledHint = "关闭后，所有视频保留原始立体效果。";
-  s.focus.offForAll = "已对所有视频关闭，保留原始立体效果。";
   s.focus.mode = "模式";
   s.focus.modes[0] = "关闭";
   s.focus.modes[1] = "手动";
@@ -672,15 +670,14 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.focus.targetHint = "选择自动对焦的指向方式。";
   s.focus.distance = "对焦距离";
   s.focus.distanceHint = "左右眼画面对齐处的距离。";
-  s.focus.gazeDot = "显示视线位置";
+  s.focus.showTarget = "显示对焦目标";
+  s.focus.showTargetHint = "显示对焦目标及测量距离。";
   s.focus.gazeCorrect = "使用学习的眼动追踪";
-  s.focus.gazeCorrectHint = "将从菜单点击中学到的校正用于立体对焦及其视线点。关闭时使用运行时的视线数据。学习会在后台继续。";
+  s.focus.gazeCorrectHint = "将从菜单点击中学到的校正用于立体对焦。关闭时使用运行时的视线数据。学习会在后台继续。";
   s.focus.baseline = "相机间距";
   s.focus.baselineHint = "拍摄此视频时两台相机的间距。";
   s.focus.autoIpd = "自动瞳距";
   s.focus.autoIpdHint = "使用头显测得的双眼间距。";
-  s.focus.diagnostics = "诊断信息";
-  s.focus.diagnosticsHint = "显示对焦目标及测量距离。";
   s.focus.motionTitle = "运动（所有视频）";
   s.focus.motion = "运动模拟";
   s.focus.motionDistance = "运动距离";
@@ -759,14 +756,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.focusStatus.targets[4] = "眼动追踪无数据，可能未授权或已关闭，改用头部朝向";
   s.focusStatus.targets[5] = "运行时或头显不支持眼动追踪，改用头部朝向";
   s.focusStatus.far = "远处";
-  s.focusStatus.nothing = "无";
   s.focusStatus.unavailable = "自动对焦不可用，深度估算器未能启动";
-  s.focusStatus.off = "已关闭，保留视频原始立体效果";
-  s.focusStatus.manual = "在 %s 处按双眼瞳距 %.1f 毫米及头部姿态对齐";
-  s.focusStatus.nearest = "距最近视频画面 %.1f°";
-  s.focusStatus.measuring = "正在测量…暂时保持 %s%s";
-  s.focusStatus.holding = "保持 %s，测量深度超出最近至最远距离范围";
-  s.focusStatus.following = "跟随视线 %s，最近测得 %s，匹配度 %s%s";
   s.releaseUpdate.downloading = "正在下载 %s…";
   s.releaseUpdate.ready = "重启应用以使用 %s";
   s.releaseUpdate.downloadFailed = "无法安装更新。请检查网络连接和可用空间。";

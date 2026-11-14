@@ -28,10 +28,6 @@ class FocusTargetSelector {
   FocusTarget update(bool eyeTracking, const GazeState& gaze, Quat head, double now,
                      const GazeFit& fit);
   TargetStatus status() const { return status_; }
-  // Where the eyes look, head axes, as the target follows it (also when aimed
-  // by the head), held through a blink; for the gaze dot.
-  bool gazeKnown() const { return gazeKnown_; }
-  Vec3 gaze() const { return gaze_; }
   // This frame's gaze as the tracker gives it, head axes, if it has one.
   bool trackerGazeGood() const { return trackerGood_; }
   Vec3 trackerGaze() const { return trackerGaze_; }
@@ -45,8 +41,6 @@ class FocusTargetSelector {
   Vec3 gaze_ = {0.0f, 0.0f, -1.0f};    // smoothed gaze, head axes
   Vec3 raw_, velocity_;                // the last sample, and the filtered rate (per second)
   double sampleAt_ = -1;               // the last sample's time
-  double goodAt_ = -1;                 // when the gaze was last good
-  bool gazeKnown_ = false;
   bool trackerGood_ = false;
   Vec3 trackerGaze_ = {0.0f, 0.0f, -1.0f};
   Vec3 target_ = {0.0f, 0.0f, -1.0f};  // what was handed out last
@@ -55,5 +49,6 @@ class FocusTargetSelector {
   double last_ = -1;
 };
 
-// One line for the menu.
-const char* targetStatusText(TargetStatus status);
+// For the menu: why the eyes don't aim the focus though they were chosen to,
+// where the viewer can do something about it. Empty otherwise.
+const char* targetNotice(TargetStatus status);

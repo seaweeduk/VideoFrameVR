@@ -300,10 +300,8 @@ struct StashSceneStrings {
 struct FocusStrings {
   const char* allTitle;
   const char* videoTitle;
-  const char* stateTitle;
   const char* enabled;
   const char* enabledHint;
-  const char* offForAll;
   const char* mode;
   const char* modes[3];
   const char* modeTips[3];
@@ -312,15 +310,14 @@ struct FocusStrings {
   const char* targetHint;
   const char* distance;
   const char* distanceHint;
-  const char* gazeDot;
+  const char* showTarget;
+  const char* showTargetHint;
   const char* gazeCorrect;
   const char* gazeCorrectHint;
   const char* baseline;
   const char* baselineHint;
   const char* autoIpd;
   const char* autoIpdHint;
-  const char* diagnostics;
-  const char* diagnosticsHint;
   const char* motionTitle;
   const char* motion;
   const char* motionDistance;
@@ -342,14 +339,7 @@ struct FocusStatusStrings {
   const char* reasons[7];  // FocusReason, except None
   const char* targets[6];  // TargetStatus
   const char* far;
-  const char* nothing;
   const char* unavailable;
-  const char* off;
-  const char* manual;       // printf: distance, IPD in mm
-  const char* nearest;      // printf: degrees
-  const char* measuring;    // printf: distance, optional reason
-  const char* holding;      // printf: distance
-  const char* following;    // printf: distance, measured distance, confidence, optional reason
 };
 
 // A newer release of the managed GitHub install: its dialog and the strip's notice.

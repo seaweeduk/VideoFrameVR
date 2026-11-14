@@ -116,14 +116,11 @@ bool applyFocusControl(FocusControl control, double value, bool& videoOwn, Focus
     case FocusControl::Enabled:
       preferences.enabled = v != 0;
       return true;
-    case FocusControl::Diagnostics:
-      preferences.diagnostics = v != 0;
+    case FocusControl::ShowTarget:
+      preferences.showTarget = v != 0;
       return true;
     case FocusControl::Target:
       preferences.eyeTracking = v != 0;
-      return true;
-    case FocusControl::GazeDot:
-      preferences.gazeDot = v != 0;
       return true;
     case FocusControl::GazeCorrect:
       preferences.gazeCorrect = v != 0;
@@ -203,16 +200,13 @@ bool FocusSettingsReader::read(const std::string& key, const std::string& value)
     enabledSeen_ = true;
     return true;
   }
-  if (key == "focus_diagnostics") {
-    preferences_.diagnostics = value == "1";
+  // The marker's switch, and the gaze dot's that it took over: on if either was.
+  if (key == "focus_diagnostics" || key == "focus_gaze_dot") {
+    preferences_.showTarget = preferences_.showTarget || value == "1";
     return true;
   }
   if (key == "focus_target") {
     preferences_.eyeTracking = value == "eyes";
-    return true;
-  }
-  if (key == "focus_gaze_dot") {
-    preferences_.gazeDot = value == "1";
     return true;
   }
   if (key == "gaze_correction") {
@@ -275,9 +269,8 @@ std::string focusSettingLines(const FocusSettings& f, const FocusPreferences& p)
       << "\nfocus2_sensitivity=" << f.sensitivity << "\nfocus2_accuracy=" << f.accuracy
       << "\nfocus2_pitch=" << f.pitchDeg << "\nfocus2_yaw=" << f.yawDeg
       << "\nfocus_enabled=" << (p.enabled ? 1 : 0)
-      << "\nfocus_diagnostics=" << (p.diagnostics ? 1 : 0)
+      << "\nfocus_diagnostics=" << (p.showTarget ? 1 : 0)
       << "\nfocus_target=" << (p.eyeTracking ? "eyes" : "head")
-      << "\nfocus_gaze_dot=" << (p.gazeDot ? 1 : 0)
       << "\ngaze_correction=" << (p.gazeCorrect ? 1 : 0)
       << "\nuser_ipd_auto=" << (p.autoIpd ? 1 : 0) << "\nuser_ipd_tenth_mm=" << p.ipdTenthMm
       << "\n";

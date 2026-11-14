@@ -56,11 +56,9 @@ FocusTarget FocusTargetSelector::update(bool eyeTracking, const GazeState& gaze,
     if (good) {
       trackerGaze_ = local;
       smooth(applyGazeFit(local, fit), gaze.ageKnown ? gaze.sampleSeconds : now);
-      goodAt_ = now;
     }
   }
   trackerGood_ = good;
-  gazeKnown_ = gaze.available && goodAt_ >= 0 && now - goodAt_ <= kHold;
   if (!eyeTracking || !gaze.available) {
     phase_ = Phase::Head;
     status_ = eyeTracking ? TargetStatus::EyesUnsupported : TargetStatus::Head;
@@ -126,18 +124,9 @@ FocusTarget FocusTargetSelector::update(bool eyeTracking, const GazeState& gaze,
   return t;
 }
 
-const char* targetStatusText(TargetStatus status) {
+const char* targetNotice(TargetStatus status) {
   const auto& t = strings().focusStatus;
-  switch (status) {
-    case TargetStatus::Head: return t.targets[0];
-    case TargetStatus::Eyes: return t.targets[1];
-    case TargetStatus::EyesHolding: return t.targets[2];
-    case TargetStatus::EyesFallback:
-      return t.targets[3];
-    case TargetStatus::EyesInactive:
-      return t.targets[4];
-    case TargetStatus::EyesUnsupported:
-      return t.targets[5];
-  }
+  if (status == TargetStatus::EyesInactive) return t.targets[4];
+  if (status == TargetStatus::EyesUnsupported) return t.targets[5];
   return "";
 }

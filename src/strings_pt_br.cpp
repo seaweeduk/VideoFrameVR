@@ -655,10 +655,8 @@ Strings brazilianPortugueseStrings(const Strings& english) {
 
   s.focus.allTitle = "Foco (todos os vídeos)";
   s.focus.videoTitle = "Foco (este vídeo)";
-  s.focus.stateTitle = "Estado";
   s.focus.enabled = "Foco estéreo";
   s.focus.enabledHint = "Desligado: mantém o estéreo original em todos os vídeos.";
-  s.focus.offForAll = "Desligado para todos os vídeos. Mantém o estéreo original.";
   s.focus.mode = "Modo";
   s.focus.modes[0] = "Desligado";
   s.focus.modes[1] = "Manual";
@@ -672,15 +670,14 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.focus.targetHint = "O que guia o foco automático.";
   s.focus.distance = "Distância do foco";
   s.focus.distanceHint = "Distância em que as imagens estéreo coincidem.";
-  s.focus.gazeDot = "Mostrar alvo do olhar";
+  s.focus.showTarget = "Mostrar alvo do foco";
+  s.focus.showTargetHint = "Mostrar o alvo do foco e a distância medida.";
   s.focus.gazeCorrect = "Usar rastreamento ocular aprendido";
-  s.focus.gazeCorrectHint = "Usar correções aprendidas com cliques nos menus para foco estéreo e seu ponto de olhar. Desativado usa o olhar do sistema. O aprendizado continua em segundo plano.";
+  s.focus.gazeCorrectHint = "Usar correções aprendidas com cliques nos menus para o foco estéreo. Desativado usa o olhar do sistema. O aprendizado continua em segundo plano.";
   s.focus.baseline = "Distância entre câmeras";
   s.focus.baselineHint = "Distância entre as câmeras que gravaram este vídeo.";
   s.focus.autoIpd = "IPD automática";
   s.focus.autoIpdHint = "Usar a distância entre olhos medida pelo headset.";
-  s.focus.diagnostics = "Diagnóstico";
-  s.focus.diagnosticsHint = "Mostrar o alvo do foco e a distância medida.";
   s.focus.motionTitle = "Movimento (todos os vídeos)";
   s.focus.motion = "Emular movimento";
   s.focus.motionDistance = "Distância do movimento";
@@ -759,14 +756,7 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.focusStatus.targets[4] = "Eye tracking sem dados (sem permissão ou desligado): usando a cabeça";
   s.focusStatus.targets[5] = "Eye tracking não suportado pelo runtime ou headset: usando a cabeça";
   s.focusStatus.far = "longe";
-  s.focusStatus.nothing = "nada";
   s.focusStatus.unavailable = "Automático indisponível (falha ao iniciar estimativa de profundidade)";
-  s.focusStatus.off = "Desligado: estéreo original do vídeo preservado";
-  s.focusStatus.manual = "Alinhado a %s para seus olhos (IPD %.1f mm) e orientação da cabeça";
-  s.focusStatus.nearest = "imagem mais próxima a %.1f°";
-  s.focusStatus.measuring = "Medindo … (mantendo %s%s por enquanto)";
-  s.focusStatus.holding = "Mantendo %s: profundidade medida fora da distância mínima ou máxima";
-  s.focusStatus.following = "Seguindo olhar a %s (última medida: %s, concordância %s%s)";
   s.releaseUpdate.downloading = "Baixando %s …";
   s.releaseUpdate.ready = "Reinicie o app para usar %s";
   s.releaseUpdate.downloadFailed = "Não foi possível instalar. Verifique a conexão e o espaço livre.";

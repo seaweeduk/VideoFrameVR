@@ -655,10 +655,8 @@ Strings germanStrings(const Strings& english) {
 
   s.focus.allTitle = "Fokus (alle Videos)";
   s.focus.videoTitle = "Fokus (dieses Video)";
-  s.focus.stateTitle = "Status";
   s.focus.enabled = "Stereofokus";
   s.focus.enabledHint = "Aus: Original-Stereo für alle Videos beibehalten.";
-  s.focus.offForAll = "Für alle Videos aus: Original-Stereo bleibt.";
   s.focus.mode = "Modus";
   s.focus.modes[0] = "Aus";
   s.focus.modes[1] = "Manuell";
@@ -672,15 +670,14 @@ Strings germanStrings(const Strings& english) {
   s.focus.targetHint = "Womit der Autofokus zielt.";
   s.focus.distance = "Fokusabstand";
   s.focus.distanceHint = "Abstand, an dem die Stereobilder übereinstimmen.";
-  s.focus.gazeDot = "Blickziel anzeigen";
+  s.focus.showTarget = "Fokusziel anzeigen";
+  s.focus.showTargetHint = "Fokusziel und gemessenen Abstand anzeigen.";
   s.focus.gazeCorrect = "Erlerntes Eye Tracking verwenden";
-  s.focus.gazeCorrectHint = "Aus Menüklicks erlernte Korrekturen für Stereofokus und Blickpunkt verwenden. Aus nutzt den Blick der Laufzeit. Das Lernen läuft im Hintergrund weiter.";
+  s.focus.gazeCorrectHint = "Aus Menüklicks erlernte Korrekturen für den Stereofokus verwenden. Aus nutzt den Blick der Laufzeit. Das Lernen läuft im Hintergrund weiter.";
   s.focus.baseline = "Kameraabstand";
   s.focus.baselineHint = "Abstand zwischen den Aufnahmekameras dieses Videos.";
   s.focus.autoIpd = "Automatische IPD";
   s.focus.autoIpdHint = "Den vom Headset gemessenen Augenabstand nutzen.";
-  s.focus.diagnostics = "Diagnose";
-  s.focus.diagnosticsHint = "Fokusziel und gemessenen Abstand anzeigen.";
   s.focus.motionTitle = "Bewegung (alle Videos)";
   s.focus.motion = "Bewegung emulieren";
   s.focus.motionDistance = "Bewegungsabstand";
@@ -759,14 +756,7 @@ Strings germanStrings(const Strings& english) {
   s.focusStatus.targets[4] = "Eye Tracking ohne Daten (Berechtigung fehlt oder Tracker aus): Kopfrichtung nutzen";
   s.focusStatus.targets[5] = "Eye Tracking von Laufzeit oder Headset nicht unterstützt: Kopfrichtung nutzen";
   s.focusStatus.far = "fern";
-  s.focusStatus.nothing = "nichts";
   s.focusStatus.unavailable = "Automatik nicht verfügbar (Tiefenschätzung konnte nicht starten)";
-  s.focusStatus.off = "Aus: Original-Stereo des Videos bleibt unverändert";
-  s.focusStatus.manual = "Auf %s für deine Augen (IPD %.1f mm) und Kopfhaltung ausgerichtet";
-  s.focusStatus.nearest = "nächstes Videobild %.1f° entfernt";
-  s.focusStatus.measuring = "Messung läuft … (bis dahin bei %s%s)";
-  s.focusStatus.holding = "%s gehalten: gemessene Tiefe außerhalb von Mindest- bis Höchstabstand";
-  s.focusStatus.following = "Folgt dem Blick bei %s (zuletzt gemessen: %s, Übereinstimmung %s%s)";
   s.releaseUpdate.downloading = "%s wird heruntergeladen …";
   s.releaseUpdate.ready = "App neu starten, um %s zu nutzen";
   s.releaseUpdate.downloadFailed = "Installation fehlgeschlagen. Verbindung und Speicherplatz prüfen.";

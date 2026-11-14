@@ -16,7 +16,7 @@ constexpr double kSeekBack = 0.25;
 // measurement: a scene cut. Consecutive frames of a real clip differ by
 // about 0.01, different scenes of it by 0.13 or more.
 constexpr float kSceneCut = 0.06f;
-constexpr double kStatusInterval = 0.25;  // seconds between status text updates
+constexpr double kTextInterval = 0.25;  // seconds between updates of the marker's distance
 // The side probes' angle from the target: 0.003 / sensitivity radians,
 // scaled by 4 to suit this estimator's 2.9° window.
 constexpr float kSpread = 0.003f, kSpreadScale = 4.0f;
@@ -49,21 +49,6 @@ Quat axisAngle(Vec3 axis, float angle) {
   return {axis.x * s, axis.y * s, axis.z * s, std::cos(0.5f * angle)};
 }
 
-const char* reasonText(FocusReason r) {
-  const auto& t = strings().focusStatus;
-  switch (r) {
-    case FocusReason::None: return "";
-    case FocusReason::Blank: return t.reasons[0];
-    case FocusReason::Ambiguous: return t.reasons[1];
-    case FocusReason::Mismatch: return t.reasons[2];
-    case FocusReason::Edge: return t.reasons[3];
-    case FocusReason::Clear: return t.reasons[4];
-    case FocusReason::Disagree: return t.reasons[5];
-    case FocusReason::OutOfRange: return t.reasons[6];
-  }
-  return "";
-}
-
 std::string meters(float m) {
   char buf[32];
   if (!std::isfinite(m)) return strings().focusStatus.far;
@@ -87,7 +72,7 @@ void Autofocus::startOver(bool newContent, const char* why) {
   reachAlpha_ = reachBeta_ = 0;
   for (Outcome& o : outcomes_) o.known = false;
   repeats_ = 0;
-  statusAt_ = -1;
+  textAt_ = -1;
   if (!newContent) std::printf("Autofocus: new probes (%s)\n", why);
 }
 
@@ -209,13 +194,11 @@ FocusOutput Autofocus::update(const FocusInput& in) {
                                       in.picture, in.viewerIpd, in.motion);
   else if (in.shown && length(in.motion) > 0 && in.format.projection != Projection::Flat)
     out.correction = motionCorrection(in.motion, in.picture);
-  out.distance = distance;
   out.markerDistance = distance * along;
-  if (statusAt_ < 0 || in.now - statusAt_ >= kStatusInterval) {
-    statusAt_ = in.now;
-    describe(in, automatic, distance);
+  if (textAt_ < 0 || in.now - textAt_ >= kTextInterval) {
+    textAt_ = in.now;
+    distanceText_ = distance > 0 ? meters(distance) : "";
   }
-  out.status = status_;
   out.distanceText = distanceText_;
   return out;
 }
@@ -229,47 +212,4 @@ void Autofocus::report(double now, bool settled) {
               measurements_ / (now - reportAt_), 100.0 * settledFrames_ / frames_);
   reportAt_ = now;
   frames_ = settledFrames_ = measurements_ = 0;
-}
-
-void Autofocus::describe(const FocusInput& in, bool automatic, float distance) {
-  const FocusSettings& s = in.settings;
-  const auto& t = strings().focusStatus;
-  char buf[512];
-  distanceText_ = distance > 0 ? meters(distance) : "";
-  if (s.mode == FocusMode::Automatic && !automatic) {
-    status_ = t.unavailable;
-    return;
-  }
-  if (distance <= 0) {
-    status_ = t.off;
-    return;
-  }
-  const float ipd = 1000.0f * (in.viewerIpd > 0 ? in.viewerIpd : length(in.rightEye - in.leftEye));
-  if (!automatic) {
-    std::snprintf(buf, sizeof(buf), t.manual, meters(distance).c_str(), ipd);
-    status_ = buf;
-    return;
-  }
-  const FocusController::State& st = controller_.state();
-  std::string why = reasonText(st.holding ? FocusReason::OutOfRange : st.reason);
-  if (reachAlpha_ != 0 || reachBeta_ != 0) {
-    std::snprintf(buf, sizeof(buf), t.nearest,
-                  std::hypot(reachAlpha_, reachBeta_) / kDegree);
-    why = why.empty() ? buf : why + ", " + buf;
-  }
-  if (!st.locked) {
-    std::snprintf(buf, sizeof(buf), t.measuring, meters(distance).c_str(),
-                  (why.empty() ? "" : "; " + why).c_str());
-    status_ = buf;
-  } else if (st.holding) {
-    std::snprintf(buf, sizeof(buf), t.holding, meters(distance).c_str());
-    status_ = buf;
-  } else {
-    char confidence[32];
-    std::snprintf(confidence, sizeof(confidence), "%.0f%%", 100.0f * st.confidence);
-    std::snprintf(buf, sizeof(buf), t.following, meters(distance).c_str(),
-                  (st.measured > 0 ? meters(st.measured) : t.nothing).c_str(), confidence,
-                  (why.empty() ? "" : ", " + why).c_str());
-    status_ = buf;
-  }
 }
