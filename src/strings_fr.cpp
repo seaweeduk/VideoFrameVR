@@ -655,10 +655,8 @@ Strings frenchStrings(const Strings& english) {
 
   s.focus.allTitle = "Focus (toutes les vidéos)";
   s.focus.videoTitle = "Focus (cette vidéo)";
-  s.focus.stateTitle = "État";
   s.focus.enabled = "Focus stéréo";
   s.focus.enabledHint = "Non : conserver la stéréo d'origine de toutes les vidéos.";
-  s.focus.offForAll = "Désactivé partout : stéréo d'origine conservée.";
   s.focus.mode = "Mode";
   s.focus.modes[0] = "Non";
   s.focus.modes[1] = "Manuel";
@@ -672,15 +670,14 @@ Strings frenchStrings(const Strings& english) {
   s.focus.targetHint = "Choisir ce qui dirige le focus automatique.";
   s.focus.distance = "Distance de focus";
   s.focus.distanceHint = "Distance à laquelle les images stéréo s'alignent.";
-  s.focus.gazeDot = "Afficher le point regardé";
+  s.focus.showTarget = "Afficher la cible du focus";
+  s.focus.showTargetHint = "Afficher la cible du focus et la distance mesurée.";
   s.focus.gazeCorrect = "Utiliser le suivi oculaire appris";
-  s.focus.gazeCorrectHint = "Utiliser les corrections apprises des clics dans les menus pour la mise au point stéréo et son point de regard. Désactivé, utilise le regard du système. L'apprentissage continue en arrière-plan.";
+  s.focus.gazeCorrectHint = "Utiliser les corrections apprises des clics dans les menus pour la mise au point stéréo. Désactivé, utilise le regard du système. L'apprentissage continue en arrière-plan.";
   s.focus.baseline = "Écart des caméras";
   s.focus.baselineHint = "Distance entre les caméras ayant filmé cette vidéo.";
   s.focus.autoIpd = "IPD automatique";
   s.focus.autoIpdHint = "Utiliser l'écart entre les yeux mesuré par le casque.";
-  s.focus.diagnostics = "Diagnostic";
-  s.focus.diagnosticsHint = "Afficher la cible du focus et la distance mesurée.";
   s.focus.motionTitle = "Mouvement (toutes les vidéos)";
   s.focus.motion = "Simuler le mouvement";
   s.focus.motionDistance = "Distance du mouvement";
@@ -759,14 +756,7 @@ Strings frenchStrings(const Strings& english) {
   s.focusStatus.targets[4] = "Suivi oculaire sans données (autorisation ou capteur désactivé) : direction de la tête";
   s.focusStatus.targets[5] = "Suivi oculaire non pris en charge par le runtime ou le casque : direction de la tête";
   s.focusStatus.far = "loin";
-  s.focusStatus.nothing = "rien";
   s.focusStatus.unavailable = "Mode auto indisponible (échec du démarrage de l'estimation de profondeur)";
-  s.focusStatus.off = "Désactivé : stéréo d'origine de la vidéo, inchangée";
-  s.focusStatus.manual = "Aligné à %s selon vos yeux (IPD %.1f mm) et la pose de la tête";
-  s.focusStatus.nearest = "image vidéo la plus proche à %.1f°";
-  s.focusStatus.measuring = "Mesure … (à %s en attendant%s)";
-  s.focusStatus.holding = "Maintien à %s : profondeur mesurée hors des distances minimale et maximale";
-  s.focusStatus.following = "Suit le regard à %s (dernière mesure %s, concordance %s%s)";
   s.releaseUpdate.downloading = "Téléchargement de %s …";
   s.releaseUpdate.ready = "Redémarrer l'app pour utiliser %s";
   s.releaseUpdate.downloadFailed = "Installation impossible. Vérifier la connexion et l'espace libre.";

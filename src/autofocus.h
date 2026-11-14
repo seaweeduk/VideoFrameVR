@@ -44,12 +44,10 @@ struct FocusInput {
 
 struct FocusOutput {
   StereoCorrection correction;  // for the renderer; none if off or not possible
-  float distance = 0;           // meters corrected at, 0 = none
   float markerDistance = 0;     // meters from the head to the measured spot as shown
   bool automatic = false;
-  Vec3 marker;         // the measured direction (local space), for the diagnostics
-  std::string status;  // one line for the menu
-  std::string distanceText;  // corrected distance, centred on the diagnostic marker
+  Vec3 marker;         // the measured direction (local space), for the marker
+  std::string distanceText;  // corrected distance, centred on the marker
 };
 
 // Stereo focus for the running video: no correction, a manual distance, or
@@ -66,12 +64,13 @@ class Autofocus {
  public:
   // timing: print the measuring rate every two seconds (--timing).
   bool init(bool timing = false);
+  // Whether automatic focus can measure (the depth estimator started).
+  bool available() const { return ready_; }
   FocusOutput update(const FocusInput& in);
 
  private:
   void startOver(bool newContent, const char* why);
   void report(double now, bool settled);
-  void describe(const FocusInput& in, bool automatic, float distance);
 
   DepthEstimator estimator_;
   FocusController controller_;
@@ -98,6 +97,6 @@ class Autofocus {
   // How far the last centre measurement moved off a see-through target (DepthEstimate).
   float reachAlpha_ = 0, reachBeta_ = 0;
   double lastPosition_ = -1, lastNow_ = 0;
-  double statusAt_ = -1;
-  std::string status_, distanceText_;
+  double textAt_ = -1;
+  std::string distanceText_;
 };

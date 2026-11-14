@@ -16,26 +16,12 @@ constexpr float kRingRadius = 0.0253f;  // per meter of distance: 1.45°, the me
 // is a ring the size of a coin, with a reading too small to make out.
 constexpr float kFullSize = 1.0f;
 constexpr float kMaxGrowth = 3.0f;
-constexpr float kGazeDotDistance = 2.0f;
-// Transparent canvas size per meter of distance; the centre dot is about 0.35° across.
-constexpr float kGazeDotSize = 2 * 0.0524f * 64 / 60;
 
 }  // namespace
 
 bool FocusMarker::init(Uploader& uploader) {
   if (!ring_.init(uploader, 128, 128)) return false;
   drawDistance();
-
-  if (!dot_.init(uploader, 128, 128)) return false;
-  cairo_t* cr = dot_.cr();
-  dot_.clear();
-  cairo_arc(cr, 64, 64, 5, 0, 2 * 3.14159265);
-  cairo_set_source_rgba(cr, 0, 0, 0, 0.7);
-  cairo_fill(cr);
-  cairo_arc(cr, 64, 64, 3.5, 0, 2 * 3.14159265);
-  cairo_set_source_rgba(cr, 0.2, 0.9, 1.0, 1.0);
-  cairo_fill(cr);
-  dot_.upload();
   return true;
 }
 
@@ -77,17 +63,6 @@ void FocusMarker::drawDistance() {
   ring_.upload();
 }
 
-void FocusMarker::updateGaze(bool show, Vec3 origin, Vec3 direction, float distance) {
-  showDot_ = show;
-  if (!show) return;
-  distance = distance > 0 ? std::min(distance, 50.0f) : kGazeDotDistance;
-  const Vec3 at = origin + direction * distance;
-  Mat4 basis;
-  if (!facingBasis(direction * -1.0f, {0, 1, 0}, basis)) basis = Mat4{};
-  const float d = kGazeDotSize * distance;
-  dotModel_ = translation(at) * basis * scaling(d, d, 1);
-}
-
 void FocusMarker::update(bool show, Vec3 headCenter, Quat head, Vec3 direction, float distance,
                          const std::string& distanceText) {
   show_ = show && distance > 0;
@@ -109,13 +84,9 @@ void FocusMarker::update(bool show, Vec3 headCenter, Quat head, Vec3 direction, 
 }
 
 void FocusMarker::addTo(std::vector<OverlayDraw>& overlays) {
-  auto add = [&](const Texture* texture, const Mat4& model) {
-    PanelItem item;
-    item.texture = texture;
-    item.model = model;
-    overlays.push_back(item);
-  };
-  if (showDot_) add(dot_.texture(), dotModel_);
   if (!show_) return;
-  add(ring_.texture(), ringModel_);
+  PanelItem item;
+  item.texture = ring_.texture();
+  item.model = ringModel_;
+  overlays.push_back(item);
 }

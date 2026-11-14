@@ -3292,14 +3292,9 @@ int run(Options opts) {
           settings.focusPrefs.eyeTracking, xr.gaze(), headRot, now,
           settings.focusPrefs.gazeCorrect ? gazeCorrection.fit() : GazeFit{});
       const FocusOutput focusOut = autofocus.update(focusIn);
-      focusMarker.update(settings.focusPrefs.diagnostics,
+      focusMarker.update(settings.focusPrefs.showTarget,
                          (focusIn.leftEye + focusIn.rightEye) * 0.5f, headRot, focusOut.marker,
                          focusOut.markerDistance, focusOut.distanceText);
-      // The dot hangs on the line of sight from between the eyes.
-      focusMarker.updateGaze(
-          settings.focusPrefs.gazeDot && focusTargets.gazeKnown() && focusIn.headValid,
-          (focusIn.leftEye + focusIn.rightEye) * 0.5f,
-          transformDir(rotation(headRot), focusTargets.gaze()), focusOut.distance);
 
       if (panel.open && !loading) releaseUpdate.menuOpened();
       releaseUpdate.poll();
@@ -3452,8 +3447,8 @@ int run(Options opts) {
       view.focus.preferences = settings.focusPrefs;
       view.focus.own = app.video.hasFocus;
       view.focus.supported = stereoCorrectionSupported(app.format) && xr.eyeCount() == 2;
-      view.focus.status = focusOut.status;
-      view.focus.targetStatus = targetStatusText(focusTargets.status());
+      view.focus.unavailable = !autofocus.available();
+      view.focus.targetNotice = targetNotice(focusTargets.status());
       view.motionEmulation = settings.motionEmulation;
       view.motionDistance = settings.motionDistance;
       view.resume = settings.resume;
@@ -3715,7 +3710,7 @@ int run(Options opts) {
         if (menu.glass()) item.glassAlpha = Menu::kGlassAlpha;
         overlays.push_back(item);
       }
-      // Keep the gaze dot and focus diagnostics visible over the menus.
+      // Keep the focus target visible over the menus.
       focusMarker.addTo(overlays);
       // Messages in front of the eyes, last, over everything: the recenter
       // countdown, and the viewpoint as the stick moves it (or Recenter puts

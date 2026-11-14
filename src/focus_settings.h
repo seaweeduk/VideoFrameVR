@@ -32,10 +32,9 @@ struct FocusSettings {
 // User preferences for the focus that are the same for every video.
 struct FocusPreferences {
   bool enabled = true;       // off: every video keeps its own stereo, whatever its mode
-  bool diagnostics = false;  // target marker and the estimate's state in the view
+  bool showTarget = false;   // a marker in the view where the focus measures, with its distance
   bool eyeTracking = false;  // aim automatic focus with the eyes (else the head direction)
-  bool gazeDot = false;      // a dot where the eyes look, for checking eye tracking
-  // Apply the correction learned from menu clicks to focus and its gaze dot.
+  // Apply the correction learned from menu clicks to the focus target.
   // Off uses the runtime's gaze unchanged; learning continues in the background.
   bool gazeCorrect = true;
   // The viewer's IPD for the correction: the
@@ -44,9 +43,8 @@ struct FocusPreferences {
   int ipdTenthMm = 640;
 
   bool operator==(const FocusPreferences& o) const {
-    return enabled == o.enabled && diagnostics == o.diagnostics && eyeTracking == o.eyeTracking &&
-           autoIpd == o.autoIpd && ipdTenthMm == o.ipdTenthMm && gazeDot == o.gazeDot &&
-           gazeCorrect == o.gazeCorrect;
+    return enabled == o.enabled && showTarget == o.showTarget && eyeTracking == o.eyeTracking &&
+           autoIpd == o.autoIpd && ipdTenthMm == o.ipdTenthMm && gazeCorrect == o.gazeCorrect;
   }
 };
 
@@ -56,21 +54,21 @@ struct FocusView {
   FocusPreferences preferences;
   bool own = false;        // the video has its own (else the defaults)
   bool supported = false;  // the running video's format can be corrected
-  std::string status;      // the live state, one line
-  std::string targetStatus;  // what aims it (head, eyes, fallback), one line
+  bool unavailable = false;  // automatic focus could not start
+  std::string targetNotice;  // why the eyes don't aim it though chosen, or empty
   int headsetIpdTenthMm = 0;  // the headset's eye separation now (0 = unknown)
 
   bool operator==(const FocusView& o) const {
     return settings == o.settings && preferences == o.preferences && own == o.own &&
-           supported == o.supported && status == o.status && targetStatus == o.targetStatus &&
-           headsetIpdTenthMm == o.headsetIpdTenthMm;
+           supported == o.supported && unavailable == o.unavailable &&
+           targetNotice == o.targetNotice && headsetIpdTenthMm == o.headsetIpdTenthMm;
   }
 };
 
 // The focus menu's controls (MenuCommand::SetFocus carries one of them).
 enum class FocusControl { Mode, Distance, Baseline, MakeDefault, UseDefault, MinDistance,
                           MaxDistance, Transition, Sensitivity, Accuracy, Pitch, Yaw,
-                          Diagnostics, Target, GazeDot, AutoIpd, Ipd, GazeCorrect, Enabled };
+                          ShowTarget, Target, AutoIpd, Ipd, GazeCorrect, Enabled };
 
 // Carries out a focus control for the running video: changes its own
 // settings (it has them from then on), copies them to the defaults, drops

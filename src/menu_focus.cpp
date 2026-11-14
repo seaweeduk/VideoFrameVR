@@ -1,8 +1,8 @@
 // The menu's stereo focus page, in groups like the other settings pages: on
 // the left what holds for all videos (stereo focus on or off, what aims it,
-// the viewer's IPD, diagnostics, motion), on the right the running video's
-// own focus (mode, camera separation, manual distance, automatic tuning, and
-// the default handling) and its live state.
+// its marker in the view, the viewer's IPD, motion), on the right the running
+// video's own focus (mode, camera separation, manual distance, automatic
+// tuning, and the default handling).
 #include "menu_style.h"
 #include "motion.h"
 
@@ -46,9 +46,10 @@ void Menu::focusChanged(const FocusView& view) {
   const auto& p = view.preferences;
   const auto& q = old.preferences;
   if (view.settings.mode != old.settings.mode || view.own != old.own ||
-      view.supported != old.supported || p.enabled != q.enabled ||
-      p.diagnostics != q.diagnostics || p.eyeTracking != q.eyeTracking ||
-      p.gazeDot != q.gazeDot || p.gazeCorrect != q.gazeCorrect || p.autoIpd != q.autoIpd) {
+      view.supported != old.supported || view.unavailable != old.unavailable ||
+      view.targetNotice != old.targetNotice || p.enabled != q.enabled ||
+      p.showTarget != q.showTarget || p.eyeTracking != q.eyeTracking ||
+      p.gazeCorrect != q.gazeCorrect || p.autoIpd != q.autoIpd) {
     browserChanged();
     return;
   }
@@ -68,10 +69,6 @@ void Menu::focusChanged(const FocusView& view) {
   value(s.yawDeg, t.yawDeg, FocusControl::Yaw);
   value(p.ipdTenthMm, q.ipdTenthMm, FocusControl::Ipd);
   value(view.headsetIpdTenthMm, old.headsetIpdTenthMm, FocusControl::Ipd);
-  if ((view.status != old.status || view.targetStatus != old.targetStatus) && !groups_.empty()) {
-    const Group& state = groups_.back();
-    browserChanged(state.y - 4, state.y + state.h + 4, state.x - 4, state.x + state.w + 4);
-  }
 }
 
 void Menu::layoutFocus() {
@@ -94,15 +91,25 @@ void Menu::layoutFocus() {
   const bool advanced = view_.advancedSettings;
   const double pageTop = layoutAdvancedSwitch();
 
+  double x, y;
+  // Something the viewer should know, as a row of its own.
+  auto note = [&](const std::string& words) {
+    addLabel(x + 12, y, rowW - 12, kSettingRowH, words, kHintSize, true);
+    y += kSettingStep;
+  };
+
   // For all videos.
-  double x = left + kGroupPad, y = firstRow(pageTop);
+  x = left + kGroupPad, y = firstRow(pageTop);
   addToggleRow(x, y, rowW, t.enabled, on, toggle(FocusControl::Enabled, on)).tooltip =
       t.enabledHint;
   y += kSettingStep;
   addChoiceRow(x, y, rowW, 170, t.target, {t.targets[0], t.targets[1]}, p.eyeTracking ? 1 : 0,
                [](int i) { return focusCommand(FocusControl::Target, i)(); }, !on, t.targetHint);
   y += kSettingStep;
-  addToggleRow(x, y, rowW, t.gazeDot, p.gazeDot, toggle(FocusControl::GazeDot, p.gazeDot));
+  // The eyes were chosen but the head aims: why.
+  if (on && !f.targetNotice.empty()) note(f.targetNotice);
+  addToggleRow(x, y, rowW, t.showTarget, p.showTarget,
+               toggle(FocusControl::ShowTarget, p.showTarget), !on).tooltip = t.showTargetHint;
   y += kSettingStep;
   addToggleRow(x, y, rowW, t.gazeCorrect, p.gazeCorrect,
                toggle(FocusControl::GazeCorrect, p.gazeCorrect)).tooltip = t.gazeCorrectHint;
@@ -118,9 +125,6 @@ void Menu::layoutFocus() {
     addValueRow(x, y, rowW, labelW, t.ipd, ipdText, ipd, 400, 900,
                 next(FocusControl::Ipd, ipd, -1), next(FocusControl::Ipd, ipd, 1), !on, false,
                 t.ipdHint);
-    y += kSettingStep;
-    addToggleRow(x, y, rowW, t.diagnostics, p.diagnostics,
-                 toggle(FocusControl::Diagnostics, p.diagnostics), !on).tooltip = t.diagnosticsHint;
     y += kSettingStep;
   }
   addGroup(left, pageTop, w, y + 10 - pageTop, t.allTitle);
@@ -154,6 +158,11 @@ void Menu::layoutFocus() {
   // This video's own (or the defaults it follows).
   x = right + kGroupPad;
   y = firstRow(pageTop);
+  // Why its focus does nothing, where that is so.
+  if (!f.supported)
+    note(t.unsupported);
+  else if (automatic && f.unavailable)
+    note(text().focusStatus.unavailable);
   addChoiceRow(x, y, rowW, 170, t.mode, {t.modes[0], t.modes[1], t.modes[2]},
                static_cast<int>(s.mode), [](int i) { return focusCommand(FocusControl::Mode, i)(); },
                 !on);
@@ -214,16 +223,4 @@ void Menu::layoutFocus() {
       .disabled = !on;
   y += kSettingStep;
   addGroup(right, pageTop, w, y + 10 - pageTop, t.videoTitle);
-
-  // What it is doing now.
-  const double stateTop = y + 10 + kGap;
-  y = firstRow(stateTop);
-  addLabel(x + 12, y, rowW - 12, 0, !f.supported ? t.unsupported : on ? f.status : t.offForAll,
-           kTextSize, !f.supported, 2);
-  y += 80;
-  if (f.supported && automatic) {
-    addLabel(x + 12, y, rowW - 12, 0, f.targetStatus, kTextSize, false, 2);
-    y += 80;
-  }
-  addGroup(right, stateTop, w, y - stateTop, t.stateTitle);
 }
