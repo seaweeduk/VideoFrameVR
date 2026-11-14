@@ -156,6 +156,7 @@ FocusOutput Autofocus::update(const FocusInput& in) {
       q.accuracy = s.accuracy;
       if (in.target.eyes) q.window = kEyeWindow, q.reach = kEyeReach;
       q.seeThrough = in.seeThrough;
+      q.held = controller_.held();
       q.tag = generation_;
       if (estimator_.request(q)) {
         requestPhase_ = phase;

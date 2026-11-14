@@ -699,7 +699,7 @@ Strings frenchStrings(const Strings& english) {
   s.focus.tuningLabels[5] = "Focus vertical";
   s.focus.tuningLabels[6] = "Focus horizontal";
   s.focus.tuningHints[0] = "Distance minimale acceptée par le focus automatique.";
-  s.focus.tuningHints[1] = "Distance maximale acceptée par le focus automatique.";
+  s.focus.tuningHints[1] = "Distance maximale du focus automatique. Au-delà, le focus se fait ici.";
   s.focus.tuningHints[2] = "Vitesse du focus vers une nouvelle distance.";
   s.focus.tuningHints[3] = "Valeur élevée : sondes de focus plus proches de la cible.";
   s.focus.tuningHints[4] = "Valeur élevée : plus de profondeurs vérifiées, calcul plus long.";
@@ -748,7 +748,7 @@ Strings frenchStrings(const Strings& english) {
   s.focusStatus.reasons[3] = "hors de l'image";
   s.focusStatus.reasons[4] = "transparent";
   s.focusStatus.reasons[5] = "sondes en désaccord";
-  s.focusStatus.reasons[6] = "hors de la plage de distance";
+  s.focusStatus.reasons[6] = "plus près que la distance minimale";
   s.focusStatus.targets[0] = "Cible dirigée par la tête";
   s.focusStatus.targets[1] = "Suivi oculaire actif";
   s.focusStatus.targets[2] = "Suivi oculaire : cible maintenue pendant une brève coupure";

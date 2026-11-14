@@ -699,7 +699,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.focus.tuningLabels[5] = "垂直偏移";
   s.focus.tuningLabels[6] = "水平偏移";
   s.focus.tuningHints[0] = "自动对焦允许的最近距离。";
-  s.focus.tuningHints[1] = "自动对焦允许的最远距离。";
+  s.focus.tuningHints[1] = "自动对焦使用的最远距离。更远的物体按此距离对焦。";
   s.focus.tuningHints[2] = "对焦距离改变的速度。";
   s.focus.tuningHints[3] = "值越高，对焦采样点越靠近目标。";
   s.focus.tuningHints[4] = "值越高，检查的候选深度越多，耗时越长。";
@@ -748,7 +748,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.focusStatus.reasons[3] = "画面之外";
   s.focusStatus.reasons[4] = "透明区域";
   s.focusStatus.reasons[5] = "采样不一致";
-  s.focusStatus.reasons[6] = "超出距离范围";
+  s.focusStatus.reasons[6] = "近于最近距离";
   s.focusStatus.targets[0] = "按头部朝向指向";
   s.focusStatus.targets[1] = "眼动追踪已启用";
   s.focusStatus.targets[2] = "眼动追踪短暂中断，保持目标";

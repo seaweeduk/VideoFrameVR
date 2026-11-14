@@ -699,7 +699,7 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.focus.tuningLabels[5] = "Foco vertical";
   s.focus.tuningLabels[6] = "Foco horizontal";
   s.focus.tuningHints[0] = "Menor distância permitida para o foco automático.";
-  s.focus.tuningHints[1] = "Maior distância permitida para o foco automático.";
+  s.focus.tuningHints[1] = "Maior distância do foco automático. O que estiver mais longe é focado aqui.";
   s.focus.tuningHints[2] = "Velocidade de mudança da distância de foco.";
   s.focus.tuningHints[3] = "Valores altos mantêm amostras de foco mais perto do alvo.";
   s.focus.tuningHints[4] = "Valores altos verificam mais profundidades e levam mais tempo.";
@@ -748,7 +748,7 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.focusStatus.reasons[3] = "fora da imagem";
   s.focusStatus.reasons[4] = "transparente";
   s.focusStatus.reasons[5] = "amostras divergem";
-  s.focusStatus.reasons[6] = "fora do intervalo de distância";
+  s.focusStatus.reasons[6] = "mais perto que a distância mínima";
   s.focusStatus.targets[0] = "Alvo segue a direção da cabeça";
   s.focusStatus.targets[1] = "Eye tracking ativo";
   s.focusStatus.targets[2] = "Eye tracking: mantendo durante breve pausa";
