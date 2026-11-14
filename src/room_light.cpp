@@ -31,11 +31,14 @@ constexpr auto kBlankTimeout = std::chrono::milliseconds(800);
 constexpr double kColourSpread = 0.015;
 // An auto-exposed camera puts the room's average near 18 % of its white.
 constexpr double kMiddleGrey = 0.18;
-// Lit: at least this luminance. A view with less than kMinLit of its pixels
-// lit shows no room (the cameras black after the headset moved: under 1 %;
-// a dim room: over 90 %), and gives no reading.
+// Lit: at least this luminance. A view with less than kNoRoom of its pixels
+// lit shows no room (the cameras black after the headset moved: under 1 %),
+// and gives no reading. One with less than kMinLit lit is a dark room (no
+// light on: 2 to 9 %): read for how dark it is, but its few lit pixels are
+// mostly noise and don't give the light's colour. A dim room has over 90 %
+// lit and is read as any other.
 constexpr float kLit = 0.01f;
-constexpr double kMinLit = 0.10;
+constexpr double kNoRoom = 0.01, kMinLit = 0.10;
 
 struct Sums {
   double log = 0;  // of the luminance
@@ -221,11 +224,12 @@ std::optional<RoomLight::Reading> RoomLight::read() {
     trace += step;
   }
 
-  if (sums.shown < kMinLit * sums.n) {
-    std::printf("Room light: frames %s; too dark to read (%.1f %% lit)\n", trace.c_str(),
-                100.0 * sums.shown / std::max(sums.n, 1L));
+  const double shown = 100.0 * sums.shown / std::max(sums.n, 1L);
+  if (sums.shown < kNoRoom * sums.n) {
+    std::printf("Room light: frames %s; no room in view (%.1f %% lit)\n", trace.c_str(), shown);
     return {};
   }
+  const bool dark = sums.shown < kMinLit * sums.n;
   Reading reading;
   reading.white = static_cast<float>(std::exp(sums.log / sums.n) / kMiddleGrey);
   double spread = 0;
@@ -237,9 +241,10 @@ std::optional<RoomLight::Reading> RoomLight::read() {
       spread = std::max(spread, std::sqrt(std::max(sums.chroma2[k] / sums.lit - mean * mean, 0.0)));
     }
   }
-  reading.colour = sums.lit >= 1000 && spread > kColourSpread;
-  std::printf("Room light: frames %s; light %.3f %.3f %.3f, spread %.3f (%s), white %.3f\n",
+  reading.colour = !dark && sums.lit >= 1000 && spread > kColourSpread;
+  std::printf("Room light: frames %s; light %.3f %.3f %.3f, spread %.3f (%s), white %.3f, "
+              "%.1f %% lit\n",
               trace.c_str(), reading.light[0], reading.light[1], reading.light[2], spread,
-              reading.colour ? "colour" : "no colour", reading.white);
+              dark ? "dark room" : reading.colour ? "colour" : "no colour", reading.white, shown);
   return reading;
 }
