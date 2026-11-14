@@ -55,7 +55,7 @@ constexpr double kRowY = Menu::kStripBodyY + 152;
 constexpr double kPlayButton = 72;  // and the volume slider's height
 constexpr double kToolSize = 60;    // the other round buttons of that row
 constexpr double kTransportGap = 18;
-constexpr double kVolumeX = 1130;   // the speaker, then the slider to the right margin
+constexpr double kVolumeX = 1205;   // the speaker, then the slider to the right margin
 constexpr double kStripStarW = 44;  // a star of the rating among the tools
 
 // The browser, in its texture's pixels: the navigation column on the left,

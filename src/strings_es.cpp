@@ -1223,6 +1223,14 @@ Strings spanishStrings(const Strings& english) {
   s.deletion.deletedTitle = "Eliminado";
   s.deletion.tipNeedsSendToStash = "Activa «Enviar valoraciones, historial y etiquetas» en Ajustes para eliminar escenas reproducidas desde Stash";
   s.deletion.tipStashDown = "Stash no responde";
+  s.afterVideo.choices[0] = "Detener al final";
+  s.afterVideo.choices[1] = "Repetir este vídeo";
+  s.afterVideo.choices[2] = "Reproducir el vídeo siguiente";
+  s.afterVideo.choices[3] = "Aleatorio";
+  s.afterVideo.tips[0] = "El vídeo se detiene en su último fotograma y se abre el menú.";
+  s.afterVideo.tips[1] = "El vídeo vuelve a empezar cada vez que termina. No se conserva al salir del reproductor.";
+  s.afterVideo.tips[2] = "Continúa con el vídeo siguiente de la carpeta o lista desde la que se abrió este.";
+  s.afterVideo.tips[3] = "Continúa por la carpeta o lista en orden aleatorio. «Vídeo anterior» y «Vídeo siguiente» también lo siguen. No se conserva al salir del reproductor.";
   s.colourBalance.warmth = "Calidez";
   s.colourBalance.tint = "Matiz";
   s.colourBalance.exposure = "Exposición";

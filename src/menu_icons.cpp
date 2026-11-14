@@ -802,6 +802,69 @@ void Menu::drawIcon(cairo_t* cr, Icon icon, double cx, double cy, double s, doub
       cairo_stroke(cr);
       cairo_restore(cr);
       break;
+    case Icon::StopAtEnd:
+      // An arrow running up to a bar.
+      beginIcon24(cr, x, y, s);
+      cairo_move_to(cr, 3, 12);
+      cairo_line_to(cr, 15, 12);
+      cairo_move_to(cr, 10.5, 7.5);
+      cairo_line_to(cr, 15, 12);
+      cairo_line_to(cr, 10.5, 16.5);
+      cairo_move_to(cr, 20, 5.5);
+      cairo_line_to(cr, 20, 18.5);
+      cairo_stroke(cr);
+      cairo_restore(cr);
+      break;
+    case Icon::Repeat:
+      // Two arrows chasing each other.
+      beginIcon24(cr, x, y, s);
+      cairo_move_to(cr, 17, 2.5);
+      cairo_line_to(cr, 20.5, 6);
+      cairo_line_to(cr, 17, 9.5);
+      cairo_move_to(cr, 3.5, 11.5);
+      cairo_line_to(cr, 3.5, 10);
+      cairo_arc(cr, 7.5, 10, 4, M_PI, 1.5 * M_PI);
+      cairo_line_to(cr, 20.5, 6);
+      cairo_move_to(cr, 7, 21.5);
+      cairo_line_to(cr, 3.5, 18);
+      cairo_line_to(cr, 7, 14.5);
+      cairo_move_to(cr, 20.5, 12.5);
+      cairo_line_to(cr, 20.5, 14);
+      cairo_arc(cr, 16.5, 14, 4, 0, 0.5 * M_PI);
+      cairo_line_to(cr, 3.5, 18);
+      cairo_stroke(cr);
+      cairo_restore(cr);
+      break;
+    case Icon::PlayNext:
+      // A list's lines with a play triangle after them.
+      beginIcon24(cr, x, y, s);
+      cairo_move_to(cr, 3, 6);
+      cairo_line_to(cr, 16, 6);
+      cairo_move_to(cr, 3, 11.5);
+      cairo_line_to(cr, 16, 11.5);
+      cairo_move_to(cr, 3, 17);
+      cairo_line_to(cr, 10, 17);
+      cairo_stroke(cr);
+      triangle(cr, 14, 13.5, 14, 21, 21, 17.25);
+      cairo_fill(cr);
+      cairo_restore(cr);
+      break;
+    case Icon::Shuffle:
+      // Two arrows crossing.
+      beginIcon24(cr, x, y, s);
+      cairo_move_to(cr, 3, 7);
+      cairo_curve_to(cr, 11, 7, 12, 17, 20, 17);
+      cairo_move_to(cr, 3, 17);
+      cairo_curve_to(cr, 11, 17, 12, 7, 20, 7);
+      cairo_move_to(cr, 17, 4);
+      cairo_line_to(cr, 20, 7);
+      cairo_line_to(cr, 17, 10);
+      cairo_move_to(cr, 17, 14);
+      cairo_line_to(cr, 20, 17);
+      cairo_line_to(cr, 17, 20);
+      cairo_stroke(cr);
+      cairo_restore(cr);
+      break;
     case Icon::None:
       break;
   }

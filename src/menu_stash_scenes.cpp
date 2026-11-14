@@ -1034,7 +1034,8 @@ void StashPages::openPin(Menu& m, int pin) {
 }
 
 // Plays a scene's file, with the results as the list Previous and Next go
-// through (or all of them in a random order).
+// through; shuffled, one of them picked at random, and the player shuffles
+// the list from it.
 MenuCommand StashPages::open(Menu& m, const std::string& path, bool shuffled) {
   refresh(m);  // the results of this catalog, should a new one have come since the layout
   return play(m, state(m).result.scenes, path, shuffled);
@@ -1047,26 +1048,25 @@ MenuCommand StashPages::play(Menu& m, const std::vector<int>& scenes, const std:
   if (!c) return {};
   m.playList_.clear();
   for (const int i : scenes) m.playList_.push_back(stashSceneLocation(c->scenes()[i], m.offline_));
+  if (m.playList_.empty()) return {};
+  m.playAt_ = path;
   if (shuffled) {
     std::mt19937_64 random(static_cast<uint64_t>(unixNow()) ^ st.seed++);
-    std::shuffle(m.playList_.begin(), m.playList_.end(), random);
+    m.playAt_ = m.playList_[random() % m.playList_.size()];
   }
-  if (m.playList_.empty()) return {};
-  m.playAt_ = shuffled ? m.playList_.front() : path;
-  return m.openVideo(m.playAt_);
+  return m.openVideo(m.playAt_, shuffled);
 }
 
-bool Menu::listNeighbor(const std::string& path, int step, std::string& next) {
+bool Menu::listNeighbor(const std::string& path, int step, std::string& next,
+                        const PlayOrder& order) {
   next.clear();
   if (playList_.empty() || path != playAt_) {  // since opened from elsewhere
     playList_.clear();
     playAt_.clear();
     return false;
   }
-  const auto at = std::find(playList_.begin(), playList_.end(), path);
-  const long i = (at - playList_.begin()) + step;
-  if (at == playList_.end() || i < 0 || i >= static_cast<long>(playList_.size())) return true;
-  next = playAt_ = playList_[i];
+  next = neighborIn(playList_, path, step, order);
+  if (!next.empty()) playAt_ = next;
   return true;
 }
 

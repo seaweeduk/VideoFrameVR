@@ -1223,6 +1223,14 @@ Strings japaneseStrings(const Strings& english) {
   s.deletion.deletedTitle = "削除完了";
   s.deletion.tipNeedsSendToStash = "Stashから再生中のシーンを削除するには、設定で「評価・再生履歴・タグをStashに送信」をオンにしてください";
   s.deletion.tipStashDown = "Stashが応答していません";
+  s.afterVideo.choices[0] = "最後で停止";
+  s.afterVideo.choices[1] = "この動画をリピート";
+  s.afterVideo.choices[2] = "次の動画を再生";
+  s.afterVideo.choices[3] = "シャッフル";
+  s.afterVideo.tips[0] = "動画は最後のフレームで停止し、メニューが開きます。";
+  s.afterVideo.tips[1] = "動画は終わるたびに最初から再生されます。プレーヤーを終了すると解除されます。";
+  s.afterVideo.tips[2] = "この動画を開いたフォルダまたはリストの次の動画を続けて再生します。";
+  s.afterVideo.tips[3] = "フォルダまたはリストをランダムな順番で続けて再生します。「前の動画」と「次の動画」もその順番に従います。プレーヤーを終了すると解除されます。";
   s.colourBalance.warmth = "暖かみ";
   s.colourBalance.tint = "色合い";
   s.colourBalance.exposure = "露出";

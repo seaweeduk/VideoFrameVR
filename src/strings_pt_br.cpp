@@ -1223,6 +1223,14 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.deletion.deletedTitle = "Excluído";
   s.deletion.tipNeedsSendToStash = "Ative \"Enviar notas, histórico e tags\" em Configurações para excluir cenas reproduzidas pelo Stash";
   s.deletion.tipStashDown = "O Stash não está respondendo";
+  s.afterVideo.choices[0] = "Parar no final";
+  s.afterVideo.choices[1] = "Repetir este vídeo";
+  s.afterVideo.choices[2] = "Reproduzir o próximo vídeo";
+  s.afterVideo.choices[3] = "Aleatório";
+  s.afterVideo.tips[0] = "O vídeo para no último quadro e o menu abre.";
+  s.afterVideo.tips[1] = "O vídeo recomeça sempre que termina. Não é mantido ao sair do player.";
+  s.afterVideo.tips[2] = "Continua com o próximo vídeo da pasta ou lista de onde este foi aberto.";
+  s.afterVideo.tips[3] = "Continua pela pasta ou lista em ordem aleatória. “Vídeo anterior” e “Próximo vídeo” também a seguem. Não é mantido ao sair do player.";
   s.colourBalance.warmth = "Calor";
   s.colourBalance.tint = "Matiz";
   s.colourBalance.exposure = "Exposição";
