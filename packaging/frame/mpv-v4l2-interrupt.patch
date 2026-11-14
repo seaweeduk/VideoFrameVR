@@ -137,7 +137,7 @@
  
  #include "options/m_option.h"
  
-+// The Frame's FFmpeg (packaging/frame/ffmpeg-capture-interrupt.patch).
++// The Frame's FFmpeg (packaging/frame/ffmpeg).
 +int av_v4l2_m2m_set_interrupted(AVCodecContext *avctx, int interrupted);
 +
  static void init_avctx(struct mp_filter *vd);

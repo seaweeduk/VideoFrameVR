@@ -1,0 +1,537 @@
+/*
+ * V4L mem2mem
+ *
+ * Copyright (C) 2017 Alexis Ballier <aballier@gentoo.org>
+ * Copyright (C) 2017 Jorge Ramirez <jorge.ramirez-ortiz@linaro.org>
+ *
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * FFmpeg is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with FFmpeg; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+/*
+ * Modified by John Cox for rpi-ffmpeg (https://github.com/jc-kynesim/rpi-ffmpeg,
+ * commit d0fe46c27ff1, July 2024) and, in 2026, by the VideoFrameVR project
+ * for the Steam Frame. packaging/frame/ffmpeg/README.md in VideoFrameVR's
+ * source lists the sources, the changes and their licence.
+ */
+
+#include <linux/videodev2.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include "libavcodec/avcodec.h"
+#include "libavutil/mem.h"
+#include "libavutil/pixdesc.h"
+#include "libavutil/imgutils.h"
+#include "libavutil/pixfmt.h"
+#include "v4l2_context.h"
+#include "v4l2_fmt.h"
+#include "v4l2_m2m.h"
+#include "v4l2_req_dmabufs.h"
+
+static void
+xlat_init(xlat_track_t * const x)
+{
+    memset(x, 0, sizeof(*x));
+    x->last_pts = AV_NOPTS_VALUE;
+}
+
+
+static inline int v4l2_splane_video(struct v4l2_capability *cap)
+{
+    if (cap->capabilities & (V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_VIDEO_OUTPUT) &&
+        cap->capabilities & V4L2_CAP_STREAMING)
+        return 1;
+
+    if (cap->capabilities & V4L2_CAP_VIDEO_M2M)
+        return 1;
+
+    return 0;
+}
+
+static inline int v4l2_mplane_video(struct v4l2_capability *cap)
+{
+    if (cap->capabilities & (V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_VIDEO_OUTPUT_MPLANE) &&
+        cap->capabilities & V4L2_CAP_STREAMING)
+        return 1;
+
+    if (cap->capabilities & V4L2_CAP_VIDEO_M2M_MPLANE)
+        return 1;
+
+    return 0;
+}
+
+static int v4l2_prepare_contexts(V4L2m2mContext *s, int probe)
+{
+    struct v4l2_capability cap;
+    void *log_ctx = s->avctx;
+    int ret;
+
+    s->capture.done = s->output.done = 0;
+    s->capture.name = "capture";
+    s->capture.buf_mem = s->db_ctl != NULL ? V4L2_MEMORY_DMABUF : V4L2_MEMORY_MMAP;
+    s->output.name = "output";
+    s->output.buf_mem = s->input_drm ? V4L2_MEMORY_DMABUF : V4L2_MEMORY_MMAP;
+    atomic_init(&s->refcount, 0);
+    sem_init(&s->refsync, 0, 0);
+
+    memset(&cap, 0, sizeof(cap));
+    ret = ioctl(s->fd, VIDIOC_QUERYCAP, &cap);
+    if (ret < 0)
+        return ret;
+
+    av_log(log_ctx, probe ? AV_LOG_DEBUG : AV_LOG_INFO,
+                     "driver '%s' on card '%s' in %s mode\n", cap.driver, cap.card,
+                     v4l2_mplane_video(&cap) ? "mplane" :
+                     v4l2_splane_video(&cap) ? "splane" : "unknown");
+
+    if (v4l2_mplane_video(&cap)) {
+        s->capture.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+        s->output.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+        s->output.format.type = s->output.type;
+        return 0;
+    }
+
+    if (v4l2_splane_video(&cap)) {
+        s->capture.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        s->output.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+        s->output.format.type = s->output.type;
+        return 0;
+    }
+
+    return AVERROR(EINVAL);
+}
+
+static int check_size(AVCodecContext * const avctx, V4L2m2mContext * const s)
+{
+    struct v4l2_format fmt = {.type = s->output.type};
+    int rv;
+    uint32_t pixfmt = ff_v4l2_format_avfmt_to_v4l2(avctx->pix_fmt);
+    unsigned int w;
+    unsigned int h;
+
+    if (V4L2_TYPE_IS_MULTIPLANAR(fmt.type)) {
+        fmt.fmt.pix_mp.pixelformat = pixfmt;
+        fmt.fmt.pix_mp.width = avctx->width;
+        fmt.fmt.pix_mp.height = avctx->height;
+    }
+    else {
+        fmt.fmt.pix.pixelformat = pixfmt;
+        fmt.fmt.pix.width = avctx->width;
+        fmt.fmt.pix.height = avctx->height;
+    }
+
+    rv = ioctl(s->fd, VIDIOC_TRY_FMT, &fmt);
+
+    if (rv != 0) {
+        rv = AVERROR(errno);
+        av_log(avctx, AV_LOG_ERROR, "%s: Tryfmt failed: %s\n", __func__, av_err2str(rv));
+        return rv;
+    }
+
+    w = ff_v4l2_get_format_width(&fmt);
+    h = ff_v4l2_get_format_height(&fmt);
+
+    if (w < avctx->width || h < avctx->height) {
+        av_log(avctx, AV_LOG_WARNING, "%s: Size check failed: asked for %dx%d, got: %dx%d\n", __func__, avctx->width, avctx->height, w, h);
+        return AVERROR(EINVAL);
+    }
+
+    return 0;
+}
+
+static int v4l2_probe_driver(V4L2m2mContext *s)
+{
+    void *log_ctx = s->avctx;
+    int ret;
+
+    s->fd = open(s->devname, O_RDWR | O_NONBLOCK, 0);
+    if (s->fd < 0)
+        return AVERROR(errno);
+
+    ret = v4l2_prepare_contexts(s, 1);
+    if (ret < 0)
+        goto done;
+
+    ret = ff_v4l2_context_get_format(&s->output, 1);
+    if (ret) {
+        av_log(log_ctx, AV_LOG_DEBUG, "v4l2 output format not supported\n");
+        goto done;
+    }
+
+    // If being given frames (encode) check that V4L2 can cope with the size
+    if (s->output.av_codec_id == AV_CODEC_ID_RAWVIDEO &&
+        (ret = check_size(s->avctx, s)) != 0)
+        goto done;
+
+    ret = ff_v4l2_context_get_format(&s->capture, 1);
+    if (ret) {
+        av_log(log_ctx, AV_LOG_DEBUG, "v4l2 capture format not supported\n");
+        goto done;
+    }
+
+done:
+    if (close(s->fd) < 0) {
+        ret = AVERROR(errno);
+        av_log(log_ctx, AV_LOG_ERROR, "failure closing %s (%s)\n", s->devname, av_err2str(AVERROR(errno)));
+    }
+
+    s->fd = -1;
+
+    return ret;
+}
+
+// Why a stream Iris refused can't take the staged start, or NULL if it
+// can: HEVC Main or Main 10, or 8-bit H.264. Iris checks its per-session
+// size limit (8192x4320) against the input format, which the staged start
+// sets smaller, so it is checked here (and on the SPS's coded size).
+static const char *iris_staged_start_refusal(const V4L2m2mContext * const s)
+{
+    const AVCodecContext *const avctx = s->avctx;
+    const enum AVPixelFormat pix_fmt =
+        ff_v4l2_iris_layout(((const V4L2m2mPriv *)s->priv)->source_pix_fmt);
+
+    if (!avctx || (avctx->codec_id != AV_CODEC_ID_HEVC && avctx->codec_id != AV_CODEC_ID_H264))
+        return "codec";
+    if (!s->iris_staged_eligible && !(avctx->codec_id == AV_CODEC_ID_HEVC && s->iris_sps_in_band))
+        return s->iris_staged_refusal ? s->iris_staged_refusal : "SPS";
+    if (pix_fmt != AV_PIX_FMT_YUV420P &&
+        (avctx->codec_id != AV_CODEC_ID_HEVC || pix_fmt != AV_PIX_FMT_YUV420P10LE))
+        return "pixel format";
+    if (((avctx->coded_width + 15) >> 4) * ((avctx->coded_height + 15) >> 4) >
+        (8192 / 16) * (4320 / 16))
+        return "size above the session limit";
+    return NULL;
+}
+
+static int iris_set_input_size(const V4L2m2mContext * const s, struct v4l2_format * const fmt,
+                               const unsigned int width, const unsigned int height)
+{
+    fmt->fmt.pix_mp.width = width;
+    fmt->fmt.pix_mp.height = height;
+    if (ioctl(s->fd, VIDIOC_S_FMT, fmt) < 0)
+        return AVERROR(errno);
+    return fmt->fmt.pix_mp.width == width && fmt->fmt.pix_mp.height == height ? 0 : AVERROR(EINVAL);
+}
+
+static int v4l2_configure_contexts(V4L2m2mContext *s)
+{
+    void *log_ctx = s->avctx;
+    int ret;
+    struct v4l2_format ofmt, cfmt;
+
+    s->fd = open(s->devname, O_RDWR | O_NONBLOCK, 0);
+    if (s->fd < 0)
+        return AVERROR(errno);
+
+    ret = v4l2_prepare_contexts(s, 0);
+    if (ret < 0)
+        goto error;
+
+    ofmt = s->output.format;
+    cfmt = s->capture.format;
+    av_log(log_ctx, AV_LOG_INFO, "requesting formats: output=%s/%s capture=%s/%s\n",
+                                 av_fourcc2str(V4L2_TYPE_IS_MULTIPLANAR(ofmt.type) ?
+                                               ofmt.fmt.pix_mp.pixelformat :
+                                               ofmt.fmt.pix.pixelformat),
+                                 av_get_pix_fmt_name(s->output.av_pix_fmt) ?: "none",
+                                 av_fourcc2str(V4L2_TYPE_IS_MULTIPLANAR(cfmt.type) ?
+                                               cfmt.fmt.pix_mp.pixelformat :
+                                               cfmt.fmt.pix.pixelformat),
+                                 av_get_pix_fmt_name(s->capture.av_pix_fmt) ?: "none");
+
+    ret = ff_v4l2_context_set_format(&s->output);
+    if (ret) {
+        av_log(log_ctx, AV_LOG_ERROR, "can't set v4l2 output format\n");
+        goto error;
+    }
+
+    ret = ff_v4l2_context_set_format(&s->capture);
+    if (ret) {
+        av_log(log_ctx, AV_LOG_ERROR, "can't to set v4l2 capture format\n");
+        goto error;
+    }
+
+    ret = ff_v4l2_context_init(&s->output);
+    if (ret == AVERROR(ENOMEM) && s->avctx && av_codec_is_decoder(s->avctx->codec)) {
+        V4L2m2mPriv *priv = s->priv;
+        struct v4l2_capability cap = {0};
+        const int iris = !ioctl(s->fd, VIDIOC_QUERYCAP, &cap) && !strcmp(cap.driver, "iris_driver");
+        const char *refusal = iris ? iris_staged_start_refusal(s) : NULL;
+        if (refusal) {
+            av_log(log_ctx, AV_LOG_WARNING, "Iris staged startup not used: %s (%dx%d, SPS %dx%d, %s)\n",
+                   refusal, s->avctx->coded_width, s->avctx->coded_height,
+                   s->iris_coded_width, s->iris_coded_height,
+                   av_get_pix_fmt_name(priv->source_pix_fmt) ?: "unknown");
+        } else if (iris) {
+            const char *step = "capture format";
+            // Iris charges a new session's input size against every open
+            // session (Steam keeps one after sleep), so it refuses large
+            // streams. Their input format is only provisional: the stream's
+            // headers give the real size at its source change. So program
+            // the real full-size compressed capture first, then input formats
+            // Iris accepts: one above 36864 MBs, from which it sizes input
+            // buffers for 8K frames, and then its smallest size, from which
+            // it sizes the working memory it allocates at STREAMON. The
+            // source change allocates the real size's working memory before
+            // freeing the old, and that peak decides whether START succeeds.
+            priv->capture_ubwc = 1;
+            s->capture.format.fmt.pix_mp.pixelformat = priv->capture_10bit ?
+                v4l2_fourcc('Q','1','0','C') : v4l2_fourcc('Q','0','8','C');
+            // The SPS's coded size, which a conformance window crop leaves
+            // larger than the context's: Iris sizes the pool from it again
+            // at the source change.
+            if (s->iris_coded_width) {
+                s->capture.format.fmt.pix_mp.width = s->iris_coded_width;
+                s->capture.format.fmt.pix_mp.height = s->iris_coded_height;
+            }
+            ret = ff_v4l2_context_set_format(&s->capture);
+            if (ret == -1)
+                ret = AVERROR(errno);
+            if (!ret) {
+                s->iris_capture_format = s->capture.format;
+                step = "input format";
+                ret = iris_set_input_size(s, &s->output.format, 4096, 2560);
+            }
+            if (!ret) {
+                step = "input buffers";
+                ret = ff_v4l2_context_init(&s->output);
+            }
+            if (!ret) {
+                struct v4l2_format smallest = s->output.format;
+                step = "smallest input format";
+                ret = iris_set_input_size(s, &smallest, 128, 128);
+            }
+            if (!ret) {
+                s->iris_startup = IRIS_START_FIRST_PACKET;
+                av_log(log_ctx, AV_LOG_WARNING,
+                       "Iris allocation failed; using staged hardware startup (capture %ux%u)\n",
+                       s->iris_capture_format.fmt.pix_mp.width,
+                       s->iris_capture_format.fmt.pix_mp.height);
+            } else {
+                av_log(log_ctx, AV_LOG_WARNING, "Iris staged startup failed at its %s: %s\n",
+                       step, av_err2str(ret));
+            }
+        }
+    }
+    if (ret) {
+        av_log(log_ctx, AV_LOG_ERROR, "no v4l2 output context's buffers\n");
+        goto error;
+    }
+
+    /* decoder's buffers need to be updated at a later stage */
+    if (s->avctx && !av_codec_is_decoder(s->avctx->codec)) {
+        ret = ff_v4l2_context_init(&s->capture);
+        if (ret) {
+            av_log(log_ctx, AV_LOG_ERROR, "no v4l2 capture context's buffers\n");
+            goto error;
+        }
+    }
+
+    return 0;
+
+error:
+    if (close(s->fd) < 0) {
+        ret = AVERROR(errno);
+        av_log(log_ctx, AV_LOG_ERROR, "error closing %s (%s)\n",
+            s->devname, av_err2str(AVERROR(errno)));
+    }
+    s->fd = -1;
+
+    return ret;
+}
+
+/******************************************************************************
+ *
+ *                  V4L2 M2M Interface
+ *
+ ******************************************************************************/
+int ff_v4l2_m2m_codec_reinit(V4L2m2mContext *s)
+{
+    void *log_ctx = s->avctx;
+    int ret;
+
+    av_log(log_ctx, AV_LOG_DEBUG, "reinit context\n");
+
+    /* 1. streamoff */
+    ret = ff_v4l2_context_set_status(&s->capture, VIDIOC_STREAMOFF);
+    if (ret)
+        av_log(log_ctx, AV_LOG_ERROR, "capture VIDIOC_STREAMOFF\n");
+
+    /* 2. unmap the capture buffers (v4l2 and ffmpeg):
+     */
+    ff_v4l2_context_release(&s->capture);
+
+    /* 3. get the new capture format */
+    ret = ff_v4l2_context_get_format(&s->capture, 0);
+    if (ret) {
+        av_log(log_ctx, AV_LOG_ERROR, "query the new capture format\n");
+        return ret;
+    }
+
+    /* 4. set the capture format */
+    ret = ff_v4l2_context_set_format(&s->capture);
+    if (ret) {
+        av_log(log_ctx, AV_LOG_ERROR, "setting capture format\n");
+        return ret;
+    }
+
+    /* 5. complete reinit */
+    s->draining = 0;
+
+    return 0;
+}
+
+static void v4l2_m2m_destroy_context(void *opaque, uint8_t *context)
+{
+    V4L2m2mContext *s = (V4L2m2mContext*)context;
+
+    ff_v4l2_context_release(&s->capture);
+    sem_destroy(&s->refsync);
+    pthread_mutex_destroy(&s->interrupt_lock);
+
+    if (s->fd >= 0)
+        close(s->fd);
+    av_frame_free(&s->frame);
+    av_packet_unref(&s->buf_pkt);
+    av_freep(&s->extdata_data);
+
+    av_log(s->avctx, AV_LOG_DEBUG, "V4L2 Context destroyed\n");
+
+    av_free(s);
+}
+
+int ff_v4l2_m2m_codec_end(V4L2m2mPriv *priv)
+{
+    V4L2m2mContext *s = priv->context;
+    int ret;
+
+    if (!s)
+        return 0;
+
+    av_log(s->avctx, AV_LOG_DEBUG, "V4L2 Codec end\n");
+
+    if (s->avctx && av_codec_is_decoder(s->avctx->codec))
+        av_packet_unref(&s->buf_pkt);
+
+    if (s->fd >= 0) {
+        ret = ff_v4l2_context_set_status(&s->output, VIDIOC_STREAMOFF);
+        if (ret)
+            av_log(s->avctx, AV_LOG_ERROR, "VIDIOC_STREAMOFF %s\n", s->output.name);
+
+        ret = ff_v4l2_context_set_status(&s->capture, VIDIOC_STREAMOFF);
+        if (ret)
+            av_log(s->avctx, AV_LOG_ERROR, "VIDIOC_STREAMOFF %s\n", s->capture.name);
+    }
+
+    ff_v4l2_context_release(&s->output);
+    av_buffer_unref(&s->device_ref);
+
+    dmabufs_ctl_unref(&s->db_ctl);
+
+    if (s->fd != -1) {
+        close(s->fd);
+        s->fd = -1;
+    }
+
+    s->self_ref = NULL;
+    // This is only called on avctx close so after this point we don't have that
+    // Crash sooner if we find we are using it (can still log with avctx = NULL)
+    s->avctx = NULL;
+    priv->context = NULL;
+    av_buffer_unref(&priv->context_ref);
+
+    return 0;
+}
+
+int ff_v4l2_m2m_codec_init(V4L2m2mPriv *priv)
+{
+    int ret = AVERROR(EINVAL);
+    struct dirent *entry;
+    DIR *dirp;
+
+    V4L2m2mContext *s = priv->context;
+
+    dirp = opendir("/dev");
+    if (!dirp)
+        return AVERROR(errno);
+
+    for (entry = readdir(dirp); entry; entry = readdir(dirp)) {
+
+        if (strncmp(entry->d_name, "video", 5))
+            continue;
+
+        snprintf(s->devname, sizeof(s->devname), "/dev/%s", entry->d_name);
+        av_log(s->avctx, AV_LOG_DEBUG, "probing device %s\n", s->devname);
+        ret = v4l2_probe_driver(s);
+        if (!ret)
+            break;
+    }
+
+    closedir(dirp);
+
+    if (ret) {
+        av_log(s->avctx, AV_LOG_ERROR, "Could not find a valid device\n");
+        memset(s->devname, 0, sizeof(s->devname));
+
+        return ret;
+    }
+
+    av_log(s->avctx, AV_LOG_INFO, "Using device %s\n", s->devname);
+
+    return v4l2_configure_contexts(s);
+}
+
+int ff_v4l2_m2m_create_context(V4L2m2mPriv *priv, V4L2m2mContext **pps)
+{
+    V4L2m2mContext * const s = av_mallocz(sizeof(V4L2m2mContext));
+
+    *pps = NULL;
+    if (!s)
+        return AVERROR(ENOMEM);
+    pthread_mutex_init(&s->interrupt_lock, NULL);
+    atomic_init(&s->interrupted, 0);
+
+    priv->context_ref = av_buffer_create((uint8_t *)s, sizeof(*s),
+                                         &v4l2_m2m_destroy_context, NULL, 0);
+    if (!priv->context_ref) {
+        pthread_mutex_destroy(&s->interrupt_lock);
+        av_free(s);
+        return AVERROR(ENOMEM);
+    }
+
+    /* assign the context */
+    priv->context = s;
+    s->priv = priv;
+
+    /* populate it */
+    s->capture.num_buffers = priv->num_capture_buffers;
+    s->output.num_buffers  = priv->num_output_buffers;
+    s->self_ref = priv->context_ref;
+    s->fd = -1;
+    xlat_init(&s->xlat);
+
+    priv->context->frame = av_frame_alloc();
+    if (!priv->context->frame) {
+        av_buffer_unref(&priv->context_ref);
+        return AVERROR(ENOMEM);
+    }
+
+    *pps = s;
+    return 0;
+}

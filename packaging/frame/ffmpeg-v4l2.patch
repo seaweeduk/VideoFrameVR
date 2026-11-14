@@ -1,0 +1,38 @@
+# Build the Frame's V4L2 decoder (packaging/frame/ffmpeg/, copied over FFmpeg's own)
+# and refuse to map Qualcomm compressed frames to the CPU. Apply to FFmpeg 9.0.2.
+--- a/libavcodec/Makefile
++++ b/libavcodec/Makefile
+@@ -184,7 +184,8 @@
+ OBJS-$(CONFIG_VIDEODSP)                += videodsp.o
+ OBJS-$(CONFIG_VP3DSP)                  += vp3dsp.o
+ OBJS-$(CONFIG_VP8DSP)                  += vp8dsp.o
+-OBJS-$(CONFIG_V4L2_M2M)                += v4l2_m2m.o v4l2_context.o v4l2_buffers.o v4l2_fmt.o
++OBJS-$(CONFIG_V4L2_M2M)                += v4l2_m2m.o v4l2_context.o v4l2_buffers.o v4l2_fmt.o\
++                                          weak_link.o v4l2_req_dmabufs.o
+ OBJS-$(CONFIG_WMA_FREQS)               += wma_freqs.o
+ OBJS-$(CONFIG_WMV2DSP)                 += wmv2dsp.o
+ 
+--- a/libavutil/hwcontext_drm.c
++++ b/libavutil/hwcontext_drm.c
+@@ -31,6 +31,7 @@
+ #endif
+ 
+ #include <drm.h>
++#include <drm_fourcc.h>
+ #include <xf86drm.h>
+ 
+ #include "avassert.h"
+@@ -130,6 +131,13 @@
+     int mmap_prot;
+     void *addr;
+ 
++    for (i = 0; i < desc->nb_objects; i++) {
++        if (desc->objects[i].format_modifier == DRM_FORMAT_MOD_QCOM_COMPRESSED) {
++            av_log(hwfc, AV_LOG_ERROR, "Qualcomm compressed frames require GPU mapping\n");
++            return AVERROR(ENOSYS);
++        }
++    }
++
+     map = av_mallocz(sizeof(*map));
+     if (!map)
+         return AVERROR(ENOMEM);
