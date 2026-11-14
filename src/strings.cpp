@@ -1084,6 +1084,14 @@ const Strings kEnglish = {
         "Stash isn't answering",
     },
     {
+        {"Stop at the end", "Repeat this video", "Play the next video", "Shuffle"},
+        {"The video stops on its last frame and the menu opens.",
+         "The video starts over each time it ends. Not kept when you quit the player.",
+         "Goes on with the next video of the folder or list this one was opened from.",
+         "Goes on through the folder or list in a random order. Previous and Next follow it "
+         "too. Not kept when you quit the player."},
+    },
+    {
         "Warmth",
         "Tint",
         "Exposure",

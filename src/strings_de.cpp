@@ -1202,6 +1202,14 @@ Strings germanStrings(const Strings& english) {
   s.deletion.deletedTitle = "Gelöscht";
   s.deletion.tipNeedsSendToStash = "„Bewertungen, Verlauf und Tags senden“ in den Einstellungen aktivieren, um aus Stash gestreamte Szenen zu löschen";
   s.deletion.tipStashDown = "Stash antwortet nicht";
+  s.afterVideo.choices[0] = "Am Ende anhalten";
+  s.afterVideo.choices[1] = "Dieses Video wiederholen";
+  s.afterVideo.choices[2] = "Nächstes Video abspielen";
+  s.afterVideo.choices[3] = "Zufällige Wiedergabe";
+  s.afterVideo.tips[0] = "Das Video hält bei seinem letzten Bild an und das Menü öffnet sich.";
+  s.afterVideo.tips[1] = "Das Video beginnt nach seinem Ende wieder von vorn. Gilt nur, bis du den Player beendest.";
+  s.afterVideo.tips[2] = "Spielt danach das nächste Video des Ordners oder der Liste ab, aus der dieses geöffnet wurde.";
+  s.afterVideo.tips[3] = "Spielt den Ordner oder die Liste in zufälliger Reihenfolge weiter ab. „Voriges Video“ und „Nächstes Video“ folgen ihr ebenfalls. Gilt nur, bis du den Player beendest.";
   s.colourBalance.warmth = "Wärme";
   s.colourBalance.tint = "Tönung";
   s.colourBalance.exposure = "Belichtung";

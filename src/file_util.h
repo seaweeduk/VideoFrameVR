@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <future>
@@ -29,10 +30,25 @@ std::string fileNameSortKey(const std::string& folded);
 // a folder (e.g. deleting a file) so the next call lists it afresh.
 void forgetFolderListing();
 
+// How Previous and Next go through a list: in its order, to its ends; or
+// shuffled (shuffle != 0, the seed of the random order), round the list once
+// from `start`, the entry opened by hand: Next ends before coming back to
+// it, Previous at it.
+struct PlayOrder {
+  uint64_t shuffle = 0;
+  std::string start;
+};
+// The entry `step` places from `current` in `list` that way. An empty string
+// past its end, or if `current` isn't in it.
+std::string neighborIn(const std::vector<std::string>& list, const std::string& current, int step,
+                       const PlayOrder& order = {});
+
 // The file `step` places after `current`, counting only files of the same kind.
 // An empty string if there is none. Abandoning the future never waits for a slow share.
 // Wrap selects the first file when there is no next file (slideshows).
-std::future<std::string> mediaNeighbor(const std::string& current, int step, bool wrap = false);
+// `order.start` is a file's path, as `current` is.
+std::future<std::string> mediaNeighbor(const std::string& current, int step, bool wrap = false,
+                                       PlayOrder order = {});
 
 // Config reads and writes, in order. Disk work runs outside the queue lock;
 // shutdown waits for the last write, the frame loop never does.

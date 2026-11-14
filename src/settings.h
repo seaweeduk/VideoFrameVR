@@ -19,6 +19,12 @@ enum class Theme { Glass, Material };
 // (presets.h); Custom when they match none.
 enum class PerformancePreset { Low, Balanced, High, Custom };
 
+// What happens when a video ends: it stops on its last frame (the menu
+// opens), starts over, or playback goes on with the next video of the folder
+// or list it was opened from, in its order or shuffled. Stop and Next are
+// kept as the setting; Repeat and Shuffle last until the player quits.
+enum class AfterVideo { Stop, Repeat, Next, Shuffle };
+
 // Where the player keeps its files: ~/.config/videoframevr (or under
 // $XDG_CONFIG_HOME). A folder from the former name "vrplayer" is moved there.
 std::filesystem::path configDir();
@@ -79,6 +85,7 @@ struct Settings {
   bool motionEmulation = true;    // surround video: head translation shown as parallax (motion.h)
   int motionDistance = 200;       // ... of things this far away, cm
   bool resume = true;             // videos start where they were left (library.h)
+  AfterVideo afterVideo = AfterVideo::Next;  // Stop or Next
   bool seekPreview = true;        // pointing along the seek bar shows the frame there (seek_preview.h)
   bool thumbnails = true;         // file browser and library: video thumbnails, else a video icon
   bool showPerformance = false;   // frame rates and drops shown over the video (performance_readout.h)

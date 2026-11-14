@@ -11,6 +11,7 @@
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <deque>
 #include <initializer_list>
 #include <iterator>
@@ -174,17 +175,74 @@ void forgetFolderListing() {
   ++mediaCache->generation;
 }
 
-std::future<std::string> mediaNeighbor(const std::string& current, int step, bool wrap) {
-  std::packaged_task<std::string()> task([current, step, wrap, cache = mediaCache]() -> std::string {
+std::string neighborIn(const std::vector<std::string>& list, const std::string& current, int step,
+                       const PlayOrder& order) {
+  if (!order.shuffle) {
+    const long count = static_cast<long>(list.size());
+    long i = std::find(list.begin(), list.end(), current) - list.begin();
+    if (i == count) return {};
+    // An entry listed again (two Stash scenes of one file) counts once, where it is first.
+    for (long left = std::abs(step); left > 0;) {
+      i += step < 0 ? -1 : 1;
+      if (i < 0 || i >= count) return {};
+      if (std::find(list.begin(), list.begin() + i, list[i]) == list.begin() + i) --left;
+    }
+    return list[i];
+  }
+  // Ordered by a hash of each entry with the seed: entries that come or go
+  // leave the order of the others as it was. The start keeps its place when
+  // it is gone from the list (deleted meanwhile), so the round still ends there.
+  const bool startGone = std::find(list.begin(), list.end(), order.start) == list.end();
+  if (startGone && current == order.start) return {};
+  std::vector<std::pair<uint64_t, const std::string*>> shuffled;
+  shuffled.reserve(list.size() + 1);
+  auto add = [&](const std::string& entry) {
+    uint64_t h = std::hash<std::string>{}(entry) ^ order.shuffle;  // mixed as splitmix64 does
+    h = (h ^ (h >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    h = (h ^ (h >> 27)) * 0x94d049bb133111ebULL;
+    shuffled.emplace_back(h ^ (h >> 31), &entry);
+  };
+  for (const std::string& entry : list) add(entry);
+  add(order.start);
+  std::sort(shuffled.begin(), shuffled.end(), [](const auto& a, const auto& b) {
+    return a.first != b.first ? a.first < b.first : *a.second < *b.second;
+  });
+  // An entry listed again counts once.
+  shuffled.erase(std::unique(shuffled.begin(), shuffled.end(),
+                             [](const auto& a, const auto& b) { return *a.second == *b.second; }),
+                 shuffled.end());
+  const auto at = std::find_if(shuffled.begin(), shuffled.end(),
+                               [&](const auto& e) { return *e.second == current; });
+  if (at == shuffled.end()) return {};
+  const long count = static_cast<long>(shuffled.size());
+  long i = at - shuffled.begin();
+  for (; step > 0; --step) {
+    i = (i + 1) % count;
+    if (*shuffled[i].second == order.start) return {};
+  }
+  for (; step < 0; ++step) {
+    if (*shuffled[i].second == order.start) return {};
+    i = (i + count - 1) % count;
+  }
+  const std::string& found = *shuffled[i].second;
+  return found == current || (startGone && found == order.start) ? std::string() : found;
+}
+
+std::future<std::string> mediaNeighbor(const std::string& current, int step, bool wrap,
+                                       PlayOrder order) {
+  std::packaged_task<std::string()> task([current, step, wrap, order = std::move(order),
+                                          cache = mediaCache]() mutable -> std::string {
     const fs::path path(current);
     const std::string folder = remote::isRemote(current) ? remote::parent(current)
                                                 : path.parent_path().string();
     const std::string prefix = folder + (!folder.empty() && folder.back() != '/' ? "/" : "");
+    // The listing has names: the start as one, if it is this folder's.
+    order.start = order.start.compare(0, prefix.size(), prefix) == 0
+                      ? order.start.substr(prefix.size())
+                      : std::string();
     auto pick = [&](const std::vector<std::string>& names) {
-      const auto it = std::find(names.begin(), names.end(), path.filename().string());
-      const long index = std::distance(names.begin(), it) + step;
-      if (it != names.end() && index >= 0 && index < static_cast<long>(names.size()))
-        return prefix + names[index];
+      const std::string name = neighborIn(names, path.filename().string(), step, order);
+      if (!name.empty()) return prefix + name;
       return wrap && !names.empty() ? prefix + names.front() : std::string();
     };
     std::string next = pick(sameKindNames(current, *cache));

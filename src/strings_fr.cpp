@@ -1202,6 +1202,14 @@ Strings frenchStrings(const Strings& english) {
   s.deletion.deletedTitle = "Supprimé";
   s.deletion.tipNeedsSendToStash = "Activez « Envoyer notes, lectures et tags à Stash » dans Réglages pour supprimer les scènes lues depuis Stash";
   s.deletion.tipStashDown = "Stash ne répond pas";
+  s.afterVideo.choices[0] = "Arrêter à la fin";
+  s.afterVideo.choices[1] = "Répéter cette vidéo";
+  s.afterVideo.choices[2] = "Lire la vidéo suivante";
+  s.afterVideo.choices[3] = "Aléatoire";
+  s.afterVideo.tips[0] = "La vidéo s'arrête sur sa dernière image et le menu s'ouvre.";
+  s.afterVideo.tips[1] = "La vidéo recommence chaque fois qu'elle se termine. N'est pas conservé quand vous quittez le lecteur.";
+  s.afterVideo.tips[2] = "Continue avec la vidéo suivante du dossier ou de la liste d'où celle-ci a été ouverte.";
+  s.afterVideo.tips[3] = "Continue dans le dossier ou la liste dans un ordre aléatoire. « Vidéo précédente » et « Vidéo suivante » le suivent aussi. N'est pas conservé quand vous quittez le lecteur.";
   s.colourBalance.warmth = "Chaleur";
   s.colourBalance.tint = "Teinte";
   s.colourBalance.exposure = "Exposition";

@@ -118,7 +118,9 @@ void Menu::addDropdownList(const Button& opener, std::vector<Button> entries) {
   constexpr int perColumn = 5;
   constexpr double h = 60, step = 68;
   double w = 0;
-  for (const Button& e : entries) w = std::max(w, textWidth(e.label, 26, false) + 60);
+  for (const Button& e : entries)  // an entry's icon comes before its label
+    w = std::max(w, textWidth(e.label, 26, false) +
+                        (e.icon == Icon::None ? 60 : 35 + kIconSize * 0.75 + 20 + 35));
   const int count = static_cast<int>(entries.size());
   const int columns = (count + perColumn - 1) / perColumn;
   const int rows = std::min(count, perColumn);

@@ -11,6 +11,7 @@
 #include "places.h"
 #include "presets.h"
 #include "diagnostics.h"
+#include "file_util.h"
 #include "release_update.h"
 #include "menu_geometry.h"
 #include "settings.h"
@@ -68,7 +69,7 @@ struct MenuCommand {
               DeleteFile, CancelDelete, Quit, SetBrightness,
               SetContrast, SetSaturation, SetZoom, ResetPicture, Paste, SetTheme,
               SetAccent, SetAccentHue, SetAccentBrightness, SetAccentSaturation,
-              SetSlideshow, ToggleBackground, SetSubtitleSize,
+              SetSlideshow, SetAfterVideo, ToggleBackground, SetSubtitleSize,
               SetSubtitleRaise, SetSubtitleDistance, TogglePassthrough, ToggleGreenScreen,
               SetKeyStrength, SetKeySoftness, SetKeySpill, SetKeyShrink,
               SetKeyBackground,  // the key removes this KeySource (Automatic or GreenScreen)
@@ -109,7 +110,8 @@ struct MenuCommand {
   // seconds (Seek, SeekTo), enum index, track id (0 = off), volume 0..100,
   // 1 = only the downloaded copy (DeleteFile), picture value
   // -100..100, zoom in percent, the surround viewpoint in percent of the
-  // sphere's radius toward the picture, slideshow seconds per photo (0 = off), green
+  // sphere's radius toward the picture, slideshow seconds per photo (0 = off),
+  // AfterVideo (SetAfterVideo), green
   // screen setting 0..100, Packing (SetPacking), the flat screen's distance
   // and height in centimeters, its curve in percent, StashFormat
   // (SetStashFormat), PerformancePreset (ApplyPreset)
@@ -128,7 +130,9 @@ struct MenuCommand {
   // MoveUserPreset: its file (value: places, -1 up).
   // SetKeyboardLayout: the layout and the other one, one per line.
   std::string path;
-  int option = 0;  // SetFocus: the FocusControl; SeekTo: 1 = from the seek bar; SetupStash, SetStashServer
+  // SetFocus: the FocusControl; SeekTo: 1 = from the seek bar; SetupStash,
+  // SetStashServer; OpenFile: 1 = Shuffle from it, for the list it is opened from
+  int option = 0;
 };
 
 // The flat screen's size (ScreenSize) as the menu shows it.
@@ -185,6 +189,7 @@ struct MenuView {
   int subtitleSize = 100, subtitleRaise = 0, subtitleDistance = 150;  // see Settings
   bool photo = false;        // the current file is a photo
   int slideshowSeconds = 0;  // 0 = no slideshow
+  AfterVideo afterVideo = AfterVideo::Next;  // what happens when a video ends
   // Picture settings of the running video.
   int brightness = 0, contrast = 0, saturation = 0;
   ColourBalance balance;  // the video's, or Match the room's while it is on
@@ -343,7 +348,7 @@ class Menu {
   // Whether `path` was opened from a list in the menu (the Library, Stash's scenes),
   // and then in `next` the video `step` places from it there (empty at the
   // list's ends). False: Previous and Next go through its folder.
-  bool listNeighbor(const std::string& path, int step, std::string& next);
+  bool listNeighbor(const std::string& path, int step, std::string& next, const PlayOrder& order);
   // Where the file browser opens the first time (the last session's folder).
   void setStartDirectory(const std::string& dir) { startDirectory_ = dir; }
   // The folder the file browser shows (empty until it is first opened).
@@ -558,7 +563,8 @@ class Menu {
                     StarFilled, Passthrough, Search, Library, Video, Pin, MoveUp, MoveDown,
                     Download, Check, Card, Storage, Close, PauseLine, PlayLine, Pencil, Plus,
                     Refresh, Arrow, ArrowRight, Chevron, Trigger, Controller, Lock, Warning,
-                    Headset, Computer };
+                    Headset, Computer,
+                    StopAtEnd, Repeat, PlayNext, Shuffle };  // by AfterVideo
   enum class Dialog { None, ConfirmDelete, Deleting, Error, Deleted, ConfirmQuit,
                       SaveTo, NoRoom, RemoveDownload,  // offline downloads' (menu_offline.cpp)
                       Update,  // a newer release (menu_settings.cpp)
@@ -571,7 +577,7 @@ class Menu {
                       // Forget for a key login (and with the server not answering).
                       KeyRefused, HostKeyChanged, ForgetServer, ForgetOffline };
   // Small choice menus opened by their button.
-  enum class Dropdown { None, Slideshow, Audio, Subtitles, Chapters, Sort, Language,
+  enum class Dropdown { None, Slideshow, AfterVideo, Audio, Subtitles, Chapters, Sort, Language,
                         Presets,  // the user's own presets (menu_presets.cpp)
                         KeyBackground };  // what the background key removes
   // File browser order (folders always come first).
@@ -844,7 +850,8 @@ class Menu {
   bool showListPage(Page page);
   // Opens a video from the page shown, which is then where it was opened
   // from (Previous and Next keep it), and left with it in its place.
-  MenuCommand openVideo(const std::string& path);
+  // `shuffle`: the player then shuffles that list (MenuCommand::option).
+  MenuCommand openVideo(const std::string& path, bool shuffle = false);
   Page playedFrom_ = Page::Files;
   std::string opening_;
   const std::string& playingFile() const { return opening_.empty() ? view_.currentFile : opening_; }

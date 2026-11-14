@@ -83,6 +83,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <set>
 #include <string>
 #include <system_error>
@@ -1092,6 +1093,29 @@ int run(Options opts) {
   std::string openedAs;
   int neighborStep = 0;
   bool neighborWrap = false;
+  // What happens when a video ends: the setting, or Repeat or Shuffle once
+  // chosen in this run. Stash's Shuffle play makes it Shuffle until a video
+  // is opened by hand or it is chosen again. Shuffle goes round a list once
+  // from the video opened by hand (as it was opened, and its file), in a
+  // new order each time it starts.
+  AfterVideo afterChosen = settings.afterVideo;
+  bool listShuffle = false;
+  std::string playStart, playStartFile;
+  std::random_device seedSource;
+  uint64_t shuffleSeed = 0;
+  bool endStep = false;  // the step under way is a video's end going on: with no next one, the menu opens
+  uint64_t endStepRestarts = 0;  // ... and the player's seeks sent when it began
+  auto afterVideo = [&] { return listShuffle ? AfterVideo::Shuffle : afterChosen; };
+  auto startShuffle = [&] {
+    shuffleSeed = (static_cast<uint64_t>(seedSource()) << 32 | seedSource()) | 1;
+    playStart = openedAs;
+    playStartFile = app.currentFile;
+  };
+  // mpv starts a repeated video over by itself; it never reaches its end.
+  auto applyAfterVideo = [&] {
+    player.command(afterVideo() == AfterVideo::Repeat ? "set loop-file inf" : "set loop-file no");
+  };
+  applyAfterVideo();
   // The playing video file was opened (its play counted): where it stops is
   // kept when it is left (and every minute meanwhile), and its duration
   // once known.
@@ -1323,21 +1347,33 @@ int run(Options opts) {
   };
   // A Stash scene given on the command line opens once Stash's catalog is there.
   std::string startScene = isStashScene(opts.file) ? opts.file : "";
-  if (!opts.file.empty() && startScene.empty()) openVideo(opts.file);
-  auto stepVideo = [&](int step) {
+  if (!opts.file.empty() && startScene.empty()) {
+    openVideo(opts.file);
+    startShuffle();
+  }
+  // `atEnd`: a video's end going on with the next one, not Previous or Next.
+  auto stepVideo = [&](int step, bool atEnd = false) {
+    const bool replaced = endStep;  // Previous or Next pressed while an end's step is under way
+    endStep = false;
     if (app.currentFile.empty() || isStream(app.currentFile)) return;
+    const bool shuffle = afterVideo() == AfterVideo::Shuffle && !isPhotoFile(app.currentFile);
     // Opened from a list in the menu (Stash's scenes): through that list.
     std::string next;
-    if (!menu.listNeighbor(openedAs, step, next)) {
-      neighborStep = neighbor.valid() && !neighborWrap ? neighborStep + step : step;
+    if (!menu.listNeighbor(openedAs, step, next, {shuffle ? shuffleSeed : 0, playStart})) {
+      neighborStep = neighbor.valid() && !neighborWrap && !replaced ? neighborStep + step : step;
       neighborWrap = false;
-      neighbor = mediaNeighbor(app.currentFile, neighborStep);
+      neighbor = mediaNeighbor(app.currentFile, neighborStep, false,
+                               {shuffle ? shuffleSeed : 0, playStartFile});
+      endStep = atEnd;
+      endStepRestarts = player.counts().restarts;
       return;
     }
-    if (next.empty())
-      std::printf("No %s video in this folder\n", step > 0 ? "next" : "previous");
-    else
+    if (!next.empty()) {
       openVideo(next);
+    } else {
+      std::printf("No %s video in this list\n", step > 0 ? "next" : "previous");
+      if (atEnd) menuAtEnd = true;
+    }
   };
 
   // The Resolution row's choice: shown at once, switched to (and saved)
@@ -1970,6 +2006,27 @@ int run(Options opts) {
       case MenuCommand::OpenFile:
         openVideo(c.path);
         panel.open = false;
+        if (listShuffle != (c.option == 1)) {
+          listShuffle = c.option == 1;
+          applyAfterVideo();
+        }
+        startShuffle();
+        break;
+      case MenuCommand::SetAfterVideo:
+        afterChosen = static_cast<AfterVideo>(std::clamp(static_cast<int>(c.value), 0, 3));
+        if (afterChosen == AfterVideo::Stop || afterChosen == AfterVideo::Next) {
+          settings.afterVideo = afterChosen;
+          saveSettings(settings);
+        }
+        listShuffle = false;
+        applyAfterVideo();
+        startShuffle();  // from the playing video
+        if (endStep) {  // at an end going on: the new choice decides instead
+          neighbor = {};
+          neighborStep = 0;
+          endStep = false;
+          wasAtEnd = false;
+        }
         break;
       case MenuCommand::SelectAudio:
         player.command(("set aid " + std::to_string(static_cast<int64_t>(c.value))).c_str());
@@ -2323,11 +2380,19 @@ int run(Options opts) {
     if (stash) stash->poll();
     if (!startScene.empty() && stash && stash->catalog()) {
       openVideo(startScene);
+      startShuffle();
       startScene.clear();
     }
     if (nextPhoto.valid() &&
         nextPhoto.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
       photoPreloader.request(app.currentFile, nextPhoto.get());
+    // Sought back from the end, or seeking since: it doesn't go on.
+    if (endStep && (!player.playback().endReached || heldSeek.active() ||
+                    player.counts().restarts != endStepRestarts)) {
+      neighbor = {};
+      neighborStep = 0;
+      endStep = false;
+    }
     if (neighbor.valid() &&
         neighbor.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
       const std::string next = neighbor.get();
@@ -2335,13 +2400,24 @@ int run(Options opts) {
         openVideo(next);
       else if (!neighborWrap)
         std::printf("No %s video in this folder\n", neighborStep > 0 ? "next" : "previous");
+      if (next.empty() && endStep) menuAtEnd = true;
+      endStep = false;
       neighborStep = 0;
       app.nextSlideAt = glfwGetTime() + app.slideshowSeconds;
     }
-    // mpv keeps a video that reached its end paused on its last frame.
+    // mpv keeps a video that reached its end paused on its last frame. Play
+    // the next video and Shuffle go on from there; with no next one, as for
+    // Stop, the menu opens.
     const bool atEnd = player.playback().endReached && !app.currentFile.empty() &&
                        !isPhotoFile(app.currentFile);
-    if (atEnd != wasAtEnd) menuAtEnd = atEnd;
+    if (atEnd != wasAtEnd) {
+      const AfterVideo after = afterVideo();
+      if (atEnd && (after == AfterVideo::Next || after == AfterVideo::Shuffle) &&
+          !isStream(app.currentFile))
+        stepVideo(1, true);
+      else
+        menuAtEnd = atEnd;
+    }
     wasAtEnd = atEnd;
     // Slideshow: the next photo in the folder, after the last one the first.
     if (app.slideshowSeconds > 0 && isPhotoFile(app.currentFile) &&
@@ -3386,6 +3462,7 @@ int run(Options opts) {
                        : offline.stashDown()                    ? MenuView::Deletable::StashDown
                                                                 : MenuView::Deletable::Yes;
       view.slideshowSeconds = app.slideshowSeconds;
+      view.afterVideo = afterVideo();
       view.brightness = app.video.brightness;
       view.contrast = app.video.contrast;
       view.saturation = app.video.saturation;

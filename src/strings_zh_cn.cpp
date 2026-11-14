@@ -1202,6 +1202,14 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.deletion.deletedTitle = "已删除";
   s.deletion.tipNeedsSendToStash = "在“设置”中开启“向 Stash 发送评分、播放记录和标签”后，才可删除从 Stash 播放的场景";
   s.deletion.tipStashDown = "Stash 无响应";
+  s.afterVideo.choices[0] = "播完后停止";
+  s.afterVideo.choices[1] = "重复播放此视频";
+  s.afterVideo.choices[2] = "播放下一个视频";
+  s.afterVideo.choices[3] = "随机播放";
+  s.afterVideo.tips[0] = "视频停在最后一帧，并打开菜单。";
+  s.afterVideo.tips[1] = "视频每次播完后从头开始。退出播放器后不保留。";
+  s.afterVideo.tips[2] = "接着播放此视频所在文件夹或列表中的下一个视频。";
+  s.afterVideo.tips[3] = "按随机顺序继续播放文件夹或列表。“上一个视频”和“下一个视频”也按此顺序。退出播放器后不保留。";
   s.colourBalance.warmth = "色温";
   s.colourBalance.tint = "色调";
   s.colourBalance.exposure = "曝光";

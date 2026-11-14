@@ -164,6 +164,7 @@ void Menu::update(const MenuView& view) {
       view.refreshRate != view_.refreshRate ||
       view.foveationMaps != view_.foveationMaps ||
       view.photo != view_.photo || view.slideshowSeconds != view_.slideshowSeconds ||
+      view.afterVideo != view_.afterVideo ||
       view.background != view_.background || view.autoPassthrough != view_.autoPassthrough ||
       view.passthrough != view_.passthrough || view.packedAlpha != view_.packedAlpha ||
       view.maskFormat != view_.maskFormat || view.opacityApplies != view_.opacityApplies ||

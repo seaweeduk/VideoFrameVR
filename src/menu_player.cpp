@@ -9,8 +9,8 @@
 // the tabs that open the larger panels above it and what is playing; across
 // the strip a band that is the timeline, with the file name and the time on
 // it; under it the tools on the left, the transport in the middle, then
-// delete and the volume on the right. It is always there while the menu is
-// open and never moves.
+// what happens at the end of a video, delete and the volume on the right.
+// It is always there while the menu is open and never moves.
 
 namespace {
 
@@ -185,9 +185,29 @@ void Menu::layoutMain() {
   if (!view_.photo) icon(Icon::Forward10, t.tipForward10, command(MenuCommand::Seek, 10));
   icon(Icon::Next, t.tipNext, command(MenuCommand::NextVideo));
 
-  // Delete the playing file, between a video's Next and the speaker, so it
-  // stays put for photos' shorter transport. It opens its dialog at once; the
-  // app fills it in (askDelete()).
+  // What happens when a video ends, after its Next: the choice as the icon,
+  // lit for those that last only until the player quits (Repeat, Shuffle),
+  // and the choices in a list above it. Photos have their slideshow instead.
+  const double videoNextEnd = (kMainWidth + 5 * (kToolSize + kTransportGap) + kPlayButton) / 2;
+  const double afterX = videoNextEnd + kTransportGap;
+  static constexpr Icon kAfterIcons[] = {Icon::StopAtEnd, Icon::Repeat, Icon::PlayNext,
+                                         Icon::Shuffle};
+  const int after = static_cast<int>(view_.afterVideo);
+  const bool passing = view_.afterVideo == AfterVideo::Repeat || view_.afterVideo == AfterVideo::Shuffle;
+  if (!view_.photo) {
+    Button& b = addRound(kAfterIcons[after], t.afterVideo.choices[after],
+                         [this] {
+                           dropdown_ = dropdown_ == Dropdown::AfterVideo ? Dropdown::None
+                                                                         : Dropdown::AfterVideo;
+                           return MenuCommand{};
+                         },
+                         afterX, y, kToolSize, passing || dropdown_ == Dropdown::AfterVideo);
+    b.bare = !b.selected;
+  }
+
+  // Delete the playing file, between that and the speaker, where it stays
+  // for photos' shorter transport. It opens its dialog at once; the app
+  // fills it in (askDelete()).
   if (view_.deletable != MenuView::Deletable::No) {
     const bool can = view_.deletable == MenuView::Deletable::Yes;
     const char* tip = view_.deletable == MenuView::Deletable::NeedsSendToStash
@@ -195,7 +215,6 @@ void Menu::layoutMain() {
                       : view_.deletable == MenuView::Deletable::StashDown ? t.deletion.tipStashDown
                       : view_.photo                                       ? t.tipDeletePhoto
                                                                           : t.tipDelete;
-    const double videoNextEnd = (kMainWidth + 5 * (kToolSize + kTransportGap) + kPlayButton) / 2;
     Button& trash = addRound(Icon::Trash, tip,
                              [this] {
                                deleteInfo_ = {};
@@ -209,7 +228,7 @@ void Menu::layoutMain() {
                                c.path = view_.currentFile;
                                return c;
                              },
-                             (videoNextEnd + kVolumeX - kToolSize) / 2, y, kToolSize);
+                             afterX + kToolSize + kTransportGap, y, kToolSize);
     trash.bare = true;
     trash.dangerHover = can;
     trash.disabled = !can;
@@ -251,6 +270,28 @@ void Menu::layoutMain() {
       entries.push_back(e);
     }
     addDropdown(opener, entries);
+  }
+  if (!view_.photo && dropdown_ == Dropdown::AfterVideo) {
+    Button opener;
+    opener.x = afterX;
+    opener.y = y;
+    opener.w = opener.h = kToolSize;
+    std::vector<Button> entries;
+    for (const AfterVideo choice : {AfterVideo::Next, AfterVideo::Shuffle, AfterVideo::Repeat,
+                                    AfterVideo::Stop}) {
+      const int i = static_cast<int>(choice);
+      Button e;
+      e.icon = kAfterIcons[i];
+      e.label = t.afterVideo.choices[i];
+      e.tooltip = t.afterVideo.tips[i];
+      e.selected = i == after;
+      e.action = [this, i] {
+        dropdown_ = Dropdown::None;
+        return command(MenuCommand::SetAfterVideo, i)();
+      };
+      entries.push_back(e);
+    }
+    addDropdownList(opener, entries);
   }
 }
 
@@ -375,7 +416,7 @@ void Menu::showPlayedFrom() {
   if (!showListPage(playedFrom_)) showBrowser();
 }
 
-MenuCommand Menu::openVideo(const std::string& path) {
+MenuCommand Menu::openVideo(const std::string& path, bool shuffle) {
   playedFrom_ = page_;
   opening_ = path;
   showPage(Page::Main);
@@ -383,6 +424,7 @@ MenuCommand Menu::openVideo(const std::string& path) {
   MenuCommand c;
   c.type = MenuCommand::OpenFile;
   c.path = path;
+  c.option = shuffle ? 1 : 0;
   return c;
 }
 

@@ -861,6 +861,13 @@ struct ControllerStrings {
   const char* volumeHint;         // pointing at the volume (printf: grip's name, then the trigger's)
 };
 
+// What happens when a video ends (AfterVideo): the strip's button right of
+// Next and its list.
+struct AfterVideoStrings {
+  const char* choices[4];  // by AfterVideo; the button's tooltip is the chosen one
+  const char* tips[4];     // Repeat's and Shuffle's say that they aren't kept
+};
+
 // Video settings' colour balance (colour_balance.h) in the Picture group, and
 // Match the room (room_light.h) in the Passthrough group.
 struct ColourBalanceStrings {
@@ -1212,6 +1219,7 @@ struct Strings {
   SetupStrings setup;
   ControllerStrings controls;
   DeleteStrings deletion;
+  AfterVideoStrings afterVideo;
   ColourBalanceStrings colourBalance;
   WhatsNewStrings whatsNew;
   const char* foveationLearnedHint;
