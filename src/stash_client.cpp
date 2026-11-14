@@ -1,5 +1,6 @@
 #include "stash_client.h"
 
+#include "run_log.h"
 #include "strings.h"
 
 #include <curl/curl.h>
@@ -387,7 +388,12 @@ std::string rfc3339(int64_t seconds) {
 }  // namespace
 
 StashClient::StashClient(const std::string& url, std::string apiKey, bool unverified)
-    : typed_(url), address_(url, unverified), apiKey_(std::move(apiKey)) {}
+    : typed_(url), address_(url, unverified), apiKey_(std::move(apiKey)) {
+  // curl's messages name the host: hidden before any request, also for an
+  // address only tried in setup or Settings. A scheme typed alone has none.
+  if (address_.server.find("://") != std::string::npos)
+    hideInRunLog(urlHost(address_.server), "<Stash server>");
+}
 
 bool StashClient::post(const std::string& query, std::string& body, std::string& error,
                        StashProblem& problem, const std::string& variables, bool slow) {
