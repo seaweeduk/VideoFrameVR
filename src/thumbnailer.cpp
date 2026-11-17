@@ -158,7 +158,8 @@ bool decodeFrame(const std::string& path, AVBufferRef* gpu, Size size,
     // Timestamps count from the file's start time: hours in on a Blu-ray
     // disc's transport streams.
     const int64_t start = format->start_time != AV_NOPTS_VALUE ? format->start_time : 0;
-    if (!isPhotoFile(path) && format->duration > 0)
+    // A partial download's first fifth may not be there yet.
+    if (!isPhotoFile(path) && !isPartialDownload(path) && format->duration > 0)
       av_seek_frame(format, -1, start + format->duration / 5, AVSEEK_FLAG_BACKWARD);
 
     bool got = false, ended = false;

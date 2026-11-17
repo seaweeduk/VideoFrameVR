@@ -6,6 +6,7 @@ Strings germanStrings(const Strings& english) {
   s.loading = "Lädt …";
   s.playbackFailed = "Dieses Video kann nicht abgespielt werden. Versuche eine andere Datei.";
   s.discEncrypted = "Dieses Disc-Abbild ist verschlüsselt und kann nicht abgespielt werden.";
+  s.partialFailed = "Dieser Download kann noch nicht abgespielt werden. Nach dem Abschluss klappt es vielleicht.";
   s.format = "Format";
   s.projections[0] = "Leinwand";
   s.projections[1] = "180°";

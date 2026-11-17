@@ -6,6 +6,7 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.loading = "Carregando …";
   s.playbackFailed = "Não foi possível reproduzir este vídeo. Tente outro arquivo.";
   s.discEncrypted = "Esta imagem de disco está criptografada e não pode ser reproduzida.";
+  s.partialFailed = "Ainda não é possível reproduzir este download. Talvez funcione quando terminar.";
   s.format = "Formato";
   s.projections[0] = "Tela";
   s.projections[1] = "180°";

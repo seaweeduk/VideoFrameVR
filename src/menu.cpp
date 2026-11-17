@@ -136,7 +136,8 @@ void Menu::update(const MenuView& view) {
   // Playing on only changes the strip.
   const bool playing =
       static_cast<int>(a.position) != static_cast<int>(b.position) ||
-      (view.streaming && static_cast<int>(a.bufferedUntil) != static_cast<int>(b.bufferedUntil)) ||
+      ((view.streaming || view.partialDownload) &&
+       static_cast<int>(a.bufferedUntil) != static_cast<int>(b.bufferedUntil)) ||
       a.paused != b.paused || std::abs(a.volume - b.volume) > 0.5 || a.muted != b.muted;
   const bool changed =
       std::abs(a.duration - b.duration) > 0.5 || a.title != b.title ||

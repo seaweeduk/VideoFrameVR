@@ -515,7 +515,7 @@ void Menu::drawMainPage(cairo_t* cr) {
     const double fraction = std::clamp(shown / p.duration, 0.0, 1.0);
     cairo_save(cr);
     cairo_clip(cr);
-    if (view_.streaming) {
+    if (view_.streaming || view_.partialDownload) {
       cairo_rectangle(cr, x, kBandY, w * std::clamp(p.bufferedUntil / p.duration, 0.0, 1.0),
                       kBandH);
       setColor(cr, pal.buffered);
@@ -535,7 +535,9 @@ void Menu::drawMainPage(cairo_t* cr) {
   }
   cairo_new_path(cr);
   const std::string title = view_.currentFile.empty() ? t.noVideo
-                            : view_.playbackFailed    ? (view_.discEncrypted ? t.discEncrypted : t.playbackFailed)
+                            : view_.playbackFailed    ? (view_.discEncrypted     ? t.discEncrypted
+                                                         : view_.partialDownload ? t.partialFailed
+                                                                                 : t.playbackFailed)
                             : p.title.empty()         ? t.loading
                                                       : p.title;
   double titleRight = x + w - 24;

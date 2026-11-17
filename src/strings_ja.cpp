@@ -6,6 +6,7 @@ Strings japaneseStrings(const Strings& english) {
   s.loading = "読み込み中…";
   s.playbackFailed = "この動画を再生できません。別のファイルをお試しください。";
   s.discEncrypted = "このディスクイメージは暗号化されているため再生できません。";
+  s.partialFailed = "このダウンロードはまだ再生できません。完了すると再生できる場合があります。";
   s.format = "形式";
   s.projections[0] = "スクリーン";
   s.projections[1] = "180°";

@@ -937,6 +937,7 @@ struct Strings {
   const char* loading;
   const char* playbackFailed;
   const char* discEncrypted;  // instead of playbackFailed: an encrypted Blu-ray disc image
+  const char* partialFailed;
   const char* format;
   const char* projections[7];  // by Projection value
   const char* stereo[3];

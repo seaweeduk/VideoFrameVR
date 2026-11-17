@@ -37,9 +37,28 @@ std::string lowerCase(std::string s) {
   return s;
 }
 
-bool isVideoFile(const fs::path& p) {
+namespace {
+
+bool hasVideoExtension(const fs::path& p) {
   return hasExtension(p, {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".ts", ".m2ts", ".wmv",
                           ".flv", ".mpg", ".mpeg", ".iso"});
+}
+
+}  // namespace
+
+bool isVideoFile(const fs::path& p) { return hasVideoExtension(p) || isPartialDownload(p); }
+
+// Not a disc image: it plays only once it is complete.
+bool isPartialDownload(const fs::path& p) {
+  return hasExtension(p, {".part"}) && hasVideoExtension(p.stem()) && !hasExtension(p.stem(), {".iso"});
+}
+
+bool subtitleBelongsTo(const std::string& video, const std::string& subtitle) {
+  const fs::path name = isPartialDownload(video) ? fs::path(video).stem() : fs::path(video);
+  const std::string base = foldFileName(name.stem().string());
+  const std::string other = foldFileName(fs::path(subtitle).stem().string());
+  return other == base || (other.size() > base.size() + 1 && other[base.size()] == '.' &&
+                           other.compare(0, base.size(), base) == 0);
 }
 
 bool isPhotoFile(const fs::path& p) {
