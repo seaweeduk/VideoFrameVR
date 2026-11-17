@@ -37,9 +37,28 @@ std::string lowerCase(std::string s) {
   return s;
 }
 
-bool isVideoFile(const fs::path& p) {
+namespace {
+
+bool hasVideoExtension(const fs::path& p) {
   return hasExtension(p, {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".ts", ".m2ts", ".wmv",
                           ".flv", ".mpg", ".mpeg", ".iso"});
+}
+
+}  // namespace
+
+bool isVideoFile(const fs::path& p) { return hasVideoExtension(p) || isPartialDownload(p); }
+
+// Not a disc image: it plays only once it is complete.
+bool isPartialDownload(const fs::path& p) {
+  return hasExtension(p, {".part"}) && hasVideoExtension(p.stem()) && !hasExtension(p.stem(), {".iso"});
+}
+
+bool subtitleBelongsTo(const std::string& video, const std::string& subtitle) {
+  const fs::path name = isPartialDownload(video) ? fs::path(video).stem() : fs::path(video);
+  const std::string base = foldFileName(name.stem().string());
+  const std::string other = foldFileName(fs::path(subtitle).stem().string());
+  return other == base || (other.size() > base.size() + 1 && other[base.size()] == '.' &&
+                           other.compare(0, base.size(), base) == 0);
 }
 
 bool isPhotoFile(const fs::path& p) {
@@ -305,4 +324,85 @@ bool drainConfigWork(double seconds) {
   auto finished = done->get_future();
   queueConfigWork([done] { done->set_value(); });
   return finished.wait_for(std::chrono::duration<double>(seconds)) == std::future_status::ready;
+}
+
+namespace {
+
+bool isLink(const std::string& s) {
+  const std::string lower = lowerCase(s.substr(0, 8));
+  return lower.rfind("http://", 0) == 0 || lower.rfind("https://", 0) == 0;
+}
+
+std::string percentDecoded(const std::string& s) {
+  std::string out;
+  for (size_t i = 0; i < s.size(); ++i) {
+    if (s[i] == '%' && i + 2 < s.size() && std::isxdigit(static_cast<unsigned char>(s[i + 1])) &&
+        std::isxdigit(static_cast<unsigned char>(s[i + 2]))) {
+      out += static_cast<char>(std::stoi(s.substr(i + 1, 2), nullptr, 16));
+      i += 2;
+    } else {
+      out += s[i] == '+' ? ' ' : s[i];
+    }
+  }
+  return out;
+}
+
+// The query's parameters, names lowercase, values still encoded.
+std::vector<std::pair<std::string, std::string>> queryOf(const std::string& link) {
+  std::vector<std::pair<std::string, std::string>> params;
+  const size_t q = link.find('?');
+  if (q == std::string::npos) return params;
+  const std::string query = link.substr(q + 1, link.find('#', q) - q - 1);
+  for (size_t start = 0; start <= query.size();) {
+    const size_t end = std::min(query.find('&', start), query.size());
+    const std::string part = query.substr(start, end - start);
+    const size_t eq = part.find('=');
+    params.emplace_back(lowerCase(part.substr(0, eq)), eq == std::string::npos ? "" : part.substr(eq + 1));
+    start = end + 1;
+  }
+  return params;
+}
+
+// filename*=UTF-8''name or filename="name" of a Content-Disposition.
+std::string dispositionName(const std::string& d) {
+  const std::string lower = lowerCase(d);
+  if (size_t at = lower.find("filename*="); at != std::string::npos) {
+    std::string v = d.substr(at + 10, d.find(';', at) - at - 10);
+    if (const size_t quotes = v.find("''"); quotes != std::string::npos) v = v.substr(quotes + 2);
+    return percentDecoded(v);
+  }
+  if (size_t at = lower.find("filename="); at != std::string::npos) {
+    std::string v = d.substr(at + 9);
+    if (!v.empty() && v[0] == '"') return v.substr(1, v.find('"', 1) - 1);
+    return v.substr(0, v.find(';'));
+  }
+  return {};
+}
+
+}  // namespace
+
+std::string linkInText(const std::string& text) {
+  const size_t first = text.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos) return {};
+  const std::string link = text.substr(first, text.find_last_not_of(" \t\r\n") - first + 1);
+  return isLink(link) && link.find_first_of(" \t") == std::string::npos ? link : std::string();
+}
+
+std::string linkFileName(const std::string& location) {
+  if (!isLink(location)) return {};
+  for (const auto& [name, value] : queryOf(location))
+    if (name == "response-content-disposition")
+      if (std::string file = dispositionName(percentDecoded(value)); !file.empty())
+        return file.substr(file.find_last_of("/\\") + 1);
+  const std::string path = location.substr(0, location.find_first_of("?#"));
+  const size_t slash = path.find_last_of('/');
+  return percentDecoded(slash == std::string::npos ? path : path.substr(slash + 1));
+}
+
+std::string linkIdentity(const std::string& location) {
+  if (!isLink(location)) return location;
+  for (const auto& [name, value] : queryOf(location))
+    if (name == "signature" || name == "x-amz-signature" || name == "x-goog-signature")
+      return location.substr(0, location.find_first_of("?#"));
+  return location;
 }

@@ -1002,14 +1002,14 @@ void Menu::drawListStates(cairo_t* cr) {
   char noMatches[512];
   if (!empty && page_ == Page::Files && folderMatchCount() == 0) {
     std::snprintf(noMatches, sizeof(noMatches), t.noMatches, fileFilter_.c_str());
-    empty = noMatches;
+    empty = linkInText(fileFilter_).empty() ? noMatches : t.playLink;
   }
   if (page_ == Page::Library && !libraryPinHelp() && libraryMatchCount() == 0) {
     if (libraryFilter_.empty()) {
       empty = stashCovers_ && !stashCatalog() ? t.libraryEmptyStash : t.libraryEmpty;
     } else {
       std::snprintf(noMatches, sizeof(noMatches), t.libraryNoMatches, libraryFilter_.c_str());
-      empty = noMatches;
+      empty = linkInText(libraryFilter_).empty() ? noMatches : t.playLink;
     }
   }
   if (empty)

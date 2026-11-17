@@ -6,6 +6,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.loading = "正在加载…";
   s.playbackFailed = "无法播放此视频，请尝试其他文件。";
   s.discEncrypted = "此光盘映像已加密，无法播放。";
+  s.partialFailed = "暂时无法播放此下载内容。下载完成后可能可以播放。";
   s.format = "格式";
   s.projections[0] = "屏幕";
   s.projections[1] = "180°";
@@ -114,6 +115,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.tipSearchFolder = "搜索此文件夹";
   s.clear = "清除";
   s.noMatches = "此文件夹中没有匹配“%s”的内容";
+  s.playLink = "这是一个链接：按“完成”即可播放";
   s.matches = "此文件夹中 %d / %d 项";
   s.greenScreen = "绿幕抠像";
   s.greenScreenHint = "用下方设置去除视频背景。";

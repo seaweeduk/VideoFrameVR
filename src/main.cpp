@@ -2321,7 +2321,9 @@ int run(Options opts) {
     }
     // Every minute, where it is: kept even if VideoFrameVR is killed.
     if (videoOpened && glfwGetTime() >= resumeSaveAt) saveResume();
-    if (videoOpened && !durationKept && player.playback().duration > 0) {
+    // A partial download's duration may count only what is there so far.
+    if (videoOpened && !durationKept && player.playback().duration > 0 &&
+        !isPartialDownload(app.currentFile)) {
       durationKept = true;
       library.setDuration(app.currentFile, player.playback().duration);
     }
@@ -2407,13 +2409,14 @@ int run(Options opts) {
     }
     // mpv keeps a video that reached its end paused on its last frame. Play
     // the next video and Shuffle go on from there; with no next one, as for
-    // Stop, the menu opens.
+    // Stop, the menu opens. So it does at the end of a partial download's
+    // data: the rest of it may still come.
     const bool atEnd = player.playback().endReached && !app.currentFile.empty() &&
                        !isPhotoFile(app.currentFile);
     if (atEnd != wasAtEnd) {
       const AfterVideo after = afterVideo();
       if (atEnd && (after == AfterVideo::Next || after == AfterVideo::Shuffle) &&
-          !isStream(app.currentFile))
+          !isStream(app.currentFile) && !isPartialDownload(app.currentFile))
         stepVideo(1, true);
       else
         menuAtEnd = atEnd;
@@ -2594,7 +2597,8 @@ int run(Options opts) {
     for (const Offline::Download& d : downloaded) library.addCopy(d.path, d.oshash, d.size, d.mtime);
     if (videoCheckAt > 0 && glfwGetTime() >= videoCheckAt) {
       videoCheckAt = 0;
-      videoCheck.start(app.currentFile, app.format, videoCheckKind);
+      // It looks through the whole video and runs once: on the finished file.
+      if (!isPartialDownload(app.currentFile)) videoCheck.start(app.currentFile, app.format, videoCheckKind);
     }
     if (VideoCheck::Result checked; videoCheck.result(checked)) {
       // Kept for the video, even if another plays by now: it runs once.
@@ -2633,6 +2637,7 @@ int run(Options opts) {
     subtitles.setText(floatingSubtitles ? player.playback().subtitleText : "");
     loadingText.setText(!player.failed()                     ? strings().loading
                         : bdmv::isEncrypted(app.currentFile) ? strings().discEncrypted
+                        : isPartialDownload(app.currentFile) ? strings().partialFailed
                                                              : strings().playbackFailed);
     // Until the new file's first frame arrives, the texture still holds the old
     // video, which would show cut apart in the new format; show nothing instead.
@@ -3431,6 +3436,7 @@ int run(Options opts) {
       view.accent = settings.accent;
       view.floatingSubtitles = settings.floatingSubtitles;
       view.streaming = isStream(app.currentFile);
+      view.partialDownload = isPartialDownload(app.currentFile);
       view.videoWidth = photo ? photoWidth : player.width();
       view.videoHeight = photo ? photoHeight : player.height();
       if (photo) view.playback.title = std::filesystem::path(app.currentFile).filename().string();
@@ -3721,7 +3727,7 @@ int run(Options opts) {
         addText(subtitles, subtitlePlacement.update(app, player.aspect(), headPos,
                                                     yawFromQuat(headRot), settings));
       constexpr float kTextW = 1.4f, kTextH = kTextW / SubtitleOverlay::kAspect;
-      if ((stillLoading || (!photo && player.failed())) && headValid) {
+      if ((stillLoading || (!photo && (player.failed() || player.waitingForDownload()))) && headValid) {
         // Raised a little: the text sits at the bottom of its texture.
         const Vec3 center = headPos + transformDir(frame, {0.0f, 0.1f, -2.0f});
         addText(loadingText, translation(center) * frame * scaling(kTextW, kTextH, 1));

@@ -291,17 +291,12 @@ Status remove(const std::string& locator, uint64_t size, int64_t modified) {
 
 std::vector<std::string> subtitlesBeside(const std::string& locator) {
   const std::string folder = parent(locator);
-  const std::string base = foldFileName(std::filesystem::path(locator).stem().string());
-  const std::string prefix = base + ".";
   std::vector<Entry> entries;
   std::vector<std::string> paths;
   if (list(folder, entries) != Status::Ok) return paths;
   for (const auto& entry : entries) {
     if (entry.folder || !isSubtitleFile(entry.name)) continue;
-    const std::string name = foldFileName(std::filesystem::path(entry.name).stem().string());
-    if (name == base || (name.size() > prefix.size() &&
-                        name.compare(0, prefix.size(), prefix) == 0))
-      paths.push_back(folder + "/" + entry.name);
+    if (subtitleBelongsTo(locator, entry.name)) paths.push_back(folder + "/" + entry.name);
   }
   std::sort(paths.begin(), paths.end());
   return paths;

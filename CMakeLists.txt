@@ -108,6 +108,7 @@ add_executable(videoframevr
   src/mpv_gl_context.cpp
   src/offline.cpp
   src/oshash.cpp
+  src/partial_stream.cpp
   src/performance_readout.cpp
   src/photo_preloader.cpp
   src/pipelines.cpp

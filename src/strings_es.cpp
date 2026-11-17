@@ -6,6 +6,7 @@ Strings spanishStrings(const Strings& english) {
   s.loading = "Cargando …";
   s.playbackFailed = "No se puede reproducir este vídeo. Prueba con otro archivo.";
   s.discEncrypted = "Esta imagen de disco está cifrada y no se puede reproducir.";
+  s.partialFailed = "Esta descarga aún no se puede reproducir. Puede que funcione cuando termine.";
   s.format = "Formato";
   s.projections[0] = "Pantalla";
   s.projections[1] = "180°";
@@ -114,6 +115,7 @@ Strings spanishStrings(const Strings& english) {
   s.tipSearchFolder = "Buscar en esta carpeta";
   s.clear = "Borrar";
   s.noMatches = "Sin resultados para \"%s\" en esta carpeta";
+  s.playLink = "Es un enlace: pulsa Listo para reproducirlo";
   s.matches = "%d de %d en esta carpeta";
   s.greenScreen = "Chroma";
   s.greenScreenHint = "Eliminar el fondo del vídeo con los ajustes de abajo.";

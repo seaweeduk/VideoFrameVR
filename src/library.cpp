@@ -40,8 +40,11 @@ constexpr int64_t kDay = 24 * 60 * 60;
 
 int64_t now() { return static_cast<int64_t>(std::time(nullptr)); }
 
+// Known by its address. So is a partial download: its fingerprint changes with
+// its size, which would make it a new video each time it grew.
 bool isStream(const std::string& location) {
-  return location.find("://") != std::string::npos && !remote::isRemote(location);
+  return (location.find("://") != std::string::npos && !remote::isRemote(location)) ||
+         isPartialDownload(location);
 }
 
 bool endsWith(const std::string& s, const char* tail) {
@@ -69,8 +72,9 @@ std::string normalPath(const std::string& path) {
   return normal;
 }
 
+// A link signed anew each time is one video; so are a link's copies.
 std::string keyOf(const std::string& location) {
-  return isStream(location) ? location : normalPath(location);
+  return isStream(location) ? linkIdentity(location) : normalPath(location);
 }
 
 json colourJson(const KeyColour& c) { return json::array({c.r, c.g, c.b}); }
@@ -897,6 +901,10 @@ std::vector<VideoRecord> Library::lookup(const std::vector<FolderListing::Entry>
   for (size_t i = 0; i < entries.size(); ++i) {
     const FolderListing::Entry& e = entries[i];
     if (e.directory) continue;
+    if (isPartialDownload(e.path)) {
+      records[i] = record(e.path);
+      continue;
+    }
     const std::string path = normalPath(e.path);
     const bool detailsKnown = e.size != 0 && e.modified != 0;
     if (const auto waiting = pending_.find(path); waiting != pending_.end()) {
@@ -1176,8 +1184,9 @@ void Library::change(const std::string& location, const Change& c) {
     return;
   }
   if (isStream(location)) {
-    const auto it = byStream_.find(location);
-    apply(it != byStream_.end() ? it->second : addVideo("", location), c);
+    const std::string key = keyOf(location);
+    const auto it = byStream_.find(key);
+    apply(it != byStream_.end() ? it->second : addVideo("", key), c);
     return;
   }
   const std::string path = normalPath(location);

@@ -97,6 +97,16 @@ const char* packingName(Packing p) {
   }
 }
 
+namespace {
+
+// The name guessed from: a file's, or the one a link names (linkFileName()).
+std::string nameOf(const std::string& path) {
+  const std::string linked = linkFileName(path);
+  return !linked.empty() ? linked : path.substr(path.find_last_of('/') + 1);
+}
+
+}  // namespace
+
 StereoLayout nextStereo(StereoLayout s) {
   return static_cast<StereoLayout>((static_cast<int>(s) + 1) %
                                    static_cast<int>(StereoLayout::kCount));
@@ -115,7 +125,7 @@ VideoFormat guessVideoFormat(const std::string& path, int width, int height, Two
   // A disc image is flat; a 3D title shows in 3D once mpv says it decodes
   // both views (above).
   if (bdmv::isDiscImage(path)) return {};
-  std::string name = path.substr(path.find_last_of('/') + 1);
+  std::string name = nameOf(path);
   std::transform(name.begin(), name.end(), name.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
@@ -216,7 +226,7 @@ bool hasVrNameTag(const std::string& path) {
       "lr",        "rl",         "sbs",        "tb",         "ou",      "oculus", "oculusrift",
       "gearvr",    "psvr",       "vr",         "mkx200",     "fisheye", "fisheye180",
       "fisheye190", "fisheye200", "rf52",      "eac"};
-  const std::string name = lowerCase(path.substr(path.find_last_of('/') + 1));
+  const std::string name = lowerCase(nameOf(path));
   size_t start = 0;
   for (size_t i = 0; i <= name.size(); ++i) {
     const bool end = i == name.size() || std::strchr(" _-.[]()", name[i]) != nullptr;
@@ -243,7 +253,7 @@ float eyeDisplayAspect(const VideoFormat& format, float frameAspect) {
 }
 
 bool hasPackedAlpha(const std::string& path) {
-  std::string name = path.substr(path.find_last_of('/') + 1);
+  std::string name = nameOf(path);
   std::transform(name.begin(), name.end(), name.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   for (const char* tag : {"_alpha", "-alpha", " alpha"}) {

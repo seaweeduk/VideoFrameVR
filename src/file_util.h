@@ -12,6 +12,14 @@ bool isVideoFile(const std::filesystem::path& p);
 bool isPhotoFile(const std::filesystem::path& p);
 bool isSubtitleFile(const std::filesystem::path& p);
 
+// A video still being downloaded, or left unfinished: "movie.mp4.part". It is
+// a video file too (isVideoFile), though what it holds keeps changing and
+// its last part, or all of it, may not play yet.
+bool isPartialDownload(const std::filesystem::path& p);
+// Whether a subtitle file's name goes with a video's: "movie.srt" or
+// "movie.en.srt" for "movie.mp4", or for "movie.mp4.part".
+bool subtitleBelongsTo(const std::string& video, const std::string& subtitle);
+
 // ASCII case-insensitive name order.
 bool fileNameLess(const std::string& a, const std::string& b);
 
@@ -55,3 +63,14 @@ std::future<std::string> mediaNeighbor(const std::string& current, int step, boo
 void queueConfigWork(std::function<void()> work);
 // Waits up to `seconds` for the config writes queued so far; whether they finished.
 bool drainConfigWork(double seconds);
+
+// Links typed or pasted (http:// or https://): the link in `text`, trimmed,
+// or empty if it is anything else.
+std::string linkInText(const std::string& text);
+// A link's file name: the one its response-content-disposition names (as
+// signed storage links do), else its path's last part, decoded; empty if
+// `location` is not a link.
+std::string linkFileName(const std::string& location);
+// What tells a link's video apart: a signed link (S3's, Google's) without its
+// query, whose signature and expiry change each time; any other as it is.
+std::string linkIdentity(const std::string& location);

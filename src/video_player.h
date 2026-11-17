@@ -168,6 +168,8 @@ class VideoPlayer {
   bool sized() const {
     return width_ > 0 && !path_.empty() && !failed_ && (!loading_ || newVideoSized_);
   }
+  // Stopped at the end of a partial file's data until more arrives.
+  bool waitingForDownload() const { return partial_ && buffering_; }
   // The current frame for the scene, nullptr before the first one.
   const Texture* texture();
   // Another number whenever texture() shows another picture: the next frame,
@@ -260,6 +262,9 @@ class VideoPlayer {
   bool subtitlesInFrame_ = true;
   bool loading_ = false;
   bool failed_ = false;
+  bool partial_ = false;        // the file is a partial download (isPartialDownload)
+  bool buffering_ = false;      // mpv waits for its read-ahead to fill
+  double edgeSeekFrom_ = -1;    // where a seek forward in a partial file left, until it proves good
   bool fileLoaded_ = false;     // the new file has been opened
   bool newVideoSized_ = false;  // ...and its video has been configured
   bool loadRestarted_ = false;  // its first decoded frame has reached the render API

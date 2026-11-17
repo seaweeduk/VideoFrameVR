@@ -937,6 +937,7 @@ struct Strings {
   const char* loading;
   const char* playbackFailed;
   const char* discEncrypted;  // instead of playbackFailed: an encrypted Blu-ray disc image
+  const char* partialFailed;
   const char* format;
   const char* projections[7];  // by Projection value
   const char* stereo[3];
@@ -1010,6 +1011,7 @@ struct Strings {
   const char* tipSearchFolder;
   const char* clear;
   const char* noMatches;  // printf format: the search words
+  const char* playLink;   // instead of noMatches: the search holds a link
   const char* matches;    // printf format: matches, total
   const char* greenScreen;
   const char* greenScreenHint;

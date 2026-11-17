@@ -183,6 +183,7 @@ struct MenuView {
   Accent accent;
   bool floatingSubtitles = false;
   bool streaming = false;  // the current video is a link, not a file
+  bool partialDownload = false;  // the current video is a file still downloading, or left unfinished
   int videoWidth = 0, videoHeight = 0;
   bool background = true;  // night sky around the flat screen
   bool autoPassthrough = false;  // passthrough switches itself on for videos made for it

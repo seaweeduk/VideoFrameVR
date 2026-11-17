@@ -6,6 +6,7 @@ Strings japaneseStrings(const Strings& english) {
   s.loading = "読み込み中…";
   s.playbackFailed = "この動画を再生できません。別のファイルをお試しください。";
   s.discEncrypted = "このディスクイメージは暗号化されているため再生できません。";
+  s.partialFailed = "このダウンロードはまだ再生できません。完了すると再生できる場合があります。";
   s.format = "形式";
   s.projections[0] = "スクリーン";
   s.projections[1] = "180°";
@@ -114,6 +115,7 @@ Strings japaneseStrings(const Strings& english) {
   s.tipSearchFolder = "このフォルダを検索";
   s.clear = "クリア";
   s.noMatches = "このフォルダに「%s」に一致する項目はありません";
+  s.playLink = "リンクです。完了を押すと再生します";
   s.matches = "このフォルダ内 %d / %d件";
   s.greenScreen = "グリーンバック";
   s.greenScreenHint = "下の設定で動画の背景を除去。";

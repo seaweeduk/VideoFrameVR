@@ -6,6 +6,7 @@ Strings germanStrings(const Strings& english) {
   s.loading = "Lädt …";
   s.playbackFailed = "Dieses Video kann nicht abgespielt werden. Versuche eine andere Datei.";
   s.discEncrypted = "Dieses Disc-Abbild ist verschlüsselt und kann nicht abgespielt werden.";
+  s.partialFailed = "Dieser Download kann noch nicht abgespielt werden. Nach dem Abschluss klappt es vielleicht.";
   s.format = "Format";
   s.projections[0] = "Leinwand";
   s.projections[1] = "180°";
@@ -114,6 +115,7 @@ Strings germanStrings(const Strings& english) {
   s.tipSearchFolder = "Diesen Ordner durchsuchen";
   s.clear = "Leeren";
   s.noMatches = "Keine Treffer für „%s“ in diesem Ordner";
+  s.playLink = "Das ist ein Link: Tippe auf Fertig, um ihn abzuspielen";
   s.matches = "%d von %d in diesem Ordner";
   s.greenScreen = "Green Screen";
   s.greenScreenHint = "Den Hintergrund des Videos mit den Einstellungen unten entfernen.";

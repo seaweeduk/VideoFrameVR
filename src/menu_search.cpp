@@ -1,5 +1,6 @@
 #include "menu_style.h"
 
+#include "file_util.h"
 #include "menu_setup.h"
 #include "menu_stash.h"
 
@@ -208,6 +209,16 @@ MenuCommand Menu::submitText() {
   }
   if (page_ == Page::VideoSettings && presetName_.open) return submitPresetName();
   if (editingFilter() && stashTextPage()) return StashPages::submitText(*this);
+  // A link pasted into the folder's or the library's search plays.
+  if (editingFilter() && (page_ == Page::Files || page_ == Page::Library))
+    if (const std::string link = linkInText(filterText()); !link.empty()) {
+      setFilter("");
+      stopEditing();
+      MenuCommand c;
+      c.type = MenuCommand::OpenFile;
+      c.path = link;
+      return c;
+    }
   if (editingFilter()) stopEditing();
   return {};
 }
