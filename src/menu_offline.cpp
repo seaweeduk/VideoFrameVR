@@ -644,7 +644,8 @@ void Menu::drawOfflineButton(cairo_t* cr, const Button& b, const double ink[4]) 
       if (gone) cairo_push_group(cr);
       const double th = b.h - (tall ? 8 : 4), tw = (view_.thumbnails || stashCoversShown()) ? th * 16 / 9 : th;
       const double tx = b.x + (tall ? 8 : 10), ty = b.y + (b.h - th) / 2;
-      if (!b.thumbPath.empty() && (b.icon == Icon::None || pictureOf(b.thumbPath, tw)))
+      if (!b.thumbPath.empty() &&
+          (b.icon == Icon::None || pictureOf(cr, b.thumbPath, tx, ty, tw, th)))
         drawThumbnail(cr, b.thumbPath, tx, ty, tw, th, tall ? 8 : 5);
       else if (b.icon != Icon::None)
         drawIcon(cr, b.icon, tx + tw / 2, ty + th / 2, th * 0.7, ink[0], ink[1], ink[2]);

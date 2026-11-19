@@ -602,7 +602,8 @@ void Menu::drawButtonContent(cairo_t* cr, const Button& b, const double ink[4]) 
     if (b.card) {  // file browser grid: thumbnail (or folder), name in two lines, details
       const Palette& pal = palette();
       const double tw = b.w - 16, th = tw * 9 / 16, tx = b.x + 8, ty = b.y + 8;
-      if (!b.thumbPath.empty() && (previewFrame(b.thumbPath, tx, ty) || pictureOf(b.thumbPath, tw))) {
+      if (!b.thumbPath.empty() &&
+          (previewFrame(b.thumbPath, tx, ty) || pictureOf(cr, b.thumbPath, tx, ty, tw, th))) {
         drawThumbnail(cr, b.thumbPath, tx, ty, tw, th, 10);
       } else {
         roundedRect(cr, tx, ty, tw, th, 10);
@@ -641,7 +642,7 @@ void Menu::drawButtonContent(cairo_t* cr, const Button& b, const double ink[4]) 
       const double th = b.h - 4, tw = listThumbW(b), tx = b.x + 10, ty = b.y + 2;
       // A video's picture; with thumbnails off its icon, unless Stash has a cover.
       if (!b.thumbPath.empty() && (b.icon == Icon::None || previewFrame(b.thumbPath, tx, ty) ||
-                                  pictureOf(b.thumbPath, tw))) {
+                                  pictureOf(cr, b.thumbPath, tx, ty, tw, th))) {
         drawThumbnail(cr, b.thumbPath, tx, ty, tw, th, 5);
       } else if (b.icon != Icon::None) {
         drawIcon(cr, b.icon, tx + tw / 2, ty + th / 2, th * 0.7, ink[0], ink[1], ink[2]);
@@ -1006,10 +1007,38 @@ double Menu::listNameWidth(const Button& row) const {
   return end - 16 - (row.x + 10 + listThumbW(row) + 16);
 }
 
-cairo_surface_t* Menu::pictureOf(const std::string& path, double w) const {
+cairo_surface_t* Menu::pictureOf(cairo_t* cr, const std::string& path, double x, double y,
+                                 double w, double h) const {
   cairo_surface_t* picture = findPicture(path, w);
-  shownPictures_[path] = {w, picture, !picture && !pictureComing(path)};
+  const ShownPicture now{w, picture, !picture && !pictureComing(path)};
+  const auto shown = shownPictures_.find(path);
+  // Only what reached the box counts as shown: a strip of it that took a
+  // new picture leaves the rest showing the old one until picturesChanged()
+  // redraws all of it.
+  if (shown == shownPictures_.end()) {
+    if (paintedPart(cr, x, y, w, h) != Painted::None) shownPictures_.emplace(path, now);
+    return picture;
+  }
+  ShownPicture& s = shown->second;
+  if (s.surface == picture && (picture || s.icon == now.icon) && !s.torn) {
+    s = now;
+    return picture;
+  }
+  const Painted painted = paintedPart(cr, x, y, w, h);
+  if (painted == Painted::None) return picture;
+  s = now;
+  s.torn = painted == Painted::Part;
   return picture;
+}
+
+Menu::Painted Menu::paintedPart(cairo_t* cr, double x, double y, double w, double h) const {
+  double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+  cairo_clip_extents(cr, &x0, &y0, &x1, &y1);
+  // Pictures are in a list's rows, cut off at its edges (drawButtons()).
+  const double top = std::max(y, listTop_ - 2), bottom = std::min(y + h, listBottom_);
+  if (top >= bottom) return Painted::All;  // none of it shows
+  if (x0 >= x + w || x1 <= x || y0 >= bottom || y1 <= top) return Painted::None;
+  return x0 <= x && x1 >= x + w && y0 <= top && y1 >= bottom ? Painted::All : Painted::Part;
 }
 
 bool Menu::pictureComing(const std::string& path) const {
@@ -1044,7 +1073,8 @@ bool Menu::picturesChanged() {
     if (picture == shownPictures_.end() && !logo) continue;
     if (logo ||
         (picture != shownPictures_.end() &&
-         (findPicture(b.thumbPath, picture->second.w) != picture->second.surface ||
+         (picture->second.torn ||
+          findPicture(b.thumbPath, picture->second.w) != picture->second.surface ||
           (!picture->second.surface && picture->second.icon != !pictureComing(b.thumbPath))))) {
       browserChanged(b.y - 4, b.y + b.h + 4, b.x - 4, b.x + b.w + 4);
       continue;
@@ -1061,7 +1091,7 @@ bool Menu::picturesChanged() {
 void Menu::drawThumbnail(cairo_t* cr, const std::string& path, double x, double y, double w,
                          double h, double radius) const {
   cairo_surface_t* thumb = previewFrame(path, x, y);
-  if (!thumb) thumb = pictureOf(path, w);
+  if (!thumb) thumb = pictureOf(cr, path, x, y, w, h);
   // A strip of a scrolling list clear of its corners: their straight edges
   // alone, much cheaper to paint within.
   double x0 = 0, y0 = 0, x1 = 0, y1 = 0;

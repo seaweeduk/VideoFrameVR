@@ -1609,6 +1609,10 @@ void Menu::redraw() {
       dirty_ = true;
       return;
     }
+    // All of it drawn anew, a band at a time: what its pictures and logos
+    // show is what the bands paint (pictureOf(), drawStudioMark()).
+    shownPictures_.clear();
+    logosComing_.clear();
     browserView_ = view_;
     browserOffset_ = scrollOffset_;
     browserFraction_ = scrollFraction_;
