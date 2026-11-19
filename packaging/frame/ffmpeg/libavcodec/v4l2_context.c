@@ -1040,6 +1040,52 @@ static int stuff_all_buffers(AVCodecContext * avctx, V4L2Context* ctx)
     return rv;
 }
 
+// Adds the capture buffers create_buffers() left for after STREAMON, until
+// the pool's total or, past the driver's minimum, until memory runs out.
+static int add_late_buffers(AVCodecContext * const avctx, V4L2Context * const ctx)
+{
+    V4L2m2mContext * const s = ctx_to_m2mctx(ctx);
+    int tries = 0;
+    int ret = 0;
+
+    while (ctx->num_buffers < ctx->late_target) {
+        struct v4l2_create_buffers create = {.count = 1, .memory = ctx->buf_mem, .format = ctx->format};
+        if (ioctl(s->fd, VIDIOC_CREATE_BUFS, &create) < 0) {
+            const int err = errno;
+            if (err == EINTR)
+                continue;
+            // The old working memory goes when the firmware answers its
+            // release, shortly after STREAMON.
+            if (err == ENOMEM && ++tries < (ctx->num_buffers < ctx->late_minimum ? 50 : 5)) {
+                usleep(4000);
+                continue;
+            }
+            if (err == ENOMEM && ctx->num_buffers >= ctx->late_minimum)
+                break;
+            ret = AVERROR(err);
+            av_log(avctx, AV_LOG_ERROR, "%s VIDIOC_CREATE_BUFS failed with %d of %d buffers: %s\n",
+                   ctx->name, ctx->num_buffers, ctx->late_minimum, av_err2str(ret));
+            return ret;
+        }
+        if (create.count != 1 || create.index != (unsigned int)ctx->num_buffers)
+            return AVERROR(EINVAL);
+        ff_mutex_lock(&ctx->lock);
+        ret = ff_v4l2_buffer_initialize(&ctx->bufrefs[ctx->num_buffers], ctx->num_buffers, ctx, ctx->buf_mem);
+        if (!ret) {
+            V4L2Buffer * const buf = (V4L2Buffer *)ctx->bufrefs[ctx->num_buffers]->data;
+            ++ctx->num_buffers;
+            ret = ff_v4l2_buffer_enqueue(buf);
+        }
+        ff_mutex_unlock(&ctx->lock);
+        if (ret < 0)
+            return ret;
+    }
+    av_log(avctx, AV_LOG_INFO, "%s: driver minimum %d buffers, %d in all, made after streaming started\n",
+           ctx->name, ctx->late_minimum, ctx->num_buffers);
+    ctx->late_target = 0;
+    return 0;
+}
+
 static int set_streamon(AVCodecContext * const avctx, V4L2Context*const ctx)
 {
     int type = ctx->type;
@@ -1055,6 +1101,17 @@ static int set_streamon(AVCodecContext * const avctx, V4L2Context*const ctx)
         ret = AVERROR(errno);
         av_log(avctx, AV_LOG_ERROR, "%s set status ON failed: err=%s\n", ctx->name,
                av_err2str(ret));
+
+        // The upstream Iris driver allocates its reference frames and working
+        // memory here, after the pool, all within the decoder's address
+        // range. The pool only holds frames for display there, so the caller
+        // can retry with the driver's minimum and a frame to spare.
+        if (ret == AVERROR(ENOMEM) && !V4L2_TYPE_IS_OUTPUT(ctx->type) &&
+            ctx_to_m2mctx(ctx)->iris_reports_minimum) {
+            av_log(avctx, AV_LOG_WARNING, "%s: the driver refused a pool of %d buffers\n",
+                   ctx->name, ctx->num_buffers);
+            ((V4L2m2mPriv *)ctx_to_m2mctx(ctx)->priv)->capture_start_refused = 1;
+        }
         return ret;
     }
 
@@ -1063,6 +1120,8 @@ static int set_streamon(AVCodecContext * const avctx, V4L2Context*const ctx)
     ctx->flag_last = 0;
     ctx->actual_last = 0;
     av_log(avctx, AV_LOG_DEBUG, "%s set status ON OK\n", ctx->name);
+    if (!V4L2_TYPE_IS_OUTPUT(ctx->type) && ctx->late_target > ctx->num_buffers)
+        ret = add_late_buffers(avctx, ctx);
     return ret;
 }
 
@@ -1374,7 +1433,37 @@ static int create_buffers(V4L2Context* const ctx, const unsigned int req_buffers
     req.count = spare >= 0 ? 1 : req_buffers;
     req.memory = mem;
     req.type = ctx->type;
-    while ((ret = ioctl(s->fd, VIDIOC_REQBUFS, &req)) == -1) {
+    ctx->late_target = ctx->late_minimum = 0;
+    // The upstream Iris driver allocates its reference frames and working
+    // memory at capture STREAMON, the new set before it frees the old, all in
+    // the decoder's address range. A pool allocated first can leave them no
+    // room (8K HEVC Main 10 with a minimum of 8 had none even at 8), so start
+    // with one buffer and add the rest once streaming (VIDIOC_CREATE_BUFS
+    // takes an exact count, VIDIOC_REQBUFS the driver's minimum).
+    if (spare >= 0 && s->iris_reports_minimum && !s->iris_startup) {
+        struct v4l2_control minimum = {.id = V4L2_CID_MIN_BUFFERS_FOR_CAPTURE};
+        struct v4l2_create_buffers create = {.count = 1, .memory = mem, .format = ctx->format};
+        if (ioctl(s->fd, VIDIOC_G_CTRL, &minimum) < 0 || minimum.value < 1) {
+            av_log(logger(ctx), AV_LOG_ERROR, "%s: no capture minimum from the driver\n", ctx->name);
+            return AVERROR(EINVAL);
+        }
+        while ((ret = ioctl(s->fd, VIDIOC_CREATE_BUFS, &create)) == -1) {
+            if (errno != EINTR) {
+                ret = AVERROR(errno);
+                av_log(logger(ctx), AV_LOG_ERROR, "%s VIDIOC_CREATE_BUFS failed: %s\n", ctx->name, av_err2str(ret));
+                return ret;
+            }
+        }
+        if (create.count != 1 || create.index != 0) {
+            ret = AVERROR(EINVAL);
+            goto fail_release;
+        }
+        ctx->late_minimum = minimum.value;
+        ctx->late_target = minimum.value + spare;
+        req.count = 1;
+        spare = 0;
+    }
+    else while ((ret = ioctl(s->fd, VIDIOC_REQBUFS, &req)) == -1) {
         if (errno != EINTR) {
             ret = AVERROR(errno);
             av_log(logger(ctx), AV_LOG_ERROR, "%s VIDIOC_REQBUFS failed: %s\n", ctx->name, av_err2str(ret));
@@ -1404,7 +1493,7 @@ static int create_buffers(V4L2Context* const ctx, const unsigned int req_buffers
     }
 
     ctx->num_buffers = req.count;
-    ctx->bufrefs = av_mallocz(ctx->num_buffers * sizeof(*ctx->bufrefs));
+    ctx->bufrefs = av_mallocz(FFMAX(ctx->num_buffers, ctx->late_target) * sizeof(*ctx->bufrefs));
     if (!ctx->bufrefs) {
         av_log(logger(ctx), AV_LOG_ERROR, "%s malloc enomem\n", ctx->name);
         ret = AVERROR(ENOMEM);

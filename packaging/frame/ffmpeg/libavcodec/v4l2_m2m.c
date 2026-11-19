@@ -100,6 +100,14 @@ static int v4l2_prepare_contexts(V4L2m2mContext *s, int probe)
                      v4l2_mplane_video(&cap) ? "mplane" :
                      v4l2_splane_video(&cap) ? "splane" : "unknown");
 
+    s->iris_reports_minimum = 0;
+    if (!probe && !strcmp((const char *)cap.driver, "iris_driver")) {
+        struct v4l2_queryctrl ctrl = {.id = V4L2_CID_MIN_BUFFERS_FOR_CAPTURE};
+        s->iris_reports_minimum = !ioctl(s->fd, VIDIOC_QUERYCTRL, &ctrl);
+        av_log(log_ctx, AV_LOG_INFO, "Iris %s its capture minimum\n",
+               s->iris_reports_minimum ? "reports" : "doesn't report");
+    }
+
     if (v4l2_mplane_video(&cap)) {
         s->capture.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
         s->output.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
@@ -255,6 +263,21 @@ static int v4l2_configure_contexts(V4L2m2mContext *s)
                                                cfmt.fmt.pix.pixelformat),
                                  av_get_pix_fmt_name(s->capture.av_pix_fmt) ?: "none");
 
+    // The stateful decoder's input size is provisional: the stream's headers
+    // give the real one at the source change. Iris sizes the working memory
+    // it allocates before then from it, and at capture start allocates the
+    // real size's before freeing that: an 8K input format left 8K HEVC Main 10
+    // no room to start. 4096x2560 still gets input buffers for 8K frames.
+    if (s->iris_reports_minimum && s->avctx && av_codec_is_decoder(s->avctx->codec) &&
+        V4L2_TYPE_IS_MULTIPLANAR(s->output.format.type) &&
+        (uint64_t)s->output.format.fmt.pix_mp.width * s->output.format.fmt.pix_mp.height >
+        4096 * 2560) {
+        av_log(log_ctx, AV_LOG_INFO, "Iris: provisional input size 4096x2560 for %ux%u\n",
+               s->output.format.fmt.pix_mp.width, s->output.format.fmt.pix_mp.height);
+        s->output.format.fmt.pix_mp.width = 4096;
+        s->output.format.fmt.pix_mp.height = 2560;
+    }
+
     ret = ff_v4l2_context_set_format(&s->output);
     if (ret) {
         av_log(log_ctx, AV_LOG_ERROR, "can't set v4l2 output format\n");
@@ -268,7 +291,10 @@ static int v4l2_configure_contexts(V4L2m2mContext *s)
     }
 
     ret = ff_v4l2_context_init(&s->output);
-    if (ret == AVERROR(ENOMEM) && s->avctx && av_codec_is_decoder(s->avctx->codec)) {
+    // The staged start relies on the old driver keeping the capture format
+    // through input format changes; the upstream driver replaces it.
+    if (ret == AVERROR(ENOMEM) && s->avctx && av_codec_is_decoder(s->avctx->codec) &&
+        !s->iris_reports_minimum) {
         V4L2m2mPriv *priv = s->priv;
         struct v4l2_capability cap = {0};
         const int iris = !ioctl(s->fd, VIDIOC_QUERYCAP, &cap) && !strcmp(cap.driver, "iris_driver");
