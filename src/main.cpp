@@ -14,7 +14,6 @@
 #include "foveation.h"
 #include "frame_reuse.h"
 #include "frame_timer.h"
-#include "gaze_notice.h"
 #include "hints.h"
 #include "video_check.h"
 #include "removable_drives.h"
@@ -30,6 +29,7 @@
 #include "mirror_window.h"
 #include "motion.h"
 #include "mpv_gl_context.h"
+#include "notices.h"
 #include "offline.h"
 #include "performance_readout.h"
 #include "photo_preloader.h"
@@ -59,6 +59,7 @@
 #include "video_format.h"
 #include "video_memory.h"
 #include "video_player.h"
+#include "value_adjust.h"
 #include "vr_input.h"
 #include "vr_space.h"
 #include "whats_new.h"
@@ -72,6 +73,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -465,6 +467,16 @@ class SubtitlePlacement {
   }
 };
 
+// The strip or the browser fading in as it starts being shown and out as it
+// stops (menu_feel.h): drawn as it was last shown until it has faded.
+struct PanelFade {
+  ShownFade fade;
+  std::array<PanelItem, 3> drawn;  // the panel, then its list's faded edges
+  int count = 0;
+  bool shown = false;    // last frame
+  bool waiting = false;  // shown, not yet fading in: its page isn't drawn yet
+};
+
 // The menu panel (Menu::PanelId) a ray hits first, -1 if none; u/v in its
 // texture (v = 0 at the top) and the distance along the ray.
 int menuHitTest(const MenuPanels& panel, const Menu& menu, Vec3 origin, Vec3 dir, float& u,
@@ -727,8 +739,6 @@ int run(Options opts) {
   if (!eyeTargets.init(gpu, xr)) return 1;
   SceneRenderer renderer;
   if (!renderer.init(gpu, interop, uploader, eyeTargets)) return 1;
-  // Not on the Frame: no glass there (docs/frame-plan.md, W11).
-  if (!kStandaloneHeadset && !renderer.initGlass(xr)) return 1;
   renderer.setTestPattern(opts.xrTest);
   renderer.setMenuLodBias(opts.menuLodBias);
   if (opts.menuLodBias != 0.0f) std::printf("Menu sharpness: mip bias %g\n", opts.menuLodBias);
@@ -762,31 +772,29 @@ int run(Options opts) {
   DiagnosticsExport diagnostics;
   SubtitleOverlay subtitles;
   if (!subtitles.init(uploader)) return 1;
-  SubtitleOverlay loadingText;  // "Loading …" shown instead of the video while a file opens
+  // "Loading …" shown instead of the video while a file opens, or why it
+  // doesn't play. Drawn once before playback starts.
+  NoticeCanvas loadingText(1);
   if (!loadingText.init(uploader)) return 1;
-  // The first font lookup can be slow: draw this before playback starts.
-  loadingText.setText(strings().loading);
-  loadingText.texture();
+  loadingText.set(menu, NoticeIcon::None, strings().loading);
   SeekPreview seekPreview;
   // Not on the Frame: a second full-size decoder beside playback fails there
   // (docs/frame-plan.md, W4). Without init() it never shows.
   if (!kStandaloneHeadset &&
       !seekPreview.init(interop, opts.previewHwdec, uploader, glContext))
     return 1;
-  GazeNotice countdownNotice(0);  // "Recentering in 2 …"
-  // "Viewpoint: 15 % closer" while the stick moves it, or "Opacity: 70 %"
-  // while a twist changes it, whichever changed last.
-  GazeNotice valueNotice(1);
-  GazeNotice passthroughNotice(2);  // "Passthrough on: green screen video"
-  GazeNotice driveNotice(3);        // "microSD card: HOLIDAY", "Now in the file explorer"
-  if (!countdownNotice.init(uploader) || !valueNotice.init(uploader) ||
-      !passthroughNotice.init(uploader) || !driveNotice.init(uploader))
-    return 1;
+  // "Recentering in 2 …"; "Viewpoint: 15 % closer" while the stick moves it,
+  // or "Opacity: 70 %" while a twist changes it, whichever changed last;
+  // "Passthrough on: green screen video"; "microSD card: HOLIDAY", "Now in
+  // the file explorer".
+  Notices notices;
+  if (!notices.init(uploader)) return 1;
   // microSD cards and USB drives; on the Frame the app mounts those SteamOS
   // leaves alone.
   RemovableDrives drives;
   drives.start(kStandaloneHeadset);
   std::string driveText;
+  NoticeIcon driveIcon = NoticeIcon::Drive;
   double driveShownUntil = 0;
   double viewpointShownUntil = 0;  // glfwGetTime() it goes away
   double opacityShownUntil = 0;    // ... and the opacity's
@@ -944,6 +952,7 @@ int run(Options opts) {
   menu.setFolderMemory(&folders);
   menu.setStartDirectory(settings.lastFolder);
   menu.setGallery(settings.gallery);
+  menu.setVideoSettingsThisVideo(settings.videoSettingsThisVideo);
   menu.setKeyboardLayout(settings.keyboardLayout, settings.keyboardOther);
 
   App app;
@@ -1044,6 +1053,9 @@ int run(Options opts) {
   StartMenu startMenu = opts.startMenu;  // ... or on this page, then
   int activeHand = 1;  // the hand whose pointer drives the menu
   float laserLength = kLaserStartLength;
+  ShownFade menuFade;  // the laser's, as the menu opens and closes
+  PanelFade panelFades[2];  // the strip's and the browser's (Menu::kMain, Menu::kBrowser)
+  Ease dotTight;  // how far the pointer's dot has tightened
   int knownWidth = 0, knownHeight = 0;
   TwoViews knownViews = TwoViews::No;
   bool formatDetected = false;  // for this file: logged once, then as it changes
@@ -1061,6 +1073,11 @@ int run(Options opts) {
   double heldSeekTens = 0, heldSeekTickAt = 0;
   HoldRepeat turnLeft(0.5, 0.35), turnRight(0.5, 0.35);
   HoldRepeat cursorLeft(0.5, 0.07), cursorRight(0.5, 0.07);  // as the keyboard's keys repeat
+  // A pointed value stepped by either stick (value_adjust.h), which is its
+  // until both sticks are let go.
+  HoldRepeat valueLess(adjust::kStickDelay, adjust::kStickRepeat);
+  HoldRepeat valueMore(adjust::kStickDelay, adjust::kStickRepeat);
+  bool valueStick = false;
   // A short pulse on a controller (0 left, 1 right, -1 both), on events
   // only, unless Settings has Controller vibration off. Pulses asked for in
   // one frame go out together at its end (sendBuzzes()), the strongest per
@@ -1334,19 +1351,13 @@ int run(Options opts) {
     app.video.format = app.format;
     storeVideo(VideoSettings::kFormat);
   };
-  unsigned pendingPicture = 0;
+  // At once, also while a slider is held (mpv takes them asynchronously,
+  // direct frames recompute their colour matrix); stored soon, not per step.
   auto applyPicture = [&](unsigned parts) {
-    if (parts != VideoSettings::kZoom) {
-      // mpv's picture properties can stall; the held slider shows the choice until release.
-      if (menu.draggingSlider() != MenuCommand::None && !isPhotoFile(app.currentFile)) {
-        pendingPicture |= parts;
-      } else {
-        player.setPicture(app.video.brightness, app.video.contrast, app.video.saturation);
-        pendingPicture = 0;
-      }
-    }
+    if (parts != VideoSettings::kZoom)
+      player.setPicture(app.video.brightness, app.video.contrast, app.video.saturation);
     app.screen.zoom = app.video.zoom;
-    storeVideo(parts);
+    storeVideoSoon(parts);
   };
   // A Stash scene given on the command line opens once Stash's catalog is there.
   std::string startScene = isStashScene(opts.file) ? opts.file : "";
@@ -1380,11 +1391,13 @@ int run(Options opts) {
   };
 
   // The Resolution row's choice: shown at once, switched to (and saved)
-  // once it settles: on letting go of its slider, or a pause after its
-  // last click, so several clicks make one switch. 0 = none.
+  // once it settles: a pause after its last change, also while its slider
+  // is held, so a drag across several stops or several clicks make one
+  // switch; at once on letting go. 0 = none.
   constexpr double kResolutionSettle = 0.35;
   int pendingResolution = 0;
   double pendingResolutionAt = 0;
+  bool resolutionHeld = false;
   bool pendingFoveation = false;
   // The user's named presets as last listed, and the listing on its way;
   // the one picked last (its name), and the one shown as chosen.
@@ -1664,10 +1677,6 @@ int run(Options opts) {
         app.slideshowSeconds = static_cast<int>(c.value);
         if (!app.slideshowSeconds && neighborWrap) neighbor = {};
         app.nextSlideAt = glfwGetTime() + app.slideshowSeconds;
-        break;
-      case MenuCommand::SetTheme:
-        settings.theme = static_cast<Theme>(static_cast<int>(c.value));
-        saveSettings(settings);
         break;
       case MenuCommand::SetAccent:
       case MenuCommand::SetAccentHue:
@@ -2591,6 +2600,7 @@ int run(Options opts) {
         if (why.size() > 80) why = why.substr(0, 77) + "...";
         const bool usb = change.failedKinds.back() == Kind::Usb;
         driveText = std::string(usb ? t.usbFailed : t.cardFailed) + "\n" + why;
+        driveIcon = NoticeIcon::Warning;
         driveShownUntil = glfwGetTime() + kDriveNoticeShown;
       } else if (!change.added.empty() && !menu.setupRunning()) {  // setup shows it as a card
         const RemovableDrives::Drive& d = change.added.back();
@@ -2598,6 +2608,9 @@ int run(Options opts) {
                            : d.kind == Kind::Usb ? t.usbDrive
                                                  : t.drive;
         driveText = kind + (d.label.empty() ? "" : ": " + d.label) + "\n" + t.inExplorer;
+        driveIcon = d.kind == Kind::Card  ? NoticeIcon::Card
+                    : d.kind == Kind::Usb ? NoticeIcon::Usb
+                                          : NoticeIcon::Drive;
         driveShownUntil = glfwGetTime() + kDriveNoticeShown;
       }
     }
@@ -2655,9 +2668,6 @@ int run(Options opts) {
         app.format.stereo != StereoLayout::Mono || app.format.projection != Projection::Flat;
     player.setSubtitlesInFrame(!floatingSubtitles);
     subtitles.setText(floatingSubtitles ? player.playback().subtitleText : "");
-    loadingText.setText(!player.failed()                     ? strings().loading
-                        : bdmv::isEncrypted(app.currentFile) ? strings().discEncrypted
-                                                             : strings().playbackFailed);
     // Until the new file's first frame arrives, the texture still holds the old
     // video, which would show cut apart in the new format; show nothing instead.
     bool photo = isPhotoFile(app.currentFile);
@@ -2715,6 +2725,10 @@ int run(Options opts) {
     }
     if (menu.gallery() != settings.gallery) {
       settings.gallery = menu.gallery();
+      saveSettings(settings);
+    }
+    if (menu.videoSettingsThisVideo() != settings.videoSettingsThisVideo) {
+      settings.videoSettingsThisVideo = menu.videoSettingsThisVideo();
       saveSettings(settings);
     }
 
@@ -3147,12 +3161,31 @@ int run(Options opts) {
       if (cursorRight.update(typing && (left.right || right.right), now)) menu.moveCursor(1);
       for (int i = 0; i < 2; ++i) forwardStick[i].update(input.hands[i], now);
 
+      // A value row pointed (its field, − or +): either stick sideways steps
+      // it, as − and + do, and holding repeats. Until both sticks are let go
+      // the stick is the value's: it neither seeks nor turns the view.
+      {
+        float x = 0.0f;
+        bool centred = true;
+        for (const HandState& h : input.hands) {
+          if (std::abs(h.stickX) > std::abs(h.stickY) && std::abs(h.stickX) > std::abs(x)) x = h.stickX;
+          centred = centred && std::abs(h.stickX) < adjust::kStickRelease &&
+                    std::abs(h.stickY) < adjust::kStickRelease;
+        }
+        if (!panel.open || typing || centred) valueStick = false;
+        if (!valueStick && panel.open && !typing && !heldSeek.active() &&
+            std::abs(x) >= adjust::kStickPress && menu.pointedValue())
+          valueStick = true;
+        if (valueLess.update(valueStick && x <= -adjust::kStickPress, now)) execute(menu.stepValue(-1));
+        if (valueMore.update(valueStick && x >= adjust::kStickPress, now)) execute(menu.stepValue(1));
+      }
+
       {
         const bool seekable = !app.currentFile.empty() && !photo;
         const PlaybackState& p = player.playback();
         // The right stick counts sideways once it is mostly sideways; then all
         // of its sideways push, so a thumb drifting up or down keeps the hold.
-        const float x = typing ? 0.0f : input.hands[1].stickX;
+        const float x = typing || valueStick ? 0.0f : input.hands[1].stickX;
         const float sideways =
             heldSeek.active() || std::abs(x) > std::abs(input.hands[1].stickY) ? x : 0.0f;
         const float back = seekable ? std::max(app.seekBackKey ? 1.0f : 0.0f, -sideways) : 0.0f;
@@ -3223,11 +3256,11 @@ int run(Options opts) {
         }
         if (heldSeekLanding && !player.seeking()) heldSeekLanding = false;
       }
-      if (turnLeft.update((left.left && !typing) || app.turnLeftKey, now)) {
+      if (turnLeft.update((left.left && !typing && !valueStick) || app.turnLeftKey, now)) {
         app.screen.turn = wrapAngle(app.screen.turn - kTurnStep);
         if (left.left) buzz(0, 0.2f, 0.014);
       }
-      if (turnRight.update((left.right && !typing) || app.turnRightKey, now)) {
+      if (turnRight.update((left.right && !typing && !valueStick) || app.turnRightKey, now)) {
         app.screen.turn = wrapAngle(app.screen.turn + kTurnStep);
         if (left.right) buzz(0, 0.2f, 0.014);
       }
@@ -3240,7 +3273,7 @@ int run(Options opts) {
         float tilt = 0.0f;
         for (int i = 0; i < 2; ++i) {
           const HandState& h = input.hands[i];
-          if (menuGrab.hand == i || screenControl.hand() == i ||
+          if (valueStick || menuGrab.hand == i || screenControl.hand() == i ||
               std::abs(h.stickY) <= std::abs(h.stickX))
             continue;
           if (std::abs(h.stickY) > std::abs(tilt)) tilt = h.stickY;
@@ -3410,6 +3443,13 @@ int run(Options opts) {
         updateOffered = true;
         menu.showUpdate();
       }
+      // A development build's feel.conf is read again as the menu opens; as
+      // it closes, nothing stays pointed.
+      if (panel.open && !menuWasOpen) {
+        reloadMenuFeel(configDir());
+        dotTight.set(0);
+      }
+      if (!panel.open && menuWasOpen) menu.resetHover();
       menuWasOpen = panel.open;
       // What's new, the first time the menu shows: not during setup, nor
       // over another dialog (the update's comes first). Closed, however that
@@ -3455,9 +3495,6 @@ int run(Options opts) {
       view.currentFile = app.currentFile;
       view.playbackFailed = player.failed();
       view.discEncrypted = player.failed() && bdmv::isEncrypted(app.currentFile);
-      // No glass on the Frame (docs/vulkan-renderer.md, 7): Solid there,
-      // keeping a saved Glass for the desktop.
-      view.theme = kStandaloneHeadset ? Theme::Material : settings.theme;
       view.accent = settings.accent;
       view.floatingSubtitles = settings.floatingSubtitles;
       view.streaming = isStream(app.currentFile);
@@ -3516,7 +3553,6 @@ int run(Options opts) {
       view.toneLook = settings.toneLook;
       view.videoResolution = pendingResolution > 0 ? pendingResolution : chosenResolution();
       view.resolutionStops = resolutionStops.empty() ? nullptr : &resolutionStops;
-      view.resolutionPending = pendingResolution > 0;
       view.videoResolutionActive = static_cast<int>(std::lround(askedScale() * 100));
       view.videoResolutionEffective = static_cast<int>(std::lround(xr.requestedEyeScale() * 100));
       view.resolutionOverride =
@@ -3633,13 +3669,10 @@ int run(Options opts) {
         case Menu::Feel::Edge: buzz(activeHand, 1.0f, 0, 1); break;
         case Menu::Feel::None: break;
       }
-      if (pendingPicture && menu.draggingSlider() == MenuCommand::None) applyPicture(pendingPicture);
-      if (pendingResolution > 0) {
-        if (menu.draggingSlider() == MenuCommand::SetVideoResolution)
-          pendingResolutionAt = 0;  // switched on letting go
-        else if (glfwGetTime() >= pendingResolutionAt)
-          applyPendingResolution();
-      }
+      const bool resolutionWasHeld = resolutionHeld;
+      resolutionHeld = menu.draggingSlider() == MenuCommand::SetVideoResolution;
+      if (pendingResolution > 0 && ((resolutionWasHeld && !resolutionHeld) || glfwGetTime() >= pendingResolutionAt))
+        applyPendingResolution();
       // A command may have closed or replaced the picture chosen above (Stop
       // frees the video's images, a new file is loading): choose it again.
       choosePicture();
@@ -3676,6 +3709,21 @@ int run(Options opts) {
       }
 
       // --- Drawing ---
+      // About when this frame is shown: what eases is shown as it is then
+      // (menu_feel.h, Ease).
+      const double easedAt = now + std::max(0.0, xr.displayPeriod());
+      // The strip and the browser shown now; a held seek's strip with the
+      // menu closed, in place of the menu's (which goes at once).
+      const bool panelOn[2] = {panel.open && menu.panelShown(Menu::kMain),
+                               panel.open && menu.panelShown(Menu::kBrowser)};
+      const bool heldStrip = !panel.open && heldSeekBar && (heldSeek.holding() || now < heldSeekBarUntil);
+      if (heldStrip) {
+        menuFade.hide();
+        for (PanelFade& f : panelFades) {
+          f.fade.hide();
+          f.shown = false;
+        }
+      }
       // The seek bar preview: a frame of the video where the pointer is.
       double hoverFraction = 0;
       if (panel.open && !loading && !app.currentFile.empty() && menu.seekHover(hoverFraction)) {
@@ -3686,7 +3734,7 @@ int run(Options opts) {
         playing.views = player.playback().views;
         playing.flip = app.flipVideo;
         seekPreview.show(hoverFraction, playing, panel.panel(menu, Menu::kMain));
-      } else {
+      } else if (panelOn[Menu::kMain] || !panelFades[Menu::kMain].fade.drawn()) {  // it fades with the strip
         seekPreview.hide();
       }
       scene.clear = blended ? ClearMode::Transparent
@@ -3738,7 +3786,7 @@ int run(Options opts) {
       // Over the video, in drawing order: the screen's corner handles, the
       // subtitles, loading text, the performance readout, the menu's panels
       // (browser, then strip), the seek preview, the pointer, the focus markers
-      // and the messages in front of the eyes (GazeNotice).
+      // and the messages in front of the eyes (Notices).
       std::vector<OverlayDraw>& overlays = scene.overlays;
       const std::vector<Quad>& handles = screenControl.handle();
       if (!handles.empty()) overlays.push_back(QuadsItem{handles});
@@ -3751,11 +3799,16 @@ int run(Options opts) {
       if (!subtitles.empty() && headValid && !loading)
         addText(subtitles, subtitlePlacement.update(app, player.aspect(), headPos,
                                                     yawFromQuat(headRot), settings));
-      constexpr float kTextW = 1.4f, kTextH = kTextW / SubtitleOverlay::kAspect;
       if ((stillLoading || (!photo && player.failed())) && headValid) {
-        // Raised a little: the text sits at the bottom of its texture.
-        const Vec3 center = headPos + transformDir(frame, {0.0f, 0.1f, -2.0f});
-        addText(loadingText, translation(center) * frame * scaling(kTextW, kTextH, 1));
+        // Where the picture will be, the size of the messages in front of the eyes.
+        const bool failed = player.failed();
+        loadingText.set(menu, failed ? NoticeIcon::Warning : NoticeIcon::None,
+                        !failed                              ? strings().loading
+                        : bdmv::isEncrypted(app.currentFile) ? strings().discEncrypted
+                                                             : strings().playbackFailed);
+        constexpr float kAt = 2.0f, kScale = kAt / notice_place::kNear * notice_place::kScale;
+        const Vec3 center = headPos + transformDir(frame, {0.0f, 0.0f, -kAt});
+        overlays.push_back(loadingText.item(translation(center) * frame, kScale));
       }
       if (showPerformance) {
         if (readout.due(now)) {
@@ -3777,45 +3830,104 @@ int run(Options opts) {
         }
         if (headValid) overlays.push_back(readout.item(headPos, headRot));
       }
-      if (panel.open) {
+      // The dot at the laser's end: tighter while the trigger is held.
+      auto dotLook = [&](LaserItem& laser) {
+        const MenuFeel& feel = menuFeel();
+        dotTight.to(hand.select ? 1.0f : 0.0f, feel.dotEase, now);
+        const float tight = dotTight.update(easedAt);
+        laser.dotRadius = kLaserDotRadius * (1 + (static_cast<float>(feel.dotPressed) - 1) * tight);
+      };
+      // The menu's panels: the strip and the browser each fade in as they
+      // start being shown and out as they stop (menu_feel.h), whatever the
+      // cause (the menu opening or closing, the browser coming or going in
+      // it); the laser with the menu. Input is never held back: a panel
+      // takes none from the frame it stops being shown, and is drawn as it
+      // was last until it has faded, with nothing pointed. Setup's panel
+      // fades as it is placed.
+      const float menuOpacity = menuFade.update(panel.open, now, easedAt);
+      if (panel.open || menuOpacity > 0 || panelFades[Menu::kMain].fade.drawn() ||
+          panelFades[Menu::kBrowser].fade.drawn()) {
         // The textures first: a click may have changed the page and with it
-        // what the panels show.
-        for (const Menu::PanelId id : {Menu::kBrowser, Menu::kMain, Menu::kSetup}) {
-          if (!menu.panelShown(id)) continue;
-          PanelItem item;
-          item.texture = menu.texture(id);
-          item.curved = panel.panel(menu, id);
-          if (id == Menu::kSetup) {
-            item.opacity = setupPlacement.opacity();
-            if (setupIntro.playing(now)) {  // its layers under the page, which fades in last
-              setupIntro.addUnder(overlays, menu, *item.curved, item.opacity,
-                                  menu.glass() ? Menu::kGlassAlpha : 0.0f, !kStandaloneHeadset, now);
-              item.opacity *= setupIntro.pageOpacity(now);
+        // what the panels show; then the pointed control eases on them.
+        const Texture* textures[3] = {};
+        if (panel.open) {
+          for (const Menu::PanelId id : {Menu::kBrowser, Menu::kMain, Menu::kSetup})
+            if (menu.panelShown(id)) textures[id] = menu.texture(id);
+          menu.easeHover(now, easedAt);
+        }
+        float opacity[2] = {};
+        for (const Menu::PanelId id : {Menu::kBrowser, Menu::kMain}) {
+          PanelFade& f = panelFades[id];
+          // The browser coming starts fading in once the page it opens on
+          // can be drawn (it is drawn a band of rows a frame); a page
+          // changed while it is shown doesn't fade.
+          if (id == Menu::kBrowser && panelOn[id] && !f.shown) f.waiting = true;
+          if (f.waiting) f.waiting = panelOn[id] && !menu.browserReady();
+          f.shown = panelOn[id];
+          opacity[id] = f.fade.update(panelOn[id] && !f.waiting, now, easedAt);
+          if (panelOn[id]) {  // as it is now, kept for fading out
+            f.count = 0;
+            PanelItem& item = f.drawn[0];
+            item.texture = textures[id];
+            item.curved = panel.panel(menu, id);
+            item.hover.reset();
+            // A value held: the strip fades away (the browser in its shader).
+            item.opacity = id == Menu::kMain ? static_cast<float>(1 - menu.heldFade()) : 1.0f;
+            if (item.opacity <= 0) continue;
+            PanelHover hover;
+            if (menu.hoverLook(id, hover)) item.hover = hover;
+            f.count = 1;
+            // A list's faded edges, over it.
+            for (int edge = 0; id == Menu::kBrowser && edge < 2; ++edge) {
+              PanelItem& fade = f.drawn[f.count];
+              CurvedPanel part;
+              if (!item.texture || !menu.listFade(edge, *item.curved, part, fade.texture)) continue;
+              fade.curved = part;
+              ++f.count;
             }
           }
-          PanelHover hover;
-          if (menu.hoverRect(id, hover.rect, hover.radius, hover.danger, hover.clip)) {
-            for (int i = 0; i < 3; ++i)
-              hover.rim[i] = static_cast<uint8_t>(std::lround(menu.accent().fill[i] * 255));
-            item.hover = hover;
+          for (int i = 0; i < f.count && opacity[id] > 0; ++i) {
+            overlays.push_back(f.drawn[i]);
+            PanelItem& item = std::get<PanelItem>(overlays.back());
+            item.opacity *= opacity[id];
+            // Fading out, nothing is pointed on it (but a held value's fade).
+            if (!panelOn[id] && item.hover && !(item.hover->fade > 0)) item.hover.reset();
           }
-          if (menu.glass()) item.glassAlpha = Menu::kGlassAlpha;
+        }
+        if (panel.open && menu.panelShown(Menu::kSetup)) {
+          PanelItem item;
+          item.texture = textures[Menu::kSetup];
+          item.curved = panel.panel(menu, Menu::kSetup);
+          item.opacity = setupPlacement.opacity();
+          if (setupIntro.playing(now)) {  // its layers under the page, which fades in last
+            setupIntro.addUnder(overlays, menu, *item.curved, item.opacity, now);
+            item.opacity *= setupIntro.pageOpacity(now);
+          }
+          PanelHover hover;
+          if (menu.hoverLook(Menu::kSetup, hover)) item.hover = hover;
           overlays.push_back(item);
         }
-        seekPreview.addTo(overlays);
+        if (opacity[Menu::kMain] > 0) seekPreview.addTo(overlays, opacity[Menu::kMain]);  // with the strip
         if (pointing) {
           LaserItem laser;
           laser.from = rayOrigin;
           laser.to = hitPanel ? hitPoint : rayOrigin + rayDir * laserLength;
-          laser.dotRadius = kLaserDotRadius;
+          dotLook(laser);
+          laser.opacity = menuOpacity;
+          overlays.push_back(laser);
+        } else if (!panel.open && menuOpacity > 0 && hand.poseValid && !setupPlacement.fading()) {
+          LaserItem laser;  // where the hand points now
+          laser.from = hand.aimPosition;
+          laser.to = laser.from + aimDirection(hand) * laserLength;
+          dotLook(laser);
+          laser.opacity = menuOpacity;
           overlays.push_back(laser);
         }
-      } else if (heldSeekBar && (heldSeek.holding() || now < heldSeekBarUntil)) {
+      } else if (heldStrip) {
         // A held seek with the menu closed: the strip alone, no pointer.
         PanelItem item;
         item.texture = menu.texture(Menu::kMain);
         item.curved = panel.panel(menu, Menu::kMain);
-        if (menu.glass()) item.glassAlpha = Menu::kGlassAlpha;
         overlays.push_back(item);
       }
       // Keep the focus target visible over the menus.
@@ -3828,27 +3940,30 @@ int run(Options opts) {
         char text[64];
         std::snprintf(text, sizeof(text), strings().recenterIn,
                       static_cast<int>(std::ceil(app.recenterAt - now)));
-        countdownNotice.addTo(overlays, text, headPos, headRot);
+        notices.show(menu, Notices::Countdown, NoticeIcon::Recenter, text);
       }
       if (now < std::max(viewpointShownUntil, opacityShownUntil) &&
           app.format.projection != Projection::Flat && headValid) {
         char text[160];
-        if (opacityShownUntil > viewpointShownUntil) {
+        const bool opacity = opacityShownUntil > viewpointShownUntil;
+        if (opacity) {
           std::snprintf(text, sizeof(text), strings().opacityOverlay, app.video.opacity);
         } else {
           const int percent = static_cast<int>(std::lround(app.video.originForward * 100));
           std::snprintf(text, sizeof(text), strings().viewpoint.overlay,
                         viewpointText(percent).c_str());
         }
-        valueNotice.addTo(overlays, text, headPos, headRot);
+        notices.show(menu, Notices::Value, opacity ? NoticeIcon::None : NoticeIcon::Viewpoint, text);
       }
       if (now < passthroughShownUntil && passthroughWhy && app.video.passthrough && headValid)
-        passthroughNotice.addTo(
-            overlays, std::string(passthroughWhy) + "\n" + strings().autoPassthrough.undo, headPos,
-            headRot);
+        notices.show(menu, Notices::Passthrough, NoticeIcon::Passthrough,
+                     std::string(passthroughWhy) + "\n" + strings().autoPassthrough.undo);
       if (now < driveShownUntil && headValid)
-        driveNotice.addTo(overlays, driveText, headPos, headRot);
-      if (headValid) hints.addTo(overlays, hintTexture, hintW, hintH, headPos, headRot, now);
+        notices.show(menu, Notices::Drive, driveIcon, driveText);
+      if (headValid) {
+        notices.addTo(overlays, headPos, headRot, hintTexture && hints.showing());
+        hints.addTo(overlays, hintTexture, hintW, hintH, headPos, headRot, now);
+      }
       if (menu.setupRunning() && headValid) setupPlacement.addCues(overlays, menu, headPos, headRot, now);
       if (menu.setupRunning() && headValid && (menu.setupIntroDue() || setupIntro.playing(now)))
         setupIntro.addCover(overlays, menu, headPos, headRot, now);
@@ -3921,7 +4036,7 @@ int run(Options opts) {
       if (slot) {
         SceneRenderer::GpuTimes gpuTimes;
         if (renderer.readTimes(*slot, gpuTimes)) {
-          timer.gpu(gpuTimes.upload, gpuTimes.glass, gpuTimes.eye[0], gpuTimes.eye[1], gpuTimes.mirror,
+          timer.gpu(gpuTimes.upload, gpuTimes.keyMask, gpuTimes.eye[0], gpuTimes.eye[1], gpuTimes.mirror,
                     gpuTimes.frame);
           if (showPerformance) readout.gpuTime(gpuTimes.frame);
         }

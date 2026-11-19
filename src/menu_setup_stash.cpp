@@ -17,12 +17,13 @@ using Step = SetupMenu::Step;
 using Page = SetupStash::Page;
 using Answer = StashClient::Answer;
 
-constexpr double kW = Menu::kSetupWidth, kH = Menu::kSetupHeight;
-constexpr double kFooterY = kH - 48 - 72;
-constexpr double kLeft = 56, kInner = kW - 2 * kLeft;
-constexpr double kFieldW = 900, kFieldH = 64;
-constexpr double kBlue[4] = {140 / 255.0, 190 / 255.0, 1.0, 1.0};
-constexpr double kRowsY = 220, kRowStep = 128, kEndY = 640;  // what Stash adds, two to a row
+using setup::kH;
+using setup::kW;
+// Do you use Stash?: what it adds, two to a row, an icon in the accent
+// before each title and its line; a line under them.
+constexpr double kLeft = setup::kTextLeft, kInner = kW - 2 * kLeft;
+constexpr double kFormW = 940;  // the address's or the sign-in's group
+constexpr double kRowsY = setup::kTop + kit::kSpaceEdge, kRowStep = 128, kEndY = kRowsY + 3 * kRowStep + 36;
 
 // The address as typed, spaces and a trailing slash dropped (Connect tries
 // it with https, http and Stash's port: StashClient::check()).
@@ -194,12 +195,6 @@ void SetupPages::layoutStash(Menu& m) {
   const NetworkStrings& n = m.text().network;
   const bool asking = st.asking.running();
   if (st.page == Page::Ask) {
-    // No Set up later: Not now is it. Back to the folders as they were left.
-    addFooter(m, [&m] {
-      setStep(m, Step::Folders);
-      if (!m.setup_->places.empty()) m.setup_->folders->page = SetupFolders::Page::Added;
-      return MenuCommand{};
-    });
     // Not now and Connect Stash; with Stash connected already (by setup
     // left and started again before it asked for folders first), Change
     // and Continue. Either way on to the Library.
@@ -210,50 +205,63 @@ void SetupPages::layoutStash(Menu& m) {
       return MenuCommand{};
     };
     auto on = command(MenuCommand::EndSetup, 1);
-    const std::string first = connected ? t.change : t.notNow;
-    const std::string second = connected ? t.next : t.connectStash;
-    Menu::Button primary = m.textButton(second, Icon::None, connected ? std::function<MenuCommand()>(on) : open, true);
-    primary.fontSize = 30;
-    const double primaryW = std::max(240.0, m.textWidth(second, 30, false) + 90);
-    add(m, primary, kW - 48 - primaryW, kFooterY, primaryW, 72);
-    Menu::Button other = m.textButton(first, Icon::None, connected ? std::function<MenuCommand()>(open) : on);
-    other.fontSize = 30;
-    const double otherW = std::max(200.0, m.textWidth(first, 30, false) + 90);
-    add(m, other, kW - 48 - primaryW - 16 - otherW, kFooterY, otherW, 72);
+    Menu::Action other{connected ? t.change : t.notNow, "", connected ? std::function<MenuCommand()>(open) : on};
+    Menu::Action primary{connected ? t.next : t.connectStash, "",
+                         connected ? std::function<MenuCommand()>(on) : open};
+    primary.primary = true;
+    // No Set up later: Not now is it. Back to the folders as they were left.
+    addFooter(m, back(m, [&m] {
+                setStep(m, Step::Folders);
+                if (!m.setup_->places.empty()) m.setup_->folders->page = SetupFolders::Page::Added;
+                return MenuCommand{};
+              }),
+              Icon::Arrow, {other, primary});
     return;
   }
 
-  // A field: its label is drawn above it, the address's hint under it
-  // (drawStash()).
-  auto field = [&](int i, double y, double w) {
-    const bool active = st.field == i && m.editing_;
-    const std::string& typed = st.text[i];
-    const std::string shown = i == SetupStash::Password && !st.showPassword ? hidden(typed) : typed;
-    Menu::Button b = m.textButton(shown, Icon::None, [&m, i] {
+  // The address, or the sign-in's fields, in a group (the kit's form): the
+  // sign-in's titled with the address; why it failed under them.
+  const bool signIn = st.page == Page::SignIn;
+  Menu::PageLayout page(m, Menu::PageLayout::UnderHeader{}, t.stashTitle);
+  Menu::GroupLayout g = page.groupAt(0, setup::kLeft, setup::kTop, kFormW,
+                                     signIn ? trimmedAddress(st.text[SetupStash::Address]) : std::string(t.address));
+  auto field = [&](int i, const std::string& label) {
+    Menu::Field f;
+    f.text = i == SetupStash::Password && !st.showPassword ? hidden(st.text[i]) : st.text[i];
+    f.example = i == SetupStash::Address ? m.text().stashSetup.serverHint : "";
+    f.typing = st.field == i && m.editing_;
+    f.action = [&m, i] {
       m.setup_->stash.field = i;
       m.editing_ = true;
       return MenuCommand{};
-    });
-    b.field = true;
-    b.on = active;
-    b.caret = active ? m.caret() : -1;
-    b.radius = 12;
-    b.fontSize = 28;
-    add(m, b, kLeft, y, w, kFieldH);
+    };
+    if (i == SetupStash::Password) {
+      f.inner = st.showPassword ? m.text().hide : n.show;
+      f.innerAction = [&m] {
+        m.setup_->stash.showPassword = !m.setup_->stash.showPassword;
+        return MenuCommand{};
+      };
+    }
+    g.field(label, f);
   };
-  const bool signIn = st.page == Page::SignIn;
   if (signIn) {
-    field(SetupStash::User, 270, kFieldW);
-    field(SetupStash::Password, 400, kFieldW);
-    Menu::Button eye = m.textButton(st.showPassword ? m.text().hide : n.show, Icon::None, [&m] {
-      m.setup_->stash.showPassword = !m.setup_->stash.showPassword;
-      return MenuCommand{};
-    });
-    eye.bare = true;
-    eye.fontSize = 26;
-    add(m, eye, kLeft + kFieldW + 16, 400, 120, kFieldH);
+    g.labelsFor({n.fields[1], n.fields[2]});
+    field(SetupStash::User, n.fields[1]);
+    field(SetupStash::Password, n.fields[2]);
   } else {
-    field(SetupStash::Address, 240, kFieldW);
+    field(SetupStash::Address, "");
+  }
+  if (!st.untrusted.empty()) {
+    // As an SFTP server's changed key: what connecting anyway means, and
+    // its risk in red (drawStash()).
+    const StashSetupStrings& ts = m.text().stashSetup;
+    g.status(Lamp::Failed, stashPrinted(ts.untrustedTitle, st.untrusted));
+    g.note(ts.untrusted, true, 3);
+    const int lines = m.wrappedLines(ts.untrustedRisk, g.rowWidth() - 2 * kit::kSpace, kit::kNoteSize, 2, true);
+    const Menu::GroupLayout::Box risk = g.room(lines * kit::kNoteLine);
+    st.risk = {risk.x, risk.y, risk.w};
+  } else if (!st.error.empty()) {
+    g.status(Lamp::Failed, st.error);
   }
   // Back stops a request under way, else goes back a page. After a
   // certificate that isn't trusted, Connect connects without verifying it,
@@ -263,20 +271,24 @@ void SetupPages::layoutStash(Menu& m) {
                          : untrusted ? m.text().stashSetup.connectUnverified
                          : signIn    ? n.signIn
                                      : t.connect;
-  addFooter(m, [&m, signIn] {
-    SetupStash& st = m.setup_->stash;
-    if (st.asking.running() && !signIn)
-      stopAsking(m);
-    else
-      openStashPage(m, signIn ? Page::Address : Page::Ask);
-    return MenuCommand{};
-  }, go, [&m] {
-    SetupStash& st = m.setup_->stash;
-    if (!st.untrusted.empty()) st.unverifiedHost = st.untrusted;
-    askStash(m);
-    return MenuCommand{};
-  }, !untrusted, asking || trimmedAddress(st.text[SetupStash::Address]).empty() ||
-                     (signIn && st.text[SetupStash::User].empty()));
+  Menu::Action connect{go, "", [&m] {
+                         SetupStash& st = m.setup_->stash;
+                         if (!st.untrusted.empty()) st.unverifiedHost = st.untrusted;
+                         askStash(m);
+                         return MenuCommand{};
+                       }};
+  connect.primary = !untrusted;
+  connect.disabled = asking || trimmedAddress(st.text[SetupStash::Address]).empty() ||
+                     (signIn && st.text[SetupStash::User].empty());
+  addFooter(m, back(m, [&m, signIn] {
+              SetupStash& st = m.setup_->stash;
+              if (st.asking.running() && !signIn)
+                stopAsking(m);
+              else
+                openStashPage(m, signIn ? Page::Address : Page::Ask);
+              return MenuCommand{};
+            }),
+            Icon::Arrow, {connect});
   if (m.editing_) m.layoutKeyboard(Menu::kSetup, kW / 2, kH + 34, 90);
 }
 
@@ -293,21 +305,22 @@ void SetupPages::drawStash(Menu& m, cairo_t* cr) {
                                      StashIcon::Filters, StashIcon::None, StashIcon::None};
     const Menu::Icon menuIcons[6] = {Menu::Icon::None, Menu::Icon::Play, Menu::Icon::None,
                                      Menu::Icon::None, Menu::Icon::Refresh, Menu::Icon::Power};
+    const double accent[4] = {pal.textAccent.r, pal.textAccent.g, pal.textAccent.b, 1};
     const double columnW = (kInner - 40) / 2;
     for (int k = 0; k < 6; ++k) {
       const double x = kLeft + (k % 2) * (columnW + 40), y = kRowsY + (k / 2) * kRowStep;
       const double cx = x + 32, cy = y + 36;
       if (stashIcons[k] != StashIcon::None) {
-        StashPages::drawIcon(cr, stashIcons[k], cx, cy, 54, kBlue);
+        StashPages::drawIcon(cr, stashIcons[k], cx, cy, 54, accent);
       } else if (menuIcons[k] == Menu::Icon::Play) {  // in a ring
         cairo_new_path(cr);
         cairo_arc(cr, cx, cy, 20, 0, 2 * M_PI);
-        cairo_set_source_rgba(cr, kBlue[0], kBlue[1], kBlue[2], 1);
+        cairo_set_source_rgba(cr, accent[0], accent[1], accent[2], 1);
         cairo_set_line_width(cr, 54 * 0.075);
         cairo_stroke(cr);
-        Menu::drawIcon(cr, Menu::Icon::Play, cx + 1, cy, 18, kBlue[0], kBlue[1], kBlue[2]);
+        Menu::drawIcon(cr, Menu::Icon::Play, cx + 1, cy, 18, accent[0], accent[1], accent[2]);
       } else {
-        Menu::drawIcon(cr, menuIcons[k], cx, cy, 54, kBlue[0], kBlue[1], kBlue[2]);
+        Menu::drawIcon(cr, menuIcons[k], cx, cy, 54, accent[0], accent[1], accent[2]);
       }
       const char* line = t.stashFeatures[2 * k + 1];
       if (k == 5) line = !folders ? t.forDownloads : kStandaloneHeadset ? line : t.keptOnComputer;
@@ -317,7 +330,7 @@ void SetupPages::drawStash(Menu& m, cairo_t* cr) {
                  pal.textDim.b);
     }
     if (m.stash_) {
-      Menu::drawIcon(cr, Menu::Icon::Check, kLeft + 14, kEndY + 20, 26, kBlue[0], kBlue[1], kBlue[2]);
+      Menu::drawIcon(cr, Menu::Icon::Check, kLeft + 14, kEndY + 20, 26, accent[0], accent[1], accent[2]);
       char line[512];
       std::snprintf(line, sizeof(line), t.stashConnected, m.view_.stash.url.c_str());
       m.drawText(cr, line, kLeft + 40, kEndY, kInner - 40, 40, 24, false, false, pal.text.r,
@@ -326,44 +339,17 @@ void SetupPages::drawStash(Menu& m, cairo_t* cr) {
       m.drawText(cr, folders ? t.stashFree : t.stashFreeNoFolders, kLeft, kEndY, kInner, 40, 24, false, false,
                  pal.textDim.r, pal.textDim.g, pal.textDim.b);
     }
-  } else if (st.page == Page::Address) {
-    drawHead(m, cr, t.connectStash, t.addressText);
-    m.drawText(cr, t.address, kLeft, 200, 600, 34, 24, false, false, pal.textDim.r, pal.textDim.g,
-               pal.textDim.b);
-    m.drawText(cr, m.text().stashSetup.serverHint, kLeft, 314, kFieldW, 34, 24, false, false,
-               pal.textDim.r, pal.textDim.g, pal.textDim.b);
   } else {
-    drawHead(m, cr, t.stashSignInTitle, t.stashSignInText);
-    const NetworkStrings& n = m.text().network;
-    for (const auto& [label, y] : {std::pair{n.fields[1], 230.0}, {n.fields[2], 360.0}})
-      m.drawText(cr, label, kLeft, y, 600, 34, 24, false, false, pal.textDim.r, pal.textDim.g,
-                 pal.textDim.b);
-  }
-  const double red[4] = {1, 0.55, 0.5, 1};
-  if (!st.untrusted.empty()) {
-    // As an SFTP server's changed key: a warning, what it means, and the
-    // risk in red, in a box of its own.
-    const StashSetupStrings& ts = m.text().stashSetup;
-    const double y = st.page == Page::SignIn ? 490 : 370, pad = 28, textX = kLeft + pad + 52;
-    const double textW = kInner - 2 * pad - 52;
-    const int bodyLines = m.wrappedLines(ts.untrusted, textW, 24, 3);
-    const int riskLines = m.wrappedLines(ts.untrustedRisk, textW, 24, 2, true);
-    const double bodyY = y + pad + 50, riskY = bodyY + bodyLines * 24 * 1.36 + 12;
-    const double h = riskY + riskLines * 24 * 1.36 + pad - y;
-    roundedRect(cr, kLeft, y, kInner, h, 18);
-    cairo_set_source_rgba(cr, red[0], red[1], red[2], 0.1);
-    cairo_fill_preserve(cr);
-    cairo_set_source_rgba(cr, red[0], red[1], red[2], 0.45);
-    cairo_set_line_width(cr, 2);
-    cairo_stroke(cr);
-    Menu::drawIcon(cr, Menu::Icon::Warning, kLeft + pad + 20, y + pad + 20, 36, red[0], red[1], red[2]);
-    m.drawText(cr, stashPrinted(ts.untrustedTitle, st.untrusted), textX, y + pad, textW, 42, 30, true, false,
-               pal.text.r, pal.text.g, pal.text.b);
-    const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, 1};
-    m.drawTextLines(cr, ts.untrusted, textX, bodyY, textW, 24, 3, dim, false);
-    m.drawTextLines(cr, ts.untrustedRisk, textX, riskY, textW, 24, 2, red, false, 0, true);
-  } else if (!st.error.empty()) {
-    m.drawTextLines(cr, st.error, kLeft, st.page == Page::SignIn ? 482 : 362, kInner, 24, 3, red, false);
+    if (st.page == Page::Address)
+      drawHead(m, cr, t.connectStash, t.addressText);
+    else
+      drawHead(m, cr, t.stashSignInTitle, t.stashSignInText);
+    if (!st.untrusted.empty()) {
+      const Rgba warn = hexColour(0xff8a85);
+      const double red[4] = {warn.r, warn.g, warn.b, 1};
+      m.drawTextLines(cr, m.text().stashSetup.untrustedRisk, st.risk[0] + kit::kSpace, st.risk[1],
+                      st.risk[2] - 2 * kit::kSpace, kit::kNoteSize, 2, red, false, 0, true);
+    }
   }
   drawDots(m, cr);
   drawKeyboardPanel(m, cr);

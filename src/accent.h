@@ -24,6 +24,13 @@ struct Accent {
 struct AccentColours {
   double fill[3];  // chosen buttons, switches and sliders; the panels' edge
   double text[3];  // chosen rows and other accent text, on the dark panels
+  // The menu's filled controls (Play, a confirming button, a switch that is
+  // on), each a gradient from its top to its bottom: at rest and pressed.
+  // Their shadows' tints: a dark one under them, and a glow.
+  struct Gradient {
+    double top[3], bottom[3];
+  } filled, pressed;
+  double shadow[3], glow[3];
 };
 AccentColours accentColours(const Accent& accent);
 

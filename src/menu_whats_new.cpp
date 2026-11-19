@@ -1,28 +1,29 @@
-#include "menu_style.h"
+#include "menu_parts.h"
 
 #include "platform.h"
 
 #include <pango/pangocairo.h>
 
-// What's new: the release notes (whats_new.h) in a dialog over the page,
-// after an update or from Settings → Help. Its icon, title and notes hang
-// off one left edge; it is as tall as its notes, up to kMaxH, and beyond
-// that they scroll beside their own scroll bar. Its switch and Close are
-// along the bottom.
+// What's new: the release notes (whats_new.h) in a dialog over the page
+// (DialogLayout), after an update or from Settings → Help. Its icon, title
+// and notes hang off one left edge; it is as tall as its notes, up to kMaxH,
+// and beyond that they scroll beside their own scroll bar. Its switch and
+// Close are along the bottom.
 
 namespace {
 
 constexpr double kW = 1400, kMaxH = 1000;
-constexpr double kPad = 64;  // the left edge: the icon, the title, the notes and the switch
-constexpr double kTop = 48, kIcon = 84;
+constexpr double kPad = kit::kDialogPad;  // the left edge: the icon, the title, the notes and the switch
+constexpr double kIcon = 80;
 // Beside the icon and centred on it, the title over the line under it.
-constexpr double kTitleH = 42, kSubtitleGap = 6, kSubtitleH = 31.2;
-constexpr double kNotesY = kTop + kIcon + 36;
+constexpr double kTitleH = 44, kSubtitleGap = 4, kSubtitleH = 32;
+constexpr double kHead = kIcon + 20;  // the icon and the space under it, above the notes
+constexpr double kNotesY = kPad + kHead + kit::kDialogLineGap;
 constexpr double kFullW = kW - 2 * kPad;
 constexpr double kBar = 20;  // the scroll bar, in its gutter right of the notes
 constexpr double kScrollingW = kFullW - kBar - 20;
-constexpr double kButtonH = 80, kButtonW = 240;  // Close
-constexpr double kFooter = 24 + 24 + kButtonH + 44;
+// Under the notes: the dialog's buttons' row.
+constexpr double kFooter = kit::kDialogButtonsGap + kit::kDialogButtonH + kit::kDialogEdge;
 constexpr double kMaxNotesH = kMaxH - kNotesY - kFooter;
 constexpr double kFadeH = 60;  // the notes fade out above their bottom while more follow
 // A release: its version and date, then its sections, each with its name in
@@ -36,7 +37,7 @@ constexpr double kNameW = 150, kBulletW = 26;
 constexpr double kRuleH = 1.5;
 constexpr int kMaxLines = 8;
 constexpr double kNoteInk[4] = {0.91, 0.91, 0.933, 1};
-constexpr double kBox[3] = {0.1, 0.1, 0.13};  // the dialogs' fill (Menu::drawDialog())
+constexpr double kBox[3] = {0x20 / 255.0, 0x24 / 255.0, 0x2d / 255.0};  // the dialogs' fill (Finish::Pop)
 
 // A note's lines kNoteLineH apart from y, each centred in its line.
 void drawNote(cairo_t* cr, PangoLayout* layout, double x, double y) {
@@ -130,31 +131,24 @@ void Menu::layoutWhatsNew() {
   d.max = std::max(0.0, d.height - kMaxNotesH);
   d.scroll = std::clamp(d.scroll, 0.0, d.max);
   const WhatsNewBox box = whatsNewBox();
-  const double footY = box.y + kNotesY + box.notesH + 48;
+  // Its head and notes are drawWhatsNew()'s; the box is as whatsNewBox() has it.
+  DialogLayout dialog(*this, kW);
+  dialog.room(kHead);
+  dialog.room(box.notesH);
   // The switch's label on the left edge (a switch's label is 12 into it).
   Button show;
   show.label = t.showAfterUpdates;
   show.toggle = show.bare = true;
   show.on = view_.showWhatsNew;
-  show.x = box.x + kPad - 12;
-  show.y = footY + (kButtonH - kSettingRowH) / 2;
+  show.x = kPad - 12;
   show.w = std::max(412.0, textWidth(show.label, kTextSize, false) + 112);
   show.h = kSettingRowH;
   show.action = command(MenuCommand::ToggleShowWhatsNew);
-  Button close = textButton(t.close, Icon::None, [this] {
+  dialog.beside(show);
+  dialog.button(textButton(t.close, Icon::None, [this] {
     dialog_ = Dialog::None;
     return MenuCommand{};
-  }, true);
-  close.x = box.x + kW - kPad - kButtonW;
-  close.y = footY;
-  close.w = kButtonW;
-  close.h = kButtonH;
-  close.fontSize = 27;
-  for (Button* b : {&show, &close}) {
-    b->panel = kBrowser;
-    b->popup = true;
-    buttons_.push_back(*b);
-  }
+  }, true));
   if (d.max <= 0) return;
   Button bar;
   bar.panel = kBrowser;
@@ -176,15 +170,13 @@ void Menu::drawWhatsNew(cairo_t* cr) {
   const Palette& pal = palette();
   const WhatsNewBox box = whatsNewBox();
   const WhatsNewDialog& d = whatsNew_;
-  roundedRect(cr, box.x, box.y, kW, box.h, 30);
-  cairo_set_source_rgb(cr, kBox[0], kBox[1], kBox[2]);
-  cairo_fill(cr);
 
-  // The icon, and beside it the title over the line under it.
-  drawBrand(cr, box.x + kPad, box.y + kTop, kIcon);
-  const double textX = box.x + kPad + kIcon + 26, textW = kW - kPad - (textX - box.x);
-  const double titleY = box.y + kTop + (kIcon - kTitleH - kSubtitleGap - kSubtitleH) / 2;
-  drawText(cr, t.title, textX, titleY, textW, kTitleH, 40, true, false, pal.text.r, pal.text.g,
+  // The icon, and beside it the title over the line under it (the box is
+  // drawDialog()'s).
+  drawBrand(cr, box.x + kPad, box.y + kPad, kIcon);
+  const double textX = box.x + kPad + kIcon + 24, textW = kW - kPad - (textX - box.x);
+  const double titleY = box.y + kPad + (kIcon - kTitleH - kSubtitleGap - kSubtitleH) / 2;
+  drawText(cr, t.title, textX, titleY, textW, kTitleH, 34, true, false, pal.text.r, pal.text.g,
            pal.text.b);
   std::string subtitle = kAppTitle;
   if (d.releases.size() > 1 && !d.from.empty()) {
@@ -192,7 +184,7 @@ void Menu::drawWhatsNew(cairo_t* cr) {
     std::snprintf(buf, sizeof(buf), t.updatedFrom, d.from.c_str(), d.to.c_str());
     subtitle = buf;
   }
-  drawText(cr, subtitle, textX, titleY + kTitleH + kSubtitleGap, textW, kSubtitleH, kNoteSize,
+  drawText(cr, subtitle, textX, titleY + kTitleH + kSubtitleGap, textW, kSubtitleH, kTextSize,
            false, false, pal.textDim.r, pal.textDim.g, pal.textDim.b);
 
   // The notes, cut off at their edges.
@@ -257,11 +249,6 @@ void Menu::drawWhatsNew(cairo_t* cr) {
     cairo_pattern_destroy(fade);
   }
   cairo_restore(cr);
-
-  // The footer's line, across.
-  cairo_rectangle(cr, x, top + box.notesH + 24, kFullW, kRuleH);
-  cairo_set_source_rgba(cr, 1, 1, 1, 0.08);
-  cairo_fill(cr);
 }
 
 // By whole texture pixels, keeping the rest for the next frame as lists do.
@@ -274,6 +261,7 @@ void Menu::scrollWhatsNew(double pixels) {
   if (position == d.scroll) return;
   d.scroll = position;
   hoverQuiet_ = true;
+  scrolledAt_ = steadySeconds();
   listMoved_ = true;
 }
 

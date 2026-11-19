@@ -1,16 +1,17 @@
 #include "menu_style.h"
 
+#include "menu_list_parts.h"
+
 #include "file_util.h"
+#include "menu_stash.h"  // stashPrinted
 #include "menu_stash_covers.h"
 #include "thumbnailer.h"
 #include "video_memory.h"
 
 #include <cstdlib>
-#include <ctime>
 #include <filesystem>
 #include <numeric>
 #include <set>
-#include <system_error>
 
 namespace fs = std::filesystem;
 
@@ -102,9 +103,10 @@ void Menu::lookUpRecords() {
   recordsGeneration_ = library_->generation();
 }
 
-// Only the rows or cards shown whose record changed are redrawn: redrawing
-// the whole list hides the highlight and ignores clicks until it's done, and
-// a folder's videos found at a new place change one after another.
+// Only the rows or cards shown whose record changed (what they show of it:
+// rating, plays, last played, length) are redrawn: redrawing the whole list
+// hides the highlight and ignores clicks until it's done, and a folder's
+// videos found at a new place change one after another.
 void Menu::recordsChanged(const std::vector<VideoRecord>& before) {
   const std::vector<FolderListing::Entry>& entries = listing_.entries();
   if (before.size() != records_.size() || records_.size() != entries.size()) {
@@ -113,7 +115,8 @@ void Menu::recordsChanged(const std::vector<VideoRecord>& before) {
   }
   for (size_t i = 0; i < records_.size(); ++i) {
     const VideoRecord &a = before[i], &b = records_[i];
-    if (a.rating == b.rating && a.playCount == b.playCount && a.lastPlayedAt == b.lastPlayedAt)
+    if (a.rating == b.rating && a.playCount == b.playCount && a.lastPlayedAt == b.lastPlayedAt &&
+        a.durationSeconds == b.durationSeconds)
       continue;
     for (const Button& part : buttons_) {
       if (part.panel != kBrowser || (part.ratingPath != entries[i].path &&
@@ -341,14 +344,16 @@ std::vector<Menu::ListItem> Menu::fileItems() {
     }
     ListItem item = fileItem(entry.name, entry.path);
     item.size = sizeText(entry.size);
-    item.date = dateText(entry.modified);
+    item.date = dayText(entry.modified);
     if (rated && isVideoFile(entry.path)) {
+      // What the library knows of it (records_, in memory): no file is read.
       const VideoRecord& r = records_[i];
       item.ratingPath = entry.path;
       item.rating = r.rating;
-      if (r.playCount > 0) item.plays = std::to_string(r.playCount);
+      if (r.playCount > 0) item.plays = stashNumber(r.playCount);
+      if (r.durationSeconds > 0) item.length = static_cast<int>(r.durationSeconds);
       // Sorted by when they were played, the date shown is that.
-      if (fieldOf(sortMode_) == kByPlayed) item.date = dateText(r.lastPlayedAt);
+      if (fieldOf(sortMode_) == kByPlayed) item.date = dayText(r.lastPlayedAt);
     }
     items[n] = std::move(item);
   }
@@ -365,14 +370,19 @@ void Menu::clampScroll(int count, int rows, int& first, int& end) {
   end = std::min(count, scrollOffset_ + std::max(rows, static_cast<int>(shown)) + 1);
 }
 
+void Menu::endOnWholeRow() {
+  if (editingFilter())
+    listBottom_ = std::min(listBottom_, listTop_ + visibleRows_ * rowHeight_ - kRowGap);
+}
+
 // Rows from listTop_ down; the caller sets listTop_, listBottom_ and listRight_.
 void Menu::addList(const std::vector<ListItem>& items, double x0, double rowH, int rows) {
   visibleRows_ = rows;
   rowHeight_ = rowH;
+  endOnWholeRow();
   listCount_ = static_cast<int>(items.size());
   int first, end;
   clampScroll(listCount_, rows, first, end);
-  constexpr double trashW = 90;
   for (int i = first; i < end; ++i) {
     Button b;
     b.panel = kBrowser;
@@ -380,6 +390,7 @@ void Menu::addList(const std::vector<ListItem>& items, double x0, double rowH, i
     b.y = listTop_ + (i - scrollOffset_ - scrollFraction_) * rowH;
     b.w = listRight_ - x0 - 30;
     b.h = rowH - kRowGap;
+    b.radius = kit::kCorner;
     b.label = items[i].label;
     b.selected = items[i].selected;
     b.action = items[i].action;
@@ -389,53 +400,55 @@ void Menu::addList(const std::vector<ListItem>& items, double x0, double rowH, i
     b.size = items[i].size;
     b.date = items[i].date;
     b.plays = items[i].plays;
+    b.length = lengthText(items[i]);
     b.byline = items[i].byline;
-    b.fontSize = kTextSize;
-    double right = b.x + b.w;
-    if (items[i].trash) {
-      Button trash;
+    b.fontSize = kit::kRowSize;
+    buttons_.push_back(b);
+    if (items[i].trash) {  // round, in the row's right end; the name stops before it
+      Button trash = iconButton(Icon::Trash, items[i].trash);
       trash.panel = kBrowser;
-      trash.x = right - trashW;
-      trash.y = b.y;
-      trash.w = trashW;
-      trash.h = b.h;
-      trash.icon = Icon::Trash;
-      trash.action = items[i].trash;
+      trash.w = trash.h = kRowRoundSize;
+      trash.radius = kRowRoundSize / 2;
+      trash.x = b.x + b.w - kit::kSpace - trash.w;
+      trash.y = b.y + (b.h - trash.h) / 2;
+      trash.iconSize = 24;
+      trash.bare = true;
+      trash.dangerHover = true;
       trash.tooltip = items[i].trashTip.empty() ? text().tipDelete : items[i].trashTip;
       trash.scrolls = true;
-      right -= trashW + 10;
-      b.w = right - b.x;
-      buttons_.push_back(b);
+      buttons_.back().inner = trash.w + kit::kSpaceTight;
       buttons_.push_back(trash);
-    } else {
-      buttons_.push_back(b);
     }
     const size_t rowIndex = buttons_.size() - (items[i].trash ? 2 : 1);
     if (!items[i].trash && !items[i].folder && !items[i].thumbPath.empty()) {
       buttons_[rowIndex].offlinePath = items[i].thumbPath;
       if (listColumns_)
-        addOfflineButtons(buttons_[rowIndex], listColumns(b.x + b.w).status, 0);
+        addOfflineButtons(buttons_[rowIndex], listColumns(b.x + b.w, listFit()).status, 0);
     }
     // A name too long for its row shows in full while pointed at; one from
     // Stash with the file's name under it.
     Button& row = buttons_[rowIndex];
     const std::string fileName = stashCovers_ ? describeFromStash(row, items[i].thumbPath) : "";
-    const bool cut = textWidth(row.label, kTextSize, false) >
-                     listNameWidth(row) * (row.byline.empty() ? 1 : kBylineShare);
+    const bool cut = shortened(row.label, row.fontSize, rowNameWidth(row, listNameWidth(row)), 0);
     if (cut) row.tooltip = row.label;
     if (!fileName.empty()) row.tooltip = cut ? row.label + "\n" + fileName : fileName;
-    // The stars, in their column (over the row, so they take the pointer there).
+    // The stars, in their column (over the row, so they take the pointer
+    // there); unrated, shown only while the row is pointed at (hoverLook()).
     if (listColumns_ && !items[i].ratingPath.empty()) {
-      const double x = listColumns(row.x + row.w).rating;
-      buttons_.push_back(ratingButton(items[i].ratingPath, items[i].rating, kBrowser, x, b.y + 2,
-                                      kRowStarW, b.h - 4));
+      const double x = listColumns(row.x + row.w, listFit()).rating;
+      buttons_.push_back(ratingButton(items[i].ratingPath, items[i].rating, kBrowser, x,
+                                      b.y + kRowPictureIn, kRowStarW, b.h - 2 * kRowPictureIn));
       buttons_.back().ratingVideo = items[i].ratingVideo;
       buttons_.back().scrolls = true;
+      buttons_.back().iconSize = kRowStarSize;
+      buttons_.back().listLook = static_cast<int>(ListLook::RowStars);
     }
   }
   Button row;
   row.h = rowH - kRowGap;
-  wantThumbnails(items, first, end, rows, listThumbW(row));
+  double px, py, pw, ph;
+  listPicture(row, px, py, pw, ph);
+  wantThumbnails(items, first, end, rows, pw);
   addScrollbar();
 }
 
@@ -460,24 +473,28 @@ void Menu::addGallery(const std::vector<ListItem>& items, double x0, int rows) {
     b.y = listTop_ + (cell / columns - scrollFraction_) * rowH;
     b.w = cardW;
     b.h = rowH - gap;
+    b.radius = kCardCorner;
     b.label = items[i].label;
     b.selected = items[i].selected;
     b.action = items[i].action;
     b.card = true;
     b.scrolls = true;
     setThumbnailOrIcon(b, items[i]);
-    b.detail = items[i].size + (items[i].size.empty() ? "" : "   ") + items[i].date;
+    b.detail = stashJoined({lengthText(items[i]), items[i].size, items[i].date});
     b.plays = items[i].plays;
     b.rating = items[i].rating;
     // A name longer than its two lines (one over a byline) shows in full
     // while pointed at; one from Stash with the file's name under it.
     const std::string fileName = stashCovers_ ? describeFromStash(b, items[i].thumbPath) : "";
-    const bool cut = textWidth(b.label, 26, false) > (b.byline.empty() ? 1.8 : 0.9) * (b.w - 24);
+    b.fileName = fileName.empty();
+    const double nameW = b.w - 2 * kit::kSpace - (b.selected ? kPlayMarkW : 0);
+    const bool cut = shortened(b.label, kit::kRowSize, nameW, b.byline.empty() ? 2 : 1, b.fileName);
     if (cut) b.tooltip = b.label;
     if (!fileName.empty()) b.tooltip = cut ? b.label + "\n" + fileName : fileName;
     if (!items[i].folder && !items[i].thumbPath.empty()) b.offlinePath = items[i].thumbPath;
     buttons_.push_back(b);
-    if (!items[i].trash && !b.offlinePath.empty()) addOfflineButtons(b, 0, b.y + b.h - 40);
+    if (!items[i].trash && !b.offlinePath.empty())
+      addOfflineButtons(b, 0, b.y + b.h - kit::kSpace - kCardLine);
     if (items[i].trash) {  // small, in the card's upper right corner
       Button trash;
       trash.panel = kBrowser;
@@ -499,28 +516,29 @@ void Menu::addGallery(const std::vector<ListItem>& items, double x0, int rows) {
       buttons_.push_back(stars);
     }
   }
-  wantThumbnails(items, first, end, visibleRows_ * columns, cardW - 16);
+  wantThumbnails(items, first, end, visibleRows_ * columns, cardW - 2 * kCardIn);
   addScrollbar();
 }
 
-// The list's scroll bar, if it scrolls: clicking or dragging along it scrolls there.
+// The list's scroll bar, if it scrolls: clicking or dragging along it
+// scrolls there. A target wider than its track, centred on it.
 void Menu::addScrollbar() {
   if (listCount_ <= visibleRows_) return;
   Button bar;
   bar.panel = kBrowser;
-  bar.x = listRight_ - 24;
+  bar.x = listRight_ - kScrollbarW / 2 - (30 - kit::kSpace - kScrollTrackW / 2);
   bar.y = listTop_;
-  bar.w = 24;
-  bar.h = listBottom_ - listTop_ - 6;
-  bar.radius = 12;
+  bar.w = kScrollbarW;
+  bar.h = listBottom_ - listTop_;
+  bar.radius = kScrollTrackW / 2;
   bar.bare = true;
   bar.scrollbar = true;
   bar.action = [] { return MenuCommand{}; };  // handled in click()/drag()
   buttons_.push_back(bar);
 }
 
-Menu::ScrollExtent Menu::scrollExtent() const {
-  if (dialog_ == Dialog::WhatsNew) {
+Menu::ScrollExtent Menu::scrollExtent(const Button* bar) const {
+  if (dialog_ == Dialog::WhatsNew && (!bar || bar->popup)) {
     const double shown = whatsNew_.height - whatsNew_.max;
     return {whatsNew_.scroll, shown, whatsNew_.height};
   }
@@ -533,11 +551,11 @@ Menu::ScrollExtent Menu::scrollExtent() const {
 }
 
 void Menu::scrollToPointer(const Button& bar) {
-  const ScrollExtent e = scrollExtent();
-  const double thumb = std::max(40.0, bar.h * e.shown / std::max(1.0, e.total));
+  const ScrollExtent e = scrollExtent(&bar);
+  const double thumb = std::max(kScrollThumbMin, bar.h * e.shown / std::max(1.0, e.total));
   const double fraction = std::clamp((pointerY_ - bar.y - thumb / 2) / (bar.h - thumb), 0.0, 1.0);
   const double position = fraction * std::max(0.0, e.total - e.shown);
-  if (dialog_ == Dialog::WhatsNew) {
+  if (dialog_ == Dialog::WhatsNew && bar.popup) {
     whatsNew_.remainder = 0;  // an absolute position, not another stick/drag increment
     scrollWhatsNew(position - whatsNew_.scroll);
     return;
@@ -545,6 +563,7 @@ void Menu::scrollToPointer(const Button& bar) {
   if (groupedPage()) {
     if (std::abs(position - pageScroll_) > 0.01) {
       pageScroll_ = position;
+      scrolledAt_ = steadySeconds();
       browserChanged(listTop_ - 4, listBottom_ + 4);
     }
     return;
@@ -635,223 +654,136 @@ bool Menu::wantedAlready(const std::vector<std::string>& wanted, size_t shown, d
   return false;
 }
 
-// The toolbar's second row: list and thumbnails, "Sort by"
-// with the order's field and direction, the folder's (or the library's)
-// search, and to the top / end.
+// The tools row (the kit's): the view well (list, thumbnails), "Sort by"
+// with the order's field (its list opens under it) and direction, the
+// library's Show choices, the folder's (or the library's) search, then to
+// the top and to the end; clusters kColumnGap apart.
 void Menu::layoutFileTools() {
   const Strings& t = text();
-  const double y = kBrowserToolsY + toolsShift(), h = kBrowserToolsH;
+  const double y = kBrowserToolsY + toolsShift();
   const bool library = page_ == Page::Library, videos = library || fileKind_ == FileKind::Video;
   const SortMode mode = library ? librarySort_ : sortMode_;
-  double x = kPageX + kPagePad;
-  auto icon = [&](Icon i, const char* tip, bool on, std::function<MenuCommand()> action,
-                  double left) -> Button& {
-    Button& b = addRound(i, tip, std::move(action), left, y, h);
-    b.panel = kBrowser;
-    b.bare = true;
-    b.on = on;
-    return b;
-  };
+  double x = kContentLeft;
   if (videos) {
-    // List or thumbnails, the chosen one blue. The item at the top (or the
-    // playing one) stays in view.
-    auto view = [&](bool gallery, Icon i, const char* tip) {
-      icon(i, tip, gallery_ == gallery,
-           [this, gallery] {
-             if (gallery_ == gallery) return MenuCommand{};
-             std::string anchor;
-             double rows = 0;
-             const bool anchored = listAnchor(anchor, rows);
-             gallery_ = gallery;
-             if (anchored) scrollToItem(anchor, 0);
-             return MenuCommand{};
-           },
-           x);
-      x += h + 8;
+    // List or thumbnails: pieces in a well, the chosen one raised. The item
+    // at the top (or the playing one) stays in view.
+    auto view = [&](bool gallery, Icon icon, const char* tip) {
+      ToolPiece p;
+      p.icon = icon;
+      p.tooltip = tip;
+      p.chosen = gallery_ == gallery;
+      p.action = [this, gallery] {
+        if (gallery_ == gallery) return MenuCommand{};
+        std::string anchor;
+        double rows = 0;
+        const bool anchored = listAnchor(anchor, rows);
+        gallery_ = gallery;
+        if (anchored) scrollToItem(anchor, 0);
+        return MenuCommand{};
+      };
+      return p;
     };
-    view(false, Icon::List, t.tipList);
-    view(true, Icon::Grid, t.tipGallery);
-    x += 16;
+    x = toolsWell(x, y, {view(false, Icon::List, t.tipList), view(true, Icon::Grid, t.tipGallery)}) +
+        kColumnGap;
   }
   if (videos) {
-    // "Sort by  Name ▾  ▲": the field (its list of fields opens below it)
+    // "Sort by  Name ⌄  ↑": the field (its list of fields opens below it)
     // and the direction (choosing it turns it around); they apply at once.
-    Button& label = addLabel(x, y, textWidth(t.sortBy, 26, false) + 8, h, t.sortBy, 26, true);
-    x += label.w + 8;
     const int field = fieldOf(mode);
-    Button value = textButton(std::string(t.sortFields[field]) + " ▾", Icon::None, [this] {
-      dropdown_ = dropdown_ == Dropdown::Sort ? Dropdown::None : Dropdown::Sort;
-      return MenuCommand{};
-    });
-    value.panel = kBrowser;
-    value.bare = true;
-    value.on = true;  // blue dropdown value
-    value.x = x;
-    value.y = y;
-    value.h = h;
-    value.fontSize = 26;
-    value.w = textWidth(value.label, 26, false) + 40;
-    buttons_.push_back(value);
-    x += value.w + 4;
+    std::vector<int> fields(std::begin(kFolderFields), std::end(kFolderFields));
+    if (library) fields.assign(std::begin(kLibraryFields), std::end(kLibraryFields));
+    std::vector<SortField> choices;
+    int chosen = 0;
+    for (const int f : fields) {
+      if (f == field) chosen = static_cast<int>(choices.size());
+      choices.push_back({t.sortFields[f], [this, f] {
+                           sortByField(f);
+                           return MenuCommand{};
+                         }});
+    }
     const FieldOrders& orders = kFieldOrders[field];
     const bool up = mode == orders.up;
     const SortMode turned = up ? orders.down : orders.up;
-    Button direction = textButton(up ? "▲" : "▼", Icon::None, [this, turned] {
+    x = toolsSort(x, y, choices, chosen, up, t.sortModes[static_cast<int>(mode)], [this, turned] {
       sortBy(turned);
       return MenuCommand{};
     });
-    direction.panel = kBrowser;
-    direction.bare = true;
-    direction.on = true;
-    direction.x = x;
-    direction.y = y;
-    direction.w = direction.h = h;
-    direction.radius = h / 2;
-    direction.fontSize = 26;
-    direction.tooltip = t.sortModes[static_cast<int>(mode)];
-    buttons_.push_back(direction);
-    x += h + 16;
     if (library) layoutLibraryShow(x);
-    if (dropdown_ == Dropdown::Sort) {
-      // The fields stacked under it, the chosen one blue.
-      std::vector<int> fields(std::begin(kFolderFields), std::end(kFolderFields));
-      if (library) fields.assign(std::begin(kLibraryFields), std::end(kLibraryFields));
-      double w = 0;
-      for (const int f : fields) w = std::max(w, textWidth(t.sortFields[f], 26, false));
-      for (size_t i = 0; i < fields.size(); ++i) {
-        const int f = fields[i];
-        Button e = textButton(t.sortFields[f], Icon::None,
-                              [this, f] {
-                                dropdown_ = Dropdown::None;
-                                sortByField(f);
-                                return MenuCommand{};
-                              },
-                              f == field);
-        e.panel = kBrowser;
-        e.popup = true;
-        e.fontSize = 26;
-        e.radius = glass() ? 28 : 16;
-        e.x = value.x;
-        e.y = y + h + 16 + i * 64;
-        e.w = w + 60;
-        e.h = 56;
-        buttons_.push_back(e);
-      }
-    }
   }
 
-  // To the top / end, at the right end.
-  double right = kPageX + kPageWidth - kPagePad - h;
-  icon(Icon::JumpBottom, t.tipBottom, false,
-       [this] {
-         scrollOffset_ = 1 << 30;  // clamped to the last page by the layout
-         return MenuCommand{};
-       },
-       right);
-  right -= h + 8;
-  icon(Icon::JumpTop, t.tipTop, false,
-       [this] {
-         scrollOffset_ = 0;
-         scrollFraction_ = 0;
-         return MenuCommand{};
-       },
-       right);
-  right -= 16;
+  // To the top / end, at the right end: greyed where there is nowhere to go.
+  const double right = toolsJumps(
+      y,
+      [this] {
+        scrollOffset_ = 0;
+        scrollFraction_ = 0;
+        return MenuCommand{};
+      },
+      [this] {
+        scrollOffset_ = 1 << 30;  // clamped to the last page by the layout
+        return MenuCommand{};
+      });
 
   // The search: what it finds is listed as you type. The field opens the
   // keyboard; Clear (in its right end) empties it.
-  const bool editing = editingFilter();
-  const std::string& filter = filterText();
-  Button search = textButton(filter.empty() && !editing
-                                 ? std::string(library ? t.tipSearchLibrary : t.tipSearchFolder)
-                                 : filter,
-                             Icon::Search,
-                             [this] {
-                               editing_ = true;
-                               return MenuCommand{};
-                             },
-                             false);
-  search.panel = kBrowser;
-  search.x = x;
-  search.y = y;
-  search.w = right - x;
-  search.h = h;
-  search.fontSize = kTextSize;
-  search.field = true;
-  search.on = editing;  // blue outline while typing
-  search.caret = editing ? caret() : -1;
-  search.placeholder = filter.empty() && !editing;
-  search.tooltip = library ? t.tipSearchLibrary : t.tipSearchFolder;
-  search.radius = 12;
-  searchRight_ = right;
-  buttons_.push_back(search);
-  if (!filter.empty()) {
-    Button clear = textButton(t.clear, Icon::None, [this] {
-      setFilter("");
-      return MenuCommand{};
-    });
-    clear.panel = kBrowser;
-    clear.bare = true;
-    clear.on = true;
-    clear.fontSize = 26;
-    clear.w = textWidth(t.clear, 26, false) + 40;
-    clear.x = right - clear.w - 6;
-    clear.y = y + 4;
-    clear.h = h - 8;
-    clear.radius = clear.h / 2;
-    buttons_.push_back(clear);
-    searchRight_ = clear.x;
+  std::string count;
+  if (page_ == Page::Files && !filterText().empty()) {  // how many it finds, before Clear
+    count = stashPrinted(t.matches, stashNumber(folderMatchCount()),
+                         stashNumber(static_cast<long>(listing_.entries().size())));
   }
+  toolsSearch(
+      x, y, right, filterText(), library ? t.tipSearchLibrary : t.tipSearchFolder, editingFilter(),
+      [this] {
+        editing_ = true;
+        return MenuCommand{};
+      },
+      [this] {
+        setFilter("");
+        return MenuCommand{};
+      },
+      count);
 }
 
-// The list's column headings: Name, Rating, Plays, Size and Date modified
-// (in the library: Date added; Last played while sorted by it). The one it
-// is sorted by is blue with its direction; choosing it again turns the
-// direction around, choosing another keeps the direction.
+// The list's column headings: Name, Rating, Plays, Length, Size and Date
+// modified (in the library: Date added; Last played while sorted by it), in
+// line with the rows' columns. The one it is sorted by is in the accent with
+// its direction; choosing it again turns the direction around, choosing
+// another keeps the direction. Length doesn't sort.
 void Menu::layoutListHeader(double x0, double rowW) {
   const Strings& t = text();
-  const ListColumns c = listColumns(x0 + rowW);
+  const ListFit& fit = listFit();
+  const ListColumns c = listColumns(x0 + rowW, fit);
   const bool library = page_ == Page::Library;
   const SortMode mode = library ? librarySort_ : sortMode_;
   const int sorted = fieldOf(mode);
+  const double y = kListHeaderY + toolsShift();
   auto heading = [&](int field, double x, double w, bool rightAligned) {
     const bool on = field == sorted;
-    const FieldOrders& orders = kFieldOrders[field];
-    std::string label = t.sortFields[field];
-    if (on) label += mode == orders.up ? "  ▲" : "  ▼";
-    Button b = textButton(label, Icon::None, [this, field] {
-      sortByField(field);
-      return MenuCommand{};
-    });
-    b.panel = kBrowser;
-    b.bare = true;
-    b.on = on;
-    b.fontSize = 24;
-    b.w = textWidth(label, 24, false) + 24;
-    b.x = rightAligned ? x + w - b.w + 12 : x - 12;
-    b.y = kListHeaderY + toolsShift();
-    b.h = kListHeaderH;
-    b.radius = 10;
-    b.tooltip = on ? t.sortModes[static_cast<int>(mode)] : t.tipSortColumn;
-    buttons_.push_back(b);
+    listHeading(t.sortFields[field], x, w, rightAligned, y, on, mode == kFieldOrders[field].up,
+                on ? t.sortModes[static_cast<int>(mode)] : t.tipSortColumn, [this, field] {
+                  sortByField(field);
+                  return MenuCommand{};
+                });
   };
   Button row;
   row.h = kFileRowH - kRowGap;
-  heading(kByName, x0 + 10 + listThumbW(row) + 16, 400, false);
+  heading(kByName, x0 + kRowPictureIn + listThumbW(row) + kRowNameGap, 400, false);
   if (offline_) {  // the status column's: the Offline place
     Button& place = addRound(Icon::Download, t.offline.nav,
                              [this] {
                                showOffline();
                                return MenuCommand{};
                              },
-                             c.status, kListHeaderY + toolsShift() + 2, kStatusColumnW);
+                             c.status, y, kListHeaderH);
     place.panel = kBrowser;
     place.bare = true;
+    place.iconSize = 22;
   }
-  heading(kByRating, c.rating + 6, kRatingColumnW, false);
+  heading(kByRating, c.rating + 2, kRatingColumnW, false);
   heading(kByPlays, c.plays, kPlaysColumnW, true);
-  heading(kBySize, c.size, kSizeColumnW, true);
-  heading(sorted == kByPlayed ? kByPlayed : library ? kByAdded : kByDate, c.date, kDateColumnW,
+  listHeading(t.lengthColumn, c.length, fit.length, true, y, false, false, "", nullptr);
+  heading(kBySize, c.size, fit.size, true);
+  heading(sorted == kByPlayed ? kByPlayed : library ? kByAdded : kByDate, c.date, fit.date,
           false);
 }
 
@@ -883,13 +815,14 @@ void Menu::sortByField(int field) {
     sortBy((library ? libraryDescending_ : sortDescending_) ? orders.down : orders.up);
 }
 
-// The browser's page for the folder: up and the location;
-// list or thumbnails, the order (with thumbnails) and the search; then the
-// list with its column headings, or four columns of thumbnails.
+// The browser's page for the folder (the kit's content page): up, where
+// it is and Pin; list or thumbnails, the order and the search; then the
+// list with its column headings, or four columns of cards.
 void Menu::layoutFilesPage() {
   const Strings& t = text();
-  const double listX = kPageX + kPagePad;
-  listRight_ = kPageX + kPageWidth - kPagePad + 6;
+  const double listX = kContentLeft;
+  listLeft_ = kContentLeft;
+  listRight_ = kContentRight + kListRightPad;
   listShowsFolder_ = true;
   listColumns_ = false;
 
@@ -904,16 +837,17 @@ void Menu::layoutFilesPage() {
                             showNetwork();
                           return MenuCommand{};
                         },
-                        kPageX + kPagePad, kBrowserRowY, kBrowserRowH);
+                        kContentLeft, kBrowserRowY, kBrowserRowH);
   up.panel = kBrowser;
   up.bare = true;
-  // The location: hovering shows all of it.
+  up.iconSize = 30;
+  // Where it is (drawFilesHeading()): pointing shows all of it.
   const double whereRight = stashFolders_.picking
                                 ? layoutStashFolderChoice()
-                                : kPageX + kPageWidth - kPagePad - kBrowserRowH - 16;
+                                : kContentRight - kBrowserRowH - kColumnGap;
   Button where;
   where.panel = kBrowser;
-  where.x = kPageX + kPagePad + kBrowserRowH + 16;
+  where.x = kContentLeft + kBrowserRowH + kit::kSpaceTight;
   where.y = kBrowserRowY;
   where.w = whereRight - where.x;
   headingRight_ = whereRight;
@@ -926,23 +860,23 @@ void Menu::layoutFilesPage() {
 
   const bool pinned = places_.pinned(directory());
   if (!stashFolders_.picking) {
-  Button& pin = addRound(Icon::Pin, pinned ? t.unpinFolder : t.pinFolder,
-                         [this] {
-                           places_.togglePin(directory());
-                           refreshPlaces();
-                           return MenuCommand{};
-                         },
-                         kPageX + kPageWidth - kPagePad - kBrowserRowH,
-                         kBrowserRowY, kBrowserRowH);
-  pin.panel = kBrowser;
-  pin.bare = true;
-  pin.on = pinned;
-  pin.disabled = !places_.ready() || directory().find('\n') != std::string::npos;
+    Button& pin = addRound(Icon::Pin, pinned ? t.unpinFolder : t.pinFolder,
+                           [this] {
+                             places_.togglePin(directory());
+                             refreshPlaces();
+                             return MenuCommand{};
+                           },
+                           kContentRight - kBrowserRowH, kBrowserRowY, kBrowserRowH);
+    pin.panel = kBrowser;
+    pin.bare = !pinned;
+    pin.latched = pinned;
+    pin.iconSize = 28;
+    pin.disabled = !places_.ready() || directory().find('\n') != std::string::npos;
   }
 
   if (smbForm_.kind != SmbForm::Kind::None) {
     listCount_ = 0;
-    layoutSmbForm(kBrowserToolsY);
+    layoutSmbForm();
     return;
   }
   // While typing, the keyboard takes the bottom of the page.
@@ -955,81 +889,166 @@ void Menu::layoutFilesPage() {
     listTop_ = kListTop;
     listColumns_ = true;
     addList(fileItems(), listX, kFileRowH, editing ? kEditingFileRows : kFileRows);
-    layoutListHeader(listX, listRight_ - listX - 30);
+    if (listCount_ > 0) layoutListHeader(listX, listRight_ - listX - 30);
   }
   if (editing) layoutKeyboard();
   layoutFileTools();
 }
 
-// The location and the folder search's count.
+// The parts of the folder's path from the nearest place shown in the
+// navigation (its name first), else of its whole location.
+std::vector<std::string> Menu::locationParts(const std::string& dir) const {
+  std::vector<std::string> parts;
+  const Places::Place* nearest = nullptr;
+  for (const Places::Place& p : places_.places()) {
+    if (p.hidden || !p.available || p.path.empty()) continue;
+    const bool within = dir == p.path || (dir.size() > p.path.size() && dir.rfind(p.path, 0) == 0 &&
+                                          (p.path.back() == '/' || dir[p.path.size()] == '/'));
+    if (within && (!nearest || p.path.size() > nearest->path.size())) nearest = &p;
+  }
+  std::string rest = dir;
+  if (nearest && !remote::isRemote(dir)) {
+    parts.push_back(nearest->label);
+    rest = dir.substr(nearest->path.size());
+  } else {
+    rest = shownLocation(dir);
+    if (!rest.empty() && rest[0] == '/') parts.push_back("/");
+  }
+  for (size_t from = 0; from <= rest.size();) {
+    const size_t to = std::min(rest.find('/', from), rest.size());
+    if (to > from) parts.push_back(rest.substr(from, to - from));
+    from = to + 1;
+  }
+  if (parts.size() > 1 && parts[0] == "/") parts.erase(parts.begin());
+  return parts;
+}
+
+// Where the folder is: its path's parts from the nearest place, dim and
+// apart, the folder's own name large (as a page's title); leading parts
+// give way to "…" when they don't fit.
 void Menu::drawFilesHeading(cairo_t* cr) {
   const Strings& t = text();
   const Palette& pal = palette();
-  const double x = kPageX + kPagePad + kBrowserRowH + 24;
-  std::string where = shownLocation(directory());
-  if (fileKind_ == FileKind::Subtitle) where = std::string(t.chooseSubtitleFile) + ":  " + where;
+  double x = kContentLeft + kBrowserRowH + kit::kSpaceTight + kit::kSpace;
+  const double right = headingRight_ - kit::kSpace;
+  std::string before;
+  if (fileKind_ == FileKind::Subtitle) before = std::string(t.chooseSubtitleFile) + ":";
   if (stashFolders_.picking) {
     const StashFoldersStrings& s = t.stashFolders;
-    where = std::string(stashFolders_.notThere ? s.notInFolder : s.pickTitle) + "  " + where;
+    before = stashFolders_.notThere ? s.notInFolder : s.pickTitle;
   }
-  drawText(cr, where, x, kBrowserRowY, headingRight_ - x, kBrowserRowH, kTextSize, false, false,
+  if (!before.empty()) {  // what the folder is chosen for, first
+    const double w = std::min(textWidth(before, kit::kRowSize, false) + 2, (right - x) / 2);
+    drawText(cr, before, x, kBrowserRowY, w, kBrowserRowH, kit::kRowSize, false, false, pal.text.r,
+             pal.text.g, pal.text.b);
+    x += w + 24;
+  }
+  std::vector<std::string> parts = locationParts(directory());
+  if (parts.empty()) return;
+  constexpr int crumbSize = kit::kRowSize, hereSize = kit::kTitleSize;
+  constexpr double gap = 10;
+  const double sepW = textWidth("/", crumbSize, false);
+  const std::string here = parts.back();
+  parts.pop_back();
+  const double hereW = textWidth(here, hereSize, true);
+  auto crumbsWidth = [&](size_t from) {
+    double w = 0;
+    for (size_t i = from; i < parts.size(); ++i) w += textWidth(parts[i], crumbSize, false) + 2 * gap + sepW;
+    return w;
+  };
+  // Leading parts as "…" while the rest doesn't fit beside the folder's name.
+  size_t from = 0;
+  const double ellipsisW = textWidth("…", crumbSize, false) + 2 * gap + sepW;
+  while (from < parts.size() && x + crumbsWidth(from) + (from ? ellipsisW : 0) + hereW > right) ++from;
+  const Rgba& dim = pal.textDim;
+  const Rgba& faint = pal.faint;
+  auto crumb = [&](const std::string& part) {
+    const double w = textWidth(part, crumbSize, false);
+    drawText(cr, part, x, kBrowserRowY, w + 2, kBrowserRowH, crumbSize, false, false, dim.r, dim.g, dim.b);
+    x += w + gap;
+    drawText(cr, "/", x, kBrowserRowY, sepW + 2, kBrowserRowH, crumbSize, false, false, faint.r, faint.g,
+             faint.b);
+    x += sepW + gap;
+  };
+  if (from > 0) crumb("…");
+  for (size_t i = from; i < parts.size(); ++i) crumb(parts[i]);
+  drawText(cr, here, x, kBrowserRowY, std::max(0.0, right - x), kBrowserRowH, hereSize, true, false,
            pal.text.r, pal.text.g, pal.text.b);
-  if (!fileFilter_.empty()) {
-    char count[64];
-    std::snprintf(count, sizeof(count), t.matches, folderMatchCount(),
-                  static_cast<int>(listing_.entries().size()));
-    const double w = textWidth(count, 24, false);
-    drawText(cr, count, searchRight_ - w - 16, kBrowserToolsY, w + 2, kBrowserToolsH, 24, false,
-             false, pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a);
-  }
 }
 
-// Over everything: what an empty list means.
+// Over everything: what an empty list means (drawEmptyPage()).
 void Menu::drawListStates(cairo_t* cr) {
-  const Strings& t = text();
-  const Palette& pal = palette();
-  const char* empty = networkState();
   if (smbForm_.kind != SmbForm::Kind::None) {
     drawSmbForm(cr);
     return;
-  } else if (page_ == Page::Files && listing_.reading() && listing_.entries().empty())
-    empty = t.readingFolder;
-  else if (page_ == Page::Files && listing_.status() == remote::Status::Offline)
-    empty = t.network.offline;
-  else if (page_ == Page::Files && listing_.unavailable())
-    empty = t.folderUnavailable;
-  else if (page_ == Page::Files && listing_.entries().empty())
-    empty = fileKind_ == FileKind::Video ? t.noVideos : t.noSubtitleFiles;
-  char noMatches[512];
-  if (!empty && page_ == Page::Files && folderMatchCount() == 0) {
-    std::snprintf(noMatches, sizeof(noMatches), t.noMatches, fileFilter_.c_str());
-    empty = noMatches;
   }
-  if (page_ == Page::Library && !libraryPinHelp() && libraryMatchCount() == 0) {
-    if (libraryFilter_.empty()) {
-      empty = stashCovers_ && !stashCatalog() ? t.libraryEmptyStash : t.libraryEmpty;
-    } else {
-      std::snprintf(noMatches, sizeof(noMatches), t.libraryNoMatches, libraryFilter_.c_str());
-      empty = noMatches;
-    }
-  }
-  if (empty)
-    drawText(cr, empty, kPageX + kPagePad + 24, listTop_, kPageWidth - 2 * kPagePad - 48,
-             kFileRowH, 27, false, false, pal.textDim.r, pal.textDim.g, pal.textDim.b,
-             pal.textDim.a);
+  Icon icon = Icon::Folder;
+  std::string heading, hint;
+  listState(icon, heading, hint);
+  if (!heading.empty()) drawEmptyPage(cr, icon, heading, hint);
 }
 
-// A list's scroll bar: the track, and the visible part of the list on it.
+void Menu::listState(Icon& icon, std::string& heading, std::string& hint) const {
+  const Strings& t = text();
+  if (const char* network = networkState()) {
+    icon = Icon::Globe;
+    heading = network;
+    if (!discovery_.scanning()) hint = t.network.noneHint;
+  } else if (page_ == Page::Files && listing_.reading() && listing_.entries().empty()) {
+    heading = t.readingFolder;
+  } else if (page_ == Page::Files && listing_.status() == remote::Status::Offline) {
+    heading = t.network.offline;
+  } else if (page_ == Page::Files && listing_.unavailable()) {
+    heading = t.folderUnavailable;
+  } else if (page_ == Page::Files && listing_.entries().empty()) {
+    heading = fileKind_ == FileKind::Video ? t.noVideos : t.noSubtitleFiles;
+  } else if (page_ == Page::Files && folderMatchCount() == 0) {
+    icon = Icon::Search;
+    heading = stashPrinted(t.noMatches, fileFilter_);
+  } else if (page_ == Page::Library && !libraryPinHelp() && libraryMatchCount() == 0) {
+    icon = Icon::Library;
+    if (!libraryFilter_.empty()) {
+      icon = Icon::Search;
+      heading = stashPrinted(t.libraryNoMatches, libraryFilter_);
+    } else if (libraryShow_ != 0 && libraryCounts_[0] > 0) {  // Show leaves none of them
+      heading = t.libraryShowsNone;
+    } else {
+      heading = t.libraryEmpty;
+      if (stashCovers_ && !stashCatalog()) hint = t.libraryEmptyStash;
+    }
+  } else if (page_ == Page::Offline && offline_ && offline_->downloads().empty()) {
+    icon = Icon::Download;
+    heading = t.offline.empty;
+    hint = stash_ ? t.offline.emptyHint : t.offline.emptyHintNoStash;
+  }
+}
+
+// A list's scroll bar: a sunk track, and the shown part raised on it (in
+// the accent while dragged).
 void Menu::drawScrollbar(cairo_t* cr, const Button& bar) const {
-  double x = 0, w = 0;
+  double x = 0, w = 0, y = 0, h = 0;
   scrollbarTrack(bar, x, w);
-  roundedRect(cr, x, bar.y, w, bar.h, w / 2);
-  cairo_set_source_rgba(cr, 1, 1, 1, 0.12);
+  drawFinish(cr, Finish::Sunk, x, bar.y, w, bar.h, w / 2);
+  scrollbarThumb(bar, y, h);
+  if (draggingScroll_) {
+    roundedRect(cr, x, y, w, h, w / 2);
+    setColor(cr, palette().accent);
+    cairo_fill(cr);
+    return;
+  }
+  cairo_pattern_t* fill = cairo_pattern_create_linear(0, y, 0, y + h);
+  cairo_pattern_add_color_stop_rgba(fill, 0, 1, 1, 1, 0.34);
+  cairo_pattern_add_color_stop_rgba(fill, 1, 1, 1, 1, 0.22);
+  roundedRect(cr, x, y, w, h, w / 2);
+  cairo_set_source(cr, fill);
   cairo_fill(cr);
-  const ScrollExtent e = scrollExtent();
-  const double thumb = std::max(40.0, bar.h * e.shown / e.total);
-  const double y = bar.y + (bar.h - thumb) * std::min(1.0, e.position / (e.total - e.shown));
-  roundedRect(cr, x, y, w, thumb, w / 2);
-  cairo_set_source_rgba(cr, 1, 1, 1, 0.55);
-  cairo_fill(cr);
+  cairo_pattern_destroy(fill);
+}
+
+// The shown part's rows on the bar: at least kScrollThumbMin long.
+void Menu::scrollbarThumb(const Button& bar, double& y, double& h) const {
+  const ScrollExtent e = scrollExtent(&bar);
+  h = std::max(kScrollThumbMin, bar.h * e.shown / std::max(1.0, e.total));
+  const double range = e.total - e.shown;
+  y = bar.y + (bar.h - h) * (range > 0 ? std::clamp(e.position / range, 0.0, 1.0) : 0.0);
 }

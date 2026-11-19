@@ -1,9 +1,10 @@
 #pragma once
 
-// What the menu's source files share: layout constants, the themes' colours
-// and small drawing helpers.
+// What the menu's source files share: layout constants, the design's
+// tokens and colours, and small drawing helpers.
 
 #include "menu.h"
+#include "menu_finish.h"
 
 #include <cairo.h>
 
@@ -20,17 +21,61 @@ struct Rgba {
   double r, g, b, a;
 };
 struct Palette {
-  Rgba panel;       // panel fill
-  Rgba edge;        // the panels' and group boxes' outline, in the accent
-  Rgba button;      // buttons, keys, rows, tiles
-  Rgba field;       // text and value fields, slider tracks, the timeline band
-  Rgba accent;      // chosen buttons and tabs, slider and progress fill
+  Rgba panel;       // the panel's material, flat (MenuFinishes::panel() draws its gradient)
+  Rgba edge;        // an outline in the accent: a field typed into, the playing tile
+  Rgba button;      // a flat surface: keys, rows, tiles drawn without their finish
+  Rgba field;       // a well (MenuFinishes, Finish::Sunk), flat
+  Rgba accent;      // chosen and filled things, slider and progress fill
   Rgba text, textDim;
-  Rgba textAccent;  // chosen navigation row, the playing file's name
+  Rgba textAccent;  // the accent as text: a chosen row, the playing file's name
   Rgba buffered;    // the downloaded part of a stream on the timeline
+  Rgba faint;       // notes and examples
+  Rgba rule;        // a dividing line
+  Rgba danger, gold, ok;  // what destroys or failed, stars and what waits, what works
+  Rgba accentSoft;  // a mode that is on (latched): the accent at 16 %
 };
 
 namespace {
+
+// The design's tokens (the menu kit): spacing, corners, sizes and type, in
+// layout pixels. Pages being rebuilt use these; the constants after them are
+// the layouts of pages that are not yet.
+namespace kit {
+// Spacing: between parts, between groups and sections, inside a well, between
+// a well's pieces, a page's edge.
+constexpr double kSpace = 16, kSpaceWide = 32, kSpaceTight = 8, kSpacePiece = 4, kSpaceEdge = 24;
+// A group: its title row and its padding at the sides.
+constexpr double kGroupTitle = 48, kGroupPadX = 8;
+constexpr double kTextInset = 24;  // a row's text from its box's left
+// Corners: a panel, a group or open list, a control, a piece inside a well.
+constexpr double kPanelCorner = 30, kGroupCorner = 22, kCorner = 14, kPieceCorner = 10;
+constexpr double kPanelInset = 7;  // the panel is drawn this far inside its rectangle
+// Sizes.
+constexpr double kRowH = 52, kRowStep = 60;
+constexpr double kPageHeaderH = 56;
+constexpr double kStripTabsH = 48, kStripBandH = 58, kStripRowH = 56;
+constexpr double kStripButton = 56, kPlayW = 88;
+constexpr double kNavRowH = 56;
+constexpr double kTileMin = 84, kTileMax = 92;
+constexpr double kSwitchW = 60, kSwitchH = 34, kSwitchKnob = 28;
+constexpr double kSliderTrackH = 8, kSliderKnob = 28;
+constexpr double kKeyH = 56;
+constexpr double kPopPad = 8;  // an open list's edge around its items
+// A dialog (Menu::DialogLayout): its title and lines from its edges, its
+// buttons from its bottom-right corner; between its lines, between the last
+// and its buttons; its buttons' height.
+constexpr double kDialogPad = kSpaceWide, kDialogEdge = kSpace;
+constexpr double kDialogLineGap = 4, kDialogButtonsGap = 24, kDialogButtonH = 56;
+// Type: sizes in pixels, and the line height of notes and tooltips.
+constexpr int kTitleSize = 32;       // a page's title, bold
+constexpr int kRowSize = 25;         // a row's label
+constexpr int kWellSize = 24;        // text in a well, a field
+constexpr int kNavSize = 26, kPlaceSize = 24;
+constexpr int kGroupTitleSize = 22;  // bold, dim
+constexpr int kNoteSize = 21;        // faint
+constexpr int kTipSize = 22;
+constexpr double kNoteLine = 30, kTipLine = 30;
+}  // namespace kit
 
 constexpr double kMargin = 40;
 constexpr double kGap = 16;
@@ -45,38 +90,95 @@ constexpr const char* kFontBold = "Noto Sans Condensed SemiBold";
 constexpr const char* kFontMono = "Noto Sans Mono,Monospace Medium";
 
 // The playback strip, in its texture's pixels: its body starts below the
-// room for open lists and tooltips (Menu::kStripBodyY). Rows: the clock,
-// tabs and info; the timeline band; tools, transport and volume.
-constexpr double kTabX = 140;  // right of the clock
-constexpr double kTabY = Menu::kStripBodyY + 16, kTabH = 50;
-constexpr double kBandY = Menu::kStripBodyY + 78, kBandH = 62;
+// room for open lists and tooltips (Menu::kStripBodyY), its panel drawn
+// kit::kPanelInset inside it. Every box is kit::kSpace from the panel, and
+// its three rows are kit::kSpace apart: the tabs (the clock, the tabs, what
+// is playing, Quit), the band (the timeline) and the controls (tools,
+// transport, volume).
+namespace strip {
+constexpr double kLeft = kit::kPanelInset + kit::kSpace;
+constexpr double kRight = Menu::kMainWidth - kLeft;
+constexpr double kTabsY = Menu::kStripBodyY + kLeft, kTabsH = kit::kStripTabsH;
+constexpr double kBandY = kTabsY + kTabsH + kit::kSpace, kBandH = kit::kStripBandH;
+constexpr double kRowY = kBandY + kBandH + kit::kSpace, kRowH = kit::kStripRowH;
 constexpr double kSeekBand = kBandH / 2;  // the band is the seek bar
-constexpr double kRowY = Menu::kStripBodyY + 152;
-constexpr double kPlayButton = 72;  // and the volume slider's height
-constexpr double kToolSize = 60;    // the other round buttons of that row
-constexpr double kTransportGap = 18;
-constexpr double kVolumeX = 1205;   // the speaker, then the slider to the right margin
-constexpr double kStripStarW = 44;  // a star of the rating among the tools
+constexpr double kButton = kit::kStripButton;  // a round button, its icon:
+constexpr double kButtonIcon = 28, kPlayIcon = 30;
+constexpr double kButtonGap = kit::kSpaceTight;  // between the buttons of a cluster
+constexpr double kCluster = 24;            // between clusters, at least
+// Text without a box of its own, from its row's box: the clock, the band's.
+constexpr double kInset = kit::kSpace;
+// A tab, and Quit: its icon and label (kit::kSpace in from its ends).
+constexpr double kTabIcon = 26, kTabIconGap = 10;
+constexpr int kTabSize = 24;
+constexpr int kClockSize = 26, kInfoSize = 22, kBandSize = 26;
+// A label on the top row (Software decoding, a found update): a chip.
+constexpr double kChipH = 40, kChipPad = 14, kChipCorner = kit::kPieceCorner;
+constexpr int kChipSize = 22;
+// The rating: five stars in cells of 40.
+constexpr double kStarCell = 40;
+// The volume: the speaker, the slider, then the number, its right edge kInset
+// in from the strip's last box.
+constexpr double kVolumeW = 220, kNumberW = 48;
+constexpr int kNumberSize = 26;
+// A list opened above its button: items one under the other, columns of at
+// most kListRows; kListAbove under the list's bottom is the row's top.
+constexpr double kListItemH = 52, kListAbove = 12;
+constexpr int kListRows = 6;
+constexpr int kListSize = 25, kListSubSize = 22;
+}  // namespace strip
 
 // The browser, in its texture's pixels: the navigation column on the left,
 // then the central page from Menu::kPageX.
 constexpr double kPagePad = 24;
 constexpr double kNavRowH = 56, kPlaceRowH = 48;  // section rows, and places under them
 constexpr int kNavPlaces = 11;                     // at most so many places
-constexpr double kBrowserRowY = 20, kBrowserRowH = 56;      // up, star and the location
-constexpr double kBrowserToolsY = 88, kBrowserToolsH = 56;  // views, order, search
-constexpr double kListHeaderY = 156, kListHeaderH = 44;     // the list's column headings
-constexpr double kListTop = 206, kGridTop = 156;            // where the list or grid starts
-constexpr double kListBottom = Menu::kBrowserHeight - kPagePad;
-// Dense list rows (80 reference layout units), a small thumbnail
-// still in each; kRowGap of each is the gap to the next.
-constexpr double kFileRowH = 50, kRowGap = 4;
+// The navigation column's rows (the kit's): kit::kSpace inside its panel,
+// places indented under File explorer, a round button at a row's end
+// (Edit places, the pager's), the rule under the places.
+constexpr double kNavLeft = kit::kPanelInset + kit::kSpace, kNavTop = kNavLeft;
+constexpr double kNavWidth = menu_geometry::kSourcesWidthPx - 2 * kNavLeft;
+constexpr double kNavIndent = 24, kNavButton = 48, kNavRuleH = 2;
+// A content page's parts (the kit's): kit::kSpace inside its panel; the
+// header row (up, where you are, its actions), the tools row (views, order,
+// search, jumps), then the list's column headings and its rows, or the
+// cards straight under the tools.
+constexpr double kContentInset = kit::kPanelInset + kit::kSpace;
+constexpr double kContentLeft = Menu::kPageX + kContentInset;
+constexpr double kContentRight = Menu::kPageX + Menu::kPageWidth - kContentInset;
+constexpr double kBrowserRowY = kContentInset, kBrowserRowH = 56;
+constexpr double kBrowserToolsY = kBrowserRowY + kBrowserRowH + kit::kSpace, kBrowserToolsH = 56;
+constexpr double kListHeaderY = kBrowserToolsY + kBrowserToolsH + kit::kSpace, kListHeaderH = 40;
+constexpr double kListTop = kListHeaderY + kListHeaderH + kit::kSpacePiece, kGridTop = kListHeaderY;
+constexpr double kListBottom = Menu::kBrowserHeight - kContentInset;
+// The scroll bar's track: kScrollTrackW wide along the panel's inside edge;
+// the rows end kit::kSpace left of it, 30 left of Menu::listRight_. Its
+// target is kScrollbarW wide, its thumb at least kScrollThumbMin long.
+constexpr double kScrollTrackW = 10, kScrollbarW = 40, kScrollThumbMin = 48;
+constexpr double kListRightPad = 30 - kit::kSpace - kScrollTrackW;
+// Where a list's content fades out where more of it is, above and below.
+// Each fade also covers the panel kListFadePast past the list's edge,
+// opaque: sampling the browser's texture carries the list's edge rows a few
+// pixels beyond it, more where the eye image is coarser (foveation), which
+// over a bright picture shows as a line there.
+constexpr double kListFadeH = 28, kListFadePast = 8;
+// What moves with a list across: its rows and cards with the playing one's
+// shadow (kListShadowX out at the left), up to kListRightCut left of
+// Menu::listRight_ (clear of the scroll bar's track).
+constexpr double kListShadowX = 8, kListRightCut = 22;
+// List rows 52 high, a small picture in each; kRowGap of each is the gap to
+// the next.
+constexpr double kFileRowH = 56, kRowGap = 4;
 constexpr int kFileRows = static_cast<int>((kListBottom - kListTop) / kFileRowH);  // whole ones
-constexpr double kSizeColumnW = 100, kDateColumnW = 180;  // the list's columns
-constexpr double kPlaysColumnW = 60;
+constexpr double kRowPictureIn = 4;  // a row's picture from its edges
+constexpr double kRowNameGap = 16;   // ... and from the name
+constexpr double kSizeColumnW = 96, kDateColumnW = 176;  // Offline's columns
+constexpr double kPlaysColumnW = 56;
 constexpr double kStatusColumnW = 40;  // a video's offline download: its tick or button
+constexpr double kColumnGap = 24, kStatusGap = 8;  // between them; the status column's
 // A rating control is five stars in equal cells, nothing beside them.
-constexpr double kRowStarW = 26;  // a star's cell in a row's rating
+constexpr double kRowStarW = 28;  // a star's cell in a row's rating
+constexpr double kRowStarSize = 26;
 constexpr double kRatingColumnW = 5 * kRowStarW;
 // On a picture's strip (a tile's): cells and stars, the control's height and
 // where it starts, in from the picture's left and up from its bottom.
@@ -128,39 +230,50 @@ inline double recordKey(int field, const VideoRecord& r, int64_t addedAt) {
 }
 
 // Where a list row's columns start, for a row ending at x1: the offline
-// status, rating, plays, size and date.
+// status, rating, plays, length, size and date, as wide and as far apart
+// as `fit` has them (Menu::listFit()).
 struct ListColumns {
-  double status, rating, plays, size, date;
+  double status, rating, plays, length, size, date;
 };
-inline ListColumns listColumns(double x1) {
+inline ListColumns listColumns(double x1, const ListFit& fit) {
   ListColumns c;
-  c.date = x1 - 16 - kDateColumnW;
-  c.size = c.date - 24 - kSizeColumnW;
-  c.plays = c.size - 16 - kPlaysColumnW;
-  c.rating = c.plays - 16 - kRatingColumnW;
-  c.status = c.rating - 8 - kStatusColumnW;
+  c.date = x1 - kit::kSpace - fit.date;
+  c.size = c.date - kColumnGap - fit.apart[3] - fit.size;
+  c.length = c.size - kColumnGap - fit.apart[2] - fit.length;
+  c.plays = c.length - kColumnGap - fit.apart[1] - kPlaysColumnW;
+  c.rating = c.plays - kColumnGap - fit.apart[0] - kRatingColumnW;
+  c.status = c.rating - kStatusGap - kStatusColumnW;
   return c;
 }
 // A row's byline (Stash's performers and studio) follows its name; a long
 // name keeps at least this share of the name's column.
 constexpr double kBylineShare = 0.65;
+constexpr double kRowBylineGap = 18;  // between a row's name and its byline
+// Cards: the picture 8 in (16:9), the name's two lines (30 each) 12 under it,
+// the details' line, 16 at the bottom; kGalleryGap apart.
 constexpr int kGalleryColumns = 4;
-constexpr double kGalleryRowH = 356, kGalleryGap = 16;
-constexpr int kGalleryRows = 2;  // whole; a third peeks in under them
+constexpr double kGalleryGap = kit::kSpace;
+constexpr double kCardIn = 8, kCardNameGap = 12, kCardLine = 30, kCardCorner = 18;
+// The playing video's mark before its name (a row's and a card's).
+constexpr double kPlayMarkSize = 20, kPlayMarkW = kPlayMarkSize + 10;
+constexpr double kListWidth = kContentRight - kScrollTrackW - kit::kSpace - kContentLeft;
+constexpr double kFileCardW = (kListWidth - (kGalleryColumns - 1) * kGalleryGap) / kGalleryColumns;
 // The pictures of the gallery's tiles and the list's rows as addGallery()
 // and addList() lay them out on the page: what covers and thumbnails are
 // made for.
-constexpr double kCardPictureW =
-    (Menu::kPageWidth - 2 * kPagePad + 6 - 30 - (kGalleryColumns - 1) * kGalleryGap) /
-        kGalleryColumns - 16;
-constexpr double kRowPictureW = (kFileRowH - kRowGap - 4) * 16 / 9;
-// While typing into the folder search, the keyboard takes the bottom of the
-// page and the results the rest.
-constexpr double kKeyH = 58, kKeyStep = 66;
-constexpr double kKeyboardPadY = 10;
-// Keep the panel's bottom at the page inset, with equal padding above and
-// below its five rows of keys.
-constexpr double kKeyboardY = kListBottom - kKeyboardPadY - 4 * kKeyStep - kKeyH;
+constexpr double kCardPictureW = kFileCardW - 2 * kCardIn;
+constexpr double kCardPictureH = static_cast<int>(kCardPictureW * 9 / 16 + 0.5);
+constexpr double kFileCardH = kCardIn + kCardPictureH + kCardNameGap + 3 * kCardLine + kit::kSpace;
+constexpr double kGalleryRowH = kFileCardH + kGalleryGap;
+constexpr int kGalleryRows = 2;  // whole; a third peeks in under them
+constexpr double kRowPictureW = static_cast<int>((kFileRowH - kRowGap - 2 * kRowPictureIn) * 16 / 9);
+// While typing, the keyboard takes the bottom of the page and what it types
+// into the rest: a well of five rows of keys (the kit's, 8 apart), kit::kSpace
+// above the panel's edge. kKeyboardY is the well's top; what is above it
+// ends kit::kSpace over it.
+constexpr double kKeyH = kit::kKeyH, kKeyStep = kit::kKeyH + kit::kSpaceTight;
+constexpr double kKeyboardPadY = kit::kSpaceTight;  // the keys from the well's edges
+constexpr double kKeyboardY = kListBottom - 2 * kKeyboardPadY - 4 * kKeyStep - kKeyH;
 constexpr int kEditingFileRows = static_cast<int>((kKeyboardY - 16 - kListTop) / kFileRowH);
 constexpr int kEditingGalleryRows = 1;
 
@@ -177,8 +290,8 @@ inline double firstRow(double y) { return y + kGroupTitleH + 12; }
 constexpr int kHintSize = 22;
 inline double hintHeight(int lines) { return lines * 30 + 4; }
 
-constexpr double kButtonRadius = 18;
-constexpr int kTooltipSize = 26;  // its text  // the panel shader's hover outline uses the same
+constexpr double kButtonRadius = kit::kCorner;
+constexpr int kTooltipSize = kit::kTipSize;
 
 constexpr double kIconButtonW = 120;
 
@@ -214,6 +327,17 @@ inline std::string sizeText(uint64_t bytes) {
   return buf;
 }
 
+// "2024-05-01", local time: a day in a list's column or under a thumbnail.
+inline std::string dayText(int64_t seconds) {
+  if (seconds <= 0) return "";
+  const std::time_t t = static_cast<std::time_t>(seconds);
+  std::tm local{};
+  localtime_r(&t, &local);
+  char buf[32];
+  std::strftime(buf, sizeof(buf), "%Y-%m-%d", &local);
+  return buf;
+}
+
 // "2024-05-01 14:02", local time.
 inline std::string dateText(int64_t seconds) {
   if (seconds <= 0) return "";
@@ -225,16 +349,7 @@ inline std::string dateText(int64_t seconds) {
   return buf;
 }
 
-inline std::string formatTime(double seconds) {
-  if (!(seconds >= 0)) seconds = 0;
-  const int total = static_cast<int>(seconds);
-  char buf[32];
-  if (total >= 3600)
-    std::snprintf(buf, sizeof(buf), "%d:%02d:%02d", total / 3600, (total / 60) % 60, total % 60);
-  else
-    std::snprintf(buf, sizeof(buf), "%d:%02d", total / 60, total % 60);
-  return buf;
-}
+inline std::string formatTime(double seconds) { return clockTime(seconds); }
 
 // A layout position on the texture's pixel grid (menu_geometry::kRasterScale):
 // lines of text sit on it, so they are as sharp as they can be and the same
@@ -262,6 +377,19 @@ inline void roundedRect(cairo_t* cr, double x, double y, double w, double h, dou
   cairo_close_path(cr);
 }
 
+// The left part, w wide, of a rounded box `full` wide: a value's fill in its
+// well, without clipping to the well (a clip to a curve costs a mask).
+inline void barPath(cairo_t* cr, double x, double y, double w, double h, double r, double full) {
+  r = std::min(r, h / 2);
+  const double left = std::min(r, w / 2), right = std::clamp(r - (full - w), 0.0, w / 2);
+  cairo_new_sub_path(cr);
+  cairo_arc(cr, x + w - right, y + right, right, -M_PI / 2, 0);
+  cairo_arc(cr, x + w - right, y + h - right, right, 0, M_PI / 2);
+  cairo_arc(cr, x + left, y + h - left, left, M_PI / 2, M_PI);
+  cairo_arc(cr, x + left, y + left, left, M_PI, 3 * M_PI / 2);
+  cairo_close_path(cr);
+}
+
 inline std::function<MenuCommand()> command(MenuCommand::Type type, double value = 0) {
   return [type, value] {
     MenuCommand c;
@@ -281,65 +409,42 @@ inline std::string resolutionText(double percent, int base) {
   return buf;
 }
 
-// The look: charcoal panels with a thin bright edge in the accent (blue
-// unless chosen otherwise, accent.h) and a soft glow, lighter rows and
-// fields, white text, the accent for what is chosen (filled for buttons and
-// tabs, its text colour for rows and file names). Both designs share it;
-// Transparent lets the blurred scene show through the panels
-// (Menu::kGlassAlpha), Solid does not.
+// The colours: white text on a dark matte panel, dimmer and fainter text for
+// what matters less, the accent (blue unless chosen otherwise, accent.h) for
+// what is chosen. Surfaces have finishes (menu_finish.h); these are their
+// flat colours, and the text's.
+inline Rgba hexColour(unsigned c, double a = 1) {
+  return {((c >> 16) & 255) / 255.0, ((c >> 8) & 255) / 255.0, (c & 255) / 255.0, a};
+}
 
-const Palette kGlassPalette = {
-    {0.118, 0.118, 0.125, Menu::kGlassAlpha}, {0.118, 0.471, 1.0, 1},
-    {0.23, 0.23, 0.245, 0.88}, {0.08, 0.08, 0.085, 0.80}, {0.118, 0.471, 1.0, 1},
-    {1, 1, 1, 1}, {0.72, 0.72, 0.75, 1}, {0.36, 0.64, 1.0, 1}, {1, 1, 1, 0.22}};
-
-const Palette kMaterialPalette = {
-    {0.118, 0.118, 0.125, 0.97}, {0.118, 0.471, 1.0, 1},
-    {0.23, 0.23, 0.245, 1}, {0.08, 0.08, 0.085, 1}, {0.118, 0.471, 1.0, 1},
-    {1, 1, 1, 1}, {0.72, 0.72, 0.75, 1}, {0.36, 0.64, 1.0, 1}, {1, 1, 1, 0.22}};
-
-constexpr double kPanelRadius = 30;
-constexpr double kGlow = 7;  // the glow around a panel's edge, inside its rectangle
-
-inline Palette paletteFor(Theme theme, const AccentColours& accent) {
-  Palette p = theme == Theme::Material ? kMaterialPalette : kGlassPalette;
+inline Palette paletteFor(const AccentColours& accent) {
+  Palette p;
+  p.panel = hexColour(0x1a1d24);
+  p.button = {1, 1, 1, 0.09};
+  p.field = {0, 0, 0, 0.30};
+  p.text = hexColour(0xf2f4f8);
+  p.textDim = hexColour(0xa3abb8);
+  p.faint = hexColour(0x808895);  // 4.7:1 on the panel, 4.5:1 at its lightest
+  p.buffered = {1, 1, 1, 0.22};
+  p.rule = {1, 1, 1, 0.08};
+  p.danger = hexColour(0xe5484d);
+  p.gold = hexColour(0xffc22e);
+  p.ok = hexColour(0x3ad070);
   p.edge = p.accent = {accent.fill[0], accent.fill[1], accent.fill[2], 1};
+  p.accentSoft = {accent.fill[0], accent.fill[1], accent.fill[2], 0.16};
   p.textAccent = {accent.text[0], accent.text[1], accent.text[2], 1};
   return p;
 }
-
 
 inline void setColor(cairo_t* cr, const Rgba& c, double alpha = 1.0) {
   cairo_set_source_rgba(cr, c.r, c.g, c.b, c.a * alpha);
 }
 
-// A panel: the fill, a thin bright edge and a soft glow around it, all
-// within x, y, w, h (the glow takes kGlow of it).
-inline void panelFrame(cairo_t* cr, double x, double y, double w, double h, const Rgba& fill,
-                       const Rgba& edge, double radius = kPanelRadius) {
-  x += kGlow, y += kGlow, w -= 2 * kGlow, h -= 2 * kGlow;
-  roundedRect(cr, x, y, w, h, radius);
-  setColor(cr, fill);
-  cairo_fill_preserve(cr);
-  for (const auto& [width, alpha] : {std::pair{12.0, 0.10}, {6.0, 0.25}, {2.5, 1.0}}) {
-    setColor(cr, edge, alpha);
-    cairo_set_line_width(cr, width);
-    cairo_stroke_preserve(cr);
-  }
-  cairo_new_path(cr);
-}
-
-// A group of settings: a thin outlined box with its title centred at the top
-// over a dividing line (the title is drawn by the caller's text helper).
-inline void groupFrame(cairo_t* cr, double x, double y, double w, double h, const Palette& pal) {
-  roundedRect(cr, x, y, w, h, 18);
-  setColor(cr, pal.field, 0.55);
-  cairo_fill_preserve(cr);
-  setColor(cr, pal.edge, 0.9);
-  cairo_set_line_width(cr, 2.5);
-  cairo_stroke(cr);
-  cairo_rectangle(cr, x + 16, y + kGroupTitleH, w - 32, 1.5);
-  setColor(cr, pal.edge, 0.6);
+// A group of settings: a shallow darker box (its title is drawn by the
+// caller's text helper, at its top left).
+inline void groupFrame(cairo_t* cr, double x, double y, double w, double h) {
+  roundedRect(cr, x, y, w, h, kit::kGroupCorner);
+  cairo_set_source_rgba(cr, 0, 0, 0, 0.18);
   cairo_fill(cr);
 }
 
@@ -401,8 +506,6 @@ inline void drawBrand(cairo_t* cr, double x, double y, double size, int parts = 
   cairo_restore(cr);
 }
 
-constexpr double kSliderInset = 28;    // a slider's track starts this far into it
-constexpr double kSliderValueW = 110;  // the value right of it, with room for the knob at 100
 constexpr double kDialogW = 1160, kDialogH = 400;
 
 }  // namespace

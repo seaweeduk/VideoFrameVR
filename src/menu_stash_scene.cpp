@@ -1,3 +1,5 @@
+#include "menu_list_parts.h"
+#include "menu_parts.h"
 #include "menu_style.h"
 
 #include "menu_stash.h"
@@ -35,13 +37,15 @@ constexpr double kTextW = kRight - kRightX - 20;  // the column's content, clear
 constexpr double kActionH = 64;
 constexpr double kActionY = Menu::kBrowserHeight - kPagePad - kActionH;
 constexpr double kColumnTop = kTop - 4, kColumnBottom = kActionY - 16;
-constexpr double kCastW = 132, kCastGap = 12, kCastH = 250;  // portrait cards, 2:3 pictures
+constexpr int kCastColumns = 5;  // her cards, as the Performers page's
 constexpr double kTagH = 48, kTagStep = 58, kTagGap = 10;
+constexpr double kOrderH = 44;  // the tags' order well
 constexpr double kChipIconW = 30;  // an editing chip's × (or Add tags' +)
+constexpr double kTagPad = 18;  // a tag chip's text from its ends
 constexpr int kTagRows = 3;  // before "+N more"
 constexpr int kDetailLines = 3, kAllDetailLines = 40;
 constexpr size_t kSimilarCount = 12;
-constexpr double kTileGap = 16;
+constexpr double kTileGap = kGalleryGap;
 constexpr double kLogoShare = 0.36;  // of a tile's picture, as menu_stash_covers.cpp draws it
 
 std::string upper(std::string s) {
@@ -90,7 +94,8 @@ std::vector<std::pair<int, std::string>> similarScenes(const StashCatalog& c, in
     if (away && history[i].hidden) continue;
     int common = 0;
     for (const int tag : scenes[i].tags) common += tagged[tag];
-    list.emplace_back(i, stashPrinted(t.tagsInCommon, common));
+    list.emplace_back(i, common == 1 ? std::string(t.oneTagInCommon)
+                                     : stashPrinted(t.tagsInCommon, common));
   }
   return list;
 }
@@ -99,31 +104,19 @@ std::vector<std::pair<int, std::string>> similarScenes(const StashCatalog& c, in
 
 // The tab between Stereo focus and Quit, there while Stash is on whatever
 // plays, so the strip never shifts; greyed while nothing local plays.
-void StashPages::layoutSceneTab(Menu& m, double& x) {
+void StashPages::layoutSceneTab(Menu& m, Menu::StripLayout& strip) {
   const bool open = m.page_ == Menu::Page::StashSceneDetails;
-  const char* label = strings().stashScene.tab;
-  Button b = m.textButton(
-      label, Menu::Icon::None,
-      [&m, open] {
-        if (open)
-          m.showPage(Menu::Page::Main);
-        else
-          showSceneDetails(m);
-        return MenuCommand{};
-      },
-      open);
-  b.tab = true;
-  b.x = x;
-  b.y = kTabY;
-  b.w = m.textWidth(label, 26, false) + 80;
-  b.h = kTabH;
-  b.radius = kTabH / 2;
-  b.fontSize = 26;
+  Button& b = strip.tab(strings().stashScene.tab, Menu::Icon::None,
+                        open, [&m, open] {
+                          if (open)
+                            m.showPage(Menu::Page::Main);
+                          else
+                            showSceneDetails(m);
+                          return MenuCommand{};
+                        });
   b.stashLook = static_cast<int>(StashLook::Tab);
   b.stashIcon = static_cast<int>(StashIcon::Stash);
   b.disabled = !open && (m.view_.currentFile.empty() || m.view_.streaming || m.view_.photo);
-  m.buttons_.push_back(b);
-  x += b.w + 10;
 }
 
 // The page has the side column to itself: the rail's place is kept for it.
@@ -244,7 +237,7 @@ void StashPages::layoutSceneDetails(Menu& m) {
       if (r.lastPlayedAt > 0)
         plays += "  ·  " + stashPrinted(t.lastPlayed, stashAgo(r.lastPlayedAt));
     }
-    m.addLabel(kLeftX, y, kLeftW, 34, plays, 24, false);
+    m.addLabel(kLeftX, y, kLeftW, 34, plays, kit::kWellSize, false);
     y += 36;
   }
   if (local) {
@@ -273,7 +266,7 @@ void StashPages::layoutSceneDetails(Menu& m) {
         stashJoined({format, duration > 0 && !m.view_.photo ? formatTime(duration) : "",
                      s ? sizeText(s->size) : ""});
     for (const std::string& line : {stashJoined(first), second}) {
-      m.addLabel(kLeftX, y, kLeftW, 34, line, 24, false);
+      m.addLabel(kLeftX, y, kLeftW, 34, line, kit::kWellSize, false);
       y += 34;
     }
     m.addLabel(kLeftX, y + 6, kLeftW, 0, isStashScene(path) ? t.fromStash : path, kHintSize, true, 2);
@@ -290,21 +283,21 @@ void StashPages::layoutSceneDetails(Menu& m) {
   // A video Stash doesn't know, nothing playing, or no catalog yet.
   if (!s) {
     if (path.empty()) {
-      m.addLabel(kRightX, kTop - 4, kRight - kRightX, 48, t.nothingPlaying, 27, true);
+      m.addLabel(kRightX, kTop - 4, kRight - kRightX, 48, t.nothingPlaying, kit::kRowSize, true);
     } else if (!c && local) {
       const StashStatus& status = m.stash_->status();
       m.addLabel(kRightX, kTop - 4, kRight - kRightX, 48,
                  status.problem == StashProblem::TooOld ? status.error
                  : status.error.empty()                 ? std::string(ts.loading)
                                                         : std::string(ts.noCatalog),
-                 27, true);
+                 kit::kRowSize, true);
     } else {
       m.addLabel(kRightX, kTop - 4, kRight - kRightX, 48,
-                 local ? path.substr(path.find_last_of('/') + 1) : m.view_.playback.title, 30, false);
+                 local ? path.substr(path.find_last_of('/') + 1) : m.view_.playback.title, kit::kTitleSize, false);
       d.boxY = kTop + 64;
       d.boxH = local ? 300 : 180;
       const double bx = kRightX + 28, bw = kRight - kRightX - 56;
-      m.addLabel(bx + 46, d.boxY + 22, bw - 46, 40, t.notInStash, 27, false);
+      m.addLabel(bx + 46, d.boxY + 22, bw - 46, 40, t.notInStash, kit::kRowSize, false);
       // Where Stash's folders are here: its library folders mapped, else
       // the mappings' folders.
       std::vector<std::string> folders;
@@ -323,7 +316,7 @@ void StashPages::layoutSceneDetails(Menu& m) {
       const std::string why = !local   ? t.notLocal
                               : inside ? t.notScanned
                                        : stashPrinted(t.outsideFolders, shown);
-      m.addLabel(bx, d.boxY + 76, bw, 0, why, 24, true, 3);
+      m.addLabel(bx, d.boxY + 76, bw, 0, why, kit::kWellSize, true, 3);
       if (local) {
         const StashStatus& status = m.stash_->status();
         Button sync = m.textButton(ts.syncNow, Menu::Icon::None, command(MenuCommand::SyncStash));
@@ -337,7 +330,7 @@ void StashPages::layoutSceneDetails(Menu& m) {
         const std::string state =
             status.syncing ? ts.syncing
             : status.lastSync > 0
-                ? stashPrinted(t.lastSync, stashAgo(status.lastSync), stashNumber(status.scenes))
+                ? stashPrinted(t.lastSync, stashAgo(status.lastSync), stashScenes(status.scenes))
                 : ts.notSynced;
         m.addLabel(sync.x + sync.w + 24, sync.y, bw - sync.w - 24, 56, state, kHintSize, true);
       }
@@ -374,9 +367,9 @@ void StashPages::layoutSceneDetails(Menu& m) {
     b.h = kTagH;
     b.label = label;
     b.size = count;
-    b.on = on;
-    b.dim = outlined;
-    b.bare = true;
+    b.latched = on;  // chosen, or added while editing
+    b.dim = outlined;  // More, "+N more": a link
+    b.bare = outlined;
     b.radius = kTagH / 2;
     b.stashLook = static_cast<int>(StashLook::TagChip);
     b.action = [action] {
@@ -387,8 +380,8 @@ void StashPages::layoutSceneDetails(Menu& m) {
     return &column.back();
   };
   auto chipW = [&](const std::string& label, const std::string& count) {
-    return std::min(kTextW, m.textWidth(label, 24, false) + 36 +
-                                (count.empty() ? 0 : 8 + m.textWidth(count, 20, false)));
+    return std::min(kTextW, m.textWidth(label, kit::kWellSize, false) + 2 * kTagPad +
+                                (count.empty() ? 0 : kit::kSpaceTight + m.textWidth(count, kCountSize, false)));
   };
   std::vector<int> cast;
   for (const int p : s->performers)
@@ -475,7 +468,7 @@ void StashPages::layoutSceneDetails(Menu& m) {
   if (d.adding) {
     // Add tags in the column's place: a find field over every tag, the
     // keyboard under it; a tap adds one, again takes it back.
-    m.addLabel(kRightX, kTop - 4, kTextW - 300, 56, t.addTags, 30, false);
+    m.addLabel(kRightX, kTop - 4, kTextW - 300, 56, t.addTags, kit::kTitleSize, false);
     Button back = actionButton(
         m, t.backToTags, StashIcon::Back,
         [&m] {
@@ -488,13 +481,11 @@ void StashPages::layoutSceneDetails(Menu& m) {
     back.x = kRight - back.w;
     m.buttons_.push_back(back);
     const std::string hint = stashPrinted(t.findTag, stashNumber(static_cast<long>(allTags.size())));
-    Button field = m.textButton(
-        d.search.empty() && !typing ? hint : d.search, Menu::Icon::Search,
-        [&m] {
-          state(m).typing = StashMenu::Typing::Tags;
-          m.editing_ = true;
-          return MenuCommand{};
-        });
+    Button field = m.textButton(d.search, Menu::Icon::Search, [&m] {
+      state(m).typing = StashMenu::Typing::Tags;
+      m.editing_ = true;
+      return MenuCommand{};
+    });
     field.panel = Menu::kBrowser;
     field.x = kRightX;
     field.y = kTop + 64;
@@ -504,7 +495,8 @@ void StashPages::layoutSceneDetails(Menu& m) {
     field.field = true;
     field.on = typing;
     field.caret = typing ? m.caret() : -1;
-    field.placeholder = d.search.empty() && !typing;
+    field.example = hint;  // while empty, typed into or not
+    field.stashLook = static_cast<int>(StashLook::Field);  // its icon even while empty
     field.radius = 12;
     m.buttons_.push_back(field);
     if (!d.search.empty()) {
@@ -543,11 +535,14 @@ void StashPages::layoutSceneDetails(Menu& m) {
     columnTop = field.y + field.h + 16;
     columnBottom = typing ? kKeyboardY - 16 : kColumnBottom;
     if (d.found.empty() && !d.search.empty())
-      text(kRightX, 0, kTextW, 48, stashPrinted(t.noTagFound, d.search), 24, true, 1);
+      text(kRightX, 0, kTextW, 48, stashPrinted(t.noTagFound, d.search), kit::kWellSize, true, 1);
     // Only the rows in view are made: the list may hold every tag.
     constexpr double rowStep = 54, rowH = 50;
     const double cellW = (kTextW - 16) / 2;
     const size_t rows = (d.found.size() + 1) / 2;
+    // Held in the column first (as below), so that these are the rows it shows.
+    m.side_.position = std::clamp(m.side_.position, 0.0,
+                                  std::max(0.0, rows * rowStep + 8 - (columnBottom - columnTop)));
     const size_t from = static_cast<size_t>(std::max(0.0, m.side_.position / rowStep));
     const size_t to = std::min(
         rows, static_cast<size_t>((m.side_.position + columnBottom - columnTop) / rowStep) + 2);
@@ -580,8 +575,8 @@ void StashPages::layoutSceneDetails(Menu& m) {
   } else if (!d.similar) {
     // Title; studio, release date, code and director.
     const std::string title = s->displayTitle();
-    const Wrapped tw = wrapped(measure, title, 30, kTextW, 2);
-    text(kRightX, cy, kTextW, tw.height, title, 30, false, 2);
+    const Wrapped tw = wrapped(measure, title, kit::kTitleSize, kTextW, 2);
+    text(kRightX, cy, kTextW, tw.height, title, kit::kTitleSize, false, 2);
     cy += tw.height + 8;
     double x = kRightX;
     if (s->studio >= 0) {
@@ -602,48 +597,53 @@ void StashPages::layoutSceneDetails(Menu& m) {
     const std::string facts = stashJoined(
         {s->date, s->code, s->director.empty() ? "" : stashPrinted(t.director, s->director)},
         "  ·  ");
-    if (!facts.empty()) text(x + 8, cy, kRightX + kTextW - x - 8, 48, facts, 24, true, 1);
+    if (!facts.empty()) text(x + 8, cy, kRightX + kTextW - x - 8, 48, facts, kit::kWellSize, true, 1);
     cy += 60;
 
     // The cast: portraits with her age then; one opens her page.
     if (cast.empty()) {
-      text(kRightX, cy, kTextW, 40, s->performers.empty() ? t.noPerformers : t.onlyMen, 24, true, 1);
+      text(kRightX, cy, kTextW, 40, s->performers.empty() ? t.noPerformers : t.onlyMen, kit::kWellSize,
+           true, 1);
       cy += 52;
     } else {
-      const int perRow = std::max(1, static_cast<int>((kTextW + kCastGap) / (kCastW + kCastGap)));
+      const double cardW = (kTextW - (kCastColumns - 1) * kTileGap) / kCastColumns;
+      const double cardH = performerCardHeight(cardW, 2);
       for (size_t i = 0; i < cast.size(); ++i) {
         const StashPerformer& p = c->performers()[cast[i]];
         Button b;
         b.panel = Menu::kBrowser;
-        b.x = kRightX + (i % perRow) * (kCastW + kCastGap);
-        b.y = cy + (i / perRow) * (kCastH + kCastGap);
-        b.w = kCastW;
-        b.h = kCastH;
-        b.radius = 14;
+        b.x = kRightX + (i % kCastColumns) * (cardW + kTileGap);
+        b.y = cy + (i / kCastColumns) * (cardH + kTileGap);
+        b.w = cardW;
+        b.h = cardH;
+        b.card = true;
+        b.radius = kCardCorner;
         b.label = p.name;
         const int age = stashAge(p.born, s->day);
         if (age >= 0) b.detail = stashPrinted(t.ageThen, age);
         b.stashId = p.id;
-        b.stashLook = static_cast<int>(StashLook::Portrait);
+        b.stashLook = static_cast<int>(StashLook::PerformerCard);
         b.action = [&m, id = p.id] {
           showPerformer(m, id);
           return MenuCommand{};
         };
-        if (m.textWidth(p.name, 22, false) > kCastW - 20) b.tooltip = p.name;
+        if (m.textWidth(p.name, kit::kRowSize, false) > cardW - 2 * kit::kSpace) b.tooltip = p.name;
         column.push_back(b);
-        if (!p.image.empty()) wanted.push_back(Stash::portraitRequest(p, stashPixels(kCastW - 12)));
+        if (!p.image.empty())
+          wanted.push_back(Stash::portraitRequest(p, stashPixels(cardW - 2 * kCardIn)));
       }
-      cy += ((cast.size() + perRow - 1) / perRow) * (kCastH + kCastGap) + 6;
+      cy += ((cast.size() + kCastColumns - 1) / kCastColumns) * (cardH + kTileGap) + 6;
     }
 
     // The details: three lines, More shows all of them.
     if (!s->details.empty()) {
       const bool open = d.detailsOpen;
-      const bool more = wrapped(measure, s->details, 24, kTextW - 130, kDetailLines).lines > kDetailLines;
+      const bool more =
+          wrapped(measure, s->details, kit::kWellSize, kTextW - 130, kDetailLines).lines > kDetailLines;
       const double w = more && !open ? kTextW - 130 : kTextW;
       const int lines = open ? kAllDetailLines : kDetailLines;
-      const Wrapped shown = wrapped(measure, s->details, 24, w, lines);
-      text(kRightX, cy, w, shown.height, s->details, 24, false, lines);
+      const Wrapped shown = wrapped(measure, s->details, kit::kWellSize, w, lines);
+      text(kRightX, cy, w, shown.height, s->details, kit::kWellSize, false, lines);
       if (more) {
         const char* label = open ? t.lessText : t.moreText;
         chip(label, "", false, true, [&m] { state(m).sceneTab.detailsOpen ^= true; },
@@ -671,36 +671,37 @@ void StashPages::layoutSceneDetails(Menu& m) {
         std::stable_sort(keys.begin(), keys.end());
         for (size_t i = 0; i < keys.size(); ++i) tags[i] = keys[i].second;
       }
+      // Its heading and count, the order well, then Edit tags at the right.
+      const double headY = cy + (kTagH - kOrderH) / 2;
       Button heading;
       heading.panel = Menu::kBrowser;
-      heading.x = kRightX - 8;
-      heading.y = cy;
-      heading.w = 140;
-      heading.h = kTagH;
-      heading.label = t.tags;  // no action: drawn as a list heading
+      heading.listLook = static_cast<int>(ListLook::Heading);
+      heading.x = kRightX - 12;  // its text in line with the column's
+      heading.y = headY;
+      heading.w = m.textWidth(t.tags, kit::kGroupTitleSize, true) + 24;
+      heading.h = kOrderH;
+      heading.label = t.tags;
       column.push_back(heading);
-      const double countX = kRightX + m.textWidth(t.tags, Menu::kTextSize, true) + 16;
-      text(countX, cy, 80, kTagH, stashNumber(static_cast<long>(tags.size())), kHintSize, true, 1);
-      double sx = kRightX + 160;
+      const std::string tagCount = stashNumber(static_cast<long>(tags.size()));
+      const double countX = kRightX + heading.w - 24 + kit::kSpaceTight;
+      const double countW = m.textWidth(tagCount, kCountSize, false) + 4;
+      text(countX, headY, countW, kOrderH, tagCount, kCountSize, true, 1);
+      std::vector<Menu::ToolPiece> orders;
       for (int order = 0; order < 3; ++order) {
-        Button b = m.textButton(
-            t.tagOrders[order], Menu::Icon::None,
-            [&m, order] {
-              state(m).sceneTab.tagOrder = order;
-              return MenuCommand{};
-            },
-            d.tagOrder == order);
-        b.panel = Menu::kBrowser;
-        b.x = sx;
-        b.y = cy;
-        b.w = m.textWidth(t.tagOrders[order], 22, false) + 36;
-        b.h = kTagH;
-        b.radius = kTagH / 2;
-        b.fontSize = 22;
-        b.tooltip = t.tipTagOrders[order];
-        column.push_back(b);
-        sx += b.w + 6;
+        Menu::ToolPiece piece;
+        piece.label = t.tagOrders[order];
+        piece.tooltip = t.tipTagOrders[order];
+        piece.chosen = d.tagOrder == order;
+        piece.action = [&m, order] {
+          state(m).sceneTab.tagOrder = order;
+          return MenuCommand{};
+        };
+        orders.push_back(std::move(piece));
       }
+      const size_t well = m.buttons_.size();
+      double sx = m.toolsWell(countX + countW + kit::kSpace, headY, orders, kOrderH);
+      for (size_t i = well; i < m.buttons_.size(); ++i) column.push_back(std::move(m.buttons_[i]));
+      m.buttons_.resize(well);
       // At the right: Edit tags, or while editing what a tap does.
       double right = kRightX + kTextW;
       if (canEdit && !d.editing) {
@@ -715,13 +716,14 @@ void StashPages::layoutSceneDetails(Menu& m) {
           return MenuCommand{};
         });
         edit.panel = Menu::kBrowser;
-        edit.fontSize = 24;
+        edit.fontSize = kit::kWellSize;
         edit.x = right - edit.w;
-        edit.y = cy;
-        edit.h = kTagH;
+        edit.y = headY;
+        edit.h = kOrderH;
+        edit.radius = kit::kCorner;
         edit.tooltip = t.tipEditTags;
         column.push_back(edit);
-        right = edit.x - 16;
+        right = edit.x - kit::kSpace;
       }
       const std::string note = d.editing         ? std::string(t.editHint)
                                : !d.savedNote.empty() ? stashPrinted(t.saved, d.savedNote)
@@ -729,8 +731,8 @@ void StashPages::layoutSceneDetails(Menu& m) {
                                                  : std::string();
       if (!note.empty()) {
         const double hw = m.textWidth(note, kHintSize, false) + 4;
-        if (right - hw > sx + 16)
-          text(right - hw, cy, hw, kTagH, note, kHintSize, d.savedNote.empty() || d.editing, 1);
+        if (right - hw > sx + kit::kSpace)
+          text(right - hw, headY, hw, kOrderH, note, kHintSize, d.savedNote.empty() || d.editing, 1);
       }
       cy += kTagStep + 4;
 
@@ -759,6 +761,10 @@ void StashPages::layoutSceneDetails(Menu& m) {
       auto editable = [&](Button* b, int64_t id) {
         b->icon = Menu::Icon::Close;
         b->crossed = has(d.struck, id);
+        if (b->crossed) {  // flat and faded, to be removed
+          b->latched = false;
+          b->bare = true;
+        }
         b->action = [strike, id] {
           strike(id);
           return MenuCommand{};
@@ -855,7 +861,7 @@ void StashPages::layoutSceneDetails(Menu& m) {
     }
   } else {
     // Similar scenes in the details' place, each with why.
-    text(kRightX, cy, kTextW - 300, 56, t.similar, 30, false, 1);
+    text(kRightX, cy, kTextW - 300, 56, t.similar, kit::kTitleSize, false, 1);
     Button back = actionButton(
         m, t.backToDetails, StashIcon::Back,
         [&m] {
@@ -879,7 +885,7 @@ void StashPages::layoutSceneDetails(Menu& m) {
       d.similarScenes = similarScenes(*c, index, male, st.history);
     }
     if (d.similarScenes.empty()) {
-      text(kRightX, cy, kTextW, 48, t.noSimilar, 24, true, 1);
+      text(kRightX, cy, kTextW, 48, t.noSimilar, kit::kWellSize, true, 1);
       cy += 56;
     }
     // Played from here, Previous and Next go through them after this one.
@@ -889,15 +895,15 @@ void StashPages::layoutSceneDetails(Menu& m) {
     constexpr int columns = 3;
     const double cardW = (kTextW - (columns - 1) * kTileGap) / columns;
     const double pictureW = cardW - 16;
-    const double tileH = std::round(8 + pictureW * 9 / 16 + 6 + 34 + 30 + 30 + 10);
+    const double tileH = cardHeight(cardW);
     std::vector<int> studios;
     for (size_t k = 0; k < d.similarScenes.size(); ++k) {
       const StashScene& sc = c->scenes()[d.similarScenes[k].first];
       const std::string& location = paths[k + 1];
-      Button b = sceneTile(m, *c, sc, m.library_ ? m.library_->record(location).playCount : 0,
+      Button b = sceneCard(m, *c, sc, m.library_ ? m.library_->record(location).playCount : 0, 0,
                            kRightX + (k % columns) * (cardW + kTileGap),
-                           cy + (k / columns) * (tileH + kTileGap), cardW, tileH);
-      b.detail = d.similarScenes[k].second;
+                           cy + (k / columns) * (tileH + kTileGap), cardW);
+      b.byline = d.similarScenes[k].second;  // why it is similar, in place of her name
       b.action = [&m, paths, path = location] {
         m.playList_ = paths;
         m.playAt_ = path;
@@ -908,6 +914,7 @@ void StashPages::layoutSceneDetails(Menu& m) {
         return cmd;
       };
       column.push_back(b);
+      column.push_back(m.cardBadge(b, badge(sc)));
       if (m.stashCoversShown() && !sc.cover.empty())
         wanted.push_back(Stash::coverRequest(
             sc, static_cast<int>(std::ceil(pictureW * menu_geometry::kRasterScale))));
@@ -951,13 +958,16 @@ void StashPages::layoutSceneDetails(Menu& m) {
     b.label = label;
     b.size = count;
     b.selected = selected;
+    b.radius = kit::kCorner;
     b.stashLook = static_cast<int>(StashLook::Go);
     b.stashIcon = static_cast<int>(icon);
     b.action = std::move(action);
-    const double countW = count.empty() ? 0 : m.textWidth(count, 22, false) + 16;
-    if (m.textWidth(label, Menu::kTextSize, false) > w - 66 - 22 - countW) b.tooltip = label;
+    const ActionSpace a = actionSpace(kActionH);
+    const double countW = count.empty() ? 0 : m.textWidth(count, kCountSize, false) + a.gap;
+    const double lead = icon == StashIcon::None ? a.pad : a.pad + a.icon + a.gap;
+    if (m.textWidth(label, kit::kRowSize, false) > w - lead - a.pad - countW) b.tooltip = label;
     m.buttons_.push_back(b);
-    ax += w + 14;
+    ax += w + kit::kSpace;
   };
   // Editing: Save to Stash with what it sends, and Cancel, which asks once
   // before throwing changes away; after a failed save, Try again.
@@ -993,8 +1003,8 @@ void StashPages::layoutSceneDetails(Menu& m) {
        220, false);
     note(t.nothingSent);
   } else if (d.editing && failed) {
-    const double buttons = kRight - 220 - 14 - 160;
-    m.addLabel(ax, kActionY, buttons - 14 - ax, kActionH, t.saveFailed, 24, false);
+    const double buttons = kRight - 220 - kit::kSpace - 160;
+    m.addLabel(ax, kActionY, buttons - kit::kSpace - ax, kActionH, t.saveFailed, kit::kWellSize, false);
     ax = buttons;
     go(t.tryAgain, "", StashIcon::Stash, save, 220, true);
     go(base.cancel, "", StashIcon::None, cancel, 160, false);
@@ -1050,7 +1060,7 @@ void StashPages::layoutSceneDetails(Menu& m) {
        },
        150, false);
   } else {
-    const double third = (kRight - kRightX - 28) / 3;
+    const double third = (kRight - kRightX - 2 * kit::kSpace) / 3;
     if (!cast.empty()) {
       const StashPerformer& p = c->performers()[cast.front()];
       go(stashPrinted(t.moreWith, p.name), p.scenes > 1 ? stashNumber(p.scenes - 1) : "",
@@ -1099,16 +1109,11 @@ void StashPages::drawSceneDetailsHeading(const Menu& m, cairo_t* cr) {
   }
   if (d.dividerY > 0) {
     cairo_rectangle(cr, kLeftX, d.dividerY, kLeftW, 1.5);
-    setColor(cr, pal.edge, 0.5);
+    setColor(cr, pal.rule);
     cairo_fill(cr);
   }
   if (d.boxH > 0) {
-    roundedRect(cr, kRightX, d.boxY, kRight - kRightX, d.boxH, 18);
-    setColor(cr, pal.field, 0.55);
-    cairo_fill_preserve(cr);
-    setColor(cr, pal.edge, 0.6);
-    cairo_set_line_width(cr, 2);
-    cairo_stroke(cr);
+    m.drawFinish(cr, Finish::Sunk, kRightX, d.boxY, kRight - kRightX, d.boxH, kit::kGroupCorner);
     const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
     drawIcon(cr, StashIcon::Stash, kRightX + 28 + 16, d.boxY + 22 + 20, 32, dim);
   }
@@ -1119,40 +1124,35 @@ void StashPages::drawSceneButton(const Menu& m, cairo_t* cr, const Button& b,
   const Palette& pal = m.palette();
   const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
   switch (static_cast<StashLook>(b.stashLook)) {
-    case StashLook::Tab:  // as the strip's other tabs, with Stash's mark
-      drawIcon(cr, StashIcon::Stash, b.x + 20 + 15, b.y + b.h / 2, 30, ink);
-      m.drawText(cr, b.label, b.x + 60, b.y, b.w - 78, b.h, b.fontSize, false, false, ink[0], ink[1],
-                 ink[2]);
+    case StashLook::Tab: {  // as the strip's other tabs, with Stash's mark
+      double icon[4];
+      m.iconInk(b, ink, icon);
+      const double iconX = b.x + kit::kSpace, textX = iconX + strip::kTabIcon + strip::kTabIconGap;
+      drawIcon(cr, StashIcon::Stash, iconX + strip::kTabIcon / 2, b.y + b.h / 2, strip::kTabIcon,
+               icon);
+      m.drawText(cr, b.label, textX, b.y, b.x + b.w - textX - kit::kSpace + 4, b.h, b.fontSize,
+                 false, false, ink[0], ink[1], ink[2]);
       return;
+    }
     case StashLook::TagChip: {
-      // Editing: struck (to be removed) faded as a disabled button, ↶ at its
-      // end to keep it; else × to strike it. Add tags starts with +.
+      // Its label and count on the chip's own finish (raised, latched while
+      // chosen); More and "+N more" in the accent, as links. Editing:
+      // struck (to be removed) flat and faded, ↶ at its end to keep it; else
+      // × to strike it. Add tags starts with +.
       if (b.crossed) cairo_push_group(cr);
-      roundedRect(cr, b.x, b.y, b.w, b.h, b.h / 2);
-      if (b.on) {
-        setColor(cr, pal.accent);
-        cairo_fill(cr);
-      } else if (b.dim) {  // "+N more", More: outlined
-        cairo_new_path(cr);
-        roundedRect(cr, b.x + 1, b.y + 1, b.w - 2, b.h - 2, b.h / 2 - 1);
-        cairo_set_source_rgba(cr, 1, 1, 1, 0.3);
-        cairo_set_line_width(cr, 2);
-        cairo_stroke(cr);
-      } else {
-        setColor(cr, pal.button);
-        cairo_fill(cr);
-      }
-      const double countW = b.size.empty() ? 0 : m.textWidth(b.size, 20, false) + 8;
+      const double accent[4] = {pal.textAccent.r, pal.textAccent.g, pal.textAccent.b, 1};
+      const double* text = b.dim ? accent : ink;
+      const double countW = b.size.empty() ? 0 : m.textWidth(b.size, kCountSize, false) + kit::kSpaceTight;
       const bool plus = b.icon == Menu::Icon::Plus;
       const double lead = plus ? kChipIconW : 0;
       const double end = b.icon == Menu::Icon::Close ? kChipIconW : 0;
-      if (plus) Menu::drawIcon(cr, Menu::Icon::Plus, b.x + 18 + 12, b.y + b.h / 2, 24);
-      m.drawText(cr, b.label, b.x + 18 + lead, b.y, b.w - 36 - countW - lead - end, b.h, 24, false,
-                 b.size.empty(), 1, 1, 1);
+      if (plus) Menu::drawIcon(cr, Menu::Icon::Plus, b.x + kTagPad + 12, b.y + b.h / 2, 24);
+      m.drawText(cr, b.label, b.x + kTagPad + lead, b.y, b.w - 2 * kTagPad - countW - lead - end, b.h,
+                 kit::kWellSize, false, b.size.empty() && !plus, text[0], text[1], text[2]);
       if (!b.size.empty()) {
-        const double* n = b.on ? ink : dim;
-        m.drawText(cr, b.size, b.x + b.w - 18 - end - countW + 8, b.y, countW, b.h, 20, false, false,
-                   n[0], n[1], n[2], b.on ? 0.8 : 1);
+        const double* n = b.latched ? ink : dim;
+        m.drawText(cr, b.size, b.x + b.w - kTagPad - end - countW + kit::kSpaceTight, b.y, countW, b.h,
+                   kCountSize, false, false, n[0], n[1], n[2], b.latched ? 0.8 : 1);
       }
       if (b.crossed) {
         drawIcon(cr, StashIcon::Undo, b.x + b.w - 14 - end / 2, b.y + b.h / 2, 22, ink);
@@ -1163,59 +1163,23 @@ void StashPages::drawSceneButton(const Menu& m, cairo_t* cr, const Button& b,
       }
       return;
     }
-    case StashLook::Portrait: {  // the card is the button; her picture fills its 2:3 box
-      const double pw = b.w - 12, ph = pw * 1.5, px = b.x + 6, py = b.y + 6;
-      const StashCatalog* c = catalog(m);
-      const int index = c ? c->performerById(b.stashId) : -1;
-      cairo_surface_t* picture = nullptr;
-      if (index >= 0 && !c->performers()[index].image.empty())
-        picture = m.stash_->images().find(
-            Stash::portraitRequest(c->performers()[index], stashPixels(pw)));
-      roundedRect(cr, px, py, pw, ph, 10);
-      if (picture) {
-        const double sw = cairo_image_surface_get_width(picture),
-                     sh = cairo_image_surface_get_height(picture);
-        const double scale = std::max(pw / sw, ph / sh);
-        cairo_save(cr);
-        cairo_clip(cr);
-        cairo_translate(cr, px + (pw - sw * scale) / 2, py + (ph - sh * scale) / 2);
-        cairo_scale(cr, scale, scale);
-        cairo_set_source_surface(cr, picture, 0, 0);
-        cairo_paint(cr);
-        cairo_restore(cr);
-      } else {  // her initials
-        cairo_set_source_rgba(cr, 1, 1, 1, 0.06);
-        cairo_fill(cr);
-        std::string initials;
-        bool start = true;
-        for (const char ch : b.label) {
-          if (start && ch != ' ' && initials.size() < 2) initials += ch;
-          start = ch == ' ';
-        }
-        m.drawText(cr, initials, px, py, pw, ph, 40, true, true, dim[0], dim[1], dim[2]);
-      }
-      m.drawText(cr, b.label, b.x + 10, py + ph + 4, b.w - 20, 30, 22, false, false, ink[0], ink[1],
-                 ink[2]);
-      if (!b.detail.empty())
-        m.drawText(cr, b.detail, b.x + 10, py + ph + 32, b.w - 20, 28, 22, false, false, dim[0],
-                   dim[1], dim[2]);
-      return;
-    }
-    case StashLook::Go: {  // icon, label, and a count at the right end
+    case StashLook::Go: {  // icon, label, and a count at the right end, as actionButton()'s
       const StashIcon icon = static_cast<StashIcon>(b.stashIcon);
-      const double countW = b.size.empty() ? 0 : m.textWidth(b.size, 22, false) + 16;
+      const ActionSpace a = actionSpace(b.h);
+      const double countW = b.size.empty() ? 0 : m.textWidth(b.size, kCountSize, false) + a.gap;
       if (!b.size.empty())
-        m.drawText(cr, b.size, b.x + b.w - 22 - countW + 16, b.y, countW, b.h, 22, false, false,
-                   b.selected ? ink[0] : dim[0], b.selected ? ink[1] : dim[1],
+        m.drawText(cr, b.size, b.x + b.w - a.pad - countW + a.gap, b.y, countW, b.h, kCountSize, false,
+                   false, b.selected ? ink[0] : dim[0], b.selected ? ink[1] : dim[1],
                    b.selected ? ink[2] : dim[2], b.selected ? 0.85 : 1);
       if (icon == StashIcon::None) {
-        m.drawText(cr, b.label, b.x + 16, b.y, b.w - 32 - countW, b.h, Menu::kTextSize, false, true,
-                   ink[0], ink[1], ink[2]);
+        m.drawText(cr, b.label, b.x + a.pad, b.y, b.w - 2 * a.pad - countW, b.h, kit::kRowSize, false,
+                   true, ink[0], ink[1], ink[2]);
         return;
       }
-      drawIcon(cr, icon, b.x + 22 + 14, b.y + b.h / 2, 28, ink);
-      m.drawText(cr, b.label, b.x + 66, b.y, b.w - 66 - 22 - countW, b.h, Menu::kTextSize, false,
-                 false, ink[0], ink[1], ink[2]);
+      drawIcon(cr, icon, b.x + a.pad + a.icon / 2, b.y + b.h / 2, a.icon, ink);
+      const double textX = b.x + a.pad + a.icon + a.gap;
+      m.drawText(cr, b.label, textX, b.y, b.x + b.w - a.pad - countW - textX, b.h, kit::kRowSize,
+                 false, false, ink[0], ink[1], ink[2]);
       return;
     }
     default:

@@ -107,7 +107,7 @@ void SeekPreview::place(double fraction, float aspect, const CurvedPanel& strip)
   timeModel_ = base * translation({0.0f, y - h / 2 + lh / 2, -r + 0.002f}) * scaling(lw, lh, 1);
 }
 
-void SeekPreview::addTo(std::vector<OverlayDraw>& overlays) {
+void SeekPreview::addTo(std::vector<OverlayDraw>& overlays, float opacity) {
   if (!shown_) return;
   if (const Texture* image = grabber_.image()) {
     PreviewItem frame;
@@ -115,15 +115,18 @@ void SeekPreview::addTo(std::vector<OverlayDraw>& overlays) {
     frame.model = model_;
     frame.format = format_;
     frame.flip = flip_;
+    frame.opacity = opacity;
     overlays.push_back(frame);
   } else {
     PanelItem frame;
     frame.texture = placeholder_.texture();
     frame.model = model_;
+    frame.opacity = opacity;
     overlays.push_back(frame);
   }
   PanelItem time;
   time.texture = time_.texture();
   time.model = timeModel_;
+  time.opacity = opacity;
   overlays.push_back(time);
 }

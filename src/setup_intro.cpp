@@ -62,7 +62,7 @@ float SetupIntro::pageOpacity(double now) const {
 }
 
 void SetupIntro::addUnder(std::vector<OverlayDraw>& overlays, Menu& menu, const CurvedPanel& panel,
-                          float opacity, float glassAlpha, bool blurred, double now) const {
+                          float opacity, double now) const {
   if (!playing(now)) return;
   const double t = now - start_;
   const float shown = opacity * easeOut(along(t, 0.9, 0.7));
@@ -73,15 +73,10 @@ void SetupIntro::addUnder(std::vector<OverlayDraw>& overlays, Menu& menu, const 
     item.texture = p.texture;
     item.curved = placed(panel, p, dx, dy, scale);
     item.opacity = alpha;
-    if (layer == Layer::Backdrop) item.glassAlpha = glassAlpha;
     overlays.push_back(item);
   };
-  // The empty panel; as the page fades in over it, less of it, so that the
-  // two together are as translucent as the panel is (blurred glass covers
-  // what is under the page by itself).
-  const float page = pageOpacity(now);
-  const float a = glassAlpha > 0 && !blurred ? glassAlpha : 1.0f;
-  add(Layer::Backdrop, shown * (a < 1 ? (1 - page) / (1 - page * a) : 1.0f));
+  // The empty panel, under the page as it fades in.
+  add(Layer::Backdrop, shown);
   add(Layer::Tile, shown * easeOut(along(t, 2.8, 0.8)));
   const float slide = along(t, 1.2, 1.3);
   const float circles = shown * std::min(1.0f, slide / 0.3f);

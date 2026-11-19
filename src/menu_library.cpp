@@ -1,5 +1,7 @@
 #include "menu_style.h"
 
+#include "menu_list_parts.h"
+
 #include "file_util.h"
 #include "menu_stash.h"  // stashAgo, stashNumber, stashPrinted
 #include "menu_stash_covers.h"
@@ -312,55 +314,77 @@ const std::vector<Menu::ListItem>& Menu::libraryListItems() {
     item.ratingPath = e.path;
     item.ratingVideo = library.id;
     item.rating = r.rating;
-    if (r.playCount > 0) item.plays = std::to_string(r.playCount);
+    if (r.playCount > 0) item.plays = stashNumber(r.playCount);
+    if (r.durationSeconds > 0) item.length = static_cast<int>(r.durationSeconds);
     item.size = sizeText(e.size);
     // Sorted by when they were played, the date shown is that; else when added.
-    item.date = dateText(played ? r.lastPlayedAt : library.addedAt);
+    item.date = dayText(played ? r.lastPlayedAt : library.addedAt);
     items.push_back(std::move(item));
   }
   return items;
 }
 
-// All · Not played · Played · Rated with how many the search finds, on the
-// tool row from x (as Stash's All / VR / 2D).
+// All · Not played · Played · Rated, each with how many the search finds:
+// a well on the tools row from x, the one shown raised.
 void Menu::layoutLibraryShow(double& x) {
   const Strings& t = text();
   libraryListItems();  // the counts
+  std::vector<ToolPiece> pieces;
   for (int i = 0; i < 4; ++i) {
-    const std::string label = std::string(t.libraryShows[i]) + "  " + stashNumber(libraryCounts_[i]);
-    Button b = textButton(label, Icon::None,
-                          [this, i] {
-                            libraryShow_ = i;
-                            sortLibrary();
-                            scrollOffset_ = 0;
-                            scrollFraction_ = 0;
-                            dirty_ = true;
-                            return MenuCommand{};
-                          },
-                          libraryShow_ == i);
-    // Never a choice that shows nothing.
-    b.disabled = libraryCounts_[i] == 0 && libraryShow_ != i;
-    b.panel = kBrowser;
-    b.x = x;
-    b.y = kBrowserToolsY + toolsShift();
-    b.h = kBrowserToolsH;
-    b.w = textWidth(label, kTextSize, false) + 36;
-    b.radius = kBrowserToolsH / 2;
-    buttons_.push_back(b);
-    x += b.w + 6;
+    ToolPiece p;
+    p.label = t.libraryShows[i];
+    p.count = stashNumber(libraryCounts_[i]);
+    p.chosen = libraryShow_ == i;
+    p.disabled = libraryCounts_[i] == 0 && libraryShow_ != i;  // never a choice that shows nothing
+    p.action = [this, i] {
+      libraryShow_ = i;
+      sortLibrary();
+      scrollOffset_ = 0;
+      scrollFraction_ = 0;
+      dirty_ = true;
+      return MenuCommand{};
+    };
+    pieces.push_back(std::move(p));
   }
-  x += 10;
+  // The search after them keeps at least its example's width (its text after
+  // its icon, as fieldTextBox() has it, up to toolsJumps()). Where it
+  // wouldn't, the pieces' sides narrow; where that isn't enough, the
+  // filters not chosen keep their counts in their tooltips.
+  const double searchRight = kContentRight - 2 * kBrowserToolsH - kit::kSpaceTight - kColumnGap;
+  const double need = std::ceil(textWidth(t.tipSearchLibrary, kit::kWellSize, false)) + 2 * kit::kSpace + 26 + 12;
+  auto over = [&] { return x + toolsWellWidth(pieces) + kColumnGap + need - searchRight; };
+  auto narrow = [&] {
+    if (over() <= 0) return;
+    const double pad = std::max(kit::kSpaceTight + 2, kButtonPadX - std::ceil(over() / (2 * pieces.size())));
+    for (ToolPiece& p : pieces) p.padX = pad;
+  };
+  narrow();
+  if (over() > 0) {
+    for (ToolPiece& p : pieces) {
+      p.padX = -1;
+      if (p.chosen) continue;
+      p.tooltip = p.label + " · " + p.count;
+      p.count.clear();
+    }
+    narrow();
+  }
+  x = toolsWell(x, kBrowserToolsY + toolsShift(), pieces) + kColumnGap;
 }
 
 namespace {
 
-constexpr double kBannerH = 64, kSyncLineH = 56, kBandGap = 12;
+// The bands under the Library's header (the banner after setup, the first
+// sync's line), as high as its rows, kit::kSpace apart.
+constexpr double kBannerH = kBrowserRowH, kSyncLineH = kBrowserRowH, kBandGap = kit::kSpace;
 // The page with nothing to list: its icon's centre, the title and the
 // text under it, then its buttons.
 constexpr double kCentreY = Menu::kBrowserHeight * 0.33;
 constexpr double kCentreTextY = kCentreY + 120, kCentreTextLines = 3;
 constexpr double kCentreButtonsY = Menu::kBrowserHeight * 0.58;
-constexpr double kAmber[3] = {1, 190 / 255.0, 120 / 255.0};
+// A button inside a band, kit::kSpacePiece in from its edges.
+constexpr double kBandButtonH = kBrowserRowH - 2 * kit::kSpacePiece;
+// A band's text, after its icon (kit::kSpace in, 28 wide).
+constexpr double kBandTextX = kit::kSpace + 28 + 12;
 
 }  // namespace
 
@@ -422,9 +446,10 @@ void Menu::updateLibraryFirstSync() {
 // settings and ×; the first sync's line with Try again once it failed.
 void Menu::layoutLibraryBands(const LibraryBands& bands) {
   const Strings& t = text();
-  const double x = kPageX + kPagePad, right = kPageX + kPageWidth - kPagePad;
+  constexpr double in = kit::kSpacePiece;
   if (bands.banner >= 0) {
-    const std::string words = allSetText();
+    // Leave a gap before the button itself, not just before its label.
+    const std::string words = allSetText() + " " + t.setup.changeItIn;
     Button link = textButton(t.videoSettings, Icon::None, [this] {
       showPage(Page::VideoSettings);
       return MenuCommand{};
@@ -432,25 +457,28 @@ void Menu::layoutLibraryBands(const LibraryBands& bands) {
     link.panel = kBrowser;
     link.bare = true;
     link.on = true;
-    link.fontSize = 26;
-    link.x = x + 60 + textWidth(words + " " + t.setup.changeItIn, 26, false) + 4;
-    link.y = bands.banner + 4;
-    link.w = textWidth(t.videoSettings, 26, false) + 24;
-    link.h = kBannerH - 8;
+    link.fontSize = kit::kRowSize;
+    link.w = textWidth(t.videoSettings, kit::kRowSize, false) + 2 * kit::kSpaceTight;
+    link.x = kContentLeft + kBandTextX + textWidth(words, kit::kRowSize, false) + kit::kSpaceTight;
+    link.y = bands.banner + in;
+    link.h = kBandButtonH;
+    link.radius = kit::kPieceCorner;
     buttons_.push_back(link);
     Button& close = addRound(Icon::Close, t.setup.dismiss, command(MenuCommand::DismissSetupBanner),
-                             right - kBannerH + 4, bands.banner + 4, kBannerH - 8);
+                             kContentRight - in - kBandButtonH, bands.banner + in, kBandButtonH);
     close.panel = kBrowser;
     close.bare = true;
+    close.iconSize = 26;
   }
   if (bands.sync >= 0 && firstSync() == FirstSync::Failed) {
     Button again = textButton(t.setup.tryAgain, Icon::None, command(MenuCommand::SyncStash), true);
     again.panel = kBrowser;
-    again.fontSize = 24;
-    again.w = textWidth(t.setup.tryAgain, 24, false) + 60;
-    again.x = right - 8 - again.w;
-    again.y = bands.sync + 6;
-    again.h = kSyncLineH - 12;
+    again.fontSize = kit::kWellSize;
+    again.w = textWidth(t.setup.tryAgain, kit::kWellSize, false) + 2 * kButtonPadX;
+    again.x = kContentRight - in - again.w;
+    again.y = bands.sync + in;
+    again.h = kBandButtonH;
+    again.radius = kit::kPieceCorner;
     buttons_.push_back(again);
   }
 }
@@ -465,7 +493,7 @@ void Menu::layoutLibraryCentre() {
   if (firstSync() == FirstSync::Failed) {
     row.push_back(textButton(t.setup.tryAgain, Icon::None, command(MenuCommand::SyncStash), true));
     row.push_back(textButton(t.setup.stashSettings, Icon::None, [this] {
-      showPage(Page::Settings);
+      showStashSettings();
       return MenuCommand{};
     }));
   } else {
@@ -497,35 +525,35 @@ std::string Menu::allSetText() const {
                                                                     : p.names[static_cast<int>(preset)]);
 }
 
+// The banner: in the accent's soft colour, its tick in the accent; the
+// first sync's line: a well, its state's icon.
 void Menu::drawLibraryBands(cairo_t* cr, const LibraryBands& bands) {
   const Palette& pal = palette();
-  const double x = kPageX + kPagePad, w = kPageWidth - 2 * kPagePad;
+  const double x = kContentLeft, w = kContentRight - kContentLeft;
+  constexpr double icon = 28;
   if (bands.banner >= 0) {
     const double y = bands.banner;
-    roundedRect(cr, x, y, w, kBannerH, 16);
-    setColor(cr, pal.accent, 0.12);
-    cairo_fill_preserve(cr);
-    setColor(cr, pal.edge, 0.9);
-    cairo_set_line_width(cr, 2);
-    cairo_stroke(cr);
-    drawIcon(cr, Icon::Check, x + 32, y + kBannerH / 2, 32, pal.textAccent.r, pal.textAccent.g,
-             pal.textAccent.b);
-    drawText(cr, allSetText() + " " + text().setup.changeItIn, x + 60, y, w - 140, kBannerH, 26,
-             false, false, pal.text.r, pal.text.g, pal.text.b);
+    roundedRect(cr, x, y, w, kBannerH, kit::kCorner);
+    setColor(cr, pal.accentSoft);
+    cairo_fill(cr);
+    drawIcon(cr, Icon::Check, x + kit::kSpace + icon / 2, y + kBannerH / 2, icon, pal.textAccent.r,
+             pal.textAccent.g, pal.textAccent.b);
+    drawText(cr, allSetText() + " " + text().setup.changeItIn, x + kBandTextX, y,
+             w - kBandTextX - kBannerH, kBannerH, kit::kRowSize, false, false, pal.text.r, pal.text.g,
+             pal.text.b);
   }
   if (bands.sync >= 0) {
     const double y = bands.sync;
     const bool failed = firstSync() == FirstSync::Failed;
-    roundedRect(cr, x, y, w, kSyncLineH, 16);
-    setColor(cr, pal.field, 0.35);
-    cairo_fill(cr);
+    drawFinish(cr, Finish::Sunk, x, y, w, kSyncLineH, kit::kCorner);
+    const Rgba& k = failed ? pal.gold : pal.textAccent;
+    drawIcon(cr, failed ? Icon::Warning : Icon::Refresh, x + kit::kSpace + icon / 2, y + kSyncLineH / 2,
+             icon, k.r, k.g, k.b);
+    double end = x + w - kit::kSpace;  // before Try again (layoutLibraryBands())
     if (failed)
-      drawIcon(cr, Icon::Warning, x + 32, y + kSyncLineH / 2, 30, kAmber[0], kAmber[1], kAmber[2]);
-    else
-      drawIcon(cr, Icon::Refresh, x + 32, y + kSyncLineH / 2, 30, pal.textAccent.r,
-               pal.textAccent.g, pal.textAccent.b);
-    drawText(cr, firstSyncText(true), x + 60, y, w - (failed ? 300 : 80), kSyncLineH, 24, false,
-             false, pal.text.r, pal.text.g, pal.text.b);
+      end -= kit::kSpacePiece + textWidth(text().setup.tryAgain, kit::kWellSize, false) + 2 * kButtonPadX;
+    drawText(cr, firstSyncText(true), x + kBandTextX, y, end - x - kBandTextX, kSyncLineH,
+             kit::kWellSize, false, false, pal.text.r, pal.text.g, pal.text.b);
   }
 }
 
@@ -533,7 +561,7 @@ void Menu::drawLibraryCentre(cairo_t* cr) {
   const Strings& t = text();
   const Palette& pal = palette();
   const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
-  const double w = kPageWidth - 2 * kPagePad - 200;
+  const double w = kContentRight - kContentLeft - 200;
   const FirstSync state = firstSync();
   std::string title = t.libraryNoPinsTitle, words;
   if (state == FirstSync::Running) {
@@ -542,7 +570,7 @@ void Menu::drawLibraryCentre(cairo_t* cr) {
     title = t.setup.gettingScenes;
     words = firstSyncText(false) + "\n" + t.setup.gettingScenesText;
   } else if (state == FirstSync::Failed) {
-    drawIcon(cr, Icon::Warning, kPageCenterX, kCentreY, 64, kAmber[0], kAmber[1], kAmber[2]);
+    drawIcon(cr, Icon::Warning, kPageCenterX, kCentreY, 64, pal.gold.r, pal.gold.g, pal.gold.b);
     title = t.setup.couldntGetScenes;
     words = firstSyncText(false);
   } else {
@@ -550,9 +578,10 @@ void Menu::drawLibraryCentre(cairo_t* cr) {
     // Stash on but no catalog yet: its scenes are to come.
     words = stashCovers_ && !stashCatalog() ? t.libraryNoPinsStash : t.libraryNoPinsText;
   }
-  drawText(cr, title, kPageX + kPagePad, kCentreY + 50, kPageWidth - 2 * kPagePad, 60, 34, true,
-           true, pal.text.r, pal.text.g, pal.text.b);
-  drawTextLines(cr, words, kPageCenterX - w / 2, kCentreTextY, w, 27, kCentreTextLines, dim, true);
+  drawText(cr, title, kContentLeft, kCentreY + 50, kContentRight - kContentLeft, 60, kit::kTitleSize,
+           true, true, pal.text.r, pal.text.g, pal.text.b);
+  drawTextLines(cr, words, kPageCenterX - w / 2, kCentreTextY, w, kit::kRowSize, kCentreTextLines, dim,
+                true);
 }
 
 // What the heading says of the looks for new videos.
@@ -571,71 +600,53 @@ std::string Menu::libraryStatus() const {
 // headings, or the thumbnails. With nothing to list, how to pin a folder.
 void Menu::layoutLibraryPage() {
   const Strings& t = text();
-  const double listX = kPageX + kPagePad;
-  listRight_ = kPageX + kPageWidth - kPagePad + 6;
+  contentEdges();
   listShowsFolder_ = false;
   listColumns_ = false;
   const LibraryBands bands = libraryBands();
-  layoutLibraryBands(bands);
+  double right = kContentRight;
   if (libraryPinHelp()) {
+    contentTitle(t.library, "", right);
+    layoutLibraryBands(bands);
     layoutLibraryCentre();
     return;
   }
   const LibraryIndex::State s = index_ ? index_->state() : LibraryIndex::State{};
   const bool open = index_ && index_->videoOpen();
-  Button& again = addRound(Icon::Refresh,
-                           open ? t.tipLookWaits : s.looking ? t.tipLookingNow : t.tipLookAgain,
-                           [this] {
-                             if (index_) index_->lookAgain();
-                             return MenuCommand{};
-                           },
-                           kPageX + kPageWidth - kPagePad - kBrowserRowH, kBrowserRowY, kBrowserRowH);
-  again.panel = kBrowser;
-  again.bare = true;
-  again.on = s.looking;
+  headerRound(right, Icon::Refresh, open ? t.tipLookWaits : s.looking ? t.tipLookingNow : t.tipLookAgain,
+              [this] {
+                if (index_) index_->lookAgain();
+                return MenuCommand{};
+              }).on = s.looking;
+  // How many: all of them, or what the search and Show leave of them.
+  libraryListItems();  // the counts
+  int total = 0;
+  for (const LibraryItem& item : libraryItems_) total += !item.entry.path.empty();
+  const std::string count =
+      libraryFilter_.empty() && libraryShow_ == 0
+          ? stashPrinted(s.firstLook ? t.libraryCountSoFar : total == 1 ? t.libraryCountOne : t.libraryCount,
+                         stashNumber(total))
+          : stashPrinted(t.libraryMatches, stashNumber(libraryCounts_[libraryShow_]), stashNumber(total));
+  contentTitle(t.library, count, right, libraryStatus());
+  layoutLibraryBands(bands);
   const bool editing = editingFilter();
   listBottom_ = editing ? kKeyboardY - 16 : kListBottom;
   if (gallery_) {
     listTop_ = kGridTop + bands.shift;
-    addGallery(libraryListItems(), listX, editing ? kEditingGalleryRows : kGalleryRows);
+    addGallery(libraryListItems(), listLeft_, editing ? kEditingGalleryRows : kGalleryRows);
   } else {
     listTop_ = kListTop + bands.shift;
     listColumns_ = true;
-    addList(libraryListItems(), listX, kFileRowH,
+    addList(libraryListItems(), listLeft_, kFileRowH,
             static_cast<int>((listBottom_ - listTop_) / kFileRowH));
-    layoutListHeader(listX, listRight_ - listX - 30);
+    if (listCount_ > 0) layoutListHeader(listLeft_, listRight_ - listLeft_ - 30);
   }
   if (editing) layoutKeyboard();
   layoutFileTools();
 }
 
 void Menu::drawLibraryHeading(cairo_t* cr) {
-  const Strings& t = text();
-  const Palette& pal = palette();
-  const double x = kPageX + kPagePad + 8, right = kPageX + kPageWidth - kPagePad;
-  drawText(cr, t.library, x, kBrowserRowY, 400, kBrowserRowH, 30, true, false, pal.text.r,
-           pal.text.g, pal.text.b);
-  const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
+  drawPageHead(cr);
   drawLibraryBands(cr, libraryBands());
-  if (libraryPinHelp()) {
-    drawLibraryCentre(cr);
-    return;
-  }
-  int total = 0;
-  for (const LibraryItem& item : libraryItems_) total += !item.entry.path.empty();
-  std::string count;
-  if (libraryFilter_.empty() && libraryShow_ == 0)
-    count = stashPrinted(index_ && index_->state().firstLook ? t.libraryCountSoFar
-                         : total == 1                         ? t.libraryCountOne
-                                                              : t.libraryCount,
-                         total);
-  else
-    count = stashPrinted(t.libraryMatches, libraryMatchCount(), total);
-  const double titleW = textWidth(t.library, 30, true);
-  drawText(cr, count, x + titleW + 36, kBrowserRowY, 800, kBrowserRowH, 24, false, false, dim[0],
-           dim[1], dim[2], dim[3]);
-  const std::string status = libraryStatus();
-  const double w = textWidth(status, 24, false);
-  drawText(cr, status, right - kBrowserRowH - 16 - w, kBrowserRowY, w + 4, kBrowserRowH, 24, false,
-           false, dim[0], dim[1], dim[2], dim[3]);
+  if (libraryPinHelp()) drawLibraryCentre(cr);
 }

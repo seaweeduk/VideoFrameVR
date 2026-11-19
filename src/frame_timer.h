@@ -26,9 +26,9 @@ class FrameTimer {
   }
   // One frame's GPU milliseconds (SceneRenderer::GpuTimes), averaged over
   // the frames that have them.
-  void gpu(double upload, double glass, double eye0, double eye1, double mirror, double frame) {
+  void gpu(double upload, double keyMask, double eye0, double eye1, double mirror, double frame) {
     gpu_[0] += upload;
-    gpu_[1] += glass;
+    gpu_[1] += keyMask;
     gpu_[2] += eye0;
     gpu_[3] += eye1;
     gpu_[4] += mirror;
@@ -58,7 +58,7 @@ class FrameTimer {
       std::printf("[timing] %.1f fps longest %.1f ms |", frames_ / elapsed, longest_);
       for (int i = 0; i < kCount; ++i) std::printf(" %s %.2f ms", names[i], totals_[i] / frames_);
       if (gpuFrames_ > 0)
-        std::printf(" | gpu upload %.2f glass %.2f eye0 %.2f eye1 %.2f mirror %.2f frame %.2f max %.2f ms",
+        std::printf(" | gpu upload %.2f key %.2f eye0 %.2f eye1 %.2f mirror %.2f frame %.2f max %.2f ms",
                     gpu_[0] / gpuFrames_, gpu_[1] / gpuFrames_, gpu_[2] / gpuFrames_,
                     gpu_[3] / gpuFrames_, gpu_[4] / gpuFrames_, gpu_[5] / gpuFrames_, gpuMax_);
       std::printf(" | vk memory %.0f MiB live %.0f retired | drawn %.1f fps\n", live_ / 1048576.0,

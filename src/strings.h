@@ -36,6 +36,7 @@ struct StashStrings {
   const char* minutesAgo;    // printf: minutes
   const char* hoursAgo;      // printf: hours
   const char* daysAgo;       // printf: days
+  const char* oneDayAgo;
   const char* editTitle;
   const char* fieldNames[4];  // URL, API key, Stash's folder, this computer's
   const char* editHint;
@@ -136,12 +137,13 @@ struct StashStrings {
   const char* backToPerformers;
   const char* pins;
   const char* noMatches;  // printf: the search words
-  const char* columns[6];  // title, rating, plays, studio, released, length
+  const char* columns[5];  // title, rating, plays, released, length
   const char* tipExclude;
   const char* vr;
   const char* flat;
   // The Performers and performer pages.
   const char* performersCount;    // printf: performers
+  const char* onePerformer;
   const char* performersCountOf;  // printf: shown, all
   const char* searchPerformers;
   const char* performerSorts[5];  // StashPerformerSort
@@ -171,6 +173,7 @@ struct StashStrings {
   const char* tipCoStar;
   // The Studios page and a studio's.
   const char* studiosCount;    // printf: studios
+  const char* oneStudio;
   const char* studioSorts[5];  // your plays, scenes, newest release, name, your rating
   const char* onePlay;
   const char* newest;    // printf: date
@@ -232,6 +235,7 @@ struct StashWriteBackStrings {
   const char* tipToggle;
   const char* tipSendAll;
   const char* tipDryRun;
+  const char* group;  // Settings → Stash: the group with the switch and the one-off send
 };
 
 // The strip's Scene tab (docs/stash.md): the playing video's Stash details.
@@ -263,11 +267,12 @@ struct StashSceneStrings {
   const char* with;           // printf: performers
   const char* sameStudio;     // printf: studio
   const char* tagsInCommon;   // printf: how many
+  const char* oneTagInCommon;
   const char* notInStash;
   const char* outsideFolders;  // printf: Stash's folder here
   const char* notScanned;
   const char* notLocal;
-  const char* lastSync;  // printf: when, scenes
+  const char* lastSync;  // printf: when, how many scenes ("1 scene")
   const char* nothingPlaying;
   const char* fromStash;  // in place of the path, for a scene played from Stash's stream
   const char* tipTagOrders[3];
@@ -371,7 +376,8 @@ struct DiagnosticsStrings {
 struct NetworkStrings {
   const char* nav;
   const char* looking;
-  const char* none;
+  const char* none;      // an empty page's heading ...
+  const char* noneHint;  // ... and what to do, under it
   const char* lookAgain;
   const char* addServer;
   const char* forget;        // tooltip: a server's trash button
@@ -523,7 +529,6 @@ struct DriveStrings {
 // Settings → Appearance: the menu's colour (accent.h).
 struct AccentStrings {
   const char* group;
-  const char* colour;
   const char* names[8];  // the presets and Custom, as their swatches' tooltips
   const char* hue;
   const char* brightness;
@@ -541,7 +546,9 @@ struct OfflineStrings {
   const char* summary;        // printf: downloads to go, bytes left
   const char* summaryTime;    // printf: ... and the time left
   const char* summaryDone;    // printf: videos on this device, their size
-  const char* empty;
+  const char* empty;          // the empty place's heading ...
+  const char* emptyHint;      // ... and what to do, under it
+  const char* emptyHintNoStash;  // the same without Stash, while it is off
   const char* pauseAll;
   const char* resumeAll;
   const char* pause;
@@ -553,7 +560,6 @@ struct OfflineStrings {
   const char* internal;       // the drive in the headset or computer
   const char* internalHeadset;
   const char* internalComputer;
-  const char* queued;
   const char* queuedSize;     // printf: size
   const char* copying;        // printf: percent, copied, size, speed, time left, drive
   const char* copyingStart;   // printf: percent, copied, size, drive (speed not known yet)
@@ -606,9 +612,7 @@ struct PlacesStrings {
   const char* edit;  // the navigation's link to the page
   const char* title;
   const char* hint;
-  const char* name;  // column headings
-  const char* location;
-  const char* show;
+  const char* show;  // whether a place shows in the navigation
   const char* tipRename;
   const char* tipMoveUp;
   const char* tipMoveDown;
@@ -969,14 +973,11 @@ struct Strings {
   const char* quitTitle;
   const char* quit;
   const char* picture;
-  const char* pictureHint;
   const char* brightness;
   const char* contrast;
   const char* saturation;
   const char* zoom;
   const char* reset;
-  const char* design;
-  const char* themes[2];            // glass, material
   const char* projectionShort[7];   // format tiles
   const char* stereoShort[3];
   // Tooltips of icon buttons.
@@ -1048,7 +1049,7 @@ struct Strings {
   const char* halfSbs;  // format tile: flat 3D with half-squeezed eyes
   const char* halfTb;
   const char* halfPackedHint;
-  const char* allVideos;     // picture page: heading of the settings for every video
+  const char* display;       // video settings: the section of the settings for every video
   const char* videoMipmaps;  // on = trilinear through mipmaps, off = full-size level only
   const char* antiShimmer;   // choice: how much fine lines are smoothed with mipmaps off
   const char* antiShimmerLevels[3];  // off, on, strong
@@ -1056,7 +1057,6 @@ struct Strings {
   const char* antiShimmerFrameHint;  // ... on the Frame, where Strong costs more
   const char* antiShimmerMipmaps;    // not used while Video mipmaps is on
   const char* sharpen;       // followed by the strength
-  const char* sharpenOff;
   const char* toneLook;      // toggle: tone curve and vignette
   const char* toneLookHint;
   const char* tvGamma;       // global toggle: BT.1886 conversion
@@ -1067,7 +1067,6 @@ struct Strings {
   const char* resolutionOverride;  // printf format: this run's eye image pixels are the command line's
   const char* resolutionLimited;   // printf format: the scale SteamVR or the GPU allowed
   const char* resolutionChanged;   // printf format: 1× is now the panel's pixels; the nearest size
-  const char* resolutionPending;   // while its slider is held: the size switches on letting go
   const char* refreshRate;         // choice: the headset's refresh rate (Frame)
   const char* refreshRateChoice;   // printf format: a rate in Hz
   const char* foveation;           // choice: how much less detail away from where you look
@@ -1101,9 +1100,13 @@ struct Strings {
   const char* readingFolder;
   const char* groupMenu;  // settings group titles
   const char* groupView;
+  const char* general;    // Settings' first section: everything but Stash
   const char* stereoFocus;
   const char* groupScreen;  // the flat screen's distance, height and curve
-  const char* imageAllVideos;
+  const char* image;        // video settings: the image group, for all videos
+  const char* thisVideo;    // ... its sections: the running video's settings (and display)
+  const char* thisVideoClosed;  // ... greyed out while no video is open: why
+  const char* performance;  // ... the group with the eye images' size and the refresh rate
   const char* greenScreenOn;
   const char* videoSettings;
   const char* tabMainMenu;
@@ -1123,7 +1126,6 @@ struct Strings {
   const char* resumeHint;
   const char* seekPreview;  // the setting
   const char* seekPreviewHint;
-  const char* seekPreviewUnavailable;  // why it is off on the Steam Frame
   const char* showPerformance;  // the setting: the performance readout (performance_readout.h)
   const char* showPerformanceHint;
   const char* vibration;  // the setting: controllers buzz on clicks, seeks and grabs
@@ -1149,8 +1151,10 @@ struct Strings {
   const char* library;  // the library view
   const char* tipSearchLibrary;
   const char* libraryEmpty;
-  const char* libraryEmptyStash;  // ... with Stash on, before its first catalog
+  const char* libraryEmptyStash;  // ... under it with Stash on, before its first catalog
   const char* libraryNoMatches;  // printf format: the search words
+  const char* libraryShowsNone;  // what Show leaves of the videos is nothing
+  const char* lengthColumn;      // the File explorer's and the Library's lists' Length heading
   const char* libraryCount;      // printf format: videos
   const char* libraryCountOne;   // ... one
   const char* libraryMatches;    // printf format: matches, videos

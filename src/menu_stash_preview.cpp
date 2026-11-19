@@ -34,9 +34,8 @@ void Menu::updatePreview() {
     stopPreview();
     return;
   }
-  const double w = b.card ? b.w - 16 : listThumbW(b);
-  const double h = b.card ? w * 9 / 16 : b.h - 4;
-  const double x = b.x + (b.card ? 8 : 10), y = b.y + (b.card ? 8 : 2);
+  double x, y, w, h;  // where its row or card draws the picture
+  listPicture(b, x, y, w, h);
   if (pointerX_ < x || pointerX_ > x + w || pointerY_ < y || pointerY_ > y + h) {
     stopPreview();
     return;
@@ -80,10 +79,9 @@ void Menu::drawPreview() {
   // Replace the background under the rounded picture's antialiased edge,
   // then paint the tile and its existing badges/stars in their normal order.
   // No layout, headings, rail or whole-panel upload for a new video frame.
-  paintFrame(cr, browserFrame_, kBrowserWidth, kBrowserHeight,
-             {{0, 0, menu_geometry::kSourcesWidthPx, kBrowserHeight},
-              {kPageX, 0, kPageWidth, kBrowserHeight}});
+  paintBrowserFrame(cr);
   drawButtons(cr, kBrowser);
   cairo_restore(cr);
   canvas.upload(y0, y1, x0, x1);
+  lookStale_ = true;
 }

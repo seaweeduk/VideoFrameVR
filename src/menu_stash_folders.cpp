@@ -64,7 +64,7 @@ void Menu::updateStashFolders() {
       command_ = stashFolders(stash_->foldersWith(f.folder, {found.front().pathFrom,
                                                              found.front().pathTo}));
       f.picking = false;
-      showPage(Page::Settings);
+      showStashSettings();
     } else {
       f.notThere = true;
     }
@@ -126,17 +126,18 @@ double Menu::layoutStashFolderChoice() {
   });
   buttons_.back().disabled = checking || page_ != Page::Files;
   add(strings().cancel, false, [this] {
-    showPage(Page::Settings);  // which stops choosing
+    showStashSettings();  // which stops choosing
     return MenuCommand{};
   });
   return right - 16;
 }
 
 // The Folders rows: one per Stash library folder with scenes (its place
-// here, tapped to type it, and Choose…), each followed by the other places
-// its videos were found in, with Use, or that they were found nowhere.
-// Before the first sync, or with one folder: one row, as there is one.
-double StashPages::layoutFolders(Menu& m, double x, double y, double w, double labelW) {
+// here, tapped to type it, and Choose…), each followed by where it is here
+// and the other places its videos were found in, with Use, or that they
+// were found nowhere. Before the first sync, or with one folder: one row,
+// as there is one.
+void StashPages::shownFolders(Menu& m, StashSettingsShown& shown) {
   const StashStrings& t = strings().stash;
   const StashFoldersStrings& tf = strings().stashFolders;
   const StashSettings& s = m.view_.stash;
@@ -147,15 +148,6 @@ double StashPages::layoutFolders(Menu& m, double x, double y, double w, double l
   const bool several = rows.size() > 1;
   const StashFolderFinder* finder = m.stash_ ? &m.stash_->folderFinder() : nullptr;
   const bool looking = finder && finder->running() && !m.stashFolders_.checking;
-  // A hint, on one line or two as it needs.
-  auto lines = [&](const std::string& text, double width) {
-    return m.textWidth(text, kHintSize, false) > width ? 2 : 1;
-  };
-  auto line = [&](const std::string& text, bool dim) {
-    const int n = lines(text, w - 12);
-    m.addLabel(x + 12, y, w - 12, 0, text, kHintSize, dim, n);
-    y += hintHeight(n) + 6;
-  };
   for (size_t i = 0; i < std::max<size_t>(rows.size(), 1); ++i) {
     const StashCatalogFolder* row = rows.empty() ? nullptr : rows[i];
     const std::string folder = row ? row->folder : std::string();
@@ -166,38 +158,12 @@ double StashPages::layoutFolders(Menu& m, double x, double y, double w, double l
       from = map->from;
     }
     const bool foundHere = !row || row->listed * 2 >= row->scenes;
-
-    Button choose = m.textButton(tf.choose, Menu::Icon::None, [&m, folder] {
-      m.chooseStashFolder(folder);
-      return MenuCommand{};
-    });
-    choose.panel = Menu::kBrowser;
-    choose.x = x + w - choose.w;
-    choose.y = y;
-    choose.h = kSettingRowH;
-    choose.fontSize = 24;
-    choose.tooltip = tf.tipChoose;
-    m.buttons_.push_back(choose);
-    if (i == 0) m.addLabel(x + 12, y, labelW - 12, kSettingRowH, t.folders);
     const std::string shownHere = here.empty() ? "?" : m.shownLocation(here);
     const std::string mapping = from.empty() && here.empty() ? "" : from + "  →  " + shownHere;
-    const std::string label = !several ? mapping : folder.empty() ? tf.otherFiles : from;
-    Button b = m.textButton(label, Menu::Icon::None, [&m, folder] {
-      editServer(m, 2, folder);
-      return MenuCommand{};
-    });
-    b.panel = Menu::kBrowser;
-    b.x = x + labelW;
-    b.y = y;
-    b.w = w - labelW - choose.w - kGap;
-    b.h = kSettingRowH;
-    b.field = true;
-    b.radius = 10;
-    b.fontSize = 24;
-    b.stashLook = static_cast<int>(StashLook::Field);
-    b.tooltip = (mapping.empty() ? "" : mapping + "\n") + t.tipFields[2];
-    m.buttons_.push_back(b);
-    y += kSettingStep;
+    StashSettingsShown::Folder& f = shown.folders.emplace_back();
+    f.folder = folder;
+    f.label = !several ? mapping : folder.empty() ? tf.otherFiles : from;
+    f.tooltip = (mapping.empty() ? "" : mapping + "\n") + t.tipFields[2];
 
     // Places, not mappings: /a → /b and /a/c → /b/c are the same one.
     std::vector<const StashFolderFinder::Mapping*> places;
@@ -208,51 +174,38 @@ double StashPages::layoutFolders(Menu& m, double x, double y, double w, double l
       if (found.found < half || sameMapping(s, found, row->samples)) continue;
       bool known = false;
       for (const StashFolderFinder::Mapping* p : places) {
-        StashSettings shown;
-        shown.folders = {{p->pathFrom, p->pathTo}};
-        known |= sameMapping(shown, found, row->samples);
+        StashSettings other;
+        other.folders = {{p->pathFrom, p->pathTo}};
+        known |= sameMapping(other, found, row->samples);
       }
       if (!known && places.size() < (several ? 2 : 3)) places.push_back(&found);
     }
     // Several: where each is here, under it (unless found elsewhere). Its
-    // scenes not here play from Stash's stream: said, not a warning.
+    // scenes not here play from Stash's stream.
     const bool streamed = row && row->streamed > 0;
     if (several && foundHere && !here.empty()) {
-      line(stashPrinted(tf.folderHere, shownHere.c_str()), true);
-      if (streamed) line(tf.folderRest, true);
+      f.lines.push_back(stashPrinted(tf.folderHere, shownHere.c_str()));
+      if (streamed) f.lines.push_back(tf.folderRest);
     } else if (!several && foundHere && streamed) {
-      line(tf.streamed, true);
+      f.lines.push_back(tf.streamed);
     } else if (places.empty() && !foundHere && (several || !looking)) {
-      line(streamed ? (several ? tf.folderStreamed : tf.streamed)
-                    : several ? tf.folderNotHere : tf.notFound,
-           streamed);
+      f.lines.push_back(streamed ? (several ? tf.folderStreamed : tf.streamed)
+                                 : several ? tf.folderNotHere : tf.notFound);
     }
     for (const StashFolderFinder::Mapping* p : places) {
       const bool first = p == places.front() && !foundHere;
       const std::string place = m.shownLocation(stashMapped({p->pathFrom, p->pathTo},
                                                             folder.empty() ? p->pathFrom : folder));
-      Button use = m.textButton(tf.use, Menu::Icon::None, [&m, folder, map = *p] {
-        return m.stashFolders(m.stash_->foldersWith(folder, {map.pathFrom, map.pathTo}));
-      }, first);
-      use.panel = Menu::kBrowser;
-      use.x = x + w - use.w;
-      use.y = y;
-      use.h = kSettingRowH;
-      use.fontSize = Menu::kTextSize;
-      use.tooltip = stashPrinted(tf.tipUse, place.c_str());
-      m.buttons_.push_back(use);
-      const std::string text = stashPrinted(first ? tf.foundIn : tf.alsoIn, place.c_str());
-      const double h = std::max(kSettingRowH, hintHeight(lines(text, w - use.w - 28)));
-      m.addLabel(x + 12, y, w - use.w - 28, h, text, kHintSize, !first, 2);
-      y += h + 8;
+      f.uses.push_back({stashPrinted(first ? tf.foundIn : tf.alsoIn, place.c_str()),
+                        stashPrinted(tf.tipUse, place.c_str()), folder,
+                        {p->pathFrom, p->pathTo}, first});
     }
   }
   if (looking) {
     const int jobs = finder->jobs();
-    line(jobs > 1 ? stashPrinted(tf.lookingFolders, finder->done() + 1, jobs) : std::string(tf.looking),
-         true);
+    shown.looking = jobs > 1 ? stashPrinted(tf.lookingFolders, finder->done() + 1, jobs)
+                             : std::string(tf.looking);
   }
-  return y;
 }
 
 // Stash's scenes are there but none is listed (none here, none its stream

@@ -4,17 +4,18 @@
 #include "platform.h"
 #include "stash_client.h"
 
+#include <cassert>
 #include <pango/pangocairo.h>
 
 namespace {
 
 using Step = SetupMenu::Step;
 
-constexpr double kW = Menu::kSetupWidth, kH = Menu::kSetupHeight;
-constexpr double kFooterY = kH - 48 - 72;  // Back, the dots and the step's button
+using setup::kW;
+using setup::kH;
 constexpr int kSteps = 3;                  // with dots: Controls, Add folders, Stash
 // The cues' canvases, in layout pixels.
-constexpr int kArrowSize = 112, kLabelW = 240, kLabelH = 36, kHintW = 1100, kHintH = 96;
+constexpr int kArrowSize = 112, kLabelW = 240, kLabelH = 36, kHintW = 1100 + 2 * kPillShadow, kHintH = kPillHeight;
 constexpr int kMirrorW = 1280, kMirrorH = 720;
 
 // The app's name, its second half in the icon's blue to green, centred in w at y.
@@ -112,10 +113,11 @@ void Menu::endSetup(bool finished) {
 }
 
 // Welcome's intro: the icon's parts in cells side by side (a gap between
-// them, for the image's smaller levels), the name under them.
+// them, for the image's smaller levels), the name under them in a cell at
+// least kNameW wide.
 namespace {
 constexpr int kBrandSize = 230, kBrandX = (Menu::kSetupWidth - kBrandSize) / 2, kBrandY = 64;
-constexpr int kNameW = 700, kNameH = 160, kNameY = 318, kCellGap = 16;
+constexpr int kNameW = 700, kNameH = 160, kNameY = 318, kNameSize = 104, kCellGap = 16;
 constexpr int kPieces = 5;  // tile, blue, green, lens, play
 constexpr int kPiecesW = kPieces * (kBrandSize + kCellGap) - kCellGap;
 constexpr int kPiecesH = kBrandSize + kCellGap + kNameH;
@@ -143,22 +145,26 @@ Menu::IntroPiece Menu::setupIntroPiece(IntroLayer layer) {
   if (!in.backdrop) {
     // The panel with nothing on it (at layout resolution: the page drawn
     // over it hides it from 3.7 s), the pieces, and black.
-    const Palette pal = palette();
     in.backdrop = std::make_unique<CairoCanvas>();
     in.pieces = std::make_unique<CairoCanvas>();
     in.black = std::make_unique<CairoCanvas>();
+    // The name's cell: the whole word with a gap at either end, an even
+    // width so that it is centred on whole pixels as the page centres it.
+    const int word = static_cast<int>(std::ceil(textWidth(kAppTitle, kNameSize, true)));
+    in.nameW = std::max(kNameW, (word + 2 * kCellGap + 1) / 2 * 2);
     if (!in.backdrop->init(*uploader_, kSetupWidth, kSetupHeight) ||
-        !in.pieces->init(*uploader_, kPiecesW, kPiecesH, menu_geometry::kRasterScale) ||
+        !in.pieces->init(*uploader_, std::max(kPiecesW, in.nameW), kPiecesH, menu_geometry::kRasterScale) ||
         !in.black->init(*uploader_, 4, 4)) {
       dropSetupIntro();
       return p;
     }
-    panelFrame(in.backdrop->cr(), 0, 0, kSetupWidth, kSetupHeight, pal.panel, pal.edge);
+    MenuFinishes::panel(in.backdrop->cr(), 0, 0, kSetupWidth, kSetupHeight, kit::kPanelInset,
+                        kit::kPanelCorner);
     in.backdrop->upload();
     cairo_t* cr = in.pieces->cr();
     for (int i = 0; i < kPieces; ++i)
       drawBrand(cr, i * (kBrandSize + kCellGap), 0, kBrandSize, 1 << i);
-    drawWordmark(cr, 0, kBrandSize + kCellGap, kNameW, 104);
+    drawWordmark(cr, 0, kBrandSize + kCellGap, in.nameW, kNameSize);
     in.pieces->upload();
     cairo_set_source_rgb(in.black->cr(), 0, 0, 0);
     cairo_paint(in.black->cr());
@@ -174,10 +180,11 @@ Menu::IntroPiece Menu::setupIntroPiece(IntroLayer layer) {
     const bool name = layer == IntroLayer::Name;
     const int i = static_cast<int>(layer) - static_cast<int>(IntroLayer::Tile);
     const float cellX = name ? 0 : i * (kBrandSize + kCellGap), cellY = name ? kBrandSize + kCellGap : 0;
-    p.w = name ? kNameW : kBrandSize, p.h = name ? kNameH : kBrandSize;
-    p.u0 = cellX / kPiecesW, p.u1 = (cellX + p.w) / kPiecesW;
+    const float piecesW = in.pieces->width();
+    p.w = name ? in.nameW : kBrandSize, p.h = name ? kNameH : kBrandSize;
+    p.u0 = cellX / piecesW, p.u1 = (cellX + p.w) / piecesW;
     p.v0 = cellY / kPiecesH, p.v1 = (cellY + p.h) / kPiecesH;
-    p.x = name ? (kSetupWidth - kNameW) / 2 : kBrandX;
+    p.x = name ? (kSetupWidth - in.nameW) / 2 : kBrandX;
     p.y = name ? kNameY : kBrandY;
   }
   return p;
@@ -221,6 +228,8 @@ void SetupPages::redraw(Menu& m) {
   damage.swap(s.damage);
   m.keyboardShown_ = false;
   layout(m);
+  // The parts (menu_parts.h) put theirs on the browser: all of these are on setup's panel.
+  for (Menu::Button& b : m.buttons_) b.panel = Menu::kSetup;
   if (!m.keyboardShown_) m.keyPopup_ = {};  // gone with the keyboard
   // No tooltips (the keyboard's): one appearing would redraw it all.
   for (Menu::Button& b : m.buttons_) b.tooltip.clear();
@@ -237,6 +246,7 @@ void SetupPages::redraw(Menu& m) {
   if (all) {  // the rows shown: the keyboard's only while typing
     s.row = 0;
     s.rowsEnd = Menu::kSetupHeight + (m.setupTyping() ? Menu::kSetupKeyboardHeight : 0);
+    if (s.folders) s.folders->drawnScroll = s.folders->scroll;
     // The first page, before any frame (Menu::startSetup()): at once.
     if (!canvas.texture()) drawBand(m, s.rowsEnd);
     return;
@@ -275,7 +285,12 @@ void SetupPages::drawBand(Menu& m, int rows) {
   cairo_save(cr);
   cairo_rectangle(cr, 0, y0, kW, y1 - y0);
   cairo_clip(cr);
+  // Every band at the list's scroll the page started with; scrolled
+  // meanwhile, the list moves once the page shows (update()).
+  SetupFolders* f = s.folders.get();
+  const double scroll = f ? std::exchange(f->scroll, f->drawnScroll) : 0;
   draw(m, cr);
+  if (f) f->scroll = scroll;
   cairo_restore(cr);
   canvas.upload(y0, y1);
   s.row = y1;
@@ -283,7 +298,6 @@ void SetupPages::drawBand(Menu& m, int rows) {
   canvas.finishUpdate();
   s.row = -1;
   s.rowsShown = s.rowsEnd;
-  if (s.folders) s.folders->drawnScroll = s.folders->scroll;
 }
 
 void SetupPages::damaged(Menu& m, double y0, double y1, double x0, double x1) {
@@ -304,62 +318,59 @@ void SetupPages::layout(Menu& m) {
   SetupMenu& s = *m.setup_;
   const SetupStrings& t = m.text().setup;
   m.buttons_.clear();
-  auto add = [&](Button b, double x, double y, double w, double h) -> Button& {
-    b.panel = Menu::kSetup;
-    b.x = x, b.y = y, b.w = w, b.h = h;
-    m.buttons_.push_back(std::move(b));
-    return m.buttons_.back();
-  };
+  m.groups_.clear();
+  m.pageScrollMax_ = 0;  // drawGroups() mustn't cut its groups off as a scrolled page's
+  m.listColumns_ = false;  // its list rows have no columns
+  m.pageHead_ = {};
   auto go = [&m](Step step) {
     return [&m, step] {
       setStep(m, step);
       return MenuCommand{};
     };
   };
-  // Defaults, no Stash, nothing pinned.
-  Button later = m.textButton(t.setUpLater, Icon::None, command(MenuCommand::EndSetup, 0));
-  later.bare = later.placeholder = true;
-  later.fontSize = 24;
-  const double laterW = m.textWidth(t.setUpLater, 24, false) + 48;
 
   if (s.step == Step::Welcome) {
-    // The language shown (the system's until chosen), its choices below it.
+    // The language shown (the system's until chosen) as a list button at
+    // the top right, its list under it.
     const std::string shown = shownLanguageCode();
     int current = 1;
     for (int i = 1; i < languageCount(); ++i)
       if (shown == languageCode(i)) current = i;
-    Button language = m.textButton(languageName(current) + " ▾", Icon::Globe, [&m] {
+    const bool open = m.dropdown_ == Menu::Dropdown::Language;
+    Button language = m.textButton(languageName(current), Icon::None, [&m] {
       m.dropdown_ = m.dropdown_ == Menu::Dropdown::Language ? Menu::Dropdown::None
                                                             : Menu::Dropdown::Language;
       return MenuCommand{};
     });
-    language.bare = true;
-    language.fontSize = 26;
-    const double languageW = m.textWidth(language.label, 26, false) + 129;
-    const Button opener = add(language, kW - 40 - languageW, 40, languageW, 56);
+    language.select = language.alignLeft = true;
+    language.latched = open;
+    language.fontSize = kit::kWellSize;
+    language.radius = kit::kCorner;
+    const double languageW = m.textWidth(language.label, kit::kWellSize, false) + 2 * 20 + 24 + 12;
+    const Button opener = add(m, language, setup::kRight - languageW, setup::kLeft, languageW, kit::kRowH);
+    // Get started: the one way on, filled, larger than the footer's.
+    constexpr double startW = 400, startH = 80;
     Button start = m.textButton(t.getStarted, Icon::None, go(Step::Controls), true);
-    start.fontSize = 36;
-    start.radius = 24;
+    start.fontSize = 32;
+    start.radius = kit::kCorner;
     start.disabled = !s.controller;
-    add(start, (kW - 440) / 2, 540, 440, 96);
-    add(later, (kW - laterW) / 2, kH - 48 - 56, laterW, 56);
-    if (m.dropdown_ == Menu::Dropdown::Language) {
-      std::vector<Button> entries;
+    add(m, start, (setup::kW - startW) / 2, 548, startW, startH);
+    const double laterW = m.textWidth(t.setUpLater, kit::kWellSize, false) + 2 * kit::kSpace;
+    addLater(m, (setup::kW - laterW) / 2, setup::kFooterY);
+    if (open) {
+      std::vector<Menu::Action> items;
       for (int i = 1; i < languageCount(); ++i)
-        entries.push_back(m.textButton(languageName(i), Icon::None, [&m, i] {
-          m.dropdown_ = Menu::Dropdown::None;
-          return command(MenuCommand::SetLanguage, i)();
-        }, i == current));
-      const size_t first = m.buttons_.size();
-      m.addDropdownBelow(opener, std::move(entries));
-      for (size_t i = first; i < m.buttons_.size(); ++i)  // under the opener's right end
-        m.buttons_[i].x = opener.x + opener.w - m.buttons_[i].w;
+        items.push_back({languageName(i), "", [&m, i] {
+                           m.dropdown_ = Menu::Dropdown::None;
+                           return command(MenuCommand::SetLanguage, i)();
+                         }});
+      listBelow(m, opener, items, current - 1);
     }
     return;
   }
 
   if (s.step == Step::Folders) {
-    layoutFolders(m, later);
+    layoutFolders(m);
     return;
   }
   if (s.step == Step::Stash) {
@@ -367,30 +378,103 @@ void SetupPages::layout(Menu& m) {
     return;
   }
   layoutControls(m);
-  add(later, kW - 40 - laterW, 48, laterW, 56);
+  addLater(m, 0, setup::kLeft);
   const Step back = static_cast<Step>(static_cast<int>(s.step) - 1);
-  Button backButton = m.textButton(t.back, Icon::Arrow, go(back));
-  backButton.bare = true;
-  backButton.fontSize = 26;
-  add(backButton, 36, kFooterY, m.textWidth(t.back, 26, false) + 129, 72);
-  Button next = m.textButton(t.next, Icon::None, go(static_cast<Step>(static_cast<int>(s.step) + 1)),
-                             true);
-  next.fontSize = 30;
-  const double nextW = std::max(240.0, m.textWidth(t.next, 30, false) + 90);
-  add(next, kW - 48 - nextW, kFooterY, nextW, 72);
+  Menu::Action next{t.next, "", go(static_cast<Step>(static_cast<int>(s.step) + 1))};
+  next.primary = true;
+  addFooter(m, SetupPages::back(m, go(back)), Icon::Arrow, {next});
+}
+
+Menu::Button& SetupPages::add(Menu& m, Menu::Button b, double x, double y, double w, double h) {
+  b.panel = Menu::kSetup;
+  b.x = x, b.y = y, b.w = w, b.h = h;
+  m.buttons_.push_back(std::move(b));
+  return m.buttons_.back();
+}
+
+// Defaults, no Stash, nothing pinned. x 0: at the panel's top right.
+Menu::Button& SetupPages::addLater(Menu& m, double x, double y) {
+  const SetupStrings& t = m.text().setup;
+  Menu::Button later = m.textButton(t.setUpLater, Menu::Icon::None, command(MenuCommand::EndSetup, 0));
+  later.bare = later.dimInk = true;
+  later.fontSize = kit::kWellSize;
+  later.radius = kit::kCorner;
+  const double w = m.textWidth(t.setUpLater, kit::kWellSize, false) + 2 * kit::kSpace;
+  return add(m, later, x > 0 ? x : setup::kRight - w, y, w, setup::kFooterH);
+}
+
+double SetupPages::footerWidth(Menu& m, const std::string& label, bool icon) {
+  // An icon before the label (Button's): 35 in, three quarters of kIconSize, 20 to the text.
+  const double text = m.textWidth(label, kit::kRowSize, false);
+  return icon ? 35 + kIconSize * 0.75 + 20 + text + 35 : std::max(160.0, text + 2 * setup::kButtonPad);
+}
+
+Menu::Action SetupPages::back(Menu& m, std::function<MenuCommand()> action) {
+  return {m.text().setup.back, "", std::move(action)};
+}
+
+void SetupPages::addFooter(Menu& m, const Menu::Action& left, Menu::Icon icon,
+                           const std::vector<Menu::Action>& actions, bool raised) {
+  if (left.action) {
+    Menu::Button b = m.textButton(left.label, icon, left.action);
+    b.bare = !raised;
+    b.fontSize = kit::kRowSize;
+    b.radius = kit::kCorner;
+    b.disabled = left.disabled;
+    add(m, b, setup::kLeft, setup::kFooterY, footerWidth(m, left.label, icon != Menu::Icon::None),
+        setup::kFooterH);
+  }
+  double right = setup::kRight;
+  for (auto a = actions.rbegin(); a != actions.rend(); ++a) {
+    Menu::Button b = m.textButton(a->label, Menu::Icon::None, a->action, a->primary);
+    b.fontSize = kit::kRowSize;
+    b.radius = kit::kCorner;
+    b.disabled = a->disabled;
+    b.tooltip = a->tooltip;
+    const double w = footerWidth(m, a->label);
+    add(m, b, right - w, setup::kFooterY, w, setup::kFooterH);
+    right -= w + kit::kSpaceTight;
+  }
+}
+
+void SetupPages::listBelow(Menu& m, const Menu::Button& opener, const std::vector<Menu::Action>& items,
+                           int chosen) {
+  constexpr double h = strip::kListItemH, gap = kit::kSpacePiece;
+  double w = opener.w;
+  for (const Menu::Action& a : items)
+    w = std::max(w, m.textWidth(a.label, strip::kListSize, false) + 2 * kit::kSpace + 24);
+  const double x = opener.x + opener.w - w;
+  double y = opener.y + opener.h + kit::kSpaceTight + kit::kPopPad;
+  for (size_t i = 0; i < items.size(); ++i) {
+    Menu::Button e;
+    e.popup = e.listItem = true;
+    e.label = items[i].label;
+    e.tooltip = items[i].tooltip;
+    e.selected = static_cast<int>(i) == chosen;
+    e.action = items[i].action;
+    e.radius = kit::kCorner;
+    e.fontSize = strip::kListSize;
+    add(m, e, x, y, w, h);
+    y += h + gap;
+  }
 }
 
 void SetupPages::draw(Menu& m, cairo_t* cr) {
   const SetupMenu& s = *m.setup_;
   const SetupStrings& t = m.text().setup;
   const Palette pal = m.palette();
-  panelFrame(cr, 0, 0, kW, kH, pal.panel, pal.edge);
+  // One colour behind a list that scrolls (Add folders' tree, what was
+  // added): its rows move on the GPU (scrollTo()).
+  MenuFinishes::Flat flat;
+  const SetupFolders* f = s.folders.get();
+  if (s.step == Step::Folders && f && (f->page == SetupFolders::Page::Added || !f->form)) flat = {f->top - 2, f->bottom};
+  MenuFinishes::panel(cr, 0, 0, kW, kH, kit::kPanelInset, kit::kPanelCorner, flat);
   const Rgba& ink = pal.text;
   const Rgba& dim = pal.textDim;
   if (s.step == Step::Welcome) {
     // As the intro's pieces end up (setupIntroPiece()).
     drawBrand(cr, kBrandX, kBrandY, kBrandSize);
-    drawWordmark(cr, 0, kNameY, kW, 104);
+    drawWordmark(cr, 0, kNameY, kW, kNameSize);
     m.drawText(cr, t.welcome, 0, 456, kW, 50, 32, false, true, ink.r, ink.g, ink.b);
     // A line with its mark before it, centred: the trigger's SteamVR glyph,
     // else one drawn like it.
@@ -418,6 +502,7 @@ void SetupPages::draw(Menu& m, cairo_t* cr) {
   } else {
     drawControls(m, cr);
   }
+  m.drawGroups(cr);
   m.drawButtons(cr, Menu::kSetup);
   m.drawPopups(cr, Menu::kSetup);
 }
@@ -429,26 +514,25 @@ bool SetupPages::shows(cairo_t* cr, double x, double y, double w, double h) {
   return x - kReach < x1 && x + w + kReach > x0 && y - kReach < y1 && y + h + kReach > y0;
 }
 
-void SetupPages::drawHead(Menu& m, cairo_t* cr, const char* title, const std::string& line,
+void SetupPages::drawHead(Menu& m, cairo_t* cr, const std::string& title, const std::string& line,
                           double width) {
-  if (!shows(cr, 56, 48, std::max(width, kW - 352), 170)) return;
+  using namespace setup;
+  if (!shows(cr, kTextLeft, kTitleY, std::max(width, kW - 2 * kTextLeft), kTop - kTitleY)) return;
   const Palette pal = m.palette();
-  m.drawText(cr, title, 56, 48, kW - 112 - 240, 64, 44, true, false, pal.text.r, pal.text.g, pal.text.b);
+  const double x = kTextLeft;
+  // The title stops before Set up later at the top right.
+  m.drawText(cr, title, x, kTitleY, kW - kTextLeft - x - 240, kTitleH, kTitleSize, true, false, pal.text.r,
+             pal.text.g, pal.text.b);
   const double lineInk[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
-  m.drawTextLines(cr, line, 56, 132, width, 27, 2, lineInk, false);
+  m.drawTextLines(cr, line, kTextLeft, kLineY, std::min(width, kW - 2 * kTextLeft), kLineSize, 2, lineInk,
+                  false);
 }
 
-// Under the panel while it types, on its own with the theme's edge.
+// Under the panel while it types, a panel of its own.
 void SetupPages::drawKeyboardPanel(Menu& m, cairo_t* cr) {
   if (!m.keyboardShown_) return;
-  const Palette pal = m.palette();
   const double* k = m.keyboardRect_;
-  roundedRect(cr, k[0], k[1], k[2], k[3], 22);
-  setColor(cr, pal.panel);
-  cairo_fill_preserve(cr);
-  setColor(cr, pal.edge);
-  cairo_set_line_width(cr, 3);
-  cairo_stroke(cr);
+  MenuFinishes::panel(cr, k[0], k[1], k[2], k[3], 0, kit::kGroupCorner);
 }
 
 // The dots: this step's long, those done in the accent.
@@ -458,7 +542,7 @@ void SetupPages::drawDots(Menu& m, cairo_t* cr) {
   double x = (kW - (kSteps - 1) * 30 - 34) / 2;
   for (int i = 0; i < kSteps; ++i) {
     const double w = i == at ? 34 : 16;
-    roundedRect(cr, x, kFooterY + 28, w, 16, 8);
+    roundedRect(cr, x, setup::kFooterY + (setup::kFooterH - 16) / 2, w, 16, 8);
     if (i <= at)
       setColor(cr, pal.accent, i == at ? 1.0 : 0.6);
     else
@@ -491,20 +575,17 @@ void SetupPages::setStep(Menu& m, Step step) {
 
 void SetupPages::drawPill(Menu& m, cairo_t* cr, double w, double h,
                           const std::vector<PillGlyph>& glyphs, const std::string& line) {
-  constexpr double kPillH = 88, kStart = 20, kGap = 20, kEnd = 38, kBetween = 10;
+  constexpr double kStart = 20, kGap = 20, kEnd = 38, kBetween = 10;
   double glyphsW = 0;
   for (const PillGlyph& g : glyphs)
     if (g.image || !g.letter.empty() || g.trigger) glyphsW += (glyphsW > 0 ? kBetween : 0) + kGlyph;
   const double textX = glyphsW > 0 ? kStart + glyphsW + kGap : kEnd;
-  const double pillW = std::min(w - 4.0, textX + m.textWidth(line, 31, false) + kEnd);
+  // In the kit's pop surface, its shadow inside the canvas.
+  const double pillW = std::min(w - 2 * kPillShadow, textX + m.textWidth(line, kPillSize, false) + kEnd);
   const double x = (w - pillW) / 2, y = (h - kPillH) / 2;
-  roundedRect(cr, x, y, pillW, kPillH, kPillH / 2);
-  cairo_set_source_rgba(cr, 6 / 255.0, 8 / 255.0, 12 / 255.0, 0.9);
-  cairo_fill(cr);
-  roundedRect(cr, x + 1, y + 1, pillW - 2, kPillH - 2, kPillH / 2 - 1);
-  cairo_set_source_rgba(cr, 1, 1, 1, 0.22);
-  cairo_set_line_width(cr, 2);
-  cairo_stroke(cr);
+  assert(MenuFinishes::reach(Finish::Pop) <= kPillShadow && h >= kPillH + 2 * kPillShadow);
+  m.drawFinish(cr, Finish::Pop, x, y, pillW, kPillH, kPillH / 2);
+  const Rgba& ink = m.palette().text;
   double gx = x + kStart;
   for (const PillGlyph& g : glyphs) {
     const double cx = gx + kGlyph / 2.0, cy = y + kPillH / 2;
@@ -526,7 +607,8 @@ void SetupPages::drawPill(Menu& m, cairo_t* cr, double w, double h,
     }
     gx += kGlyph + kBetween;
   }
-  m.drawText(cr, line, x + textX, y, pillW - textX - kEnd + 4, kPillH, 31, false, false, 1, 1, 1);
+  m.drawText(cr, line, x + textX, y, pillW - textX - kEnd + 4, kPillH, kPillSize, false, false, ink.r,
+             ink.g, ink.b);
 }
 
 SetupPages::PillGlyph SetupPages::pillGlyph(const ControllerArt* art,

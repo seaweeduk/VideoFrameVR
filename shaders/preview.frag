@@ -27,5 +27,5 @@ void main() {
   vec4 p = pc.draw.picture;
   vec2 m = 0.5 / (vec2(textureSize(tex, 0)) * p.xy);
   vec3 c = inside ? textureLod(tex, p.zw + clamp(uv, m, 1.0 - m) * p.xy, 0.0).rgb : vec3(0.0);
-  fragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+  fragColor = vec4(clamp(c, 0.0, 1.0), 1.0) * pc.draw.view.w;  // premultiplied
 }

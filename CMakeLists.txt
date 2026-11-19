@@ -64,21 +64,25 @@ add_executable(videoframevr
   src/key_picker.cpp
   src/key_share.cpp
   src/focus_settings.cpp
-  src/glass_backdrop.cpp
   src/video_check.cpp
   src/library.cpp
   src/library_index.cpp
   src/accent.cpp
   src/mask_probe.cpp
   src/menu.cpp
+  src/menu_adjust.cpp
   src/menu_browser.cpp
   src/menu_delete.cpp
+  src/menu_feel.cpp
+  src/menu_finish.cpp
   src/menu_focus.cpp
   src/menu_hints.cpp
   src/menu_icons.cpp
   src/menu_library.cpp
+  src/menu_list_parts.cpp
   src/menu_network.cpp
   src/menu_offline.cpp
+  src/menu_parts.cpp
   src/menu_places.cpp
   src/menu_player.cpp
   src/menu_presets.cpp
@@ -90,6 +94,7 @@ add_executable(videoframevr
   src/menu_setup_stash.cpp
   src/menu_setup_folders.cpp
   src/menu_stash_covers.cpp
+  src/menu_video_settings.cpp
   src/menu_widgets.cpp
   src/menu_whats_new.cpp
   src/mirror_window.cpp
@@ -106,6 +111,7 @@ add_executable(videoframevr
   src/menu_stash_studios.cpp
   src/motion.cpp
   src/mpv_gl_context.cpp
+  src/notices.cpp
   src/offline.cpp
   src/oshash.cpp
   src/performance_readout.cpp
@@ -206,7 +212,6 @@ foreach(shader IN ITEMS
     key_reach.frag
     depth_patch.frag
     sky.frag
-    blur.frag
     surround.frag
     screen.vert
     screen.frag
@@ -272,6 +277,11 @@ string(REGEX REPLACE "^v" "" VIDEOFRAMEVR_VERSION_TEXT "${VIDEOFRAMEVR_VERSION_T
 set(VIDEOFRAMEVR_RELEASE_TEXT "${VIDEOFRAMEVR_VERSION_TEXT}")
 if(VIDEOFRAMEVR_VERSION_TEXT STREQUAL "")
   set(VIDEOFRAMEVR_VERSION_TEXT "${PROJECT_VERSION}-dev")
+endif()
+# Any build but a release's plain "0.2.0" (devVersion() in src/whats_new.h)
+# can take the menu's feel from a file (src/menu_feel.h); a release can't.
+if(NOT VIDEOFRAMEVR_VERSION_TEXT MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+  target_compile_definitions(videoframevr PRIVATE VIDEOFRAMEVR_DEV_BUILD)
 endif()
 
 # The release notes, built in for What's new (src/whats_new.h). A release

@@ -90,23 +90,24 @@ std::string stashListName(const StashList& list, const StashCatalog* catalog);
 // How a Stash button is drawn (Menu::Button::stashLook).
 enum class StashLook {
   None,
-  Tile,     // a scene in the grid: picture, stars and plays, title, studio · date, performers
-  Row,      // a scene in the list: picture, title, performers, then its columns
-  Facet,    // a rail or full list row: name and count; included blue (on), left out red (danger)
-  Exclude,  // its ⊘ target beside it
-  Chip,     // an active filter above the results: included blue, left out red-outlined with ⊘
-  Link,     // "All tags …": blue text on a row
-  Action,   // a header button: icon and label
-  Nav,      // a navigation row with a Stash icon
-  Field,    // a text field, its text from the left; outlined blue while typed into (on)
+  // Over a scene's list row (ListLook::Overlay): its plays, studio, release
+  // date and length (`plays`, `size`, `date`, `caption`) in their columns,
+  // and the downloaded tick.
+  SceneColumns,
+  // A rail or full list row: name and count, flush; included in the accent
+  // (latched), left out red with ⊘ on a faint red (dim).
+  Facet,
+  Exclude,  // its ⊘ target beside it: flush, red while pointed; red while on
+  Chip,     // an active filter above the results: included latched, left out red with ⊘
+  Link,     // "All tags …": text in the accent on a row
+  Action,   // a button with an icon before its label (or only a label), its padding by its height
+  Field,    // a text field (a search's icon first), its text from the left; ringed while typed into (on)
   // The Scene tab (menu_stash_scene.cpp): the strip's tab with Stash's mark;
-  // a tag chip (label and size the count; on chosen, dim an outlined "+N
-  // more"); a performer's portrait card (label her name, detail her age
-  // then, stashId hers); a wide button with an icon, its label and size a
-  // count on the right.
+  // a tag chip (label and size the count; latched chosen, dim a link such
+  // as "+N more"); a wide button with an icon, its label and size a count
+  // on the right.
   Tab,
   TagChip,
-  Portrait,
   Go,
   PerformerCard,  // a performer's card: portrait (2:3), name, then two lines; played count on it
   CoStar,         // a co-star on the performer page: round portrait, name, count; chosen blue (on)
@@ -114,7 +115,7 @@ enum class StashLook {
   Shelf,   // a Home shelf's heading: title, a dim note, and "See all" at the right
   Warning,  // a problem to act on: a red warning sign, then its label
 };
-enum class StashIcon { None, Stash, Home, Scenes, Performers, Studios, Pin, Shuffle, Filters, Ban,
+enum class StashIcon { None, Stash, Scenes, Performers, Studios, Pin, Shuffle, Filters, Ban,
                        Undo, Back };
 
 // One line of the filter rail, made when the results change; laid out only
@@ -354,7 +355,37 @@ struct StashMenu {
   std::string shownWriteBack;
 
   // Where the last layout put what the heading draws.
-  double titleX = 0, resultsX = 0, resultsTop = 0, fullTitleX = 0, fullTitleRight = 0;
+  double titleX = 0, titleRight = 0, resultsX = 0, resultsTop = 0, fullTitleX = 0, fullTitleRight = 0;
+};
+
+// What Settings' Stash section shows (StashPages::settingsShown()), kept
+// apart from its layout so that the debug fit check can show every row.
+struct StashSettingsShown {
+  bool enabled = false;
+  bool connected = false;  // Stash runs (Menu::stash_); else only its server and folders
+  std::string url, apiKey;
+  // A row of Stash's library folders: its field, what was found about it,
+  // and the other places its videos are in, each with Use.
+  struct Use {
+    std::string text, tooltip, folder;
+    StashFolderMap map;
+    bool first = false;  // where they are, not where they are too: the one to take
+  };
+  struct Folder {
+    std::string folder, label, tooltip;
+    std::vector<std::string> lines;
+    std::vector<Use> uses;
+  };
+  std::vector<Folder> folders;
+  std::string looking;  // the search for them under way
+  // The connection: its lamp (Lamp, menu_parts.h), what it says, and what
+  // the copy in use holds.
+  int lamp = 0;
+  std::string state, counts;
+  bool syncing = false, signIn = false, certificate = false, firstSync = false;
+  bool covers = false, titles = false, malePerformers = false;
+  bool writeBack = false;
+  std::string writeBackLine;  // what waits or was sent, and what went wrong
 };
 
 struct StashPages {
@@ -368,14 +399,19 @@ struct StashPages {
   static void staleHome(Menu& m);
   static void staleStudios(Menu& m);
   static void update(Menu& m);  // each frame
-  static void layoutNavigation(Menu& m, double x, double w, double y, double bottom);
+  static void layoutNavigation(Menu& m, double y, double bottom);
   static void layoutCard(Menu& m, double x, double w, double bottom);  // "Use Stash?"
-  static void layoutSettingsGroup(Menu& m, double top);
+  // Settings' Stash section (menu_stash_settings.cpp): the switch, then
+  // while it is on the server and its state, its folders, and sending to it.
+  static StashSettingsShown settingsShown(Menu& m);
+  static void layoutSettings(Menu& m, Menu::PageLayout& page, const StashSettingsShown& shown);
+#ifndef NDEBUG
+  static StashSettingsShown fullestSettings();  // every row it can have, for the fit check
+#endif
   static void layoutServerEditor(Menu& m);
   // Its certificate isn't trusted: Don't connect, or Connect without
   // verification (Dialog::StashCertificate, the host in dialogPath_).
   static void layoutCertificateDialog(Menu& m, std::vector<Menu::Button>& row);
-  static void drawCertificateDialog(Menu& m, cairo_t* cr, double textX, double boxY);
   // The server's fields, with the keyboard; the folders' are those of the
   // mapping Stash's `folder` goes by (the first for "").
   static void editServer(Menu& m, int field, const std::string& folder = std::string());
@@ -405,7 +441,7 @@ struct StashPages {
   static std::string playingTitle(const Menu& m, const std::string& fallback);
 
   // The strip's Scene tab and its page (menu_stash_scene.cpp).
-  static void layoutSceneTab(Menu& m, double& x);
+  static void layoutSceneTab(Menu& m, Menu::StripLayout& strip);
   static void showSceneDetails(Menu& m);
   static void leaveSceneDetails(Menu& m);
   static void updateSceneDetails(Menu& m);
@@ -463,6 +499,7 @@ struct StashPages {
   static void layoutProfile(Menu& m, int performer, double x, double top, double bottom);
   static void drawProfile(const Menu& m, cairo_t* cr, const StashPerformer& p);
   static void drawPerformerButton(const Menu& m, cairo_t* cr, const Button& b, const double ink[4]);
+  static double performerCardHeight(double w, int lines = 3);  // a card w wide (StashLook::PerformerCard)
   // Her portrait filling the box (initials while none), top kept.
   static void drawPortrait(const Menu& m, cairo_t* cr, const StashPerformer& p, double x, double y,
                            double w, double h, double radius);
@@ -475,7 +512,8 @@ struct StashPages {
   static StashMenu& state(Menu& m) { return *m.stashMenu_; }
   static const StashCatalog* catalog(const Menu& m);
   // menu_stash_folders.cpp
-  static double layoutFolders(Menu& m, double x, double y, double w, double labelW);
+  // The Folders rows Settings shows (settingsShown()).
+  static void shownFolders(Menu& m, StashSettingsShown& shown);
   static bool layoutNotHere(Menu& m, double x, double& y, double w);
   static void showScenes(Menu& m);
   // The Scenes page with its own list, in place of a pinned list's.
@@ -557,38 +595,38 @@ struct StashPages {
                               double w, double h);
   static Button actionButton(Menu& m, const std::string& label, StashIcon icon,
                              std::function<MenuCommand()> action, double x, double y, double h);
-  // A scene's tile, `plays` on its picture (its action still to be set);
-  // and the stars over the picture's lower left corner (the tile is told
-  // their rating, for its strip).
-  static Button sceneTile(const Menu& m, const StashCatalog& c, const StashScene& s, int plays,
-                          double x, double y, double w, double h);
-  static Button tileStars(const Menu& m, Button& tile, const std::string& path, float rating);
-  // Where the scene list's columns start, for a row from x0 to x1 (a narrow
-  // one has no studio column).
+  // A scene's card, the lists' own (Menu::addGallery()'s): its picture with
+  // `plays` and `rating` on it, its title, performers, then studio · date ·
+  // length (no studio where its mark is on the picture); w wide and
+  // cardHeight(w) high, its action still to be set.
+  static Button sceneCard(const Menu& m, const StashCatalog& c, const StashScene& s, int plays,
+                          float rating, double x, double y, double w);
+  static double cardHeight(double w);
+  // The card and what goes on it: its download, its badge ("VR · 8K") and
+  // its stars.
+  static void addSceneCard(Menu& m, const Button& card, const StashScene& s);
+  // Where the scene list's columns start, for a row ending at x1.
   struct SceneColumns {
-    double status, rating, plays, studio, released, length;
+    double status, rating, plays, released, length;
   };
-  // Where a tile's last line is (its studio and date), for its tick.
-  static double tileLastLine(const Button& tile) { return tile.y + 8 + (tile.w - 16) * 9 / 16 + 70; }
-  static SceneColumns sceneColumns(double x0, double x1);
+  static SceneColumns sceneColumns(const Menu& m, double x1);
+  static const std::array<double, 3>& sceneApart(const Menu& m);
+  static constexpr double kReleasedColumnW = 130, kLengthColumnW = 90;
+  // A button with an icon before its label (StashLook::Action), by its
+  // height: its ends, its icon and the gap after it.
+  struct ActionSpace {
+    double pad, icon, gap;
+  };
+  static ActionSpace actionSpace(double h) {
+    return h < 48 ? ActionSpace{16, 22, 8} : ActionSpace{20, 28, 12};
+  }
   // A scene's lines: its title (Stash's with the titles setting), its shown
   // performers, "studio · date", and its resolution badge.
   static std::string title(const Menu& m, const StashScene& s);
   static std::string performers(const Menu& m, const StashScene& s);
-  static std::string studioDate(const StashCatalog& c, const StashScene& s);
   static std::string badge(const StashScene& s);
-  // The picture of a scene's tile or row: its Stash cover with covers on,
-  // else its frame thumbnail; on a tile, the studio's logo top right.
-  static void drawPicture(const Menu& m, cairo_t* cr, const Button& b, double x, double y, double w,
-                          double h, double radius);
   static void drawIcon(cairo_t* cr, StashIcon icon, double cx, double cy, double s,
                        const double rgba[4]);
-  // On a card's picture: a badge from its top left corner ("VR · 8K"), and
-  // the plays, a play mark and the count, to its lower right one.
-  static void drawCaption(const Menu& m, cairo_t* cr, const std::string& caption, double x,
-                          double y);
-  static void drawPlays(const Menu& m, cairo_t* cr, const std::string& plays, double right,
-                        double bottom);
 };
 
 // "3,454".
@@ -599,6 +637,8 @@ std::string stashAgo(int64_t when);
 std::string stashSyncStep(const StashStatus& status);
 // "1 play", "96 plays"; none for none.
 std::string stashPlays(int plays);
+// "1 scene", "96 scenes".
+std::string stashScenes(long scenes);
 // Texture pixels for `w` layout pixels: how wide to ask images() for a picture.
 inline int stashPixels(double w) {
   return static_cast<int>(std::lround(w * menu_geometry::kRasterScale));

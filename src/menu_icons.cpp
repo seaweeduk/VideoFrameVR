@@ -43,28 +43,25 @@ void ellipse(cairo_t* cr, double cx, double cy, double rx, double ry, double fro
 
 }  // namespace
 
-// Draws an icon in colour r, g, b centered at (cx, cy) in an s-sized box.
+// Draws an icon in colour r, g, b centered at (cx, cy) in an s-sized box;
+// one drawn in one paint (onePaint()) can be drawn at alpha a.
 void Menu::drawIcon(cairo_t* cr, Icon icon, double cx, double cy, double s, double r, double g,
-                    double b) {
+                    double b, double a) {
   const double x = cx - s / 2, y = cy - s / 2;
   cairo_save(cr);
   cairo_new_path(cr);  // no line from where text left the current point
-  cairo_set_source_rgba(cr, r, g, b, 1);
+  cairo_set_source_rgba(cr, r, g, b, a);
   cairo_set_line_width(cr, s * 0.08);
   cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
   switch (icon) {
     case Icon::Pin:
+    case Icon::Shuffle:
+    case Icon::Layers:
+    case Icon::Film:
+    case Icon::People:
+    case Icon::Building:
       beginIcon24(cr, x, y, s);
-      cairo_move_to(cr, 8, 3);
-      cairo_line_to(cr, 16, 3);
-      cairo_move_to(cr, 9.5, 3);
-      cairo_line_to(cr, 9.5, 9);
-      cairo_line_to(cr, 6, 14);
-      cairo_line_to(cr, 18, 14);
-      cairo_line_to(cr, 14.5, 9);
-      cairo_line_to(cr, 14.5, 3);
-      cairo_move_to(cr, 12, 14);
-      cairo_line_to(cr, 12, 21);
+      iconPath24(cr, icon);
       cairo_stroke(cr);
       cairo_restore(cr);
       break;
@@ -495,6 +492,15 @@ void Menu::drawIcon(cairo_t* cr, Icon icon, double cx, double cy, double s, doub
       cairo_stroke(cr);
       cairo_restore(cr);
       break;
+    case Icon::Caret:
+      // Pointing down: a list opens under it.
+      beginIcon24(cr, x, y, s);
+      cairo_move_to(cr, 7, 10);
+      cairo_line_to(cr, 12, 15);
+      cairo_line_to(cr, 17, 10);
+      cairo_stroke(cr);
+      cairo_restore(cr);
+      break;
     case Icon::Trigger:
       // A trigger's face as SteamVR's glyphs draw it: wide at the top, to a
       // rounded point, lightly filled, thinly outlined.
@@ -594,29 +600,6 @@ void Menu::drawIcon(cairo_t* cr, Icon icon, double cx, double cy, double s, doub
       cairo_fill(cr);
       cairo_restore(cr);
       break;
-    case Icon::Curved:
-      // A screen bent around the viewer.
-      beginIcon24(cr, x, y, s);
-      cairo_move_to(cr, 3, 7.5);
-      cairo_curve_to(cr, 9, 5.23, 15, 5.23, 21, 7.5);
-      cairo_line_to(cr, 21, 16.5);
-      cairo_curve_to(cr, 15, 14.23, 9, 14.23, 3, 16.5);
-      cairo_close_path(cr);
-      cairo_stroke(cr);
-      cairo_restore(cr);
-      break;
-    case Icon::Passthrough:
-      // An eye: seeing the room around the video.
-      beginIcon24(cr, x, y, s);
-      cairo_move_to(cr, 2, 12);
-      cairo_curve_to(cr, 6, 5, 18, 5, 22, 12);
-      cairo_curve_to(cr, 18, 19, 6, 19, 2, 12);
-      cairo_close_path(cr);
-      cairo_stroke(cr);
-      cairo_arc(cr, 12, 12, 3.2, 0, 2 * M_PI);
-      cairo_fill(cr);
-      cairo_restore(cr);
-      break;
     case Icon::Power:
       // Ring open at the top with a bar through the gap.
       cairo_set_line_width(cr, s * 0.1);
@@ -683,23 +666,6 @@ void Menu::drawIcon(cairo_t* cr, Icon icon, double cx, double cy, double s, doub
       cairo_fill(cr);
       cairo_restore(cr);
       break;
-    case Icon::PauseLine:  // as Pause and Play, in lines for a labelled button
-      beginIcon24(cr, x, y, s);
-      cairo_set_line_width(cr, 2.6);
-      cairo_move_to(cr, 8.5, 5);
-      cairo_line_to(cr, 8.5, 19);
-      cairo_move_to(cr, 15.5, 5);
-      cairo_line_to(cr, 15.5, 19);
-      cairo_stroke(cr);
-      cairo_restore(cr);
-      break;
-    case Icon::PlayLine:
-      beginIcon24(cr, x, y, s);
-      cairo_set_line_width(cr, 2);
-      triangle(cr, 7, 4.5, 7, 19.5, 19, 12);
-      cairo_stroke(cr);
-      cairo_restore(cr);
-      break;
     case Icon::Close:
       beginIcon24(cr, x, y, s);
       cairo_set_line_width(cr, 2);
@@ -732,17 +698,6 @@ void Menu::drawIcon(cairo_t* cr, Icon icon, double cx, double cy, double s, doub
       cairo_line_to(cr, 12, 19);
       cairo_move_to(cr, 5, 12);
       cairo_line_to(cr, 19, 12);
-      cairo_stroke(cr);
-      cairo_restore(cr);
-      break;
-    case Icon::Lock:
-      // A padlock: its body, the shackle over it.
-      beginIcon24(cr, x, y, s);
-      roundedRect(cr, 5, 10.5, 14, 10, 2);
-      cairo_move_to(cr, 8, 10.5);
-      cairo_line_to(cr, 8, 8);
-      cairo_arc(cr, 12, 8, 4, M_PI, 2 * M_PI);
-      cairo_line_to(cr, 16, 10.5);
       cairo_stroke(cr);
       cairo_restore(cr);
       break;
@@ -849,9 +804,173 @@ void Menu::drawIcon(cairo_t* cr, Icon icon, double cx, double cy, double s, doub
       cairo_fill(cr);
       cairo_restore(cr);
       break;
-    case Icon::Shuffle:
-      // Two arrows crossing.
+    case Icon::Home:
+      // A house with its door.
       beginIcon24(cr, x, y, s);
+      cairo_move_to(cr, 4, 11);
+      cairo_line_to(cr, 12, 4);
+      cairo_line_to(cr, 20, 11);
+      cairo_line_to(cr, 20, 20);
+      cairo_line_to(cr, 14.5, 20);
+      cairo_line_to(cr, 14.5, 14);
+      cairo_line_to(cr, 9.5, 14);
+      cairo_line_to(cr, 9.5, 20);
+      cairo_line_to(cr, 4, 20);
+      cairo_close_path(cr);
+      cairo_stroke(cr);
+      cairo_restore(cr);
+      break;
+    case Icon::Usb:
+      // A USB stick, its plug up.
+      beginIcon24(cr, x, y, s);
+      cairo_new_sub_path(cr);
+      cairo_move_to(cr, 8, 10);
+      cairo_line_to(cr, 16, 10);
+      cairo_line_to(cr, 16, 20.5);
+      cairo_arc(cr, 15, 20.5, 1, 0, 0.5 * M_PI);
+      cairo_arc(cr, 9, 20.5, 1, 0.5 * M_PI, M_PI);
+      cairo_close_path(cr);
+      cairo_move_to(cr, 9.5, 10);
+      cairo_line_to(cr, 9.5, 3.5);
+      cairo_line_to(cr, 14.5, 3.5);
+      cairo_line_to(cr, 14.5, 10);
+      cairo_stroke(cr);
+      cairo_arc(cr, 11, 6, 0.9, 0, 2 * M_PI);
+      cairo_fill(cr);
+      cairo_arc(cr, 13, 6, 0.9, 0, 2 * M_PI);
+      cairo_fill(cr);
+      cairo_restore(cr);
+      break;
+    case Icon::ChevronLeft:
+      beginIcon24(cr, x, y, s);
+      cairo_move_to(cr, 15, 6);
+      cairo_line_to(cr, 9, 12);
+      cairo_line_to(cr, 15, 18);
+      cairo_stroke(cr);
+      cairo_restore(cr);
+      break;
+    case Icon::ArrowUp:
+    case Icon::ArrowDown: {
+      // An order's direction: ascending up, descending down.
+      const bool up = icon == Icon::ArrowUp;
+      beginIcon24(cr, x, y, s);
+      if (s <= 22) cairo_set_line_width(cr, 2.4);
+      cairo_move_to(cr, 12, up ? 19 : 5);
+      cairo_line_to(cr, 12, up ? 5 : 19);
+      cairo_move_to(cr, 6, up ? 11 : 13);
+      cairo_line_to(cr, 12, up ? 5 : 19);
+      cairo_line_to(cr, 18, up ? 11 : 13);
+      cairo_stroke(cr);
+      cairo_restore(cr);
+      break;
+    }
+    case Icon::None:
+      break;
+  }
+  cairo_restore(cr);
+}
+
+// Faded at alpha in place, an icon whose parts overlap would show the
+// overlap: those are faded through a temporary surface (drawButtons()).
+bool Menu::onePaint(Icon icon) {
+  switch (icon) {
+    case Icon::FolderUp:  // its arrow cut out of the folder
+    case Icon::Settings:
+    case Icon::Recenter:
+    case Icon::Fisheye190:
+    case Icon::Focus:
+    case Icon::Audio:
+    case Icon::Video:
+    case Icon::Trigger:  // filled lightly under its outline
+    case Icon::Usb:
+      return false;
+    case Icon::None:
+    case Icon::Play:
+    case Icon::Pause:
+    case Icon::Stop:
+    case Icon::Previous:
+    case Icon::Next:
+    case Icon::Back10:
+    case Icon::Forward10:
+    case Icon::VolumeUp:
+    case Icon::Mute:
+    case Icon::Folder:
+    case Icon::Trash:
+    case Icon::Power:
+    case Icon::Globe:
+    case Icon::FormatDome:
+    case Icon::ProjFlat:
+    case Icon::Proj180:
+    case Icon::Proj360:
+    case Icon::Fisheye180:
+    case Icon::Fisheye200:
+    case Icon::Cube:
+    case Icon::StereoMono:
+    case Icon::StereoSbs:
+    case Icon::StereoTb:
+    case Icon::Slideshow:
+    case Icon::JumpTop:
+    case Icon::JumpBottom:
+    case Icon::Grid:
+    case Icon::MenuLines:
+    case Icon::Subtitles:
+    case Icon::Chapters:
+    case Icon::List:
+    case Icon::Star:
+    case Icon::StarFilled:
+    case Icon::Search:
+    case Icon::Library:
+    case Icon::Pin:
+    case Icon::MoveUp:
+    case Icon::MoveDown:
+    case Icon::Download:
+    case Icon::Check:
+    case Icon::Card:
+    case Icon::Storage:
+    case Icon::Close:
+    case Icon::Pencil:
+    case Icon::Plus:
+    case Icon::Refresh:
+    case Icon::Arrow:
+    case Icon::ArrowRight:
+    case Icon::Chevron:
+    case Icon::Caret:
+    case Icon::Controller:
+    case Icon::Warning:
+    case Icon::Headset:
+    case Icon::Computer:
+    case Icon::StopAtEnd:
+    case Icon::Repeat:
+    case Icon::PlayNext:
+    case Icon::Shuffle:
+    case Icon::Home:
+    case Icon::ChevronLeft:
+    case Icon::ArrowUp:
+    case Icon::ArrowDown:
+    case Icon::Layers:
+    case Icon::Film:
+    case Icon::People:
+    case Icon::Building:
+      return true;
+  }
+  return false;
+}
+
+void Menu::iconPath24(cairo_t* cr, Icon icon) {
+  switch (icon) {
+    case Icon::Pin:  // a pushpin
+      cairo_move_to(cr, 8, 3);
+      cairo_line_to(cr, 16, 3);
+      cairo_move_to(cr, 9.5, 3);
+      cairo_line_to(cr, 9.5, 9);
+      cairo_line_to(cr, 6, 14);
+      cairo_line_to(cr, 18, 14);
+      cairo_line_to(cr, 14.5, 9);
+      cairo_line_to(cr, 14.5, 3);
+      cairo_move_to(cr, 12, 14);
+      cairo_line_to(cr, 12, 21);
+      break;
+    case Icon::Shuffle:  // two arrows crossing
       cairo_move_to(cr, 3, 7);
       cairo_curve_to(cr, 11, 7, 12, 17, 20, 17);
       cairo_move_to(cr, 3, 17);
@@ -862,11 +981,52 @@ void Menu::drawIcon(cairo_t* cr, Icon icon, double cx, double cy, double s, doub
       cairo_move_to(cr, 17, 14);
       cairo_line_to(cr, 20, 17);
       cairo_line_to(cr, 17, 20);
-      cairo_stroke(cr);
-      cairo_restore(cr);
       break;
-    case Icon::None:
+    case Icon::Layers:  // three layers, as Stash's own mark
+      for (const double y : {7.0, 12.0, 17.0}) {
+        cairo_move_to(cr, 3, y);
+        cairo_line_to(cr, 12, y - 4);
+        cairo_line_to(cr, 21, y);
+        cairo_line_to(cr, 12, y + 4);
+        cairo_close_path(cr);
+      }
+      break;
+    case Icon::Film:  // a frame of film
+      roundedRect(cr, 3, 5, 18, 14, 2);
+      cairo_move_to(cr, 7.5, 5);
+      cairo_line_to(cr, 7.5, 19);
+      cairo_move_to(cr, 16.5, 5);
+      cairo_line_to(cr, 16.5, 19);
+      cairo_move_to(cr, 3, 12);
+      cairo_line_to(cr, 7.5, 12);
+      cairo_move_to(cr, 16.5, 12);
+      cairo_line_to(cr, 21, 12);
+      break;
+    case Icon::People:  // two people
+      cairo_arc(cr, 9, 7, 3, 0, 2 * M_PI);
+      cairo_new_sub_path(cr);
+      cairo_arc(cr, 18, 8, 2.5, 0, 2 * M_PI);
+      cairo_move_to(cr, 3, 21);
+      cairo_line_to(cr, 3, 18);
+      cairo_curve_to(cr, 3, 12, 15, 12, 15, 18);
+      cairo_line_to(cr, 15, 21);
+      cairo_move_to(cr, 17, 14);
+      cairo_curve_to(cr, 21, 14, 22, 16, 22, 19);
+      cairo_line_to(cr, 22, 21);
+      break;
+    case Icon::Building:  // its windows, its door
+      roundedRect(cr, 5, 3, 14, 18, 1);
+      for (const double x : {9.0, 15.0})
+        for (const double y : {7.0, 11.0}) {
+          cairo_move_to(cr, x, y);
+          cairo_line_to(cr, x, y + 1);
+        }
+      cairo_move_to(cr, 10, 21);
+      cairo_line_to(cr, 10, 16);
+      cairo_line_to(cr, 14, 16);
+      cairo_line_to(cr, 14, 21);
+      break;
+    default:
       break;
   }
-  cairo_restore(cr);
 }

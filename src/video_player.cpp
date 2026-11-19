@@ -694,6 +694,7 @@ void VideoPlayer::setViews(const char* mode) {
 // mpv's chapters, else a disc playlist's. Also once a file has loaded: mpv
 // tells nothing when its list is the last file's (none, for most discs).
 void VideoPlayer::updateChapters() {
+  const std::vector<Chapter> was = std::move(playback_.chapters);
   playback_.chapters = mpvChapters_;
   discChapters_ = false;
   if (playback_.chapters.empty() && bdmv::isDiscImage(path_))
@@ -701,6 +702,9 @@ void VideoPlayer::updateChapters() {
       for (const double time : disc->title.chapters) playback_.chapters.push_back({time, {}});
       discChapters_ = !playback_.chapters.empty();
     }
+  if (!std::equal(was.begin(), was.end(), playback_.chapters.begin(), playback_.chapters.end(),
+                  [](const Chapter& a, const Chapter& b) { return a.time == b.time && a.title == b.title; }))
+    ++playback_.chaptersRevision;
   if (discChapters_)
     updateDiscChapter();
   else

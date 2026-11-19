@@ -14,7 +14,7 @@
 // The scene's pipelines, made once at startup against the eye render pass,
 // whatever the settings (docs/vulkan-renderer.md, 2.5), with their one
 // descriptor set layout (two combined image samplers, pushed per draw: the
-// draw's texture and the glass backdrop), pipeline layout (that set and 256
+// draw's texture and a second one, a video's chroma), pipeline layout (that set and 256
 // bytes of push constants) and samplers (2.6). The colour key's pipelines
 // also read its mask (KeyMask) as set 1, through layouts of their own.
 class Pipelines {
@@ -39,6 +39,9 @@ class Pipelines {
     kSurroundMaskRedBlueSharpen,
     kSurroundColourKey,
     kSurroundColourKeySharpen,
+    kPanelPointed,  // the panel with a pointed or pressed control (kPanel: every other one)
+    kPanelFaded,    // the browser fading away while a value is held
+    kPanelStars,    // as kPanelPointed, with the empty stars of an unrated list row pointed at
     kCount
   };
   // The video's pipeline: the surround or the flat screen, with the mask
@@ -58,7 +61,7 @@ class Pipelines {
     kVideoBase,       // the full-size level alone, bilinear (the shaders take several taps)
     kCanvas,          // 8x anisotropy
     kSky,             // repeats around
-    kGlass,           // linear, clamped
+    kChroma,          // the second texture (a video's chroma): linear, clamped
     kSamplerCount
   };
   // surround.frag's common modes (its pipeline constants): a pipeline each,
@@ -108,9 +111,6 @@ class Pipelines {
   // distancePass, reachPass: the colour key's mask passes (KeyMask).
   bool init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEyePass,
             VkRenderPass distancePass, VkRenderPass reachPass);
-  // The desktop's glass backdrop (glass_backdrop.h): the scene's pipelines
-  // again for its float images, and its blur.
-  bool initGlass(VkRenderPass glassPass);
   // The video's pipelines for Q10C decoder frames (Frame, DirectVideo): the
   // unsharpened surround (its common modes too), its mask-first versions
   // (one for each MaskColours), its colour key and the screen, built for
@@ -159,22 +159,20 @@ class Pipelines {
   VkPipeline keyReach() const { return keyReach_; }
   VkDescriptorSetLayout keyMaskSetLayout() const { return keyMaskSetLayout_; }
   // A pipeline of the scene's layout (or another one) for another render
-  // pass (the sky, glass); the caller retires it.
+  // pass (the sky); the caller retires it.
   VkPipeline create(const Desc& desc, VkRenderPass pass, const char* what,
                     VkPipelineLayout layout = VK_NULL_HANDLE);
 
   // For the eye pass with its density map, or the plain one.
   VkPipeline get(Id id, bool plain = false) const { return plain && plain_[id] ? plain_[id] : pipelines_[id]; }
-  VkPipeline glass(Id id) const { return glass_[id]; }
-  VkPipeline blur() const { return blur_; }
   VkPipeline foveation(bool plain) const { return foveation_[plain ? 1 : 0]; }
   VkPipelineLayout layout() const { return layout_; }
   VkSampler sampler(SamplerId id) const { return samplers_[id]; }
 
-  // Pushes a draw's textures: binding 0 (the dummy if none) and the glass
-  // backdrop at binding 1 (the dummy if none).
+  // Pushes a draw's textures: binding 0 (the dummy if none) and a second
+  // one at binding 1 (the dummy if none).
   void bindTextures(VkCommandBuffer cmd, const Texture* texture, SamplerId sampler,
-                    const Texture* glass = nullptr) const;
+                    const Texture* second = nullptr) const;
 
  private:
   bool createSamplers();
@@ -246,11 +244,8 @@ class Pipelines {
   // The colour key's mask's set, and the layout with it as set 1.
   VkDescriptorSetLayout keyMaskSetLayout_ = VK_NULL_HANDLE;
   VkPipelineLayout keyLayout_ = VK_NULL_HANDLE;
-  Desc descs_[kCount] = {};
   VkPipeline pipelines_[kCount] = {};
   VkPipeline plain_[kCount] = {};  // for the plain eye pass, where it is another
-  VkPipeline glass_[kCount] = {};
-  VkPipeline blur_ = VK_NULL_HANDLE;
   VkPipeline foveation_[2] = {};
   VkRenderPass eyePass_ = VK_NULL_HANDLE, plainEyePass_ = VK_NULL_HANDLE;
   VkRenderPass distancePass_ = VK_NULL_HANDLE;

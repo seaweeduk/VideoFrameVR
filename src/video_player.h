@@ -53,6 +53,7 @@ struct PlaybackState {
   int audioChannels = 0;
   std::vector<Chapter> chapters;
   int chapter = -1;  // the current one, -1 = before the first / none
+  unsigned chaptersRevision = 0;  // counts the times chapters changed
   TwoViews views = TwoViews::No;  // 3D Blu-ray (MVC) video: as mpv decodes it
 };
 

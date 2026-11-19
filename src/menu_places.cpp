@@ -1,28 +1,14 @@
-#include "menu_style.h"
+#include "menu_parts.h"
 
-// Edit places: the navigation's places in a group, each with its name (to
-// rename it), where it is, a switch for whether it shows and its moves; under
-// the group, back to the default order and Done.
+// Edit places: the navigation's places in a group across the page, a row
+// each: its name in a field (to rename it), where it is, whether it shows
+// and its moves; Reset at the group's title, Done under it.
 void Menu::layoutPlacesPage() {
   if (!placeRename_.path.empty()) {
     layoutPlaceRename();
     return;
   }
   const PlacesStrings& t = text().places;
-  const double x0 = kPageX + kPagePad, w = kPageWidth - 2 * kPagePad;
-  const double x = x0 + kGroupPad, inner = w - 2 * kGroupPad;
-  constexpr double nameW = 560, switchW = 110, moveW = kSettingRowH;
-  const double downX = x + inner - moveW, upX = downX - 6 - moveW, switchX = upX - 16 - switchW;
-  const double locationX = x + nameW + kGap;
-  const double top = kPagePad - 4;
-  double y = firstRow(top);
-  addLabel(x + 12, y, inner - 12, 0, t.hint, kHintSize, true, 1);
-  y += hintHeight(1) + 6;
-  addLabel(x + 12, y, nameW - 12, 30, t.name, kHintSize, true);
-  addLabel(locationX, y, switchX - locationX, 30, t.location, kHintSize, true);
-  addLabel(switchX, y, switchW, 30, t.show, kHintSize, true);
-  y += 38;
-
   auto place = [this](std::function<void(Places&)> change) {
     return [this, change] {
       change(places_);
@@ -30,119 +16,105 @@ void Menu::layoutPlacesPage() {
       return MenuCommand{};
     };
   };
+  PageLayout page(*this, t.edit, t.hint);
+  const double groupW = PageLayout::columnX(2) + PageLayout::kColumnW - PageLayout::columnX(0);
+  GroupLayout group = page.groupAt(0, PageLayout::columnX(0), PageLayout::kTop, groupW, t.title);
+  // The group's Reset, at its title row's right end (PageLayout::group()).
+  {
+    constexpr int size = kit::kGroupTitleSize;
+    Button b = textButton(t.reset, Icon::None, place([](Places& all) { all.resetOrder(); }));
+    b.panel = kBrowser;
+    b.bare = b.dimInk = true;
+    b.fontSize = size;
+    b.h = 36;
+    b.w = textWidth(t.reset, size, false) + 2 * 14;
+    b.x = PageLayout::columnX(0) + groupW - kit::kGroupPadX - b.w;
+    b.y = PageLayout::kTop + (kit::kGroupTitle - b.h) / 2;
+    b.radius = kit::kPieceCorner;
+    b.tooltip = t.tipReset;
+    buttons_.push_back(b);
+  }
+  constexpr double nameW = 520, moveW = kit::kRowH, in = kit::kSpacePiece;
+  const double switchW = switchWidth(t.show);
   const auto& places = places_.places();
   for (size_t i = 0; i < places.size(); ++i) {
     const Places::Place& p = places[i];
-    Button name = textButton(p.label, Icon::None, [this, path = p.path, own = p.ownName,
-                                                   label = p.label] {
+    const GroupLayout::Box row = group.room(kit::kRowH);
+    Field name;
+    name.text = p.label;
+    name.tooltip = t.tipRename;
+    name.action = [this, path = p.path, own = p.ownName, label = p.label] {
       placeRename_ = {path, own, label};
       editing_ = true;
       dirty_ = true;
       return MenuCommand{};
-    });
-    name.panel = kBrowser;
-    name.x = x;
-    name.y = y;
-    name.w = nameW;
-    name.h = kSettingRowH;
-    name.field = true;
-    name.radius = 10;
-    name.fontSize = 24;
-    name.tooltip = t.tipRename;
-    buttons_.push_back(name);
-    addLabel(locationX, y, switchX - kGap - locationX, kSettingRowH, shownLocation(p.path),
-             kHintSize, true);
-    addToggleRow(switchX, y, switchW, "", !p.hidden,
-                 place([path = p.path, hidden = p.hidden](Places& all) {
-                   all.setHidden(path, !hidden);
-                 }));
+    };
+    addField(row.x, row.y, nameW, name);
+    const double downX = row.x + row.w - moveW, upX = downX - in - moveW;
+    const double switchX = upX - kit::kSpace - switchW;
+    const double locationX = row.x + nameW + kit::kSpace + kit::kSpace;
+    addLabel(locationX, row.y, switchX - kit::kSpace - locationX, row.h, shownLocation(p.path),
+             kit::kWellSize, true);
+    addSwitch(switchX, row.y, switchW, row.h, t.show, !p.hidden,
+              place([path = p.path, hidden = p.hidden](Places& all) {
+                all.setHidden(path, !hidden);
+              }));
     for (const auto& [by, icon, tip, at] : {std::tuple{-1, Icon::MoveUp, t.tipMoveUp, upX},
                                            std::tuple{1, Icon::MoveDown, t.tipMoveDown, downX}}) {
       if ((by < 0 && i == 0) || (by > 0 && i + 1 == places.size())) continue;
       Button& move = addRound(icon, tip, place([path = p.path, by = by](Places& all) {
                                 all.move(path, by);
-                              }), at, y, moveW);
+                              }), at, row.y, moveW);
       move.panel = kBrowser;
       move.bare = true;
+      move.radius = kit::kCorner;
     }
-    y += kSettingStep;
   }
-  addGroup(x0, top, w, y + 8 - top, t.title);
-
-  y += 8 + kGap;
+  // Done, filled, under the group at its right end.
   Button done = textButton(strings().done, Icon::None, [this] {
     showBrowser();
     return MenuCommand{};
   }, true);
   done.panel = kBrowser;
-  done.x = x0 + w - done.w;
-  done.y = y;
-  done.h = kBrowserRowH;
+  done.w = textWidth(done.label, kTextSize, false) + 2 * 20;
+  done.x = PageLayout::columnX(0) + groupW - done.w;
+  done.y = page.bottom(0) + kit::kSpace;
+  done.h = kit::kRowH;
+  done.radius = kit::kCorner;
+  done.fontSize = kTextSize;
   buttons_.push_back(done);
-  Button reset = textButton(t.reset, Icon::None, place([](Places& all) { all.resetOrder(); }));
-  reset.panel = kBrowser;
-  reset.x = done.x - kGap - reset.w;
-  reset.y = y;
-  reset.h = kBrowserRowH;
-  reset.tooltip = t.tipReset;
-  buttons_.push_back(reset);
 }
 
-// One place's name in its field, over the keyboard: Enter or Save keeps it,
-// empty gives the place its own name back.
+// One place's name in its field, in a group alone on the page over the
+// keyboard: Enter or Save keeps it, empty gives the place its own name back
+// (faint in the field while it is empty).
 void Menu::layoutPlaceRename() {
   const PlacesStrings& t = text().places;
-  const double x0 = kPageX + kPagePad, w = kPageWidth - 2 * kPagePad;
-  const double x = x0 + kGroupPad, inner = w - 2 * kGroupPad;
-  constexpr double h = 56;
-  const double top = kPagePad - 4;
-  double y = firstRow(top);
-  const std::string& typed = placeRename_.text;
-  Button field = textButton(typed.empty() && !editing_ ? placeRename_.ownName
-                                                       : typed,
-                            Icon::None, [this] {
-                              editing_ = true;
-                              return MenuCommand{};
-                            });
-  field.panel = kBrowser;
-  field.x = x;
-  field.y = y;
-  field.w = inner;
-  field.h = h;
-  field.field = true;
-  field.placeholder = typed.empty() && !editing_;
-  field.on = editing_;
-  field.caret = editing_ ? caret() : -1;
-  field.radius = 12;
-  field.fontSize = kTextSize;
-  buttons_.push_back(field);
-  y += h + 10;
-  addLabel(x + 12, y, inner - 12, 0, t.renameHint, kHintSize, true, 1);
-  y += hintHeight(1) + 8;
-  Button save = textButton(t.save, Icon::None, [this] {
-    savePlaceName();
-    return MenuCommand{};
-  }, true);
-  save.panel = kBrowser;
-  save.x = x + inner - save.w;
-  save.y = y;
-  save.h = h;
-  buttons_.push_back(save);
-  Button cancel = textButton(strings().cancel, Icon::None, [this] {
-    placeRename_ = {};
-    editing_ = false;
-    dirty_ = true;
-    return MenuCommand{};
-  });
-  cancel.panel = kBrowser;
-  cancel.x = save.x - kGap - cancel.w;
-  cancel.y = y;
-  cancel.h = h;
-  buttons_.push_back(cancel);
-  y += h + 16;
   char title[256];
   std::snprintf(title, sizeof(title), t.renameTitle, placeRename_.ownName.c_str());
-  addGroup(x0, top, w, y - top, title);
+  PageLayout page(*this, t.title);
+  GroupLayout group = page.group(0, title);
+  Field field;
+  field.text = placeRename_.text;
+  field.example = placeRename_.ownName;
+  field.typing = editing_;
+  field.action = [this] {
+    editing_ = true;
+    return MenuCommand{};
+  };
+  group.field("", field);
+  group.note(t.renameHint);
+  Action save{t.save, "", [this] {
+                savePlaceName();
+                return MenuCommand{};
+              }};
+  save.primary = true;
+  group.buttons({save, {strings().cancel, "", [this] {
+                          placeRename_ = {};
+                          editing_ = false;
+                          dirty_ = true;
+                          return MenuCommand{};
+                        }}});
   if (editing_) layoutKeyboard();
 }
 

@@ -1,5 +1,6 @@
 #include "menu_style.h"
 
+#include "menu_list_parts.h"
 #include "menu_stash.h"
 #include "menu_stash_covers.h"
 #include "stash.h"
@@ -21,11 +22,11 @@
 
 namespace {
 
-constexpr double kRailW = 400, kRailGap = 16;  // as the Scenes page's
-constexpr double kTileGap = 16;
+constexpr double kRailW = 400, kRailGap = kit::kSpace;  // as the Scenes page's
+constexpr double kTileGap = kGalleryGap;
 constexpr int kColumns = 6;
-constexpr double kLettersH = 52;
-constexpr double kCardsTop = kGridTop + kLettersH + 16;  // under the letters
+constexpr double kLettersH = 48;
+constexpr double kCardsTop = kGridTop + kLettersH + kit::kSpace;  // under the letters
 constexpr double kProfileW = 400;
 constexpr double kPortraitW = 192, kPortraitH = 288;
 constexpr double kFactStep = 32;
@@ -39,11 +40,6 @@ int32_t today() { return static_cast<int32_t>(unixNow() / 86400); }
 char letterOf(const std::string& name) {
   const unsigned char c = name.empty() ? 0 : static_cast<unsigned char>(name[0]);
   return c < 0x80 && std::isalpha(c) ? static_cast<char>(std::toupper(c)) : '#';
-}
-
-std::string scenesLabel(int scenes) {
-  return scenes == 1 ? strings().stash.oneScene
-                     : stashPrinted(strings().stash.count, stashNumber(scenes));
 }
 
 // What Stash knows of her, a line each.
@@ -163,9 +159,9 @@ void StashPages::drawPortrait(const Menu& m, cairo_t* cr, const StashPerformer& 
   cairo_restore(cr);
 }
 
-// A card: portrait, played count over its lower right, name and two lines.
-// A co-star: a round portrait, the name and the scenes with her; blue while
-// chosen.
+// A card, as the lists' (Menu::addGallery()'s) with a 2:3 portrait: her
+// scenes played on it, her name and two lines under it. A co-star: a round
+// portrait, the name and the scenes with her; latched while chosen.
 void StashPages::drawPerformerButton(const Menu& m, cairo_t* cr, const Button& b,
                                      const double ink[4]) {
   const Palette& pal = m.palette();
@@ -173,38 +169,37 @@ void StashPages::drawPerformerButton(const Menu& m, cairo_t* cr, const Button& b
   const StashCatalog* c = catalog(m);
   const int index = c ? c->performerById(b.stashId) : -1;
   if (b.stashLook == static_cast<int>(StashLook::PerformerCard)) {
-    const double pw = b.w - 16, ph = pw * 1.5, px = b.x + 8, py = b.y + 8;
-    if (index >= 0) {
-      drawPortrait(m, cr, c->performers()[index], px, py, pw, ph, 10);
-    } else {
-      roundedRect(cr, px, py, pw, ph, 10);
-      cairo_set_source_rgba(cr, 1, 1, 1, 0.06);
-      cairo_fill(cr);
-    }
-    drawPlays(m, cr, b.plays, px + pw - 6, py + ph - 6);  // her scenes played
-    const double textX = b.x + 14, textW = b.w - 28;
-    const double light[4] = {0.88, 0.88, 0.9, 1};
-    m.drawTextLines(cr, b.label, textX, py + ph + 4, textW, 26, 1, ink, false);
-    m.drawTextLines(cr, b.detail, textX, py + ph + 40, textW, 22, 1, light, false);
-    m.drawTextLines(cr, b.date, textX, py + ph + 68, textW, 22, 1, dim, false);
+    const double pw = b.w - 2 * kCardIn, ph = std::round(pw * 1.5), px = b.x + kCardIn,
+                 py = b.y + kCardIn;
+    if (index >= 0)
+      drawPortrait(m, cr, c->performers()[index], px, py, pw, ph, kit::kPieceCorner);
+    else
+      m.drawFinish(cr, Finish::Sunk, px, py, pw, ph, kit::kPieceCorner);
+    m.drawCoverStrip(cr, b, px, py, pw, ph);  // her scenes played
+    const double x = b.x + kit::kSpace, w = b.w - 2 * kit::kSpace, y = py + ph + kCardNameGap;
+    m.drawLinesIn(cr, b.label, x, y, w, kit::kRowSize, 1, kCardLine, ink);
+    m.drawLinesIn(cr, b.detail, x, y + kCardLine, w, kHintSize, 1, kCardLine, dim);
+    m.drawLinesIn(cr, b.date, x, y + 2 * kCardLine, w, kHintSize, 1, kCardLine, dim);
     return;
   }
   // A co-star.
-  roundedRect(cr, b.x, b.y, b.w, b.h, b.h / 2);
-  if (b.on)
-    setColor(cr, pal.accent);
-  else
-    setColor(cr, pal.button);
-  cairo_fill(cr);
-  const double d = b.h - 12;
-  if (index >= 0) drawPortrait(m, cr, c->performers()[index], b.x + 6, b.y + 6, d, d, d / 2);
-  const double countW = b.size.empty() ? 0 : m.textWidth(b.size, 22, false) + 8;
-  const double nameX = b.x + d + 18;
-  m.drawText(cr, b.label, nameX, b.y, b.x + b.w - 18 - countW - nameX, b.h, 24, false, false,
-             b.on ? 1 : ink[0], b.on ? 1 : ink[1], b.on ? 1 : ink[2]);
-  if (!b.size.empty())
-    m.drawText(cr, b.size, b.x + b.w - 18 - countW + 8, b.y, countW, b.h, 22, false, false,
-               b.on ? 1 : dim[0], b.on ? 1 : dim[1], b.on ? 1 : dim[2], b.on ? 0.9 : 1);
+  const double d = b.h - 2 * kit::kSpacePiece - 4;
+  if (index >= 0)
+    drawPortrait(m, cr, c->performers()[index], b.x + kit::kSpacePiece + 2, b.y + (b.h - d) / 2, d, d,
+                 d / 2);
+  const double countW = b.size.empty() ? 0 : m.textWidth(b.size, kCountSize, false) + kit::kSpaceTight;
+  const double nameX = b.x + d + kit::kSpace;
+  m.drawText(cr, b.label, nameX, b.y, b.x + b.w - kit::kSpace - countW - nameX, b.h, kHintSize + 2,
+             false, false, ink[0], ink[1], ink[2]);
+  if (!b.size.empty()) {
+    const double* n = b.latched ? ink : dim;
+    m.drawText(cr, b.size, b.x + b.w - kit::kSpace - countW + kit::kSpaceTight, b.y, countW, b.h,
+               kCountSize, false, false, n[0], n[1], n[2]);
+  }
+}
+
+double StashPages::performerCardHeight(double w, int lines) {
+  return kCardIn + std::round((w - 2 * kCardIn) * 1.5) + kCardNameGap + lines * kCardLine + kit::kSpace;
 }
 
 // ---- the Performers page ----
@@ -471,8 +466,8 @@ void StashPages::layoutPerformerGrid(Menu& m, double x0, double top) {
   const StashCatalog& c = *catalog(m);
   const StashStrings& t = strings().stash;
   const double cardW = (m.listRight_ - 30 - x0 - (kColumns - 1) * kTileGap) / kColumns;
-  const double pictureW = cardW - 16;
-  const double rowH = std::round(8 + pictureW * 1.5 + 6 + 34 + 28 + 28 + 10 + kTileGap);
+  const double pictureW = cardW - 2 * kCardIn;
+  const double rowH = performerCardHeight(cardW) + kTileGap;
   const int count = static_cast<int>(ps.shown.size());
   m.listTop_ = top;
   m.rowHeight_ = rowH;
@@ -493,14 +488,15 @@ void StashPages::layoutPerformerGrid(Menu& m, double x0, double top) {
     b.w = cardW;
     b.h = rowH - kTileGap;
     b.label = p.name;
-    std::string scenes = scenesLabel(s.scenes);
+    std::string scenes = stashScenes(s.scenes);
     if (ps.sort == StashPerformerSort::Plays && s.plays > 0)
-      scenes = stashPrinted(t.playsCount, stashNumber(s.plays)) + " · " + scenes;
+      scenes = stashPlays(s.plays) + " · " + scenes;
     b.detail = stashJoined({scenes, s.rated ? stashPrinted(t.stars, s.average()) : ""});
     const int age = stashAge(p.born, now);
     b.date = stashJoined({p.country, age > 0 ? std::to_string(age) : ""});
     if (s.played > 0) b.plays = std::to_string(s.played);
     b.card = true;
+    b.radius = kCardCorner;
     b.scrolls = true;
     b.stashLook = static_cast<int>(StashLook::PerformerCard);
     b.stashId = p.id;
@@ -508,7 +504,7 @@ void StashPages::layoutPerformerGrid(Menu& m, double x0, double top) {
       showPerformer(m, id);
       return MenuCommand{};
     };
-    if (m.textWidth(b.label, 26, false) > b.w - 28) b.tooltip = b.label;
+    if (m.textWidth(b.label, kit::kRowSize, false) > b.w - 2 * kit::kSpace) b.tooltip = b.label;
     m.buttons_.push_back(b);
   }
   // Portraits: those shown, then the next screens and the row before.
@@ -525,6 +521,8 @@ void StashPages::layoutPerformerGrid(Menu& m, double x0, double top) {
   m.addScrollbar();
 }
 
+// The header row (the title and count, Their scenes), the tools row, the
+// letters, then the rail and the cards (or a look's full list).
 void StashPages::layoutPerformers(Menu& m) {
   StashMenu& st = state(m);
   StashPerformersState& ps = st.performers;
@@ -533,10 +531,10 @@ void StashPages::layoutPerformers(Menu& m) {
   const StashCatalog* c = catalog(m);
   const bool editing = m.editingFilter();
   const double bottom = editing ? kKeyboardY - 16 : kListBottom;
-  const double x0 = Menu::kPageX + kPagePad, right = Menu::kPageX + Menu::kPageWidth - kPagePad;
+  const double x0 = kContentLeft, right = kContentRight;
 
   m.listLeft_ = x0 + kRailW + kRailGap;
-  m.listRight_ = right + 6;
+  m.listRight_ = right + kListRightPad;
   m.listShowsFolder_ = false;
   m.listColumns_ = false;
   m.listBottom_ = bottom;
@@ -557,7 +555,7 @@ void StashPages::layoutPerformers(Menu& m) {
   }
   if (editing) m.layoutKeyboard();
 
-  // Their scenes, at the heading's right.
+  // Their scenes, at the header's right.
   if (ps.theirScenes > 0) {
     Button their = actionButton(
         m, std::string(t.theirScenes) + "  " + stashNumber(ps.theirScenes), StashIcon::Scenes,
@@ -577,66 +575,73 @@ void StashPages::layoutPerformers(Menu& m) {
     m.buttons_.push_back(their);
   }
 
-  // A–Z: a letter jumps to the first name with it (sorted by name).
-  const int letters = static_cast<int>(sizeof(kLetters) - 1);
-  const double lw = (right - x0 - (letters - 1) * 6) / letters;
-  for (int i = 0; i < letters && !full; ++i) {
-    const char letter = kLetters[i];
-    Button b = m.textButton(std::string(1, letter), Menu::Icon::None, [&m, letter] {
-      StashPerformersState& s = state(m).performers;
-      if (s.sort != StashPerformerSort::Name || s.descending) {
-        s.sort = StashPerformerSort::Name;
-        s.descending = false;
-        s.stale = true;
-        buildPerformers(m);
-      }
-      const StashCatalog* cat = catalog(m);
-      for (size_t at = 0; cat && at < s.shown.size(); ++at)
-        if (letterOf(cat->performers()[s.shown[at]].name) == letter) {
-          m.scrollOffset_ = static_cast<int>(at) / kColumns;
-          m.scrollFraction_ = 0;
-          break;
+  // A–Z, a well of letters: one jumps to the first name with it (sorted by
+  // name); those no name has are greyed.
+  if (!full) {
+    constexpr double in = kit::kSpacePiece;
+    const int letters = static_cast<int>(sizeof(kLetters) - 1);
+    const double lw = (right - x0 - in) / letters - in;
+    Button well;
+    well.panel = Menu::kBrowser;
+    well.well = true;
+    well.x = x0;
+    well.y = kGridTop;
+    well.w = right - x0;
+    well.h = kLettersH;
+    well.radius = kit::kCorner;
+    m.buttons_.push_back(well);
+    for (int i = 0; i < letters; ++i) {
+      const char letter = kLetters[i];
+      Button b = m.textButton(std::string(1, letter), Menu::Icon::None, [&m, letter] {
+        StashPerformersState& s = state(m).performers;
+        if (s.sort != StashPerformerSort::Name || s.descending) {
+          s.sort = StashPerformerSort::Name;
+          s.descending = false;
+          s.stale = true;
+          buildPerformers(m);
         }
-      m.dirty_ = true;
-      return MenuCommand{MenuCommand::SetStashPerformersSort, double(s.descending),
-                         stashSortName(s.sort)};
-    });
-    b.panel = Menu::kBrowser;
-    b.x = x0 + i * (lw + 6);
-    b.y = kGridTop;
-    b.w = lw;
-    b.h = kLettersH;
-    b.tooltip = t.tipJumpLetter;
-    b.radius = 10;
-    b.fontSize = 24;
-    b.disabled = !c || std::none_of(ps.shown.begin(), ps.shown.end(), [&](int p) {
-      return letterOf(c->performers()[p].name) == letter;
-    });
-    m.buttons_.push_back(b);
+        const StashCatalog* cat = catalog(m);
+        for (size_t at = 0; cat && at < s.shown.size(); ++at)
+          if (letterOf(cat->performers()[s.shown[at]].name) == letter) {
+            m.scrollOffset_ = static_cast<int>(at) / kColumns;
+            m.scrollFraction_ = 0;
+            break;
+          }
+        m.dirty_ = true;
+        return MenuCommand{MenuCommand::SetStashPerformersSort, double(s.descending),
+                           stashSortName(s.sort)};
+      });
+      b.panel = Menu::kBrowser;
+      b.piece = true;
+      b.x = x0 + in + i * (lw + in);
+      b.y = kGridTop + in;
+      b.w = lw;
+      b.h = kLettersH - 2 * in;
+      b.tooltip = t.tipJumpLetter;
+      b.radius = kit::kPieceCorner;
+      b.fontSize = kit::kWellSize;
+      b.disabled = !c || std::none_of(ps.shown.begin(), ps.shown.end(), [&](int p) {
+        return letterOf(c->performers()[p].name) == letter;
+      });
+      m.buttons_.push_back(b);
+    }
   }
 
-  // The tool row: All / VR / 2D (the Scenes page's, with the performers
+  // The tools row: All / VR / 2D (the Scenes page's, with the performers
   // each lists), the order, the search, to the top / end.
-  double fx = x0;
+  std::vector<Menu::ToolPiece> formats;
   for (int f = 0; f < 3; ++f) {
-    std::string label = t.formats[f];
-    if (c) label += "  " + stashNumber(ps.formats[f]);
-    const bool chosen = static_cast<int>(ps.format) == f;
-    Button b = m.textButton(
-        label, Menu::Icon::None, [&m, f] { return setFormat(m, static_cast<StashFormat>(f)); },
-        chosen);
-    b.disabled = c && ps.formats[f] == 0 && !chosen;
-    b.panel = Menu::kBrowser;
-    b.x = fx;
-    b.y = kBrowserToolsY;
-    b.h = kBrowserToolsH;
-    b.w = m.textWidth(label, Menu::kTextSize, false) + 36;
-    b.radius = b.h / 2;
-    m.buttons_.push_back(b);
-    fx += b.w + 6;
+    Menu::ToolPiece p;
+    p.label = t.formats[f];
+    if (c) p.count = stashNumber(ps.formats[f]);
+    p.chosen = static_cast<int>(ps.format) == f;
+    p.disabled = c && ps.formats[f] == 0 && !p.chosen;
+    p.action = [&m, f] { return setFormat(m, static_cast<StashFormat>(f)); };
+    formats.push_back(std::move(p));
   }
+  const double fx = m.toolsWell(x0, kBrowserToolsY, formats) + kColumnGap;
   const double x = layoutSort(
-      m, fx + 16, t.performerSorts, 5, static_cast<int>(ps.sort), ps.descending,
+      m, fx, t.performerSorts, 5, static_cast<int>(ps.sort), ps.descending,
       [&m](int f) {
         StashPerformersState& s = state(m).performers;
         const StashPerformerSort sort = static_cast<StashPerformerSort>(f);
@@ -658,33 +663,31 @@ void StashPages::layoutPerformers(Menu& m) {
                StashMenu::Typing::Performers);
 }
 
+// The title and count as a page's (Menu::contentTitle()), and what an
+// empty page means.
 void StashPages::drawPerformersHeading(const Menu& m, cairo_t* cr) {
   const StashPerformersState& ps = m.stashMenu_->performers;
   const StashStrings& t = strings().stash;
   const Palette& pal = m.palette();
   const StashCatalog* c = catalog(m);
-  const double x = Menu::kPageX + kPagePad;
-  const double titleW = m.textWidth(t.performers, 30, true) + 4;
-  m.drawText(cr, t.performers, x, kBrowserRowY, titleW, kBrowserRowH, 30, true, false, pal.text.r,
-             pal.text.g, pal.text.b);
+  const double x = kContentLeft + kit::kSpace;
+  const double titleW = m.textWidth(t.performers, kit::kTitleSize, true) + 4;
+  m.drawText(cr, t.performers, x, kBrowserRowY, titleW, kBrowserRowH, kit::kTitleSize, true, false,
+             pal.text.r, pal.text.g, pal.text.b);
   if (c) {
     const long shown = static_cast<long>(ps.shown.size());
     const std::string count =
-        shown == ps.all
-            ? stashPrinted(t.performersCount, stashNumber(shown))
+        shown == ps.all ? shown == 1 ? std::string(t.onePerformer)
+                                     : stashPrinted(t.performersCount, stashNumber(shown))
             : stashPrinted(t.performersCountOf, stashNumber(shown), stashNumber(ps.all));
-    m.drawText(cr, count, x + titleW + 20, kBrowserRowY, 500, kBrowserRowH, 24, false, false,
-               pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a);
+    m.drawText(cr, count, x + titleW + kit::kSpaceEdge, kBrowserRowY, 500, kBrowserRowH, 23, false,
+               false, pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a);
   }
   if (!c)
-    drawWaiting(m, cr, m.listLeft_ + 24, kCardsTop + 20,
-                Menu::kPageX + Menu::kPageWidth - kPagePad - m.listLeft_ - 48);
-  const char* empty =
-      c && ps.shown.empty() && m.stashMenu_->full == StashFull::None ? t.noPerformers : nullptr;
-  if (empty)
-    m.drawText(cr, empty, m.listLeft_ + 24, kCardsTop + 20,
-               Menu::kPageX + Menu::kPageWidth - kPagePad - m.listLeft_ - 48, kFileRowH, 27, false,
-               false, pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a);
+    drawWaiting(m, cr, m.listLeft_ + kit::kSpace, kCardsTop + 20,
+                kContentRight - m.listLeft_ - 2 * kit::kSpace);
+  else if (ps.shown.empty() && m.stashMenu_->full == StashFull::None)
+    m.drawEmptyPage(cr, Menu::Icon::People, t.noPerformers);
   drawFullHeading(m, cr);
 }
 
@@ -783,12 +786,13 @@ void StashPages::layoutProfile(Menu& m, int index, double x, double top, double 
   ps.coStarsTop = y;
   y += 44;
   double cx = x;
-  const double avatar = kCoStarH - 12;
+  const double avatar = kCoStarH - 2 * kit::kSpacePiece - 4;
   for (size_t i = 0; i < coStars.size(); ++i) {
     const StashPerformer& co = c.performers()[coStars[i].first];
     const std::string count = coStars[i].second > 0 ? stashNumber(coStars[i].second) : "";
-    const double w = std::min(kProfileW, avatar + 18 + m.textWidth(co.name, 24, false) + 18 +
-                                             (count.empty() ? 0 : m.textWidth(count, 22, false) + 8));
+    const double w =
+        std::min(kProfileW, avatar + 2 * kit::kSpace + 4 + m.textWidth(co.name, kHintSize + 2, false) +
+                                (count.empty() ? 0 : m.textWidth(count, kCountSize, false) + kit::kSpaceTight));
     if (cx > x && cx + w > x + kProfileW) {
       cx = x;
       y += kCoStarH + kCoStarGap;
@@ -802,8 +806,7 @@ void StashPages::layoutProfile(Menu& m, int index, double x, double top, double 
     b.h = kCoStarH;
     b.label = co.name;
     b.size = count;
-    b.on = i < chosen;
-    b.bare = true;
+    b.latched = i < chosen;
     b.radius = kCoStarH / 2;
     b.stashLook = static_cast<int>(StashLook::CoStar);
     b.stashId = co.id;
@@ -840,14 +843,14 @@ void StashPages::layoutPerformer(Menu& m) {
   const StashCatalog* c = catalog(m);
   const int index = c ? c->performerById(st.performer) : -1;
   const double bottom = m.editingFilter() ? kKeyboardY - 16 : kListBottom;
-  const double x0 = Menu::kPageX + kPagePad;
-  const double profileX = Menu::kPageX + Menu::kPageWidth - kPagePad - kProfileW;
+  const double x0 = kContentLeft;
+  const double profileX = kContentRight - kProfileW;
   // Her profile first: its pictures go before the results' covers.
   ps.profileX = profileX;
   ps.profileTop = ps.profileBottom = kGridTop;
   ps.coStarsTop = -1;
   if (index >= 0) layoutProfile(m, index, profileX, kGridTop, bottom);
-  layoutResults(m, kGridTop, profileX - kRailGap);
+  layoutResults(m, kGridTop, profileX - kit::kSpaceEdge);
   Button back = actionButton(
       m, t.performers, StashIcon::Back,
       [&m] {
@@ -856,7 +859,7 @@ void StashPages::layoutPerformer(Menu& m) {
       },
       x0, kBrowserRowY, kBrowserRowH);
   m.buttons_.push_back(back);
-  layoutHeader(m, back.x + back.w + kGap);
+  layoutHeader(m, back.x + back.w + kit::kSpaceTight);
   layoutTools(m);
 }
 
@@ -882,9 +885,8 @@ void StashPages::drawProfile(const Menu& m, cairo_t* cr, const StashPerformer& p
     y += 76;
   };
   stat(stashNumber(s.scenes), t.scenesHere);
-  stat(stashNumber(s.played), s.plays > 0 ? std::string(t.played) + " · " +
-                                                stashPrinted(t.playsCount, stashNumber(s.plays))
-                                          : t.played);
+  stat(stashNumber(s.played),
+       s.plays > 0 ? std::string(t.played) + " · " + stashPlays(s.plays) : t.played);
   stat(s.rated ? stashPrinted(t.stars, s.average()) : "–",
        s.rated ? stashPrinted(t.averageOf, s.rated) : t.noneRated);
   const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
@@ -900,9 +902,9 @@ void StashPages::drawProfile(const Menu& m, cairo_t* cr, const StashPerformer& p
                pal.text.b);
     y += kFactStep;
   }
-  if (ps.coStarsTop >= 0)
-    m.drawText(cr, t.oftenWith, x, ps.coStarsTop, kProfileW, 40, 26, true, false, pal.text.r,
-               pal.text.g, pal.text.b);
+  if (ps.coStarsTop >= 0)  // as a group's title
+    m.drawText(cr, t.oftenWith, x, ps.coStarsTop, kProfileW, 40, kit::kGroupTitleSize, true, false,
+               pal.textDim.r, pal.textDim.g, pal.textDim.b);
 }
 
 void StashPages::drawPerformerHeading(const Menu& m, cairo_t* cr) {

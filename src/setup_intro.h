@@ -21,12 +21,9 @@ class SetupIntro {
   // The page (Menu::kSetup's texture), which fades in last.
   float pageOpacity(double now) const;
   // Under the page: the empty panel, the icon's parts and the name, on
-  // `panel` (the setup panel's), `opacity` the panel's own. glassAlpha: the
-  // panel's (0 Material); blurred: glass shows the scene behind it blurred
-  // (the desktop), else its own translucency, kept even while the page fades
-  // in over the empty panel.
+  // `panel` (the setup panel's), `opacity` the panel's own.
   void addUnder(std::vector<OverlayDraw>& overlays, Menu& menu, const CurvedPanel& panel,
-                float opacity, float glassAlpha, bool blurred, double now) const;
+                float opacity, double now) const;
   // Over everything, last: black, fading as the sky comes in; all black
   // before it starts.
   void addCover(std::vector<OverlayDraw>& overlays, Menu& menu, Vec3 headPos, Quat headRot,
