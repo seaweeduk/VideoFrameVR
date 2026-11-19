@@ -329,6 +329,7 @@ void Menu::update(const MenuView& view) {
   // catalog (or none, Stash off; only while no video is open, else at the
   // next visit), what its heading says of the looks, its records changed.
   std::vector<std::string> found, gone;
+  if (index_) index_->setStash(stashCatalog());
   if (index_ && index_->poll(found, gone))
     libraryFilesChanged(found, gone);
   else if (page_ == Page::Library && libraryCatalogChanged() && !(index_ && index_->videoOpen()))

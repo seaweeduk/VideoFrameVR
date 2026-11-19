@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <vector>
 
+class StashCatalog;
+
 // The videos in the pinned folders and their subfolders, for the Library
 // view (docs/library.md). Its paths are a cache, kept in library_index.db
 // in dataDir() so the view opens at once, and made anew if the file is lost.
@@ -19,7 +21,9 @@
 // after a folder is pinned, only while no video is open: opening one stops
 // it after the folder it is listing, and it goes on where it stopped once no
 // video is open, or at the next start. Folders the file browser lists
-// update it too. Main thread only.
+// update it too. Stash's generated files are left out (previews and
+// transcodes named after a scene's oshash, and Stash's generated folder
+// wherever it is). Main thread only.
 class LibraryIndex {
  public:
   struct File {
@@ -59,6 +63,10 @@ class LibraryIndex {
   void lookAgain();
   // A folder the file browser listed (its videos with their sizes and dates).
   void listed(const std::string& folder, const std::vector<FolderListing::Entry>& entries);
+  // Stash's catalog, or none: an .mp4 named after one of its scenes' oshash
+  // is Stash's preview or transcode, not a video of the pins. Only a new
+  // catalog is handed over (and freed on the worker).
+  void setStash(const std::shared_ptr<const StashCatalog>& catalog);
   // A video the app deleted: gone from files() at once.
   void deleted(const std::string& path);
   // Takes what the worker found: the paths added or changed, and those
@@ -72,4 +80,5 @@ class LibraryIndex {
   std::shared_ptr<Shared> shared_;
   std::unordered_map<std::string, File> files_;
   bool videoOpen_ = false;
+  const StashCatalog* stash_ = nullptr;  // the last handed over (the worker holds it)
 };
