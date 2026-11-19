@@ -1304,7 +1304,9 @@ void Menu::drawTooltip(cairo_t* cr, int panel, double panelWidth) {
     return;
   const Button& b = buttons_[tooltip_];
   constexpr int size = kTooltipSize;
-  const double maxW = std::min(1100.0, panelWidth - 20);
+  // A page shown alone hides the sources column: keep the box on the page.
+  const double left = panel == kBrowser && pageAlone() ? kPageX : 0;
+  const double maxW = std::min(1100.0, panelWidth - left - 20);
   PangoLayout* layout = pango_cairo_create_layout(cr);
   PangoFontDescription* font = pango_font_description_from_string(kFont);
   pango_font_description_set_absolute_size(font, size * PANGO_SCALE);
@@ -1315,7 +1317,7 @@ void Menu::drawTooltip(cairo_t* cr, int panel, double panelWidth) {
   int textW = 0, textH = 0;
   pango_layout_get_pixel_size(layout, &textW, &textH);
   const double w = textW + 40, h = std::max(50, textH + 18);
-  const double x = std::clamp(b.x + b.w / 2 - w / 2, 10.0, panelWidth - 10 - w);
+  const double x = std::clamp(b.x + b.w / 2 - w / 2, left + 10, panelWidth - 10 - w);
   const double y = b.y - h - 8 >= 4 ? b.y - h - 8 : b.y + b.h + 8;
   roundedRect(cr, x, y, w, h, 12);
   cairo_set_source_rgba(cr, 0.02, 0.02, 0.03, 0.96);
