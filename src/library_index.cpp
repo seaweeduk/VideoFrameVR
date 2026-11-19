@@ -3,12 +3,14 @@
 #include "file_util.h"
 #include "settings.h"  // dataDir
 #include "remote.h"
+#include "stash_catalog.h"
 
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
 #include <filesystem>
 #include <map>
@@ -63,6 +65,27 @@ bool exec(sqlite3* db, const char* sql) {
 // .DS_Store with them).
 bool skipped(const std::string& name, bool folder) {
   return name.empty() || name == "." || name == ".." || (folder ? binOrLost(name) : name[0] == '.');
+}
+
+// Stash's generated folder, wherever its settings put it: Stash makes
+// screenshots/ (scene previews), vtt/, markers/, transcodes/,
+// interactive_heatmaps/ and download_stage/ in it at every start. A folder
+// with screenshots/ and two more of them is taken for one.
+bool stashGenerated(const std::vector<std::string>& folders) {
+  static const char* const kMore[] = {"vtt", "markers", "transcodes", "interactive_heatmaps",
+                                      "download_stage"};
+  bool screenshots = false;
+  int more = 0;
+  for (const std::string& path : folders) {
+    const size_t slash = path.rfind('/');
+    const char* name = path.c_str() + (slash == std::string::npos ? 0 : slash + 1);
+    if (std::strcmp(name, "screenshots") == 0)
+      screenshots = true;
+    else
+      more += std::any_of(std::begin(kMore), std::end(kMore),
+                          [name](const char* m) { return std::strcmp(name, m) == 0; });
+  }
+  return screenshots && more >= 2;
 }
 
 }  // namespace
@@ -120,6 +143,7 @@ struct LibraryIndex::Shared {
   bool pinsChanged = false, videoOpen = false, again = false, quit = false;
   std::vector<std::pair<std::string, std::vector<FolderListing::Entry>>> listings;
   std::vector<std::string> deleted;
+  std::vector<std::shared_ptr<const StashCatalog>> stashes;  // handed over, the last the newest
   std::unordered_map<std::string, File> changed;
   std::unordered_set<std::string> removed;
   State state;
@@ -133,6 +157,8 @@ struct LibraryIndex::Shared {
   std::unordered_map<std::string, File> files;
   std::vector<std::string> todo;  // folders this look has still to list, the next last
   std::unordered_set<std::string> failed;  // pins this look could not list
+  std::shared_ptr<const StashCatalog> stash;
+  std::unordered_set<std::string> generated;  // Stash's generated folders this start found
   int64_t done = 0, total = -1;  // folders this look listed, of those known before it (-1: not)
   bool pinsKnown = false;
   std::unordered_set<std::string> toMain, dirtyFiles, dirtyFolders, dirtyRoots;
@@ -148,6 +174,10 @@ struct LibraryIndex::Shared {
   void apply(const std::string& dir, const Listing& listing);
   void feed(const std::string& dir, const std::vector<FolderListing::Entry>& entries);
   void dropFolder(const std::string& dir);
+  bool stashCopy(const std::string& path, uint64_t size) const;
+  void dropStashCopies();
+  void sift(const std::string& dir, Listing& listing);
+  bool inGenerated(const std::string& dir, const std::string& root) const;
   void touch(const std::string& path) {
     toMain.insert(path);
     dirtyFiles.insert(path);
@@ -176,11 +206,12 @@ void LibraryIndex::Shared::run() {
     bool pinsNew, lookAgain;
     std::vector<std::pair<std::string, std::vector<FolderListing::Entry>>> listed;
     std::vector<std::string> gone;
+    std::vector<std::shared_ptr<const StashCatalog>> catalogs;
     {
       std::unique_lock<std::mutex> lock(mutex);
       wake.wait(lock, [this] {
         return quit || pinsChanged || again || !listings.empty() || !deleted.empty() ||
-               (!todo.empty() && !videoOpen);
+               !stashes.empty() || (!todo.empty() && !videoOpen);
       });
       if (quit) break;
       pinsNew = std::exchange(pinsChanged, false);
@@ -188,6 +219,12 @@ void LibraryIndex::Shared::run() {
       newPins = pins;
       listed.swap(listings);
       gone.swap(deleted);
+      catalogs.swap(stashes);
+    }
+    if (!catalogs.empty()) {
+      stash = std::move(catalogs.back());
+      catalogs.clear();  // freed here, not on the main thread
+      dropStashCopies();
     }
     if (pinsNew) setPins(std::move(newPins));
     if (lookAgain && todo.empty()) {
@@ -482,6 +519,7 @@ void LibraryIndex::Shared::lookNext() {
   const remote::Status status = list(dir, listing);
   const bool root = roots.count(dir) > 0;
   if (status == remote::Status::Ok) {
+    sift(dir, listing);
     apply(dir, listing);
     todo.insert(todo.end(), listing.folders.begin(), listing.folders.end());
   } else if (status == remote::Status::Missing && !root) {
@@ -506,6 +544,10 @@ void LibraryIndex::Shared::lookNext() {
 void LibraryIndex::Shared::apply(const std::string& dir, const Listing& listing) {
   const auto root = rootOf(dir);
   if (!root) return;
+  if (inGenerated(dir, root->first)) {
+    dropFolder(dir);
+    return;
+  }
   const bool firstLook = root->second == 0;
   const int64_t t = now();
   const auto [at, added] = folders.try_emplace(dir);
@@ -518,6 +560,7 @@ void LibraryIndex::Shared::apply(const std::string& dir, const Listing& listing)
   Folder& folder = at->second;
   std::unordered_set<std::string> seen;
   for (const auto& [path, found] : listing.videos) {
+    if (stashCopy(path, found.size)) continue;
     seen.insert(path);
     folder.files.insert(path);
     const auto known = files.find(path);
@@ -560,7 +603,69 @@ void LibraryIndex::Shared::feed(const std::string& dir,
     else if (isVideoFile(e.name))
       listing.videos.push_back({e.path, {e.size, e.modified}});
   }
+  sift(dir, listing);
   apply(dir, listing);
+}
+
+// Stash names a scene's preview (screenshots/<oshash>.mp4) and transcode
+// after the oshash of its file. The scene's own file, if it is named so,
+// has that oshash's size and stays.
+bool LibraryIndex::Shared::stashCopy(const std::string& path, uint64_t size) const {
+  if (!stash || path.size() < 4 || path.compare(path.size() - 4, 4, ".mp4") != 0) return false;
+  const size_t slash = path.rfind('/');
+  const size_t start = slash == std::string::npos ? 0 : slash + 1;
+  const std::string stem = path.substr(start, path.size() - 4 - start);
+  const int scene = stash->sceneByOshash(stem);
+  if (scene < 0) return false;
+  const StashScene& s = stash->scenes()[static_cast<size_t>(scene)];
+  return s.oshash != stem || s.size != size;
+}
+
+// A new catalog: those found before it that are Stash's copies go.
+void LibraryIndex::Shared::dropStashCopies() {
+  if (!stash) return;
+  std::vector<std::string> copies;
+  for (const auto& [path, file] : files)
+    if (stashCopy(path, file.size)) copies.push_back(path);
+  for (const std::string& path : copies) {
+    if (const auto folder = folders.find(parentOf(path)); folder != folders.end())
+      folder->second.files.erase(path);
+    files.erase(path);
+    touch(path);
+  }
+}
+
+// Stash's generated folder lists as empty: nothing in it is looked at, and
+// what was found in it before (by an earlier look, the file browser or a
+// look of an older version) goes.
+void LibraryIndex::Shared::sift(const std::string& dir, Listing& listing) {
+  if (!stashGenerated(listing.folders)) {
+    generated.erase(dir);
+    return;
+  }
+  listing = {};
+  if (!generated.insert(dir).second) return;
+  std::vector<std::string> inside;
+  for (const auto& folder : folders)
+    if (folder.first != dir && under(folder.first, dir)) inside.push_back(folder.first);
+  for (const std::string& sub : inside) dropFolder(sub);
+  const size_t before = todo.size();
+  todo.erase(std::remove_if(todo.begin(), todo.end(),
+                            [&](const std::string& p) { return p != dir && under(p, dir); }),
+             todo.end());
+  dirtyTodo = dirtyTodo || todo.size() != before;
+}
+
+// Whether a folder is inside one of Stash's generated folders.
+bool LibraryIndex::Shared::inGenerated(const std::string& dir, const std::string& root) const {
+  if (generated.empty()) return false;
+  for (std::string path = dir; path.size() > root.size();) {
+    std::string parent = parentOf(path);
+    if (parent.size() >= path.size()) break;
+    if (generated.count(parent)) return true;
+    path = std::move(parent);
+  }
+  return false;
 }
 
 void LibraryIndex::Shared::dropFolder(const std::string& dir) {
@@ -568,6 +673,7 @@ void LibraryIndex::Shared::dropFolder(const std::string& dir) {
   if (it == folders.end()) return;
   const Folder folder = std::move(it->second);
   folders.erase(it);
+  generated.erase(dir);
   dirtyFolders.insert(dir);
   for (const std::string& path : folder.files) {
     files.erase(path);
@@ -610,6 +716,14 @@ void LibraryIndex::setVideoOpen(bool open) {
 void LibraryIndex::lookAgain() {
   std::lock_guard<std::mutex> lock(shared_->mutex);
   shared_->again = true;
+  shared_->wake.notify_one();
+}
+
+void LibraryIndex::setStash(const std::shared_ptr<const StashCatalog>& catalog) {
+  if (catalog.get() == stash_) return;
+  stash_ = catalog.get();
+  std::lock_guard<std::mutex> lock(shared_->mutex);
+  shared_->stashes.push_back(catalog);
   shared_->wake.notify_one();
 }
 
