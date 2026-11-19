@@ -861,6 +861,8 @@ class Menu {
   long clockMinute_ = -1;  // the minute the strip's clock shows
   // Height of the strip's seek bar line.
   double seekLineY() const;
+  // The pointer on the seek bar, with nothing drawn in front of it there.
+  bool onSeekBand() const;
   // Adds a round icon button with a tooltip; returns it (valid until the next add).
   Button& addRound(Icon icon, const std::string& tooltip, std::function<MenuCommand()> action,
                    double x, double y, double size = 88, bool selected = false);
