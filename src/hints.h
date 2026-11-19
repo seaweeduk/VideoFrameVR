@@ -41,8 +41,10 @@ class Hints {
   // Once after a change to persist: settings.conf's line is line() now.
   bool takeChanged() { return std::exchange(changed_, false); }
 
+  // A hint shows (or fades in or out).
+  bool showing() const { return showing_ != Hint::Count; }
   // The one shown, `texture` (width × height layout pixels) in front of the
-  // eyes, fading in and out.
+  // eyes at the messages' place (notices.h), fading in and out.
   void addTo(std::vector<OverlayDraw>& overlays, const Texture* texture, int width, int height,
              Vec3 headPos, Quat headRot, double now) const;
 

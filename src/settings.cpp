@@ -57,7 +57,6 @@ Entries entries(std::istream& in) {
 // Every key, as written.
 std::string allLines(const Settings& s) {
   std::ostringstream out;
-  out << "theme=" << (s.theme == Theme::Material ? "material" : "glass") << "\n";
   out << "accent=" << accentCode(s.accent.preset) << "\n";
   out << "accent_hue=" << s.accent.hue << "\n";
   out << "accent_brightness=" << s.accent.brightness << "\n";
@@ -70,6 +69,7 @@ std::string allLines(const Settings& s) {
   out << "tv_gamma=" << (s.tvGamma ? 1 : 0) << "\n";
   out << "last_folder=" << s.lastFolder << "\n";
   out << "gallery=" << (s.gallery ? 1 : 0) << "\n";
+  out << "video_settings_section=" << (s.videoSettingsThisVideo ? "this_video" : "display") << "\n";
   out << "subtitle_size=" << s.subtitleSize << "\n";
   out << "subtitle_height=" << s.subtitleRaise << "\n";
   out << "subtitle_distance_cm=" << s.subtitleDistance << "\n";
@@ -174,7 +174,6 @@ Settings defaultSettings() {
   s.performancePreset = kDefaultPerformancePreset;
   // The Frame's own (docs/frame-plan.md, W4); its resolutions are in eye_resolution.h.
   if (kStandaloneHeadset) {
-    s.theme = Theme::Material;
     s.videoMipmaps = false;  // at 2160 they cost 8K playback's headroom; 2592 drops frames
     s.seekPreview = false;   // not available there (main.cpp)
     s.background = false;    // the night sky: a non-essential cost behind flat videos
@@ -225,8 +224,7 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
   FocusSettingsReader focus;
   bool focusRead = false;  // else the focus stays as in `s`
   for (const auto& [key, value] : file) {
-    if (key == "theme") s.theme = value == "material" ? Theme::Material : Theme::Glass;
-    else if (key == "accent") s.accent.preset = accentPreset(value);
+    if (key == "accent") s.accent.preset = accentPreset(value);
     else if (key == "accent_hue") s.accent.hue = std::clamp(std::atoi(value.c_str()), 0, 359);
     else if (key == "accent_brightness")
       s.accent.brightness = std::clamp(std::atoi(value.c_str()), 0, 100);
@@ -243,6 +241,7 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "last_folder") s.lastFolder = value;
     else if (key == "downloads_to") s.downloadsTo = value;
     else if (key == "gallery") s.gallery = value == "1";
+    else if (key == "video_settings_section") s.videoSettingsThisVideo = value == "this_video";
     else if (key == "subtitle_size") s.subtitleSize = std::atoi(value.c_str());
     else if (key == "subtitle_height") s.subtitleRaise = std::atoi(value.c_str());
     else if (key == "subtitle_distance_cm") s.subtitleDistance = std::atoi(value.c_str());

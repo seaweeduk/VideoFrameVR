@@ -125,17 +125,6 @@ bool SceneRenderer::init(GpuContext& gpu, GlInterop& interop, Uploader& uploader
          keyMask_.init(pipelines_) && createSky();
 }
 
-bool SceneRenderer::initGlass(const XrContext& xr) {
-  const int eyes = std::min(xr.eyeCount(), 2);
-  VkRect2D areas[2] = {};
-  for (int i = 0; i < eyes; ++i)
-    areas[i].extent = {static_cast<uint32_t>(xr.eyeWidth(i)), static_cast<uint32_t>(xr.eyeHeight(i))};
-  glass_ = std::make_unique<GlassBackdrop>();
-  if (glass_->init(*gpu_, eyes, areas) && pipelines_.initGlass(glass_->scenePass())) return true;
-  glass_.reset();
-  return false;
-}
-
 // Renders the night sky once into a mipmapped image, on the GPU at startup.
 bool SceneRenderer::createSky() {
   GpuContext& gpu = *gpu_;
@@ -306,35 +295,9 @@ bool SceneRenderer::record(GpuContext::FrameSlot& slot, const EyeFrame& eyes,
   interop_->recordAcquires(cmd);
   if (direct_) direct_->recordAcquires(cmd);
   timestamp(slot, kUploaded, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
-  // The colour key's mask, before any pass reads it (its time is glass's).
+  // The colour key's mask, before any pass reads it.
   if (video && !testPattern_) drawKeyMask(cmd, *video, scene.clear, eyes, matrices);
-
-  // Glass menus (desktop): what each eye shows before the first of them,
-  // drawn small and blurred before the eye passes (docs/vulkan-renderer.md, 7).
-  size_t behindGlass = scene.overlays.size();
-  for (size_t k = 0; k < scene.overlays.size(); ++k) {
-    const PanelItem* panel = std::get_if<PanelItem>(&scene.overlays[k]);
-    if (panel && panel->texture && panel->glassAlpha > 0) {
-      behindGlass = k;
-      break;
-    }
-  }
-  bool glass = glass_ && !testPattern_ && behindGlass < scene.overlays.size();
-  for (int i = 0; glass && i < eyes.count; ++i) glass = glass_->prepare(i, eyes.eyes[i].area);
-  if (glass) {
-    glassPass_ = true;
-    for (int i = 0; i < eyes.count; ++i) {
-      const VkRect2D area = glass_->beginScene(cmd, i, clearColor(scene.clear));
-      const EyeData eye = eyeData(matrices[i], area, i);
-      if (scene.sky) drawSky(cmd, eye);
-      if (video) drawVideo(cmd, eye, i, *video, scene.clear, 0.0f);  // blurred anyway
-      if (behindGlass > 0) drawOverlays(cmd, eye, matrices[i], scene, behindGlass, nullptr);
-      glass_->endScene(cmd);
-      glass_->blur(cmd, i, pipelines_, scene.clear == ClearMode::KeyGreen);
-    }
-    glassPass_ = false;
-  }
-  timestamp(slot, kGlassDone, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+  timestamp(slot, kKeyMaskDone, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 
   for (int i = 0; i < eyes.count; ++i) {
     const EyeImage& image = eyes.eyes[i];
@@ -351,8 +314,7 @@ bool SceneRenderer::record(GpuContext::FrameSlot& slot, const EyeFrame& eyes,
       if (scene.sky) drawSky(cmd, eye);
       if (video) drawVideo(cmd, eye, i, *video, scene.clear, video->sharpen);
       if (!scene.overlays.empty())
-        drawOverlays(cmd, eye, matrices[i], scene, scene.overlays.size(),
-                     glass ? glass_->texture(i) : nullptr);
+        drawOverlays(cmd, eye, matrices[i], scene);
     }
     if (scene.showFoveation) {
       vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_.foveation(plainEye_));
@@ -651,7 +613,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
   const bool adjusted = v.adjust[0] != 0.0f || v.adjust[1] != 0.0f || v.adjust[2] != 0.0f;
   const bool balance = v.balance[0] != 0.0f || v.balance[1] != 0.0f || v.balance[2] != 0.0f;
   const bool commonMode =
-      (flags & kBaseLevel) && taps == 1 && !adjusted && sharpen <= 0.0f && !glassPass_;
+      (flags & kBaseLevel) && taps == 1 && !adjusted && sharpen <= 0.0f;
   const auto source =
       tp10        ? Pipelines::kTp10
       : q08c >= 0 ? static_cast<Pipelines::SurroundSource>(Pipelines::kYcbcr + q08c)
@@ -693,8 +655,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
 }
 
 void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
-                                 const EyeMatrices& matrices, const FrameScene& scene,
-                                 size_t count, const Texture* backdrop) {
+                                 const EyeMatrices& matrices, const FrameScene& scene) {
   // Pushed once: the pipelines share the layout, so it stays for every draw.
   pushEye(cmd, eye);
   VkPipeline bound = VK_NULL_HANDLE;
@@ -703,24 +664,33 @@ void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
     bound = pipeline(id);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bound);
   };
-  for (size_t k = 0; k < count && k < scene.overlays.size(); ++k) {
+  for (size_t k = 0; k < scene.overlays.size(); ++k) {
     const OverlayDraw& item = scene.overlays[k];
     if (const PanelItem* panel = std::get_if<PanelItem>(&item)) {
       if (!panel->texture) continue;
-      bind(Pipelines::kPanel);
-      drawPanel(cmd, *panel, scene.clear, backdrop);
+      // Only the panel with a pointed control is drawn by the pipeline that
+      // draws it (with an unrated row's stars, by the one that draws them
+      // too; while a value is held, the one that fades it); every other
+      // panel and text by the plain one.
+      bind(!panel->hover              ? Pipelines::kPanel
+           : panel->hover->fade > 0   ? Pipelines::kPanelFaded
+           : panel->hover->stars >= 0 ? Pipelines::kPanelStars
+                                      : Pipelines::kPanelPointed);
+      drawPanel(cmd, *panel);
     } else if (const QuadsItem* quads = std::get_if<QuadsItem>(&item)) {
       bind(Pipelines::kPointer);
-      for (const Quad& q : quads->quads) drawPointer(cmd, q);
+      for (const Quad& q : quads->quads) drawPointer(cmd, q, 0, kPointerOrange);
     } else if (const LaserItem* laser = std::get_if<LaserItem>(&item)) {
       bind(Pipelines::kPointer);
       const Vec3 from = laser->from, to = laser->to;
+      float color[4];
+      for (int i = 0; i < 4; ++i) color[i] = kPointerOrange[i] * laser->opacity;
       // A flat strip that always faces the eye: an unlit tube looks the same.
       const Vec3 dir = normalize(to - from);
       const Vec3 side = cross(dir, normalize(matrices.position - from));
       if (length(side) >= 1e-4f) {
         const Vec3 offset = normalize(side) * 0.001f;  // 2 mm wide
-        drawPointer(cmd, {from - offset, from + offset, to - offset, to + offset}, kPointerBeam);
+        drawPointer(cmd, {from - offset, from + offset, to - offset, to + offset}, kPointerBeam, color);
       }
       // The dot: a disc facing the eye, which an unlit sphere looks like.
       const Vec3 toEye = matrices.position - to;
@@ -730,7 +700,7 @@ void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
         const Vec3 up = std::abs(n.y) < 0.9f ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
         const Vec3 a = normalize(cross(up, n)) * laser->dotRadius;
         const Vec3 b = normalize(cross(n, a)) * laser->dotRadius;
-        drawPointer(cmd, {to - a - b, to + a - b, to - a + b, to + a + b}, kPointerDot);
+        drawPointer(cmd, {to - a - b, to + a - b, to - a + b, to + a + b}, kPointerDot, color);
       }
     } else if (const PreviewItem* preview = std::get_if<PreviewItem>(&item)) {
       // Not one GL still holds (record() did not acquire it).
@@ -742,8 +712,7 @@ void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
   }
 }
 
-void SceneRenderer::drawPanel(VkCommandBuffer cmd, const PanelItem& panel, ClearMode clear,
-                              const Texture* backdrop) {
+void SceneRenderer::drawPanel(VkCommandBuffer cmd, const PanelItem& panel) {
   PanelPush p{};
   uint32_t flags = 0;
   const Mat4 model = panel.curved ? panel.curved->model() : panel.model;
@@ -767,40 +736,44 @@ void SceneRenderer::drawPanel(VkCommandBuffer cmd, const PanelItem& panel, Clear
     p.shape[1] = c.pixelScale;
     p.lodBias = menuLodBias_;
   }
-  if (panel.hover) {
-    flags |= kPanelHover;
-    if (panel.hover->danger) flags |= kPanelHoverDanger;
-    flags |= uint32_t(panel.hover->rim[0]) << 8 | uint32_t(panel.hover->rim[1]) << 16 |
-             uint32_t(panel.hover->rim[2]) << 24;
-    for (int i = 0; i < 4; ++i) p.hover[i] = panel.hover->rect[i];
-    for (int i = 0; i < 4; ++i) p.hoverClip[i] = panel.hover->clip[i];
-    p.shape[2] = panel.hover->radius;
+  if (panel.hover && panel.hover->fade > 0) {
+    // kPanelFaded: the held row in hover, Magnify's scale in hoverClip.
+    const PanelHover& h = *panel.hover;
+    for (int i = 0; i < 4; ++i) p.hover[i] = h.rect[i];
+    for (int i = 0; i < 4; ++i) p.hoverClip[i] = h.clip[i];
+    p.shape[2] = h.radius;
+    p.shape[3] = h.fade;
+    flags |= uint32_t(std::clamp(h.scaleRadius, 0.0f, 255.0f)) << 8;
+  } else if (panel.hover) {
+    const PanelHover& h = *panel.hover;
+    flags |= uint32_t(h.highlight) << 8 | uint32_t(h.shadow) << 16 | uint32_t(h.ink) << 24;
+    flags |= uint32_t(std::lround(std::clamp(h.shown, 0.0f, 1.0f) * 31)) << 3;
+    if (h.pressed) flags |= kPanelHoverPressed;
+    if (h.ring) flags |= kPanelHoverRing;
+    if (h.stars >= 0) p.shape[3] = h.stars;  // kPanelStars
+    p.hoverFill = uint32_t(h.fill[0]) | uint32_t(h.fill[1]) << 8 | uint32_t(h.fill[2]) << 16 |
+                  uint32_t(h.fill[3]) << 24;
+    for (int i = 0; i < 4; ++i) p.hover[i] = h.rect[i];
+    for (int i = 0; i < 4; ++i) p.hoverClip[i] = h.clip[i];
+    p.shape[2] = h.radius;
   }
-  // Glass: the blurred backdrop behind its translucent parts; without one
-  // (the Frame) it shows its own translucency.
-  const bool glass = backdrop && panel.glassAlpha > 0;
-  if (glass) flags |= kPanelGlass;
-  p.shape[3] = panel.glassAlpha;
   p.opacity = panel.opacity;
-  if (clear == ClearMode::KeyGreen) flags |= kPanelPassthrough;
   p.flags = flags;
-  pipelines_.bindTextures(cmd, panel.texture, Pipelines::kCanvas, glass ? backdrop : nullptr);
+  pipelines_.bindTextures(cmd, panel.texture, Pipelines::kCanvas);
   pushDraw(cmd, p);
   vkCmdDraw(cmd, panel.curved ? 2 * 65 : 4, 1, 0, 0);
 }
 
-void SceneRenderer::drawPointer(VkCommandBuffer cmd, const Quad& corners, uint32_t flags) {
+void SceneRenderer::drawPointer(VkCommandBuffer cmd, const Quad& corners, uint32_t flags,
+                                const float color[4]) {
   PointerPush p{};
   for (int i = 0; i < 4; ++i) {
     p.corners[i][0] = corners[i].x;
     p.corners[i][1] = corners[i].y;
     p.corners[i][2] = corners[i].z;
     p.corners[i][3] = 1.0f;
+    p.color[i] = color[i];
   }
-  // Orange pointer and corner handles, unlit (premultiplied, linear).
-  p.color[0] = 1.0f;
-  p.color[1] = 0.25f;
-  p.color[3] = 1.0f;
   p.mode[0] = flags;
   pushDraw(cmd, p);
   vkCmdDraw(cmd, 4, 1, 0, 0);
@@ -822,6 +795,7 @@ void SceneRenderer::drawPreview(VkCommandBuffer cmd, const PreviewItem& preview)
     p.view[0] = preview.aheadTangents[0];
     p.view[1] = preview.aheadTangents[1];
   }
+  p.view[3] = preview.opacity;
   p.mode[1] = flags;
   pipelines_.bindTextures(cmd, preview.texture, Pipelines::kVideoBase);
   pushDraw(cmd, p);
@@ -838,8 +812,8 @@ bool SceneRenderer::readTimes(const GpuContext::FrameSlot& slot, GpuTimes& times
     return ticks[b] >= ticks[a] ? static_cast<double>(ticks[b] - ticks[a]) * ms : 0.0;
   };
   times.upload = span(kStart, kUploaded);
-  times.glass = span(kUploaded, kGlassDone);
-  times.eye[0] = span(kGlassDone, kEye0Done);
+  times.keyMask = span(kUploaded, kKeyMaskDone);
+  times.eye[0] = span(kKeyMaskDone, kEye0Done);
   times.eye[1] = span(kEye0Done, kEye1Done);
   times.mirror = span(kEye1Done, kEnd);
   times.frame = span(kStart, kEnd);

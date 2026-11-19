@@ -55,8 +55,8 @@ class SeekPreview {
   // ... or shows nothing.
   void hide() { shown_ = false; }
   // What is shown this frame, added to the scene's overlays: the frame (or
-  // its placeholder) and the time.
-  void addTo(std::vector<OverlayDraw>& overlays);
+  // its placeholder) and the time, at `opacity` (fading with the menu).
+  void addTo(std::vector<OverlayDraw>& overlays, float opacity = 1);
 
  private:
   void place(double fraction, float aspect, const CurvedPanel& strip);

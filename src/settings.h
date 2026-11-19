@@ -12,9 +12,6 @@
 #include <string>
 #include <vector>
 
-// The look of the VR menus.
-enum class Theme { Glass, Material };
-
 // One choice of resolution, foveation, mipmaps, anti-shimmer and sharpening
 // (presets.h); Custom when they match none.
 enum class PerformancePreset { Low, Balanced, High, Custom };
@@ -37,7 +34,6 @@ std::filesystem::path cacheDir();
 
 // User preferences, kept in settings.conf in configDir().
 struct Settings {
-  Theme theme = Theme::Glass;
   Accent accent;                  // the menu's colour
   std::string language = "auto";
   // The on-screen keyboard's layout and the other one its layout key
@@ -48,6 +44,7 @@ struct Settings {
   bool tvGamma = false;           // SDR video converted for a TV's gamma (BT.1886)
   std::string lastFolder;         // the file browser's folder when the player last ran
   bool gallery = false;           // file browser: video thumbnails in a grid, else a list
+  bool videoSettingsThisVideo = false;  // Video settings' section picked last: This video, else Display
   int subtitleSize = 100;         // percent
   int subtitleRaise = 0;          // how much higher than usual, percent of the picture
   int subtitleDistance = 150;     // floating subtitles of surround video: centimetres away

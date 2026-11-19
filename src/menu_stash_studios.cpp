@@ -1,5 +1,6 @@
 #include "menu_style.h"
 
+#include "menu_list_parts.h"
 #include "menu_stash.h"
 #include "menu_stash_covers.h"
 #include "stash.h"
@@ -18,10 +19,9 @@
 namespace {
 
 constexpr int kColumns = 5;
-constexpr double kCardGap = 16;
-constexpr double kLogoH = 150;  // a card's logo box
-constexpr double kCardH = 8 + kLogoH + 8 + 34 + 30 + 30 + 10;
-// A logo is fitted into this part of its box, as Stash's cards show them.
+constexpr double kCardGap = kGalleryGap;
+// A logo is fitted into this part of its box (a card's picture), as
+// Stash's cards show them.
 constexpr double kLogoFitW = 0.82, kLogoFitH = 0.7;
 // A studio's page: its band of logo and facts under the heading row.
 constexpr double kStudioLogoW = 260, kStudioBandH = 132;
@@ -180,7 +180,7 @@ int64_t StashPages::fixedStudio(const Menu& m) {
 }
 
 double StashPages::bandHeight(const Menu& m) {
-  return m.page_ == Menu::Page::StashStudio ? kStudioBandH + 16 : 0;
+  return m.page_ == Menu::Page::StashStudio ? kStudioBandH + kit::kSpace : 0;
 }
 
 StashList StashPages::scopedList(const Menu& m) {
@@ -262,23 +262,23 @@ void StashPages::drawLogo(const Menu& m, cairo_t* cr, const StashStudio& studio,
   m.drawTextLines(cr, studio.name, x, y + h / 2 - 34, w, 28, 2, rgba, true, y + h);
 }
 
+// As the lists' cards (Menu::addGallery()'s): its logo on the picture's
+// sunk plate, its name and two lines under it.
 void StashPages::drawStudioCard(const Menu& m, cairo_t* cr, const Button& b, const double ink[4]) {
   const StashCatalog* c = catalog(m);
   const int index = c ? c->studioById(b.stashId) : -1;
-  const double bx = b.x + 8, by = b.y + 8, bw = b.w - 16;
-  roundedRect(cr, bx, by, bw, kLogoH, 12);
-  cairo_set_source_rgba(cr, 1, 1, 1, 0.05);
-  cairo_fill(cr);
+  double px, py, pw, ph;
+  m.listPicture(b, px, py, pw, ph);
+  m.drawFinish(cr, Finish::Sunk, px, py, pw, ph, kit::kPieceCorner);
   if (index >= 0)
-    drawLogo(m, cr, c->studios()[index], bx + bw * (1 - kLogoFitW) / 2,
-             by + kLogoH * (1 - kLogoFitH) / 2, bw * kLogoFitW, kLogoH * kLogoFitH, 1);
+    drawLogo(m, cr, c->studios()[index], px + pw * (1 - kLogoFitW) / 2, py + ph * (1 - kLogoFitH) / 2,
+             pw * kLogoFitW, ph * kLogoFitH, 1);
   const Palette& pal = m.palette();
   const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
-  const double light[4] = {0.88, 0.88, 0.9, 1};
-  const double textX = b.x + 14, textW = b.w - 28, ty = by + kLogoH;
-  m.drawTextLines(cr, b.label, textX, ty + 4, textW, 26, 1, ink, false);
-  m.drawTextLines(cr, b.detail, textX, ty + 40, textW, 22, 1, light, false);
-  m.drawTextLines(cr, b.date, textX, ty + 70, textW, 22, 1, dim, false);
+  const double x = b.x + kit::kSpace, w = b.w - 2 * kit::kSpace, y = py + ph + kCardNameGap;
+  m.drawLinesIn(cr, b.label, x, y, w, kit::kRowSize, 1, kCardLine, ink);
+  m.drawLinesIn(cr, b.detail, x, y + kCardLine, w, kHintSize, 1, kCardLine, dim);
+  m.drawLinesIn(cr, b.date, x, y + 2 * kCardLine, w, kHintSize, 1, kCardLine, dim);
 }
 
 // The Studios page: the heading row (its title and count), the tool row
@@ -291,21 +291,21 @@ void StashPages::layoutStudios(Menu& m) {
   const StashCatalog* c = catalog(m);
   if (c) rebuild(st, p, *c, m.stash_->generation(), shownFormat(m), st.studioSearch);
 
-  const double x0 = Menu::kPageX + kPagePad, right = Menu::kPageX + Menu::kPageWidth - kPagePad;
+  const double x0 = kContentLeft, right = kContentRight;
   const StashFormat shown = shownFormat(m);
   const bool editing = m.editing_ && st.typing == StashMenu::Typing::Studios;
 
   // The cards, five a row.
   const double bottomY = editing ? kKeyboardY - 16 : kListBottom;
   m.listLeft_ = x0;
-  m.listRight_ = right + 6;
+  m.listRight_ = right + kListRightPad;
   m.listShowsFolder_ = false;
   m.listColumns_ = false;
   m.listTop_ = kGridTop;
   m.listBottom_ = bottomY;
   if (c) {
     const double cardW = (m.listRight_ - 30 - x0 - (kColumns - 1) * kCardGap) / kColumns;
-    const double rowH = kCardH + kCardGap;
+    const double rowH = cardHeight(cardW) + kCardGap;
     const int count = static_cast<int>(p.cards.size());
     m.rowHeight_ = rowH;
     m.visibleRows_ = std::max(1, static_cast<int>((bottomY - kGridTop) / rowH));
@@ -322,10 +322,12 @@ void StashPages::layoutStudios(Menu& m) {
       b.x = x0 + (cell % kColumns) * (cardW + kCardGap);
       b.y = kGridTop + (cell / kColumns - m.scrollFraction_) * rowH;
       b.w = cardW;
-      b.h = kCardH;
+      b.h = rowH - kCardGap;
+      b.card = true;
+      b.radius = kCardCorner;
       b.label = studio.name;
       b.detail = stashJoined(
-          {stashPrinted(t.count, stashNumber(s.scenes)), stashPlays(s.plays)});
+          {stashScenes(s.scenes), stashPlays(s.plays)});
       b.date = stashJoined({s.newestDate.empty() ? "" : stashPrinted(t.newest, s.newestDate),
                             s.rated ? stashPrinted(t.stars, s.average()) : ""});
       b.scrolls = true;
@@ -335,11 +337,11 @@ void StashPages::layoutStudios(Menu& m) {
         showStudio(m, id);
         return MenuCommand{};
       };
-      if (m.textWidth(b.label, 26, false) > b.w - 28) b.tooltip = b.label;
+      if (m.textWidth(b.label, kit::kRowSize, false) > b.w - 2 * kit::kSpace) b.tooltip = b.label;
       m.buttons_.push_back(b);
     }
     // Their logos, then those of the rows around them.
-    const int logoW = stashPixels((cardW - 16) * kLogoFitW);
+    const int logoW = stashPixels((cardW - 2 * kCardIn) * kLogoFitW);
     std::vector<StashImages::Request> requests;
     const int page = m.visibleRows_ * kColumns;
     auto add = [&](int from, int to) {
@@ -355,30 +357,19 @@ void StashPages::layoutStudios(Menu& m) {
   }
   if (editing) m.layoutKeyboard();
 
-  // The tool row last: its sort fields open over the cards.
-  const double y = kBrowserToolsY, h = kBrowserToolsH;
-  double x = x0;
-  auto choice = [&](const std::string& label, bool chosen, bool disabled,
-                    std::function<MenuCommand()> action) {
-    Button b = m.textButton(label, Menu::Icon::None, std::move(action), chosen);
-    b.disabled = disabled;
-    b.panel = Menu::kBrowser;
-    b.x = x;
-    b.y = y;
-    b.h = h;
-    b.w = m.textWidth(label, Menu::kTextSize, false) + 36;
-    b.radius = h / 2;
-    m.buttons_.push_back(b);
-    x += b.w + 6;
-  };
+  // The tools row last, its sort fields opening over the cards: All / VR /
+  // 2D with the studios each has, the order, the search, to the top / end.
+  std::vector<Menu::ToolPiece> formats;
   for (int f = 0; f < 3; ++f) {
-    std::string label = t.formats[f];
-    if (c) label += "  " + stashNumber(p.counts[f]);
-    choice(label, static_cast<int>(shown) == f,
-           c && p.counts[f] == 0 && static_cast<int>(shown) != f,
-           [&m, f] { return setFormat(m, static_cast<StashFormat>(f)); });
+    Menu::ToolPiece piece;
+    piece.label = t.formats[f];
+    if (c) piece.count = stashNumber(p.counts[f]);
+    piece.chosen = static_cast<int>(shown) == f;
+    piece.disabled = c && p.counts[f] == 0 && !piece.chosen;
+    piece.action = [&m, f] { return setFormat(m, static_cast<StashFormat>(f)); };
+    formats.push_back(std::move(piece));
   }
-  x += 16;
+  double x = m.toolsWell(x0, kBrowserToolsY, formats) + kColumnGap;
   x = layoutSort(
       m, x, t.studioSorts, 5, static_cast<int>(p.sort), p.descending,
       [&m](int f) {
@@ -401,29 +392,30 @@ void StashPages::layoutStudios(Menu& m) {
   layoutSearch(m, x, layoutJumps(m), st.studioSearch, t.find[2], StashMenu::Typing::Studios);
 }
 
+// The title and count as a page's (Menu::contentTitle()), and what an
+// empty page means.
 void StashPages::drawStudiosHeading(const Menu& m, cairo_t* cr) {
   const StashMenu& st = *m.stashMenu_;
   const StashStrings& t = strings().stash;
   const Palette& pal = m.palette();
-  const double x = Menu::kPageX + kPagePad;
-  const double titleW = m.textWidth(t.studios, 30, true) + 4;
-  m.drawText(cr, t.studios, x, kBrowserRowY, titleW, kBrowserRowH, 30, true, false, pal.text.r,
-             pal.text.g, pal.text.b);
+  const double x = kContentLeft + kit::kSpace;
+  const double titleW = m.textWidth(t.studios, kit::kTitleSize, true) + 4;
+  m.drawText(cr, t.studios, x, kBrowserRowY, titleW, kBrowserRowH, kit::kTitleSize, true, false,
+             pal.text.r, pal.text.g, pal.text.b);
   const StashCatalog* c = catalog(m);
   if (!c) {
-    drawWaiting(m, cr, x + 24, kGridTop + 20, Menu::kPageWidth - 2 * kPagePad - 48);
+    drawWaiting(m, cr, x, kGridTop + 20, kContentRight - x - kit::kSpace);
   } else if (st.studios) {
     const StashStudiosPage& p = *st.studios;
     const long n = static_cast<long>(p.cards.size());
-    m.drawText(cr, stashPrinted(t.studiosCount, stashNumber(n)),
-               x + titleW + 20, kBrowserRowY, 600, kBrowserRowH, 24, false, false, pal.textDim.r,
-               pal.textDim.g, pal.textDim.b, pal.textDim.a);
-    if (p.cards.empty()) {
-      const std::string none =
-          st.studioSearch.empty() ? t.noStudios : stashPrinted(t.noMatches, st.studioSearch);
-      m.drawText(cr, none, x + 24, kGridTop + 20, Menu::kPageWidth - 2 * kPagePad - 48, kFileRowH,
-                 27, false, false, pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a);
-    }
+    m.drawText(cr, n == 1 ? std::string(t.oneStudio) : stashPrinted(t.studiosCount, stashNumber(n)),
+               x + titleW + kit::kSpaceEdge,
+               kBrowserRowY, 600, kBrowserRowH, 23, false, false, pal.textDim.r, pal.textDim.g,
+               pal.textDim.b, pal.textDim.a);
+    if (p.cards.empty())
+      m.drawEmptyPage(cr, st.studioSearch.empty() ? Menu::Icon::Building : Menu::Icon::Search,
+                      st.studioSearch.empty() ? std::string(t.noStudios)
+                                              : stashPrinted(t.noMatches, st.studioSearch));
   }
 }
 
@@ -438,7 +430,7 @@ void StashPages::layoutStudio(Menu& m) {
   const StashCatalog* c = catalog(m);
   StashStudiosPage& p = pageOf(st);
   if (c) rebuild(st, p, *c, m.stash_->generation(), st.list.format, st.studioSearch);
-  const double x0 = Menu::kPageX + kPagePad, right = Menu::kPageX + Menu::kPageWidth - kPagePad;
+  const double x0 = kContentLeft, right = kContentRight;
   Button back = actionButton(
       m, t.studios, StashIcon::Back,
       [&m] {
@@ -455,21 +447,21 @@ void StashPages::layoutStudio(Menu& m) {
     const StashStudiosPage::Stats& s = p.stats[index];
     if (!studio.image.empty())
       logo.push_back(Stash::logoRequest(studio, stashPixels(kStudioLogoW * kLogoFitW)));
-    const double y = kBrowserToolsY, tx = x0 + kStudioLogoW + 28;
+    const double y = kBrowserToolsY, tx = x0 + kStudioLogoW + kit::kSpaceEdge;
     // Your history with it, and the studio Stash has it under, as text.
     const std::string facts =
-        stashJoined({stashPrinted(t.count, stashNumber(s.scenes)),
+        stashJoined({stashScenes(s.scenes),
                      s.newestDate.empty() ? "" : stashPrinted(t.newestIn, s.newestDate),
                      stashPlays(s.plays), s.rated ? stashPrinted(t.average, s.average()) : ""});
-    m.addLabel(tx, y, right - tx, 40, facts, 24, false);
+    m.addLabel(tx, y, right - tx, 40, facts, kit::kWellSize, false);
     if (studio.parent >= 0)
       m.addLabel(tx, y + 40, right - tx, 36,
-                 stashPrinted(t.partOf, c->studios()[studio.parent].name), 24, true);
+                 stashPrinted(t.partOf, c->studios()[studio.parent].name), kit::kWellSize, true);
   }
   // Its scenes as the Scenes page shows them, under the band.
   m.stashCovers_->wantFirst(std::move(logo));
   layoutResults(m, kGridTop + bandHeight(m), right);
-  layoutHeader(m, back.x + back.w + kGap);
+  layoutHeader(m, back.x + back.w + kit::kSpaceTight);
   layoutTools(m);
 }
 
@@ -478,10 +470,8 @@ void StashPages::drawStudioHeading(const Menu& m, cairo_t* cr) {
   const StashCatalog* c = catalog(m);
   const int index = c ? c->studioById(m.stashMenu_->studio) : -1;
   if (index < 0) return;
-  const double x = Menu::kPageX + kPagePad, y = kBrowserToolsY;
-  roundedRect(cr, x, y, kStudioLogoW, kStudioBandH, 12);
-  cairo_set_source_rgba(cr, 1, 1, 1, 0.05);
-  cairo_fill(cr);
+  const double x = kContentLeft, y = kBrowserToolsY;
+  m.drawFinish(cr, Finish::Sunk, x, y, kStudioLogoW, kStudioBandH, kit::kCorner);
   drawLogo(m, cr, c->studios()[index], x + kStudioLogoW * (1 - kLogoFitW) / 2,
            y + kStudioBandH * (1 - kLogoFitH) / 2, kStudioLogoW * kLogoFitW, kStudioBandH * kLogoFitH, 1);
 }

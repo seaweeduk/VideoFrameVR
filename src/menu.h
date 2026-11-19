@@ -8,11 +8,14 @@
 #include "library.h"
 #include "library_index.h"
 #include "offline.h"
+#include "panel_hover.h"
 #include "places.h"
 #include "presets.h"
 #include "diagnostics.h"
 #include "file_util.h"
 #include "release_update.h"
+#include "menu_feel.h"
+#include "menu_finish.h"
 #include "menu_geometry.h"
 #include "settings.h"
 #include "remote.h"
@@ -36,6 +39,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
@@ -44,6 +48,15 @@
 
 typedef struct _PangoLayout PangoLayout;
 
+// The File explorer's and the Library's list columns as the language shown
+// needs them (Menu::listFit(), listColumns()): how much further apart than
+// kColumnGap rating and plays, plays and length, length and size, size and
+// date go, and the length's, size's and date's widths.
+struct ListFit {
+  std::array<double, 4> apart{};
+  double length = 0, size = 0, date = 0;
+};
+
 class Thumbnailer;
 class Uploader;
 class FolderMemory;
@@ -51,14 +64,19 @@ class Stash;
 class StashCatalog;
 class StashCovers;
 struct StashMenu;
+struct StashSettingsShown;
 struct SetupMenu;
 struct MenuHints;
+struct CurvedPanel;
 
 struct Palette;
 
 // Match the room's switch (room_light.h): not offered, the room not shown,
 // ready, reading, or a reading that just failed.
 enum class RoomMatch { Hidden, Off, Ready, Reading, Failed };
+
+// A message's icon (notices.h), from the menu's set.
+enum class NoticeIcon { None, Recenter, Viewpoint, Passthrough, Card, Usb, Drive, Warning };
 
 // Something the menu asks the app to do.
 struct MenuCommand {
@@ -67,7 +85,7 @@ struct MenuCommand {
               SelectSubtitle, LoadSubtitle, ToggleFloatingSubtitles,
               SetVolume, RequestDelete,
               DeleteFile, CancelDelete, Quit, SetBrightness,
-              SetContrast, SetSaturation, SetZoom, ResetPicture, Paste, SetTheme,
+              SetContrast, SetSaturation, SetZoom, ResetPicture, Paste,
               SetAccent, SetAccentHue, SetAccentBrightness, SetAccentSaturation,
               SetSlideshow, SetAfterVideo, ToggleBackground, SetSubtitleSize,
               SetSubtitleRaise, SetSubtitleDistance, TogglePassthrough, ToggleGreenScreen,
@@ -179,7 +197,6 @@ struct MenuView {
   std::string currentFile;
   bool playbackFailed = false;  // the current video couldn't be played
   bool discEncrypted = false;   // ... because it is an encrypted disc image
-  Theme theme = Theme::Glass;
   Accent accent;
   bool floatingSubtitles = false;
   bool hardwareAv1 = false;  // the headset's decoder takes AV1 (SteamOS 0.5.10)
@@ -214,7 +231,6 @@ struct MenuView {
   int resolutionBase = 0;    // eye image pixels across at 100 %
   bool panelBase = false;    // resolutionBase is the headset's panel, else SteamVR's recommendation
   bool resolutionNotice = false;  // 1× has changed meaning; show the migrated size
-  bool resolutionPending = false;  // videoResolution is chosen but not switched to yet
   // The Frame's foveation (FoveationLevel), where the eye images have it.
   bool foveationAvailable = false;
   FoveationLevel foveation = FoveationLevel::High;
@@ -323,9 +339,6 @@ class Menu {
   // First-run setup's panel: 1.36 × 0.9 m, and below it the room its
   // keyboard shows in.
   static constexpr int kSetupWidth = 1360, kSetupHeight = 900, kSetupKeyboardHeight = 370;
-  // Glass theme: the panels' own coverage where they are most transparent;
-  // the renderer shows the blurred scene through them.
-  static constexpr float kGlassAlpha = 0.62f;
 
   Menu();
   ~Menu();
@@ -358,6 +371,12 @@ class Menu {
   // Videos as a grid of large thumbnails instead of a list (all folders).
   void setGallery(bool gallery) { gallery_ = gallery; }
   bool gallery() const { return gallery_; }
+  // Video settings opens on This video (else Display) while a video is open:
+  // the section picked last.
+  void setVideoSettingsThisVideo(bool thisVideo) {
+    videoSectionPicked_ = thisVideo ? VideoSection::ThisVideo : VideoSection::Display;
+  }
+  bool videoSettingsThisVideo() const { return videoSectionPicked_ == VideoSection::ThisVideo; }
 
   void update(const MenuView& view);
   // Pointer on a panel in 0..1 of its texture (v = 0 at the top); panel
@@ -393,6 +412,12 @@ class Menu {
   bool dragging() const;
   // Scrolls a list page by (fractions of) rows, positive = down (the stick).
   void scroll(double rows);
+  // Whether a value row is pointed at (its field, − or +) and can change:
+  // the thumbstick steps it (stepValue()).
+  bool pointedValue() const { return pointedField() >= 0; }
+  // The pointed value a step down (direction -1) or up (1), as its − or +
+  // does, with a tick in the controller (a knock at either end).
+  MenuCommand stepValue(int direction);
   // While the pointer is over the strip's seek bar: where it points,
   // 0..1 of the video. For the preview frame.
   bool seekHover(double& fraction) const;
@@ -462,6 +487,15 @@ class Menu {
   // hint's line drawn for showing, each time it starts (layout pixels).
   void setHintBindings(const ControllerBindings& bindings);
   const Texture* drawHint(Hint hint, int& width, int& height);
+  // A message over the video (notices.h): its line, or a line and a dimmer
+  // one under it (after '\n'), in a pill as the hints', in the middle of
+  // w × h layout pixels. The pill is kNoticeH high (by its lines) and at most
+  // kNoticeMaxW wide, its shadow within kNoticeShadow around it; `drawn` is
+  // the part of the canvas it drew on (x, y, w, h).
+  static constexpr int kNoticeH[2] = {88, 120};
+  static constexpr int kNoticeMaxW = 1040, kNoticeShadow = 64;
+  void drawNotice(cairo_t* cr, double w, double h, NoticeIcon icon, const std::string& text,
+                  double drawn[4]);
   // A list longer than its page pointed at (`page`: the page shown); the
   // pointer on the strip's volume.
   bool pointingAtLongList(int& page) const;
@@ -533,6 +567,9 @@ class Menu {
   // Whether a panel is shown: the strip always, the browser while a page is
   // open in it (or a dialog); during setup only its own.
   bool panelShown(PanelId panel) const;
+  // Whether the browser's texture (after texture()) shows the page it is
+  // to show: drawn, or the one being drawn laid out as the one drawn last.
+  bool browserReady() const;
   // The rows [first, end) of a panel that are shown now (in layout pixels), and its columns.
   void shownRows(int panel, int& first, int& end) const;
   void shownColumns(int panel, int& first, int& end) const;
@@ -546,10 +583,30 @@ class Menu {
   // Whether the pointer is on such a button that is not a rating (its stars
   // are pointed at one by one, and on a tile the whole tile lights up).
   bool pointedButton() const;
-  bool glass() const { return view_.theme == Theme::Glass; }
-  // The theme's colours with the chosen accent (menu_style.h), and the accent.
+  // The accent's fill (chosen buttons, the panels' edge) in linear light.
+  const std::array<float, 3>& accentLinear() const { return accentLinear_; }
+  // The colours with the chosen accent (menu_style.h).
   Palette palette() const;
-  const AccentColours& accent() const { return accent_; }
+  // How the panel shader draws the control under the pointer on this panel:
+  // pointed (raised a step, lit, or for a destructive one red) or, while
+  // the trigger holds it, pressed, as far as it has eased there
+  // (easeHover()); one just left, as it fades. False if there is none.
+  // While a value is held and as the menu comes back, the browser's fade
+  // instead (PanelHover::fade), and nothing pointed.
+  bool hoverLook(PanelId panel, PanelHover& look) const;
+  // Once a frame while the menu shows, before hoverLook(): the pointed
+  // look eases toward what the pointer and the trigger do now (menu_feel.h).
+  // Seconds: `now` the input's, `at` when the frame is shown (Ease).
+  void easeHover(double now, double at);
+  // The menu closed: nothing stays pointed or easing.
+  void resetHover() { pointedEase_.reset(); }
+  // How far the menu has faded away for a held value, 0..1: the strip
+  // fades as much (its opacity), the browser by hoverLook().
+  double heldFade() const;
+  // A list's faded top (edge 0) or bottom (1), where more of it is that way:
+  // its part of the browser panel `on` and the fade's texture, drawn over
+  // the browser (menu_list_parts.cpp). False while it isn't shown.
+  bool listFade(int edge, const CurvedPanel& on, CurvedPanel& part, const Texture*& texture);
 
  private:
   enum class Page { Main, Settings, VideoSettings, Files, Library, Focus, StashScenes, StashHome, StashPerformers, StashPerformer,
@@ -559,14 +616,18 @@ class Menu {
   enum class Icon { None, Play, Pause, Stop, Previous, Next, Back10, Forward10, VolumeUp,
                     Mute, Folder, FolderUp, Settings, Recenter, Trash, Power,
                     Globe, FormatDome, ProjFlat, Proj180, Proj360,
-                    Fisheye180, Fisheye190, Fisheye200, Cube, StereoMono, StereoSbs, StereoTb, Curved,
+                    Fisheye180, Fisheye190, Fisheye200, Cube, StereoMono, StereoSbs, StereoTb,
                     Slideshow, JumpTop, JumpBottom, Grid, MenuLines, Focus, Audio, Subtitles, Chapters,
                     List, Star,
-                    StarFilled, Passthrough, Search, Library, Video, Pin, MoveUp, MoveDown,
-                    Download, Check, Card, Storage, Close, PauseLine, PlayLine, Pencil, Plus,
-                    Refresh, Arrow, ArrowRight, Chevron, Trigger, Controller, Lock, Warning,
+                    StarFilled, Search, Library, Video, Pin, MoveUp, MoveDown,
+                    Download, Check, Card, Storage, Close, Pencil, Plus,
+                    Refresh, Arrow, ArrowRight, Chevron, Caret, Trigger, Controller, Warning,
                     Headset, Computer,
-                    StopAtEnd, Repeat, PlayNext, Shuffle };  // by AfterVideo
+                    StopAtEnd, Repeat, PlayNext, Shuffle,  // by AfterVideo
+                    Home, Usb, ChevronLeft, ArrowUp, ArrowDown,
+                    // Stash's section in the navigation: its mark (three
+                    // layers), scenes (a film frame), performers, studios
+                    Layers, Film, People, Building };
   enum class Dialog { None, ConfirmDelete, Deleting, Error, Deleted, ConfirmQuit,
                       SaveTo, NoRoom, RemoveDownload,  // offline downloads' (menu_offline.cpp)
                       Update,  // a newer release (menu_settings.cpp)
@@ -581,7 +642,8 @@ class Menu {
   // Small choice menus opened by their button.
   enum class Dropdown { None, Slideshow, AfterVideo, Audio, Subtitles, Chapters, Sort, Language,
                         Presets,  // the user's own presets (menu_presets.cpp)
-                        KeyBackground };  // what the background key removes
+                        KeyBackground,  // what the background key removes
+                        DownloadsTo };  // the drive offline downloads go to
   // File browser order (folders always come first).
   using SortMode = FolderListing::Order;
   struct Button {
@@ -596,21 +658,27 @@ class Menu {
     std::string byline;    // file browser: who and where (Stash), dim after or under the name
     std::string size, date;  // file browser: the list's Size and Date modified columns
     std::string plays;       // ... and its Plays column (empty: never played)
+    std::string length;      // ... and its Length column (empty: not known)
     std::string thumbPath; // file browser video row: whose thumbnail to show
     std::string tooltip;   // icon-only button: its name, shown after hovering a while
     bool volumeSlider = false;  // click/drag sets the volume from the pointer's x
     bool popup = false;         // part of the open dropdown or dialog, drawn on top
+    bool raised = false;        // ... a dialog's button: raised as off the dialog (popups are flush)
     bool danger = false;        // destructive action, drawn red
     bool dangerHover = false;   // destructive, but only shown red when hovered
     bool hoverOnly = false;     // drawn only while it or the button before it is pointed at
-    bool plain = false;         // no background of its own (Material theme)
-    bool bare = false;          // no background in any theme (unless selected)
+    bool bare = false;          // flush: no surface of its own (unless selected)
+    bool primary = false;       // filled in the accent (Play)
+    bool latched = false;       // a mode that is on: pushed in, in the accent
+    bool well = false;          // a well that pieces sit in (a choice row's): not clickable
+    bool piece = false;         // a piece in a well: flush, raised while `selected`
     double radius = -1;         // corner radius, -1 = the default
     std::string caption;        // format tile: small label under the icon
     bool disabled = false;      // not relevant right now: greyed out, not clickable
     bool crossed = false;       // dimmed, its icon struck through (a server that doesn't answer)
     bool card = false;          // file browser gallery: large thumbnail, name under it (a
                                 // rating: on a thumbnail)
+    bool fileName = false;      // ... that name is a file's or folder's (not a Stash title)
     int fontSize = 0;           // label size in pixels, 0 = the default
     std::string badge;          // short mark on a bright disc at the top-right corner
     bool scrolls = false;       // part of a smoothly scrolled list: cut off at its edges
@@ -621,6 +689,7 @@ class Menu {
     bool placeholder = false;   // ... and that is only a hint (dimmed)
     bool staticText = false;    // only text (a label or hint): fontSize, `lines` lines at most
     int lines = 1;
+    double wrapW = 0;           // a switch's label over `lines`: the width they wrap at
     bool dim = false;           // ... in the dimmer text colour
     bool toggle = false;        // a switch: the label, and a pill that is blue while `on`
     bool on = false;
@@ -633,6 +702,18 @@ class Menu {
     // swatch before its label.
     int keySwatch = -1;
     bool alignLeft = false;     // its label from the left (a list of names)
+    bool select = false;        // opens a list: its label from the left, a caret at its right end
+    bool faint = false;         // a label (staticText) in the faint colour: a note
+    bool dimInk = false;        // its text in the dim colour (a flush − or +, a group's Reset)
+    double inner = 0;           // a switch row (a field): room left of its switch (at its end) for a button of its own
+    int lamp = 0;               // a label: a state's lamp before it (Lamp, menu_parts.h)
+    double iconSize = 0;        // an icon-only button's icon, 0 = from its size
+    // A label on the strip's top row (StripLayout::chip()): 1 a red one
+    // (what went wrong, only its tooltip), 2 one in the accent (a note to follow).
+    int chip = 0;
+    bool listItem = false;      // an item of a list opened above its button: its
+                                // icon, label and `detail` at its right end
+    bool band = false;          // the strip's timeline (drawn by drawMainPage()): pointed, ringed
     // A slider (not None): click or drag sets this command's value from the
     // pointer's x, sliderMin..sliderMax in sliderStep steps; it shows
     // sliderText, else the value.
@@ -643,6 +724,13 @@ class Menu {
     bool sliderLog = false;
     int sliderDefault = -1;  // marked stop, or none
     std::string sliderText;
+    // A value row's field (GroupLayout::value()): Magnify adjusts it
+    // (menu_adjust.cpp); its − and + are the two buttons before it, `stepper`
+    // -1 and 1. Its value as text (`tick`: as short as the magnified
+    // scale's labels); none: the number.
+    bool magnify = false;
+    int stepper = 0;
+    std::function<std::string(int value, bool tick)> sliderFormat;
     // A rating control (menu_rating.cpp): this video's stars; the trigger held
     // along them chooses, letting go keeps it. The library view rates its
     // videos by their id (a video's path may change meanwhile).
@@ -659,6 +747,12 @@ class Menu {
     std::string offlinePath;
     int offlineLook = 0;  // drawn by drawOfflineButton() instead (OfflineLook, not None)
     int64_t downloadId = 0;   // a download's row in the Offline place
+    int listLook = 0;  // drawn by drawListPart() instead (ListLook, menu_list_parts.h; not None)
+    // A field (`field`): its faint example, shown while it is empty, typed
+    // into or not. Its own button inside its right end takes `inner` of it.
+    std::string example;
+    bool keyCap = false;  // a key of the on-screen keyboard: pushed in while keyDown_ is on it
+    bool dialog = false;  // a dialog's button (DialogLayout): its icon and label centred
   };
   struct ListItem {
     std::string label;
@@ -671,12 +765,17 @@ class Menu {
     std::string ratingPath;  // a video: its rating control, with this rating
     int64_t ratingVideo = 0;  // ... by the library's id, if it is rated by that
     float rating = 0;
+    int length = -1;         // ... how long it is in whole seconds, if the library knows
+                             // (its text only for the rows shown: lengthText())
     std::string plays;       // ... and how often it was played, if at all
     std::string byline;      // dim after the name (an SFTP server's account)
     std::string trashTip;    // the delete button's tooltip, if not tipDelete
   };
   ListItem folderItem(const std::string& label, const std::string& path);
   ListItem fileItem(const std::string& label, const std::string& path);
+  static std::string lengthText(const ListItem& item) {
+    return item.length >= 0 ? clockTime(item.length) : std::string();
+  }
   const Strings& text() const { return strings(); }
   Button iconButton(Icon icon, std::function<MenuCommand()> action, bool selected = false) const;
   Button textButton(const std::string& label, Icon icon, std::function<MenuCommand()> action,
@@ -688,22 +787,83 @@ class Menu {
   // While a key colour is picked, the strip is only a card saying so, with Cancel.
   void layoutKeyPick();
   void drawKeyPick(cairo_t* cr);
-  // The grouped settings pages (menu_settings.cpp, menu_focus.cpp).
+  // The settings pages (menu_settings.cpp, menu_video_settings.cpp, menu_focus.cpp).
   void layoutSettings();
-  void layoutDiagnostics(double top, int column);  // Help: Save diagnostics
-  double layoutAdvancedSwitch();  // atop a page with rows it hides; returns where groups start
   void layoutVideoSettings();
-  // The line under its Resolution slider. It is there only with something
-  // to say, so the rows under it move when it comes or goes.
-  enum class ResolutionStatus { None, Pending, Override, Limited, Changed };
-  static ResolutionStatus resolutionStatus(const MenuView& view, bool held);
+  // The menu's parts (menu_parts.h): a page alone, its groups, their rows.
+  class Row;
+  class GroupLayout;
+  class PageLayout;
+  class StripLayout;
+  class DialogLayout;
+  struct Tile;
+  struct Action;
+  struct Field;
+  // Settings' sections: General, and Stash (menu_stash_settings.cpp).
+  enum class SettingsSection { General, Stash };
+  SettingsSection settingsSection_ = SettingsSection::General;
+  // `stash`: what the Stash section shows, if not what it shows now (the fit check).
+  void layoutSettingsSection(SettingsSection section, const StashSettingsShown* stash = nullptr);
+  void layoutHelpGroup(PageLayout& page, int column);  // What's new, Save diagnostics
+  void showStashSettings();  // Settings, opened on its Stash section
+  // A page's header as laid out: its title and what it is about (drawn by
+  // drawGroups()); no title: none.
+  struct PageHead {
+    std::string title, about;
+    double titleX = 0, aboutX = 0, aboutW = 0;
+    std::string status;      // a content page's state, dim, ending at statusRight
+    double statusRight = 0;
+  } pageHead_;
+  void drawPageHead(cairo_t* cr);
+#ifndef NDEBUG
+  // While a page is laid out to check that it fits (with every row), what
+  // is: said with the columns that don't (PageLayout).
+  const char* fitCase_ = nullptr;
+#endif
+  // Video settings' sections: Display, and This video while a video is
+  // open. The one picked last (kept in the settings) is where the page opens
+  // while one is.
+  enum class VideoSection { Display, ThisVideo };
+  VideoSection videoSection_ = VideoSection::Display;
+  VideoSection videoSectionPicked_ = VideoSection::Display;
+  void layoutVideoSection(VideoSection section);
+  void layoutPassthroughGroup(PageLayout& page, int column);
+  void layoutFoveationGroup(PageLayout& page, int column);
+#ifndef NDEBUG
+  // Lays Video settings out with every row that can show, in both sections,
+  // and says loudly where it doesn't fit (debug builds only).
+  void checkVideoSettingsFit();
+  const Strings* fitChecked_ = nullptr;  // the language it was checked in
+  // ... and Settings (both sections) and Stereo focus.
+  void checkSettingsFit();
+  void checkFocusFit();
+  const Strings* settingsFitChecked_ = nullptr;
+  const Strings* focusFitChecked_ = nullptr;
+#endif
+  // The note under its Resolution slider. It is there only with something
+  // to say, so the rows under it move when it comes or goes, or takes a
+  // line more or less.
+  enum class ResolutionStatus { None, Override, Limited, Changed };
+  static ResolutionStatus resolutionStatus(const MenuView& view);
+  static constexpr int kResolutionNoteLines = 3;
+  std::string resolutionNote(const MenuView& view) const;
+  int resolutionNoteLines(const MenuView& view) const;
   // The background key's Background row: its swatch and state, choosing
-  // what it removes (menu_settings.cpp).
-  void layoutKeyBackground(double x, double y, double w);
-  // Presets atop Video settings (menu_presets.cpp): the row (returns where
-  // the groups start), the user's own in a list under its button, and a
-  // name typed over the keyboard to save the settings as, or rename one to.
-  double layoutPresetRow();
+  // what it removes (menu_video_settings.cpp).
+  void layoutKeyBackground(GroupLayout& group);
+  // Video settings' Preset group (menu_presets.cpp): the performance presets,
+  // the user's own in a list under its button, and a name typed over the
+  // keyboard to save the settings as, or rename one to.
+  void layoutPresetGroup(PageLayout& page, int column);
+  double presetBox_[4] = {0, 0, 0, 0};  // the Preset group as laid out (x, y, w, h), w 0: none
+  double presetColumnBottom() const;  // where its column's groups end
+  // Its performance presets' tiles: offered, their second lines and tooltips,
+  // for what `key` says the page showed of them.
+  struct PresetTileText {
+    std::string key;
+    bool offered[kPerformancePresetCount] = {};
+    std::string sub[kPerformancePresetCount], tip[kPerformancePresetCount];
+  } presetTiles_;
   void layoutPresetList(const Button& opener);
   void layoutPresetName();
   void openPresetName(const std::string& file, const std::string& name);
@@ -725,8 +885,7 @@ class Menu {
   };
   PresetNameCheck checkPresetName() const;
   std::string presetDeleting_;  // the preset whose delete is asked in its row (its file)
-  // The flat screen's group on the video settings page, its box from y = top.
-  void layoutScreenGroup(double top, bool disabled);
+  int presetListPage_ = -1;  // the list's page shown when it has more than one; -1: the shown preset's
   void layoutFocus();
   // The browser: the sources column, the page's frame and its content.
   void layoutBrowser();
@@ -734,6 +893,32 @@ class Menu {
   // Video settings and stereo focus show on the page alone, without the
   // sources column.
   bool pageAlone() const { return page_ == Page::VideoSettings || page_ == Page::Focus; }
+  // ... and only as tall as their content needs: the panel's bottom where
+  // it always is, its top lower. The page is laid out from pageTop_ down
+  // (0 on the other pages); the panel starts at panelTop_, higher than that
+  // while a dialog or an open list needs the room. The browser's rows above
+  // it are not shown (shownRows()), drawnTop_ as the texture shown has it,
+  // browserTop_ as the one being drawn has it.
+  double pageTop_ = 0, panelTop_ = 0;
+  int drawnTop_ = 0, browserTop_ = 0;
+  // The page's top: its content's bottom (as tall as every row it can show
+  // at once makes it, in each of its sections) kit::kSpace above the
+  // panel's edge. Kept for the page, Advanced settings and the language;
+  // raised by layoutBrowser() if a row the measure missed reaches lower.
+  double pageAloneTop();
+  struct AloneTop {
+    const Strings* strings = nullptr;
+    Page page = Page::Main;
+    bool advanced = false;
+    double top = 0;
+  } aloneTop_;
+  double alonePanelTop() const;  // pageTop_, or higher for a dialog or list
+  // How low Video settings' (both sections) and Stereo focus's content
+  // reaches with every row they can show at once, laid out at the top and
+  // taken away again. `check`: with Advanced settings on, saying where it
+  // doesn't fit (the debug fit check).
+  double videoSettingsBottom(bool advanced, bool check);
+  double focusBottom(bool advanced, bool check);
   bool groupedPage() const {
     return page_ == Page::Settings || page_ == Page::Places || pageAlone();
   }
@@ -757,26 +942,57 @@ class Menu {
   } placeRename_;
   void openPlace(const std::string& path);
   void refreshPlaces();
-  // Panel backgrounds (panelFrame()s at x, y, w, h), drawn once per theme:
-  // the strip is redrawn every second, the browser's rows while scrolling.
-  struct Frame {
-    cairo_surface_t* surface = nullptr;
-    Theme theme = Theme::Glass;
-    Accent accent;
-    std::vector<bool> rows;
-  };
+  // Panel backgrounds (MenuFinishes::panel()s at x, y, w, h), their edges
+  // drawn once: the strip is redrawn every second, the browser's rows while
+  // scrolling.
+  // A panel's `flat` rows are its gradient's middle colour (scrollBand()).
   struct FrameBox {
     int x, y, w, h;
+    MenuFinishes::Flat flat = {};
+    bool operator==(const FrameBox& o) const {
+      return x == o.x && y == o.y && w == o.w && h == o.h && flat == o.flat;
+    }
+  };
+  struct Frame {
+    cairo_surface_t* surface = nullptr;
+    std::vector<bool> rows;
+    std::vector<FrameBox> panels;  // what its rows were drawn for
   };
   Frame browserFrame_, stripFrame_;
   AccentColours accent_ = accentColours(Accent{});
+  std::array<float, 3> accentLinear_ = linearAccent(accent_);  // its fill, in linear light
+  static std::array<float, 3> linearAccent(const AccentColours& accent);
+  // The finishes' pieces, drawn once each (menu_finish.h).
+  mutable MenuFinishes finishes_;
+  // Draws the box in the finish (MenuFinishes::draw()); `behind`: it sits
+  // straight on that panel (stripPanel()).
+  void drawFinish(cairo_t* cr, Finish finish, double x, double y, double w, double h,
+                  double radius, const MenuFinishes::Behind* behind = nullptr) const {
+    finishes_.draw(cr, finish, x, y, w, h, radius, behind);
+  }
+  // The strip's panel, as drawFinish() takes it: only for a box with nothing
+  // but the panel under it.
+  const MenuFinishes::Behind* stripPanel();
+  MenuFinishes::Behind stripBehind_;
+  // The strip's panel within the clip (paintFrame()).
+  void paintStrip(cairo_t* cr);
+  // The finish a button has at rest; false: none (flush, or it draws its own).
+  bool buttonFinish(const Button& b, Finish& finish) const;
   std::chrono::steady_clock::time_point accentChanged_;  // update()'s, for dragging
   void paintFrame(cairo_t* cr, Frame& frame, int width, int height,
                   const std::vector<FrameBox>& panels);
+  // The browser's panels within the clip: the navigation column's and the
+  // page's, flat where its list scrolls.
+  void paintBrowserFrame(cairo_t* cr);
+  // The rows a list (or a side column) of the page scrolls in by moving
+  // its pixels on the GPU (shiftList(), shiftSide()): the page's panel is one
+  // colour there, so they move nothing that differs. None on other pages.
+  MenuFinishes::Flat scrollBand() const;
+  MenuFinishes::Flat drawnBand_;  // the band the browser was last drawn whole with
   // The hovered button's tooltip, if it is on this panel.
   void drawTooltip(cairo_t* cr, int panel, double panelWidth);
   void drawPopups(cairo_t* cr, int panel);
-  void layoutTools();
+  void layoutTools(StripLayout& strip);
   // Offline downloads (menu_offline.cpp).
   Offline* offline_ = nullptr;
   uint64_t offlineGeneration_ = 0;
@@ -806,21 +1022,44 @@ class Menu {
   void drawOfflineButton(cairo_t* cr, const Button& b, const double ink[4]) const;
   void drawDriveBar(cairo_t* cr, const Offline::Drive& d, double x, double y, double w,
                     double h) const;
+  // A download's bar: a sunk track filled in the accent, grey while paused.
+  void drawProgressBar(cairo_t* cr, double x, double y, double w, double fraction, bool paused) const;
+  void drawDriveTile(cairo_t* cr, const Button& b, const double ink[4]) const;
+  void drawDownloadRow(cairo_t* cr, const Button& b, const double ink[4]) const;
   MenuCommand startDownload(const std::string& path);
   MenuCommand downloadTo(const std::string& root);
   std::string downloadRoot() const;
   std::string driveName(const Offline::Drive& d, bool full) const;
   std::string driveName(const std::string& root, bool full) const;
   Icon driveIcon(const Offline::Drive& d) const;
-  double dialogHeight() const;
-  // The delete dialog's buttons along its bottom (into `row`) and its text
-  // (menu_delete.cpp).
-  void layoutDeleteDialog(std::vector<Button>& row);
-  void drawDeleteDialog(cairo_t* cr, double textX, double boxY);
-  void layoutOfflineDialog(double boxY, std::vector<Button>& row);
-  void layoutUpdateDialog(std::vector<Button>& row);
-  void drawUpdateDialog(cairo_t* cr, double textX, double boxY);
-  void drawOfflineDialog(cairo_t* cr, double boxX, double boxY);
+  // Where an open dialog's box or list hides the panel's page under it,
+  // whatever that is (x, y, w, h: inside its rounded corners, its fill
+  // opaque); false if none is open on it.
+  bool covered(int panel, double r[4]) const;
+  // The box of a panel's open list (its entries and their margin); false if none.
+  bool popupBox(int panel, double box[4]) const;
+  bool clipCovered(cairo_t* cr, int panel, double width, double height) const;
+  // Each dialog's text and buttons (DialogLayout, menu_parts.h): the delete
+  // dialog's (menu_delete.cpp), offline downloads', the update's.
+  void layoutDeleteDialog(DialogLayout& dialog);
+  void layoutOfflineDialog(DialogLayout& dialog);
+  void layoutUpdateDialog(DialogLayout& dialog);
+  // The open dialog as laid out (DialogLayout), for drawDialog(): its box
+  // and what it says.
+  struct DialogShown {
+    double x = 0, y = 0, w = 0, h = 0;
+    struct Text {
+      std::string text;
+      double x, y, w, h;
+      int size;
+      bool bold;
+      double ink[4];
+      int lines;
+      bool mono;  // a key, in the monospace font, wrapped anywhere
+      Icon icon;  // before it, in its ink
+    };
+    std::vector<Text> texts;
+  } dialogShown_;
   // What's new: the releases shown, the line under its title, and the
   // notes laid out once (measured as they are drawn) and how far they are
   // scrolled down (max 0: they fit, at the full width).
@@ -864,8 +1103,9 @@ class Menu {
   std::string opening_;
   const std::string& playingFile() const { return opening_.empty() ? view_.currentFile : opening_; }
   double offlineScroll_ = 0;  // the Offline place's rows, where it was left
+  double driveColumnW_ = 0;   // its rows' drive column (layoutOfflinePage())
   std::string infoText_;  // what is playing, along the strip's top
-  double infoX_ = 0;
+  double infoX_ = 0, infoRight_ = 0;  // ... from, to (the frame rate's after it)
   long clockMinute_ = -1;  // the minute the strip's clock shows
   // Height of the strip's seek bar line.
   double seekLineY() const;
@@ -874,8 +1114,6 @@ class Menu {
   // Adds a round icon button with a tooltip; returns it (valid until the next add).
   Button& addRound(Icon icon, const std::string& tooltip, std::function<MenuCommand()> action,
                    double x, double y, double size = 88, bool selected = false);
-  // A strip of choices above the opener, on the opener's panel.
-  void addDropdown(const Button& opener, std::vector<Button> entries);
   // Choices under the opener, in columns where they run out of room; with
   // `oneColumn`, always one column: above the opener where they don't fit below.
   void addDropdownBelow(const Button& opener, std::vector<Button> entries, bool oneColumn = false);
@@ -883,10 +1121,13 @@ class Menu {
   void layoutDialog();
   void drawDialog(cairo_t* cr);
   void openDialog(Dialog dialog, const std::string& path, const std::string& error = "");
-  // At the bottom of the browser's page; on another panel centred on cx
-  // from y, its keys keyW wide.
+  // In its well at the bottom of the browser's page; on another panel
+  // centred on cx, its keys from y, keyW wide (the kit's: 96).
   void layoutKeyboard(int panel = kBrowser, double cx = kPageCenterX, double y = -1,
-                      double keyW = 100);
+                      double keyW = 96);
+  void drawKeyboard(cairo_t* cr) const;  // its well (its keys are buttons)
+  // Redraws a key, its shadow around it.
+  void keyChanged(double x, double y, double w);
   // Typing into the folder's (or the library's) search: the keyboard shows
   // under its results. On Stash's pages, into what stashText() is; in
   // setup, its SMB form.
@@ -921,6 +1162,28 @@ class Menu {
   // view by scrolling the text (fieldShift_) when it is longer.
   void fieldTextBox(const Button& b, double& x, double& w, int& size) const;
   void drawFieldText(cairo_t* cr, const Button& b, const double ink[4]) const;
+  // A text field (Field, menu_parts.h) at x, y, w wide, kit::kRowH high,
+  // and its own button inside its right end if it has one; the field's
+  // index in buttons_.
+  size_t addField(double x, double y, double w, const Field& field);
+  // A switch (the kit's) in a box at x, y, w × h: its label from the left,
+  // the switch at the right end; the whole box is the target.
+  Button& addSwitch(double x, double y, double w, double h, const std::string& label, bool on,
+                    std::function<MenuCommand()> action);
+  // Its width with only `label` before it (a switch in a header or a column).
+  double switchWidth(const std::string& label) const;
+  // The parts' choice and number rows in a box at x, y, w × h, the label
+  // labelW of it (GroupLayout::choice(), value()).
+  void addChoice(double x, double y, double w, double labelW, double h, const std::string& label,
+                 const std::vector<std::string>& options, int chosen,
+                 std::function<MenuCommand(int)> choose);
+  // The pieces after a well (buttons_[well]) placed across it; what one
+  // needs to show its label.
+  void placePieces(size_t well);
+  double pieceNeed(const Button& piece) const;
+  void addValue(double x, double y, double w, double labelW, double h, const std::string& label,
+                MenuCommand::Type type, int now, int lo, int hi, const std::string& text, int step,
+                std::function<MenuCommand()> less, std::function<MenuCommand()> more);
   mutable double fieldShift_ = 0;
   // A field pressed: the one typed into puts its cursor where the pointer
   // is; another opens, its cursor there too if it shows the text typed.
@@ -933,13 +1196,14 @@ class Menu {
   struct Group {
     double x, y, w, h;
     std::string title;
-    bool rule = false;  // only a thin line (between choices in a row)
+    double titleH = 42;  // its title row (kGroupTitleH; the menu kit's: kit::kGroupTitle)
   };
   std::vector<Group> groups_;  // on the browser
   void addGroup(double x, double y, double w, double h, const std::string& title);
-  void addRule(double x, double y, double h) { groups_.push_back({x, y, 1.5, h, {}, true}); }
   Button& addLabel(double x, double y, double w, double h, const std::string& text,
                    int size = kTextSize, bool dim = false, int lines = 1);
+  // The rows before the parts (menu_parts.h), kSettingRowH high from x, y:
+  // drawn as the parts' switch, number and choice rows.
   Button& addToggleRow(double x, double y, double w, const std::string& label, bool on,
                        std::function<MenuCommand()> action, bool disabled = false);
   void addValueRow(double x, double y, double w, double labelW, const std::string& label,
@@ -961,7 +1225,9 @@ class Menu {
   struct ScrollExtent {
     double position, shown, total;
   };
-  ScrollExtent scrollExtent() const;
+  // While What's new is open, its notes' (the stick and a drag scroll
+  // them), unless `bar` is the page's own scroll bar behind it.
+  ScrollExtent scrollExtent(const Button* bar = nullptr) const;
   // Wrapped text of at most `lines` lines from y, ellipsized after the last;
   // with inkBottom, fewer lines if they would reach below it.
   void drawTextLines(cairo_t* cr, const std::string& text, double x, double y, double w, int size,
@@ -969,6 +1235,14 @@ class Menu {
                      bool bold = false) const;
   // How many lines drawTextLines() wraps `text` to, at most `lines`.
   int wrappedLines(const std::string& text, double w, int size, int lines, bool bold = false) const;
+  // A label too long for one line in `room` over two: the narrowest width
+  // that keeps it on two (their lengths as even as its breaks allow), and
+  // their height.
+  void twoLines(const std::string& text, double room, int size, double& w, double& h) const;
+  // The narrowest width in `room` that keeps a text on at most `lines`
+  // lines (as even as its breaks allow); kept, by its arguments.
+  double narrowest(const std::string& text, double room, int size, int lines) const;
+  mutable std::unordered_map<std::string, double> narrowest_;
   void addList(const std::vector<ListItem>& items, double x0 = 40, double rowH = 58,
                int rows = 9);
   // The file browser as a grid of large thumbnails.
@@ -978,7 +1252,7 @@ class Menu {
   void drawScrollbar(cairo_t* cr, const Button& bar) const;
   // The columns of the scroll bar's track and thumb, narrower than its button.
   static void scrollbarTrack(const Button& bar, double& x, double& w) {
-    w = std::min(12.0, bar.w / 2);
+    w = std::min(10.0, bar.w / 2);
     x = bar.x + (bar.w - w) / 2;
   }
   bool draggingScroll_ = false;
@@ -1027,7 +1301,6 @@ class Menu {
   double listBottom_ = 0;  // the list's viewport ends here (rows below are cut off)
   bool listColumns_ = false;  // the list shows the folder's Size and Date modified columns
   void layoutListHeader(double x0, double rowW);
-  double searchRight_ = 0;  // where the folder search's text ends (its count and Clear follow)
   // A list row's parts: the thumbnail (or icon) box, then the name, then the
   // columns at its right end.
   // 16:9 for thumbnails (or Stash's covers); without them, a square for the icon.
@@ -1117,8 +1390,6 @@ class Menu {
   void layoutFileTools();
   std::vector<ListItem> fileItems();
   std::string trackName(const Track& track) const;
-  // Choices stacked above their opener, in columns of five if there are many.
-  void addDropdownList(const Button& opener, std::vector<Button> entries);
   void openFiles(FileKind kind);
   void openDirectory(const std::string& dir, const std::vector<std::string>& fallbacks = {});
   void sortBy(SortMode mode);
@@ -1234,10 +1505,37 @@ class Menu {
   void redraw();
   void drawMain(cairo_t* cr);
   void drawButtons(cairo_t* cr, int panel, bool popups = false);
+  // How far drawButtons() lets a button draw out of its box, at most a
+  // badge's or a label's: up and down, and sideways (or its finish's shadow).
+  static constexpr double kButtonReach = 16, kButtonReachX = 7;
+  // A button shown only while it or the one before it is pointed at
+  // (Button::hoverOnly) appears or goes: what it covers is drawn again.
+  void hoverOnlyChanged(const Button& b);
+  // What the browser draws only while it is pointed at, as laid out now: a
+  // hover-only button's box (hoverOnlyChanged()) and the stars pointed at
+  // (ratingBox()), and whether it moves with the list or the side column.
+  struct PointedPart {
+    double x0, y0, x1, y1;
+    bool scrolls, side;
+  };
+  int pointedParts(PointedPart parts[3]) const;
+  PointedPart hoverOnlyPart(const Button& b) const;
   void drawVolumeSlider(cairo_t* cr, const Button& b) const;
-  void drawTrack(cairo_t* cr, double x0, double x1, double y, double fraction, double buffered,
-                 double alpha) const;
-  void drawButtonContent(cairo_t* cr, const Button& b, const double ink[4]) const;
+  void drawTrack(cairo_t* cr, double x0, double x1, double y, double fraction, double alpha) const;
+  // A well `full` wide filled in the accent (by alpha) from x, w wide; the
+  // well starts at wellX (default: x).
+  void drawAccentFill(cairo_t* cr, double x, double y, double w, double h, double alpha, double r,
+                      double full, double wellX = -1) const;
+  void drawHead(cairo_t* cr, double x, double y, double h, double w = 4) const;
+  // `alpha`: an icon or a label alone drawn faded (fadesInPlace()).
+  void drawButtonContent(cairo_t* cr, const Button& b, const double ink[4], double alpha = 1) const;
+  // A disabled button that draws in one paint, an icon alone or a label
+  // alone on no surface (`surface`: buttonFinish()'s): drawn faded as it is,
+  // as it looks faded as a whole in a temporary surface (but for a level at
+  // its antialiased edges), without one.
+  bool fadesInPlace(const Button& b, bool surface) const;
+  // An icon drawn in one fill or one stroke, or in parts that don't touch.
+  static bool onePaint(Icon icon);
   MenuCommand volumeAtPointer(const Button& slider) const;
   MenuCommand sliderAtPointer(const Button& slider) const;
   void drawSlider(cairo_t* cr, const Button& b) const;
@@ -1246,31 +1544,98 @@ class Menu {
   void drawKeySwatch(cairo_t* cr, int colour, double cx, double cy, double r) const;
   MenuCommand::Type draggingSlider_ = MenuCommand::None;
   int draggingSliderOption_ = 0;
-  bool resolutionHeld_ = false;  // a new Resolution chosen, its slider still held
+  // A value row's field held (Button::magnify), and Magnify's scale over it
+  // (menu_adjust.cpp). Kept by what it is, not by button: a page's buttons
+  // are laid out again as it changes.
+  struct Adjust {
+    bool held = false;
+    MenuCommand::Type type = MenuCommand::None;
+    int option = 0;
+    double row[4] = {};  // the row, from its label to its +: x, y, w, h
+    double fieldW = 0;
+    int min = 0, max = 0, step = 1, mark = -1;
+    bool log = false;  // its range laid out logarithmically (Button::sliderLog)
+    std::function<std::string(int, bool)> format;
+    std::string name;  // its row's label, on the scale
+    int value = 0;
+    double pressX = 0, pressAt = 0;  // where it was pressed, and its field's fraction then
+    double last = 0;        // when it was last moved
+    double edgeSince = -1;  // since when the laser has been at an end of the scale
+    bool open = false;     // the magnified scale shows
+    double loupe[4] = {};  // ... here: x, y, w, h
+    double lo = 0, span = 0;  // ... from lo, span of the range across its ruler
+    int drawnValue = 0;
+    double drawnLo = 0;
+  } adjust_;
+  // Whether a value row's field opens Magnify's scale: its steps are finer
+  // on the field than the scale's (adjust::kMagnifyBelow).
+  static bool magnifies(const Button& field);
+  MenuCommand pressValue(int field);
+  MenuCommand dragValue(bool held);
+  void releaseValue();
+  void openLoupe(double x);
+  // Redraws the scale's inside, or (`all`) it with its shadow as it opens or closes.
+  void loupeChanged(bool all);
+  bool loupeBox(double r[4]) const;
+  void loupeInside(double r[4]) const;
+  // Draws only the scale when all that is redrawn is inside it.
+  bool drawLoupeOnly(cairo_t* cr) const;
+  void loupeValue(int value, double& needle, double& textX, double& textW) const;
+  double loupeNameW() const;  // the setting's name on the scale: its width (0: none)
+  void loupeNeedle(int value, double x[2]) const;
+  MenuCommand valueCommand(int value) const;
+  std::string valueText(int value, bool tick) const;
+  void drawLoupe(cairo_t* cr) const;
+  int pointedField() const;  // the pointed value row's field (pointedValue()), else -1
+  // The fade: from fadeFrom_ toward fadeTo_ since fadeAt_ (steady seconds).
+  double fadeFrom_ = 0, fadeTo_ = 0, fadeAt_ = -1e9;
+  void fadeTowards(double to);
   static void drawIcon(cairo_t* cr, Icon icon, double cx, double cy, double s, double r = 1,
-                       double g = 1, double b = 1);
-  // The button's fill and its icon/text colour in the current theme.
-  void buttonColors(const Button& b, double fill[4], double ink[4]) const;
+                       double g = 1, double b = 1, double a = 1);
+  // The path of an icon drawn in a 24-unit box, for those Stash's pages also
+  // draw at their own stroke (StashPages::drawIcon()): Pin, Shuffle and
+  // Stash's section's.
+  static void iconPath24(cairo_t* cr, Icon icon);
+  // The button's text colour, and its icon's (the accent's on a chosen row or piece).
+  // On a filled finish (the accent's, red), white whatever the button is.
+  void buttonInk(const Button& b, double ink[4]) const;
+  bool filled(const Button& b) const;  // its finish at rest is the accent's or red
+  void iconInk(const Button& b, const double ink[4], double out[4]) const;
   void drawMainPage(cairo_t* cr);
   bool settingsShown() const;
   void drawFilesHeading(cairo_t* cr);
   void drawListStates(cairo_t* cr);
+  // What a list page shows in place of its rows (none: an empty heading).
+  void listState(Icon& icon, std::string& heading, std::string& hint) const;
   // The ordinary text size in pixels: about 40 reference layout units.
   static constexpr int kTextSize = 25;
   double textWidth(const std::string& text, int size, bool bold) const;
-  mutable std::map<std::pair<std::string, int>, double> textWidths_;  // by text, size and boldness
+  // By text, size and boldness; looked up without copying the text.
+  struct ByTextAndSize {
+    using is_transparent = void;
+    template <class A, class B>
+    bool operator()(const A& a, const B& b) const {
+      const std::string_view at = a.first, bt = b.first;
+      const int order = at.compare(bt);
+      return order < 0 || (order == 0 && a.second < b.second);
+    }
+  };
+  mutable std::map<std::pair<std::string, int>, double, ByTextAndSize> textWidths_;
+  mutable std::unordered_map<std::string, int> lineCounts_;  // wrappedLines()'s, by its arguments
   void drawText(cairo_t* cr, const std::string& text, double x, double y, double w, double h,
                 int size, bool bold, bool center, double r, double g, double b, double a = 1.0) const;
   // Text laid out for drawText() (lines 0) or drawTextLines(), kept to draw
   // again: scrolled lists draw the same titles in strip after strip, and
-  // laying them out is about half of drawing them.
+  // laying them out is about half of drawing them. `fileName`: over more
+  // than one line it breaks after `_`, `.` and `-` and before a bracket,
+  // inside a word only if the word is longer than a line, with no hyphen.
   PangoLayout* textLayout(cairo_t* cr, const std::string& text, int size, bool bold, double w,
-                          int lines, bool center) const;
+                          int lines, bool center, bool fileName = false) const;
   mutable std::unordered_map<std::string, PangoLayout*> textLayouts_;
 
   CairoCanvas canvases_[2];
   bool dirty_ = true;          // everything is redrawn
-  bool stripDirty_ = false;    // only the strip (the time moved on)
+  bool stripDirty_ = false;    // only the strip
   bool browserDirty_ = false;  // only the browser (scrolling, thumbnails) ...
   int browserFirst_ = 0, browserEnd_ = 0;  // ... and only these rows of it
   int browserLeft_ = 0, browserRight_ = 0;
@@ -1323,6 +1688,69 @@ class Menu {
     }
   };
   HoverSpot hoverSpot_;
+  // The control the trigger pressed, while it is held. Drawn pushed in by
+  // Cairo (drawButtons()) if pressDrawn(), else by the panel shader
+  // (hoverLook()).
+  HoverSpot pressSpot_;
+  // The control under the pointer on `panel` as the shader draws it pointed
+  // and pressed; whether the trigger holds it, and whether the canvas draws
+  // it pushed in (pressDrawn()). False if there is none (hoverRect()).
+  bool pointedLooks(PanelId panel, PanelHover& pointed, PanelHover& pressed, bool& held,
+                    bool& canvas) const;
+  PointedEase pointedEase_;
+  double scrolledAt_ = 0;  // steadySeconds() a list or a page last scrolled (easeHover())
+  bool pressDrawn(const Button& b) const;
+  bool drawnPressed(const Button& b) const;
+  static bool pressShrinks(const Button& b);
+  void drawPressed(cairo_t* cr, const Button& b, Finish rest, double radius) const;
+  static constexpr double kPressedScale = 0.96;  // the menu design's pushed-in button
+  // Redraws the control as the trigger presses or lets it go: only its box
+  // and its shadow, on the strip too (stripChanged()).
+  void pressChanged(const HoverSpot& spot);
+  // Only these boxes of the strip are redrawn (redraw()), each uploaded by
+  // itself: a box overlapping another joins it, and with all of them taken a
+  // new one joins the last.
+  void stripChanged(double x0, double y0, double x1, double y1);
+  static constexpr int kStripParts = 4;
+  int stripParts_ = 0;
+  double stripPart_[kStripParts][4] = {};  // x0, y0, x1, y1
+  // The second ticking over while playing, and the clock's minute: only
+  // what shows them is redrawn (tickBoxes()).
+  bool bandTicked_ = false, clockTicked_ = false;
+  // What of the band moves as a video plays (drawMainPage()): computed, and
+  // as last drawn.
+  struct BandMarks {
+    bool timeline = false, dragging = false;
+    double fraction = 0;  // the fill's end and the head
+    double covered = 0;   // the well under the fill isn't drawn left of this
+    double buffered = 0;  // a stream's downloaded part, its width
+    std::string at, of;   // the time and " / " the duration
+    double atW = 0, ofW = 0;
+    double titleRight = 0;  // the title's room ends here
+  };
+  BandMarks bandMarks() const;
+  BandMarks bandDrawn_;
+  bool bandDrawnKnown_ = false;
+  void tickBoxes(bool band, bool clock);
+  // What the strip's laid-out controls show (redraw() checks that the
+  // second ticking over changed none of them).
+  size_t stripLook() const;
+  // ... and the browser's, as laid out, scrolled as given (the page being
+  // drawn whole is laid out so until it is published or drawn anew).
+  size_t browserLook(double scroll, double page, double side, double notes) const;
+  // The page being drawn's, taken once it is asked for: when it is
+  // published (texture()) or the browser waits for it (browserReady()), not
+  // for a drawing begun anew before either.
+  size_t drawingLook() const;
+  mutable size_t drawingLook_ = 0;
+  mutable bool drawingLookKnown_ = false;
+  // The texture's: of the page published, or taken again once the browser
+  // is drawn in place (lookStale_ until then). Not known after a change that
+  // wasn't drawn into it, until a page is published.
+  size_t publishedLook_ = 0;
+  bool publishedKnown_ = false, lookStale_ = false;
+  bool browserHidden_ = false;  // at the last redraw()
+  bool triggerHeld_ = false;
   bool hoverQuiet_ = false;  // something dragged or moved: the next spot is taken without a feel
   void feelHover(int hovered);
   // The dragged slider's, volume's or seek bar's value at the last frame, and
@@ -1385,6 +1813,8 @@ class Menu {
   void pointAtRating(int hovered);
   void rate(const std::string& path, int64_t video, float rating);
   void ratingChanged(const RatingDrag& control);
+  // What ratingChanged() redraws of the browser for these stars: x0, y0, x1, y1.
+  void ratingBox(const RatingDrag& control, double box[4]) const;
   void drawRating(cairo_t* cr, const Button& b) const;
   void drawCoverStrip(cairo_t* cr, const Button& card, double x, double y, double w,
                       double h) const;
@@ -1411,6 +1841,9 @@ class Menu {
   // Clamps the scroll position to `count` rows of which `rows` fit, and
   // returns the first and last (exclusive) row to lay out.
   void clampScroll(int count, int rows, int& first, int& end);
+  // A list of rows (not cards) with the keyboard up under it ends on its
+  // last whole row (visibleRows_ of rowHeight_ from listTop_).
+  void endOnWholeRow();
   int listCount_ = 0;     // items (gallery: grid rows) on the current list page, for scrolling
   int visibleRows_ = 9;   // rows the current list page shows at once
   double rowHeight_ = 58;
@@ -1462,9 +1895,11 @@ class Menu {
   void openServer(const remote::Server& server);
   void layoutNetworkPage();
   const char* networkState() const;
+  // The Network page's list of servers (not a form in its place).
+  bool networkList() const { return page_ == Page::Network && smbForm_.kind == SmbForm::Kind::None; }
   void openSmbForm(SmbForm::Kind kind, const std::string& root);
-  void layoutSmbForm(double top);
-  void layoutSftpForm(double x, double& y, double inner);
+  void layoutSmbForm();
+  void layoutSftpForm(GroupLayout& form);
   void drawSmbForm(cairo_t* cr);
   std::vector<int> smbFields() const;
   MenuCommand submitSmbForm();
@@ -1479,8 +1914,7 @@ class Menu {
   void sftpDone(const RemoteJob& job);
   void openSignedIn();
   void smbFolderRead();
-  void layoutNetworkDialog(std::vector<Button>& row);
-  void drawNetworkDialog(cairo_t* cr, double textX, double boxY);
+  void layoutNetworkDialog(DialogLayout& dialog);
   // What's typed as a server: "alex@nas:2222/media"'s parts (port 0:
   // none, -1: ":0"), and whether it names an SFTP server (1), an SMB one (0) or
   // neither (-1).
@@ -1557,6 +1991,131 @@ class Menu {
   MenuCommand useLayouts(int active, int other);
   void keysChanged();   // the keyboard alone needs drawing again
   void typedChanged();  // ... and the field typed into
+
+  // The navigation column's and the content pages' parts (menu_list_parts.cpp).
+  static Icon placeIcon(Places::Kind kind);  // a place's, by what it is
+  // A row of the navigation column at y: a section's, or (`place`) one under
+  // a section, indented, dimmed until chosen.
+  Button& navRow(const std::string& label, Icon icon, bool chosen, double y, bool place,
+                 std::function<void()> open);
+  double navLabelWidth(const Button& b) const;  // the room for a navigation row's label
+  void drawListPart(cairo_t* cr, const Button& b, const double ink[4]) const;
+  // A list row's or card's picture: a row's kRowPictureIn inside it (16:9, or
+  // square for an icon with thumbnails off), a card's kCardIn inside its top.
+  void listPicture(const Button& b, double& x, double& y, double& w, double& h) const;
+  // The parts of a folder's path from the nearest place (its name first).
+  std::vector<std::string> locationParts(const std::string& dir) const;
+  // The scroll bar's thumb (the part of the list shown) along it.
+  void scrollbarThumb(const Button& bar, double& y, double& h) const;
+  // The playing video's mark before its name.
+  void drawPlayMark(cairo_t* cr, double x, double cy) const;
+  // The faded edges' texture (listFade()): the top's rows, then the
+  // bottom's, for the list's top and bottom they were drawn for.
+  CairoCanvas listFade_;
+  double listFadeAt_[2] = {-1, -1};
+  // Where listFade() last put each edge's fade, shown or not: kept while a
+  // page is drawn in bands, as the texture shown is still the one before.
+  struct ListFadePart {
+    bool on = false;
+    double x0 = 0, x1 = 0, y0 = 0, y1 = 0, from = 0;
+  };
+  ListFadePart listFadeShown_[2];
+  void placeListFade(int edge, const CurvedPanel& on, const ListFadePart& f, CurvedPanel& part) const;
+  double tooltipBox_[4] = {};  // where drawTooltip() put the browser's tooltip
+  // Wrapped text of at most `lines` lines (ellipsized after the last) in
+  // line boxes lineH high from y, each line's text centred in its box;
+  // a file's name (`fileName`) broken between its parts (textLayout()).
+  void drawLinesIn(cairo_t* cr, const std::string& text, double x, double y, double w, int size,
+                   int lines, double lineH, const double rgba[4], bool fileName = false) const;
+  // A content page's list from the File explorer's left edge to its right
+  // (the scroll bar's track after it).
+  void contentEdges();
+  // A content page's header row without a location (the Library, Offline,
+  // Network): its actions from the right end, right to left, 8 apart (a
+  // round bare button, or a raised one with a label), then its title, what
+  // it says (dim) and its state, dim at the right, kit::kSpaceEdge before
+  // `right` (where the actions ended).
+  Button& headerRound(double& right, Icon icon, const std::string& tooltip,
+                      std::function<MenuCommand()> action);
+  Button& headerButton(double& right, const std::string& label, std::function<MenuCommand()> action,
+                       bool primary = false);
+  void contentTitle(const std::string& title, const std::string& about, double right,
+                    const std::string& status = "");
+  // A well of pieces in a tools row from x (the view, the Library's Show):
+  // each an icon (kViewPieceW wide) or a label with a count after it, the
+  // chosen one raised. Returns its right end.
+  struct ToolPiece {
+    Icon icon = Icon::None;
+    std::string label, count, tooltip;
+    bool chosen = false, disabled = false;
+    double padX = -1;  // its text from its sides; < 0: kButtonPadX
+    std::function<MenuCommand()> action;
+  };
+  double toolsWell(double x, double y, const std::vector<ToolPiece>& pieces);
+  double toolsWell(double x, double y, const std::vector<ToolPiece>& pieces, double h);  // ... h high
+  double toolsWellWidth(const std::vector<ToolPiece>& pieces) const;
+  double pieceWidth(const ToolPiece& p) const;
+  // A badge on a card's picture, from its top left corner (ListLook::Badge).
+  Button cardBadge(const Button& card, const std::string& label) const;
+  // A tools row's "Sort by" from x: the order's field, its list of `fields`
+  // opening under it (the chosen one with a dot), then its direction (`up`
+  // 1 or 0; -1 none). Returns where the next part goes, kColumnGap on.
+  struct SortField {
+    std::string label;
+    std::function<MenuCommand()> choose;
+  };
+  double toolsSort(double x, double y, const std::vector<SortField>& fields, int chosen, int up,
+                   const std::string& upTip, std::function<MenuCommand()> turn);
+  // To the top and To the end at a tools row's right end, greyed where the
+  // list is already; returns where they start, kColumnGap before them.
+  double toolsJumps(double y, std::function<MenuCommand()> top, std::function<MenuCommand()> end);
+  // A tools row's search well from x to right: its icon, the words (or the
+  // hint, which is also its tooltip), the caret while typed into, what it
+  // finds (`count`) and Clear while it has words.
+  void toolsSearch(double x, double y, double right, const std::string& text,
+                   const std::string& hint, bool typing, std::function<MenuCommand()> type,
+                   std::function<MenuCommand()> clear, const std::string& count = "");
+  // A list's column heading (ListLook::Heading) over a column at x, w wide,
+  // its text in line with the column's (a right-aligned one's right edge):
+  // the sorted one in the accent with its direction (`up`), its tooltip the
+  // order; without `sort`, a heading only.
+  void listHeading(const std::string& label, double x, double w, bool rightAligned, double y,
+                   bool sorted, bool up, const std::string& tooltip,
+                   std::function<MenuCommand()> sort);
+  // How much further apart than now two neighbouring columns' headings must
+  // go to be kColumnGap apart, either of them sorted (its arrow after its
+  // label): each heading's label and where it starts, or (`ends`, a
+  // right-aligned one) where it ends. `rightSorts` false: the right one
+  // never has an arrow.
+  double headingsApart(const std::string& left, double leftX, bool leftEnds,
+                       const std::string& right, double rightX, bool rightEnds,
+                       bool rightSorts = true) const;
+  // The list's columns (listColumns()) in this language, measured once.
+  const ListFit& listFit() const;
+  struct Apart {
+    const Strings* strings = nullptr;
+    std::array<double, 3> apart{};
+  };
+  mutable Apart sceneApart_;
+  struct {
+    const Strings* strings = nullptr;
+    ListFit fit;
+  } mutable listFit_;
+  // A list row's start: its picture (the download's state on it), the
+  // playing mark and the name (and byline) up to nameEnd, centred in
+  // [nameY, nameY + nameH).
+  void drawRowLead(cairo_t* cr, const Button& b, const double ink[4], double nameEnd, double nameY,
+                   double nameH) const;
+  // ... its name's width there, from `room` (the playing mark's and the
+  // byline's taken from it).
+  double rowNameWidth(const Button& b, double room) const;
+  // Whether a text is cut short as drawText() (`lines` 0) or drawLinesIn()
+  // draws it: asked of the layout they draw (textLayout()'s, kept).
+  bool shortened(const std::string& text, int size, double w, int lines, bool fileName = false) const;
+  // What an empty page says, in the middle of where its list would be: the
+  // page's icon, large and faint; a short heading; under it, dim, what to do.
+  void drawEmptyPage(cairo_t* cr, Icon icon, const std::string& heading,
+                     const std::string& hint = "") const;
 
   // Stash (docs/stash.md): its section in the navigation, its pages and the
   // Settings group are laid out and drawn by StashPages (menu_stash.h), only

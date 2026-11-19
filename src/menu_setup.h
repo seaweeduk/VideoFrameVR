@@ -7,6 +7,8 @@
 
 #include "cairo_canvas.h"
 #include "menu.h"
+#include "menu_parts.h"
+#include "menu_style.h"
 #include "setup_places.h"
 
 #include <map>
@@ -16,6 +18,27 @@ class StashClient;
 
 // SteamVR's glyphs on setup's pages, in layout pixels.
 constexpr int kSetupGlyph = 56;
+// A hint's pill (SetupPages::drawPill()): its height and text size, and the
+// room its pop surface's shadow takes around it; its canvas kPillHeight high.
+constexpr int kPillH = 88, kPillSize = 31, kPillShadow = 64;
+constexpr int kPillHeight = kPillH + 2 * kPillShadow;
+
+// Setup's panel as the menu's kit spaces a page: boxes kit::kSpace from the
+// panel's edge, bare text kit::kSpaceWide; the head (the step's title and
+// what to do) at the top, then the step's parts, then the footer: Back at
+// its left, the step's dots, the way on at its right.
+namespace setup {
+constexpr double kW = Menu::kSetupWidth, kH = Menu::kSetupHeight;
+constexpr double kLeft = kit::kPanelInset + kit::kSpace, kRight = kW - kLeft;
+constexpr double kTextLeft = kit::kPanelInset + kit::kSpaceWide;
+constexpr double kTitleY = kTextLeft, kTitleH = 52, kLineY = kTitleY + kTitleH + kit::kSpaceTight;
+constexpr int kTitleSize = 40, kLineSize = kit::kRowSize;
+constexpr double kTop = 184;  // under the head's two lines
+constexpr double kFooterH = kit::kDialogButtonH;
+constexpr double kFooterY = kH - kLeft - kFooterH;
+constexpr double kBottom = kFooterY - kit::kSpaceEdge;  // the step's parts end over the footer
+constexpr double kButtonPad = 24;                       // a footer button's text from its ends
+}  // namespace setup
 
 // Add folders while it shows (menu_setup_folders.cpp): the places on the
 // left, the chosen one's folder tree on the right as far as it is opened,
@@ -31,6 +54,9 @@ struct SetupFolders {
   };
   std::vector<Place> places;  // as laid out
   std::string shown;          // the place shown (its root); empty: Add a computer
+  double networkY = 0;        // "Network" over the computers, as laid out
+  bool form = false;          // a form shows instead of the tree
+  std::array<double, 3> keys{};  // a changed key's fingerprints: their rows' x, y, w
   std::vector<std::string> hosts;  // computers added by their name or address (remote::root())
   std::string computer;            // ... typed
   // ... an SFTP one: its port and user name, and the field typed into (0
@@ -100,6 +126,7 @@ struct SetupStash {
   // Connect offers to connect without verification; the host the user
   // chose that for (sent with SetupStash while the address names it).
   std::string untrusted, unverifiedHost;
+  std::array<double, 3> risk{};  // ... and its risk's lines: their x, y, w
 };
 
 // Your controllers (menu_setup_controls.cpp): the bindings, SteamVR's
@@ -161,7 +188,8 @@ struct SetupMenu {
   struct Intro {
     bool due = true;
     std::unique_ptr<CairoCanvas> backdrop;  // the panel with nothing on it
-    std::unique_ptr<CairoCanvas> pieces;    // the icon's parts and the name, side by side
+    std::unique_ptr<CairoCanvas> pieces;    // the icon's parts side by side, the name under them
+    int nameW = 0;                          // ... its cell's width
     std::unique_ptr<CairoCanvas> black;
   } intro;
 };
@@ -229,9 +257,13 @@ struct SetupPages {
   static void layout(Menu& m);
   static void draw(Menu& m, cairo_t* cr);
   static void setStep(Menu& m, SetupMenu::Step step);
-  static void drawHead(Menu& m, cairo_t* cr, const char* title, const std::string& line,
+  // The step's title and what to do.
+  static void drawHead(Menu& m, cairo_t* cr, const std::string& title, const std::string& line,
                        double width = 1100);
   static void drawDots(Menu& m, cairo_t* cr);
+  // A list opened under its button (a choice from a longer list), its
+  // right end under the button's.
+  static void listBelow(Menu& m, const Menu::Button& opener, const std::vector<Menu::Action>& items, int chosen);
   // Whether a box (with some room around it) reaches into the part being
   // drawn: text out of it isn't laid out at all.
   static bool shows(cairo_t* cr, double x, double y, double w, double h);
@@ -253,33 +285,31 @@ struct SetupPages {
   static void drawKeyboardPanel(Menu& m, cairo_t* cr);
   // Add folders (menu_setup_folders.cpp).
   static void startFolders(Menu& m);
-  static void layoutFolders(Menu& m, const Menu::Button& later);
+  static void layoutFolders(Menu& m);
   static void drawFolders(Menu& m, cairo_t* cr);
-  static void layoutPick(Menu& m, const Menu::Button& later);
+  static void layoutPick(Menu& m);
   static void drawPick(Menu& m, cairo_t* cr);
   static void treeRows(Menu& m);
   static void layoutTree(Menu& m);
   static void drawTree(Menu& m, cairo_t* cr);
+  // The pane's forms: a computer's sign-in (an SFTP one's pane), and Add a
+  // computer; their fields and errors.
   static void layoutSignIn(Menu& m);
-  static void drawSignIn(Menu& m, cairo_t* cr);
-  // An SFTP computer's pane: its sign-in, key, changed key or refused key;
-  // where their parts go, from the pane's top.
-  struct SftpRows {
-    double line = 0, choice = -1, user = 0, password = 0, once = -1, key = 0, keyH = 0, hint = -1,
-           error = -1, errorHint = -1, go = 0;
-    double run = -1, command = 0, commandH = 0, status = 0;  // KeyOnly's while its key is served
-    int keySize = 23;
-  };
-  static SftpRows sftpRows(Menu& m);
+  static void signInFields(Menu& m, Menu::GroupLayout& g);
+  static void formError(Menu& m, Menu::GroupLayout& g);
   static void layoutSftp(Menu& m);
   static void drawSftp(Menu& m, cairo_t* cr);
   // The place `root` needs a login: SMB's form, or SFTP's connect job.
   static void askLogin(Menu& m, const std::string& root);
   static void layoutAddComputer(Menu& m);
-  static void drawAddComputer(Menu& m, cairo_t* cr);
   static void layoutAdded(Menu& m);
   static void drawAdded(Menu& m, cairo_t* cr);
   static void showPlace(Menu& m, const std::string& root);
+  // A tick box at x, y: empty (`state` 0), ticked (2), or ticked faded (1).
+  static void drawTick(const Menu& m, cairo_t* cr, double x, double y, int state);
+  // A list's scroll bar (the kit's): its sunk track from top to bottom, the
+  // shown part's thumb.
+  static void drawBar(const Menu& m, cairo_t* cr, double x, double top, double bottom, double scroll, double max);
   static void readFolder(Menu& m, const std::string& path);
   static void toggleOpen(Menu& m, const std::string& path);
   static void toggleTick(Menu& m, const std::string& path);
@@ -287,6 +317,9 @@ struct SetupPages {
   static void splitComputer(SetupFolders& f);  // "alex@nas:2222" into its fields
   static void ticksChanged(Menu& m);
   static void scrollTo(Menu& m, double to);
+  // The texture's list to where it is scrolled: its rows moved on the GPU
+  // and those coming into view drawn, or all of it drawn again.
+  static void moveList(Menu& m);
   static void treeChanged(Menu& m, double y0);
   static std::vector<std::string> ticked(Menu& m);
   static std::string placeOf(Menu& m, const std::string& path);
@@ -294,7 +327,16 @@ struct SetupPages {
   static void backToPicker(Menu& m);
   // Shared by the pages.
   static Menu::Button& add(Menu& m, Menu::Button b, double x, double y, double w, double h);
-  static void addFooter(Menu& m, std::function<MenuCommand()> back, const std::string& primary = "",
-                        std::function<MenuCommand()> go = nullptr, bool selected = true,
-                        bool disabled = false);
+  // The footer (a dialog's buttons, on the panel's bottom edge): at its left
+  // `left`, bare (Back, Set up later) unless `raised` (Add more folders); the
+  // step's actions from the right, the last rightmost, filled if it is the
+  // one to take (Action::primary).
+  static void addFooter(Menu& m, const Menu::Action& left, Menu::Icon icon,
+                        const std::vector<Menu::Action>& actions, bool raised = false);
+  // Back, for the footer's left.
+  static Menu::Action back(Menu& m, std::function<MenuCommand()> action);
+  // Set up later: ends setup with nothing more (a bare button, dim).
+  static Menu::Button& addLater(Menu& m, double x, double y);
+  // A footer button's width.
+  static double footerWidth(Menu& m, const std::string& label, bool icon = false);
 };

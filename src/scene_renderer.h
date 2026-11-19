@@ -4,9 +4,9 @@
 #include "curved_panel.h"
 #include "flat_screen.h"
 #include "foveation.h"
-#include "glass_backdrop.h"
 #include "gpu_context.h"
 #include "key_mask.h"
+#include "panel_hover.h"
 #include "pipelines.h"
 #include "stereo_correction.h"
 #include "texture.h"
@@ -73,15 +73,6 @@ struct VideoDraw {
   }
 };
 
-// The menu button under the pointer, highlighted by the panel shader.
-struct PanelHover {
-  float rect[4] = {0, 0, 0, 0};  // x0, y0, x1, y1 in layout pixels
-  float radius = 18;             // corner radius; half the size for a round button
-  bool danger = false;           // destructive action (quit, delete): highlighted red
-  float clip[4] = {-1e6f, -1e6f, 1e6f, 1e6f};  // cut off outside this (its list's edges)
-  uint8_t rim[3] = {30, 120, 255};  // the rim's colour, sRGB: the menu's accent
-};
-
 // A canvas on a flat quad (text, markers) or on part of a cylinder (menus).
 struct PanelItem {
   const Texture* texture = nullptr;  // premultiplied alpha
@@ -89,10 +80,10 @@ struct PanelItem {
   std::optional<CurvedPanel> curved;  // instead of model
   std::optional<PanelHover> hover;
   float opacity = 1;  // faded out toward 0
-  // Glass menus: the panel's lowest coverage. On the desktop the scene drawn
-  // before the first of them shows blurred behind their translucent parts.
-  float glassAlpha = 0;
 };
+// The pointer's colour, and the flat screen's corner handles', unlit
+// (premultiplied, linear).
+constexpr float kPointerOrange[4] = {1.0f, 0.25f, 0.0f, 1.0f};
 // Laser-coloured quads: the flat screen's corner handles.
 struct QuadsItem {
   std::vector<Quad> quads;
@@ -101,6 +92,7 @@ struct QuadsItem {
 struct LaserItem {
   Vec3 from, to;
   float dotRadius = 0;
+  float opacity = 1;  // faded out toward 0
 };
 // The seek preview's frame (seek_preview.h) on a flat quad: the left eye of
 // a flat video, or of a surround one the view straight ahead.
@@ -110,6 +102,7 @@ struct PreviewItem {
   VideoFormat format;
   bool flip = false;
   float aheadTangents[2] = {1.0f, 9.0f / 16.0f};  // surround: the view's half width and height
+  float opacity = 1;  // faded out toward 0
 };
 using OverlayDraw = std::variant<PanelItem, QuadsItem, LaserItem, PreviewItem>;
 
@@ -188,20 +181,20 @@ static_assert(kDrawPushOffset + sizeof(ScreenPush) <= kPushConstantBytes, "push 
 // shaders/panel.glsl, PanelDraw.
 enum PanelFlag : uint32_t {
   kPanelCurved = 1,
-  kPanelHover = 2,
-  kPanelHoverDanger = 4,
-  kPanelGlass = 16,
-  kPanelPassthrough = 32,
-  // Bits 8..31: the hover rim's colour, sRGB red, green, blue.
+  // The pointed pipeline's (Pipelines::kPanelPointed). Bits 3..7: how far
+  // its stars show (of 31), 8..15: the hover's highlight, 16..23 its shadow,
+  // 24..31 how far its ink turns white.
+  kPanelHoverPressed = 1u << 1,
+  kPanelHoverRing = 1u << 2,
 };
 struct PanelPush {
   float model[3][4];  // rows
   float uv[4];        // u0, u1, v0, v1
   float arc[4];       // curved: angle left and right, height top and bottom
   float hover[4];
-  float shape[4];  // radius, pixel scale, hover corner radius, glass alpha
+  float shape[4];  // radius, pixel scale, hover corner radius, fade (kPanelFaded) or stars (kPanelStars)
   float opacity;
-  float unused;
+  uint32_t hoverFill;  // sRGB red, green, blue and alpha, low byte first
   uint32_t flags;
   float lodBias;
   float hoverClip[4];  // x0, y0, x1, y1
@@ -231,7 +224,7 @@ enum PreviewFlag : uint32_t {
 struct PreviewPush {
   float model[3][4];  // rows
   float picture[4];   // the eye's part: scale xy, offset xy
-  float view[4];      // surround: tangents of the half width and height, fisheye field of view
+  float view[4];      // surround: tangents of the half width and height, fisheye field of view; w opacity
   uint32_t mode[4];   // x projection, y flags
 };
 static_assert(sizeof(PreviewPush) == 96 && offsetof(PreviewPush, mode) == 80,
@@ -243,13 +236,13 @@ static_assert(sizeof(PreviewPush) == 96 && offsetof(PreviewPush, mode) == 80,
 class SceneRenderer {
  public:
   // Timestamps written per frame, in this order.
-  enum Timestamp : uint32_t { kStart, kUploaded, kGlassDone, kEye0Done, kEye1Done, kEnd, kCount };
+  enum Timestamp : uint32_t { kStart, kUploaded, kKeyMaskDone, kEye0Done, kEye1Done, kEnd, kCount };
   static_assert(kCount <= GpuContext::kTimestamps, "too many timestamps");
 
   // Milliseconds of GPU time of a finished frame.
   struct GpuTimes {
     double upload = 0;  // canvas copies and shared image acquires
-    double glass = 0;   // the glass backdrop's passes
+    double keyMask = 0;  // the colour key's mask passes
     double eye[2] = {};
     double mirror = 0;  // shared image releases and the desktop mirror's copy
     double frame = 0;   // all of it
@@ -262,8 +255,6 @@ class SceneRenderer {
 
   // Makes the pipelines and renders the sky (startup work on the GPU).
   bool init(GpuContext& gpu, GlInterop& interop, Uploader& uploader, EyeTargets& targets);
-  // The desktop's glass menus: their blurred backdrop, made for xr's eye images.
-  bool initGlass(const XrContext& xr);
   // --xr-test: the eyes are cleared to a slow pulse instead (left reddish,
   // right bluish), whatever the scene.
   void setTestPattern(bool on) { testPattern_ = on; }
@@ -294,22 +285,18 @@ class SceneRenderer {
   void drawSky(VkCommandBuffer cmd, EyeData eye);
   // The colour key's mask (KeyMask) for the video's frame, if it has a
   // colour key and the mask does not hold this frame's yet where these
-  // eyes (all of the frame's eye passes, glass's too) can read it.
+  // eyes (all of the frame's eye passes) can read it.
   void drawKeyMask(VkCommandBuffer cmd, const VideoDraw& video, ClearMode clear,
                    const EyeFrame& eyes, const EyeMatrices* matrices);
   // sharpen: the strength (VideoDraw::sharpen), 0 off.
   void drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const VideoDraw& video,
                  ClearMode clear, float sharpen);
-  // The scene's first `count` overlays; backdrop: behind glass panels.
   void drawOverlays(VkCommandBuffer cmd, const EyeData& eye, const EyeMatrices& matrices,
-                    const FrameScene& scene, size_t count, const Texture* backdrop);
-  void drawPanel(VkCommandBuffer cmd, const PanelItem& panel, ClearMode clear,
-                 const Texture* backdrop);
-  // The scene's pipeline, or its variant for the glass backdrop's pass.
-  VkPipeline pipeline(Pipelines::Id id) const {
-    return glassPass_ ? pipelines_.glass(id) : pipelines_.get(id, plainEye_);
-  }
-  void drawPointer(VkCommandBuffer cmd, const Quad& corners, uint32_t flags = 0);
+                    const FrameScene& scene);
+  void drawPanel(VkCommandBuffer cmd, const PanelItem& panel);
+  VkPipeline pipeline(Pipelines::Id id) const { return pipelines_.get(id, plainEye_); }
+  // color: premultiplied, linear (kPointerOrange).
+  void drawPointer(VkCommandBuffer cmd, const Quad& corners, uint32_t flags, const float color[4]);
   void drawPreview(VkCommandBuffer cmd, const PreviewItem& preview);
   void pushEye(VkCommandBuffer cmd, const EyeData& eye);
   template <typename T>
@@ -328,8 +315,6 @@ class SceneRenderer {
   bool testPattern_ = false;
   float menuLodBias_ = 0.0f;
   MirrorWindow* mirror_ = nullptr;
-  std::unique_ptr<GlassBackdrop> glass_;
-  bool glassPass_ = false;  // recording the glass backdrop's scene
   bool plainEye_ = false;   // recording an eye pass without a density map (EyeTargets)
 };
 

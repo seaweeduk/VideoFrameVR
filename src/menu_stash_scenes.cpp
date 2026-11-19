@@ -1,5 +1,6 @@
 #include "menu_style.h"
 
+#include "menu_list_parts.h"
 #include "menu_stash.h"
 #include "menu_stash_covers.h"
 #include "stash.h"
@@ -21,13 +22,13 @@
 
 namespace {
 
-constexpr double kRailW = 400, kRailGap = 16;
+constexpr double kRailW = 400, kRailGap = kit::kSpace;
 constexpr double kRowStep = 54, kRowBox = 50;  // facet rows (rail and full lists)
 constexpr double kLineGrow = 30;               // ... and each wrapped line, editing the rail
-constexpr double kExcludeW = 60;               // ... and their ⊘ target
-constexpr double kChipH = 48;
-constexpr double kResultsGap = 12;  // under the chips
-constexpr double kTileGap = 16;
+constexpr double kExcludeW = kRowBox;          // ... and their ⊘ target
+constexpr double kChipH = kListHeaderH;
+constexpr double kResultsGap = kit::kSpaceTight;  // under the chips
+constexpr double kTileGap = kGalleryGap;
 constexpr int kRailTop[] = {5, 6, 5};  // performers, tags and studios the rail lists
 constexpr int kRailYears = 6;
 constexpr int kAddedDays[] = {7, 30, 90, 365};
@@ -604,7 +605,7 @@ void StashPages::editSectionsRail(Menu& m) {
   // Two lines for a label too wide beside its switch and moves (as layoutRail
   // and the switch row lay them out).
   auto lines = [&m](const std::string& label, double indent) {
-    const double w = kRailW - 14 - indent - 2 * (kRowBox + 6) - 88;
+    const double w = kRailW - 14 - indent - 2 * (kRowBox + kit::kSpacePiece) - 88;
     return m.textWidth(label, Menu::kTextSize, false) > w ? 2 : 1;
   };
   StashRailLine heading;
@@ -1145,17 +1146,17 @@ StashPages::Button StashPages::facetButton(Menu& m, const std::string& label,
   b.h = h;
   b.label = label;
   b.size = count;
-  b.on = state == 1;
-  b.danger = false;
+  b.latched = state == 1;
   b.dim = state == 2;  // left out
   b.bare = true;
-  b.radius = 12;
+  b.radius = kit::kCorner;
   b.stashLook = static_cast<int>(StashLook::Facet);
   b.action = [include] {
     include();
     return MenuCommand{};
   };
-  if (m.textWidth(label, Menu::kTextSize, false) > w - 40 - m.textWidth(count, 22, false))
+  const double countW = count.empty() ? 0 : m.textWidth(count, kCountSize, false) + kit::kSpace;
+  if (m.textWidth(label, kit::kRowSize, false) > w - 2 * kit::kSpace - countW - (b.dim ? 32 : 0))
     b.tooltip = label;
   return b;
 }
@@ -1170,7 +1171,8 @@ StashPages::Button StashPages::excludeButton(Menu&, int state, std::function<voi
   b.h = h;
   b.on = state == 2;
   b.bare = true;
-  b.radius = 12;
+  b.dangerHover = true;
+  b.radius = kit::kCorner;
   b.stashLook = static_cast<int>(StashLook::Exclude);
   b.tooltip = strings().stash.tipExclude;
   b.action = [exclude] {
@@ -1183,22 +1185,25 @@ StashPages::Button StashPages::excludeButton(Menu&, int state, std::function<voi
 StashPages::Button StashPages::actionButton(Menu& m, const std::string& label, StashIcon icon,
                                             std::function<MenuCommand()> action, double x, double y,
                                             double h) {
+  const ActionSpace a = actionSpace(h);
   Button b;
   b.panel = Menu::kBrowser;
   b.x = x;
   b.y = y;
   b.h = h;
   b.label = label;
-  b.w = m.textWidth(label, Menu::kTextSize, false) + (icon != StashIcon::None ? 92 : 50);
-  b.fontSize = Menu::kTextSize;
+  b.fontSize = h < 48 ? kHintSize : kit::kRowSize;
+  b.w = m.textWidth(label, b.fontSize, false) + 2 * a.pad + (icon != StashIcon::None ? a.icon + a.gap : 0);
+  b.radius = kit::kCorner;
   b.stashLook = static_cast<int>(StashLook::Action);
   b.stashIcon = static_cast<int>(icon);
   b.action = std::move(action);
   return b;
 }
 
-// The heading row from x: Filters (the rail on or off, with how many are
-// active), the title, and at the right Shuffle play and pinning.
+// The header row from x: Filters (latched while the rail shows; hidden,
+// how many are active), the title and count (drawScenesHeading()), and at
+// the right Shuffle play and pinning.
 void StashPages::layoutHeader(Menu& m, double x0) {
   StashMenu& st = state(m);
   const StashStrings& t = strings().stash;
@@ -1211,19 +1216,18 @@ void StashPages::layoutHeader(Menu& m, double x0) {
         return MenuCommand{};
       },
       x0, y, h);
-  filters.selected = st.railShown;
+  filters.latched = st.railShown;
   filters.tooltip = t.tipFilters;
   const StashCatalog* c = catalog(m);
   const size_t active = c ? chipsOf(m, st.list, *c).size() : 0;
   if (active && !st.railShown) filters.badge = std::to_string(active);
   m.buttons_.push_back(filters);
-  st.titleX = filters.x + filters.w + 24;
+  st.titleX = filters.x + filters.w + kit::kSpaceEdge;
 
-  double right = Menu::kPageX + Menu::kPageWidth - kPagePad;
+  double right = kContentRight;
   auto add = [&](Button b) {
-    right -= b.w;
-    b.x = right;
-    right -= kGap;
+    b.x = right - b.w;
+    right = b.x - kit::kSpaceTight;
     m.buttons_.push_back(b);
   };
   const int pin = pinOfList(m);
@@ -1274,25 +1278,22 @@ void StashPages::layoutHeader(Menu& m, double x0) {
         m, t.shuffle, StashIcon::Shuffle, [&m] { return open(m, "", true); }, 0, y, h));
     m.buttons_.back().tooltip = t.tipShuffle;
   }
+  st.titleRight = right + kit::kSpaceTight - kit::kSpaceEdge;
 }
 
-// The tool row: list or tiles, All / VR / 2D, the order, the search and to
-// the top / end, as the file browser's.
+// The tools row, as the File explorer's: list or cards, All / VR / 2D with
+// their counts, the order, the search, and to the top and to the end.
 void StashPages::layoutTools(Menu& m) {
   StashMenu& st = state(m);
   const StashStrings& t = strings().stash;
   const Strings& base = strings();
-  const double y = kBrowserToolsY + bandHeight(m), h = kBrowserToolsH;
-  double x = Menu::kPageX + kPagePad;
-  auto icon = [&](Menu::Icon i, const char* tip, bool on, std::function<MenuCommand()> action) {
-    Button& b = m.addRound(i, tip, std::move(action), x, y, h);
-    b.panel = Menu::kBrowser;
-    b.bare = true;
-    b.on = on;
-    x += h + 8;
-  };
-  auto view = [&m](bool gallery) {
-    return [&m, gallery] {
+  const double y = kBrowserToolsY + bandHeight(m);
+  auto view = [&m, &st](bool gallery, Menu::Icon icon, const char* tip) {
+    Menu::ToolPiece p;
+    p.icon = icon;
+    p.tooltip = tip;
+    p.chosen = st.gallery == gallery;
+    p.action = [&m, gallery] {
       StashMenu& s = state(m);
       if (s.gallery == gallery) return MenuCommand{};
       s.gallery = gallery;
@@ -1300,42 +1301,37 @@ void StashPages::layoutTools(Menu& m) {
       m.scrollFraction_ = 0;
       return MenuCommand{};
     };
+    return p;
   };
-  icon(Menu::Icon::List, base.tipList, !st.gallery, view(false));
-  icon(Menu::Icon::Grid, base.tipGallery, st.gallery, view(true));
-  x += 8;
-  // All / VR / 2D with their counts, the chosen one blue; kept in the settings.
+  double x = m.toolsWell(kContentLeft, y,
+                         {view(false, Menu::Icon::List, base.tipList),
+                          view(true, Menu::Icon::Grid, base.tipGallery)}) +
+             kColumnGap;
+  // All / VR / 2D with their counts; kept in the settings. Never a choice
+  // that shows nothing.
+  std::vector<Menu::ToolPiece> formats;
   for (int f = 0; f < 3; ++f) {
-    std::string label = t.formats[f];
-    if (catalog(m)) label += "  " + stashNumber(st.result.formats[f]);
-    Button b = m.textButton(
-        label, Menu::Icon::None,
-        [&m, f] {
-          StashMenu& s = state(m);
-          s.list.format = static_cast<StashFormat>(f);
-          s.stale = true;
-          if (s.full == StashFull::None) {
-            m.scrollOffset_ = 0;
-            m.scrollFraction_ = 0;
-          }
-          MenuCommand c;
-          c.type = MenuCommand::SetStashFormat;
-          c.value = f;
-          return c;
-        },
-        static_cast<int>(st.list.format) == f);
-    // Never a choice that shows nothing.
-    b.disabled = catalog(m) && st.result.formats[f] == 0 && static_cast<int>(st.list.format) != f;
-    b.panel = Menu::kBrowser;
-    b.x = x;
-    b.y = y;
-    b.h = h;
-    b.w = m.textWidth(label, Menu::kTextSize, false) + 36;
-    b.radius = h / 2;
-    m.buttons_.push_back(b);
-    x += b.w + 6;
+    Menu::ToolPiece p;
+    p.label = t.formats[f];
+    if (catalog(m)) p.count = stashNumber(st.result.formats[f]);
+    p.chosen = static_cast<int>(st.list.format) == f;
+    p.disabled = catalog(m) && st.result.formats[f] == 0 && !p.chosen;
+    p.action = [&m, f] {
+      StashMenu& s = state(m);
+      s.list.format = static_cast<StashFormat>(f);
+      s.stale = true;
+      if (s.full == StashFull::None) {
+        m.scrollOffset_ = 0;
+        m.scrollFraction_ = 0;
+      }
+      MenuCommand c;
+      c.type = MenuCommand::SetStashFormat;
+      c.value = f;
+      return c;
+    };
+    formats.push_back(std::move(p));
   }
-  x += 16;
+  x = m.toolsWell(x, y, formats) + kColumnGap;
   x = layoutSort(
       m, x, t.sortFields, std::size(t.sortFields), static_cast<int>(st.list.sort),
       st.list.sort == StashSort::Random ? -1 : st.list.descending,
@@ -1363,146 +1359,68 @@ void StashPages::layoutTools(Menu& m) {
   layoutSearch(m, x, layoutJumps(m), st.list.text, t.searchScenes, StashMenu::Typing::Search);
 }
 
-// "Sort by  Release date ▾  ▼" on the tool row from x, and its fields under
-// it while open, in `order` (null: as listed); `descending` -1 offers no
-// direction. Either starts the list at the top. Returns where the next part goes.
+// The tools row's "Sort by" from x (Menu::toolsSort()): its fields in
+// `order` (null: as listed); `descending` -1 offers no direction. Either
+// starts the list at the top. Returns where the next part goes.
 double StashPages::layoutSort(Menu& m, double x, const char* const* fields, int count, int chosen,
                               int descending, std::function<MenuCommand(int)> choose,
                               std::function<MenuCommand()> turn, const int* order) {
-  const StashStrings& t = strings().stash;
-  const Strings& base = strings();
-  const double y = kBrowserToolsY + bandHeight(m), h = kBrowserToolsH;
-  Button& label =
-      m.addLabel(x, y, m.textWidth(base.sortBy, 26, false) + 8, h, base.sortBy, 26, true);
-  x += label.w + 8;
-  Button value = m.textButton(std::string(fields[chosen]) + " ▾", Menu::Icon::None, [&m] {
-    m.dropdown_ = m.dropdown_ == Menu::Dropdown::Sort ? Menu::Dropdown::None : Menu::Dropdown::Sort;
-    return MenuCommand{};
-  });
-  value.panel = Menu::kBrowser;
-  value.bare = true;
-  value.on = true;
-  value.x = x;
-  value.y = y;
-  value.h = h;
-  value.fontSize = 26;
-  value.w = m.textWidth(value.label, 26, false) + 40;
-  m.buttons_.push_back(value);
-  x += value.w + 4;
-  if (descending >= 0) {
-    Button direction = m.textButton(descending ? "▼" : "▲", Menu::Icon::None, [&m, turn] {
-      m.scrollOffset_ = 0;
-      m.scrollFraction_ = 0;
-      return turn();
-    });
-    direction.panel = Menu::kBrowser;
-    direction.bare = true;
-    direction.on = true;
-    direction.x = x;
-    direction.y = y;
-    direction.w = direction.h = h;
-    direction.radius = h / 2;
-    direction.fontSize = 26;
-    direction.tooltip = t.tipTurnOrder;
-    m.buttons_.push_back(direction);
+  std::vector<Menu::SortField> list;
+  int at = 0;
+  for (int i = 0; i < count; ++i) {
+    const int f = order ? order[i] : i;
+    if (f == chosen) at = i;
+    list.push_back({fields[f], [&m, f, choose] {
+                      m.scrollOffset_ = 0;
+                      m.scrollFraction_ = 0;
+                      return choose(f);
+                    }});
   }
-  x += h + 16;
-
-  if (m.dropdown_ == Menu::Dropdown::Sort) {  // the fields under it, the chosen one blue
-    std::vector<Button> entries;
-    for (int i = 0; i < count; ++i) {
-      const int f = order ? order[i] : i;
-      entries.push_back(m.textButton(
-          fields[f], Menu::Icon::None,
-          [&m, f, choose] {
-            m.dropdown_ = Menu::Dropdown::None;
-            m.scrollOffset_ = 0;
-            m.scrollFraction_ = 0;
-            return choose(f);
-          },
-          f == chosen));
-    }
-    m.addDropdownBelow(value, std::move(entries));
-  }
-  return x;
+  return m.toolsSort(x, kBrowserToolsY + bandHeight(m), list, at, descending < 0 ? -1 : !descending,
+                     strings().stash.tipTurnOrder, [&m, turn] {
+                       m.scrollOffset_ = 0;
+                       m.scrollFraction_ = 0;
+                       return turn();
+                     });
 }
 
-// To the top / end at the tool row's right end; returns where they start.
+// To the top and to the end at the tools row's right end; returns where
+// the search ends.
 double StashPages::layoutJumps(Menu& m) {
-  const Strings& base = strings();
-  const double y = kBrowserToolsY + bandHeight(m), h = kBrowserToolsH;
-  double right = Menu::kPageX + Menu::kPageWidth - kPagePad - h;
-  Button& bottom = m.addRound(
-      Menu::Icon::JumpBottom, base.tipBottom,
-      [&m] {
-        m.scrollOffset_ = 1 << 30;  // clamped to the last page by the layout
-        return MenuCommand{};
-      },
-      right, y, h);
-  bottom.panel = Menu::kBrowser;
-  bottom.bare = true;
-  right -= h + 8;
-  Button& top = m.addRound(
-      Menu::Icon::JumpTop, base.tipTop,
+  return m.toolsJumps(
+      kBrowserToolsY + bandHeight(m),
       [&m] {
         m.scrollOffset_ = 0;
         m.scrollFraction_ = 0;
         return MenuCommand{};
       },
-      right, y, h);
-  top.panel = Menu::kBrowser;
-  top.bare = true;
-  return right - 16;
+      [&m] {
+        m.scrollOffset_ = 1 << 30;  // clamped to the last page by the layout
+        return MenuCommand{};
+      });
 }
 
-// A search on the tool row from x to right, found as you type with the
+// The tools row's search from x to right, found as you type with the
 // keyboard: `typing` says what it types into.
 void StashPages::layoutSearch(Menu& m, double x, double right, const std::string& text,
                               const char* hint, StashMenu::Typing typing) {
-  const Strings& base = strings();
-  const double y = kBrowserToolsY + bandHeight(m), h = kBrowserToolsH;
-  const bool editing = m.editing_ && state(m).typing == typing;
-  Button search = m.textButton(
-      text.empty() && !editing ? std::string(hint) : text,
-      Menu::Icon::Search, [&m, typing] {
+  m.toolsSearch(
+      x, kBrowserToolsY + bandHeight(m), right, text, hint,
+      m.editing_ && state(m).typing == typing,
+      [&m, typing] {
         state(m).typing = typing;
         m.editing_ = true;
         return MenuCommand{};
+      },
+      [&m, typing] {
+        state(m).typing = typing;
+        setText(m, "");
+        return MenuCommand{};
       });
-  search.panel = Menu::kBrowser;
-  search.x = x;
-  search.y = y;
-  search.w = right - x;
-  search.h = h;
-  search.fontSize = Menu::kTextSize;
-  search.field = true;
-  search.on = editing;
-  search.caret = editing ? m.caret() : -1;
-  search.placeholder = text.empty() && !editing;
-  search.tooltip = hint;
-  search.radius = 12;
-  m.buttons_.push_back(search);
-  if (!text.empty()) {
-    Button clear = m.textButton(base.clear, Menu::Icon::None, [&m, typing] {
-      state(m).typing = typing;
-      setText(m, "");
-      return MenuCommand{};
-    });
-    clear.panel = Menu::kBrowser;
-    clear.bare = true;
-    clear.on = true;
-    clear.fontSize = 26;
-    clear.w = m.textWidth(base.clear, 26, false) + 40;
-    clear.x = right - clear.w - 6;
-    clear.y = y + 4;
-    clear.h = h - 8;
-    clear.radius = clear.h / 2;
-    m.buttons_.push_back(clear);
-  }
 }
 
-// The active filters, included blue and left out red with ⊘: tapping one
-// takes it away; Undo brings back what the last change took, Clear all
+// The active filters, included latched and left out red with ⊘: tapping
+// one takes it away; Undo brings back what the last change took, Clear all
 // takes all. Those that don't fit on the line are counted. Returns where
 // the results start.
 double StashPages::layoutChips(Menu& m, double x, double right, double y) {
@@ -1522,13 +1440,13 @@ double StashPages::layoutChips(Menu& m, double x, double right, double y) {
           return MenuCommand{};
         },
         x, y, h);
-    undo.radius = h / 2;
+    undo.bare = true;
     m.buttons_.push_back(undo);
-    x += undo.w + 12;
+    x += undo.w + kit::kSpaceTight;
   }
   const std::vector<Chip> chips = c ? chipsOf(m, st.list, *c) : std::vector<Chip>{};
   if (chips.empty()) {
-    m.addLabel(x + 8, y, right - x - 8, h, t.noFilters, 24, true);
+    m.addLabel(x + kit::kSpace, y, right - x - kit::kSpace, h, t.noFilters, kHintSize, true);
     return y + h + kResultsGap;
   }
   Button clear = actionButton(
@@ -1545,17 +1463,19 @@ double StashPages::layoutChips(Menu& m, double x, double right, double y) {
         return MenuCommand{};
       },
       0, y, h);
-  clear.radius = h / 2;
+  clear.bare = true;
   clear.x = right - clear.w;
   m.buttons_.push_back(clear);
-  const double end = clear.x - 12;
+  const double end = clear.x - kit::kSpaceTight;
+  constexpr int size = kHintSize;
   for (size_t i = 0; i < chips.size(); ++i) {
     const Chip& chip = chips[i];
-    const double w = std::min(420.0, m.textWidth(chip.label, 24, false) + (chip.out ? 72 : 40));
+    const double w =
+        std::min(420.0, m.textWidth(chip.label, size, false) + 2 * kit::kSpace + (chip.out ? 30 : 0));
     const std::string more = stashPrinted(t.moreChips, static_cast<int>(chips.size() - i));
-    const double moreW = i + 1 < chips.size() ? m.textWidth(more, 24, false) + 16 : 0;
+    const double moreW = i + 1 < chips.size() ? m.textWidth(more, size, false) + kit::kSpace : 0;
     if (x + w + moreW > end) {
-      m.addLabel(x + 4, y, end - x, h, more, 24, true);
+      m.addLabel(x + kit::kSpaceTight, y, end - x, h, more, size, true);
       break;
     }
     Button b;
@@ -1565,7 +1485,9 @@ double StashPages::layoutChips(Menu& m, double x, double right, double y) {
     b.w = w;
     b.h = h;
     b.label = chip.label;
+    b.fontSize = size;
     b.dim = chip.out;
+    b.latched = !chip.out;
     b.bare = true;
     b.radius = h / 2;
     b.stashLook = static_cast<int>(StashLook::Chip);
@@ -1576,7 +1498,7 @@ double StashPages::layoutChips(Menu& m, double x, double right, double y) {
     };
     b.tooltip = stashPrinted(t.tipRemoveFilter, chip.label);
     m.buttons_.push_back(b);
-    x += w + 10;
+    x += w + kit::kSpaceTight;
   }
   return y + h + kResultsGap;
 }
@@ -1585,7 +1507,7 @@ double StashPages::layoutChips(Menu& m, double x, double right, double y) {
 void StashPages::layoutRail(Menu& m, const std::vector<StashRailLine>& rail, double height,
                             double top, double bottom) {
   const StashStrings& t = strings().stash;
-  const double x = Menu::kPageX + kPagePad;
+  const double x = kContentLeft;
   Menu::SideColumn& side = m.side_;
   side.x = x;
   side.y = top;
@@ -1601,42 +1523,47 @@ void StashPages::layoutRail(Menu& m, const std::vector<StashRailLine>& rail, dou
     if (y < top || y0 > bottom) continue;
     switch (l.kind) {
       case StashRailLine::Heading: {
-        Button& b = m.addLabel(x + 4, y0 + 4, rowW, 48, l.label, 27, false);
-        b.side = true;
-        b.staticText = false;  // drawn as a list heading: bold, dimmer
+        // As a group's title, in line with the rows' names; with two or
+        // more chosen, All of / Any of in a small well at its right.
+        constexpr double h = kListHeaderH;
+        Button b;
+        b.panel = Menu::kBrowser;
         b.label = l.label;
+        b.listLook = static_cast<int>(ListLook::Heading);
+        b.bare = true;
+        b.dimInk = true;
+        b.x = x + kit::kSpace - 12;
+        b.y = y0 + kit::kSpaceTight;
+        b.w = std::min(rowW, m.textWidth(l.label, kit::kGroupTitleSize, true) + 24);
+        b.h = h;
+        b.side = true;
+        m.buttons_.push_back(b);
         if (l.mode >= 0) {
-          const char* names[] = {t.anyOf, t.allOf};
-          double right = x + rowW;
+          std::vector<Menu::ToolPiece> modes;
           for (int all = 0; all < 2; ++all) {
-            const auto setAll = l.setAll;
-            Button mode = m.textButton(
-                names[all], Menu::Icon::None,
-                [setAll, all] {
-                  setAll(all == 1);
-                  return MenuCommand{};
-                },
-                l.mode == all);
-            mode.panel = Menu::kBrowser;
-            mode.w = m.textWidth(names[all], 24, false) + 32;
-            mode.h = 48;
-            mode.x = right - mode.w;
-            mode.y = y0 + 4;
-            mode.fontSize = 24;
-            mode.radius = 24;
-            mode.side = true;
-            mode.tooltip = t.tipMatch[all];
-            right = mode.x - 6;
-            m.buttons_.push_back(mode);
+            Menu::ToolPiece p;
+            p.label = all ? t.allOf : t.anyOf;
+            p.tooltip = t.tipMatch[all];
+            p.chosen = l.mode == all;
+            p.action = [setAll = l.setAll, all] {
+              setAll(all == 1);
+              return MenuCommand{};
+            };
+            modes.push_back(std::move(p));
           }
+          const size_t first = m.buttons_.size();
+          m.toolsWell(x + rowW - m.toolsWellWidth(modes), y0 + kit::kSpaceTight, modes, h);
+          for (size_t i = first; i < m.buttons_.size(); ++i) m.buttons_[i].side = true;
         }
         break;
       }
       case StashRailLine::Sub:
-        m.addLabel(x + 12, y0 + 4, rowW - 12, l.height - 4, l.label, kHintSize, true).side = true;
+        m.addLabel(x + kit::kSpace, y0 + 4, rowW - kit::kSpace, l.height - 4, l.label, kHintSize, true)
+            .side = true;
         break;
       case StashRailLine::Note:
-        m.addLabel(x + 12, y0 + 6, rowW - 12, 0, l.label, kHintSize, true, 2).side = true;
+        m.addLabel(x + kit::kSpace, y0 + 6, rowW - kit::kSpace, 0, l.label, kHintSize, true, 2).side =
+            true;
         break;
       case StashRailLine::Gap:
         break;
@@ -1649,7 +1576,7 @@ void StashPages::layoutRail(Menu& m, const std::vector<StashRailLine>& rail, dou
         b.h = kRowBox;
         b.label = l.label;
         b.bare = true;
-        b.radius = 12;
+        b.radius = kit::kCorner;
         b.side = true;
         b.stashLook = static_cast<int>(StashLook::Link);
         const auto include = l.include;
@@ -1662,16 +1589,15 @@ void StashPages::layoutRail(Menu& m, const std::vector<StashRailLine>& rail, dou
       }
       case StashRailLine::Row: {
         if (l.command) {  // a section or subgroup, while editing the rail
-          const double moveW = kRowBox;
+          const double moveW = kRowBox, gap = kit::kSpacePiece;
           const double indent = l.subgroup ? 12 : 0;  // as the rail's Sub labels
-          const double w = rowW - indent - 2 * (moveW + 6);
+          const double w = rowW - indent - 2 * (moveW + gap);
           const double grow = (l.lines - 1) * kLineGrow;
-          Button& row = m.addToggleRow(x + indent, y0 + (kRowBox - kSettingRowH) / 2, w, l.label,
-                                       l.state == 1, l.command, l.inactive);
+          Button& row = m.addSwitch(x + indent, y0, w, kRowBox + grow, l.label, l.state == 1, l.command);
+          row.disabled = l.inactive;
           row.side = true;
-          row.h += grow;
           row.lines = l.lines;
-          double mx = x + indent + w + 6;
+          double mx = x + indent + w + gap;
           for (const auto& [move, icon, tip] :
                {std::tuple{l.up, Menu::Icon::MoveUp, t.tipMoveUp},
                 std::tuple{l.down, Menu::Icon::MoveDown, t.tipMoveDown}}) {
@@ -1679,20 +1605,22 @@ void StashPages::layoutRail(Menu& m, const std::vector<StashRailLine>& rail, dou
               Button& b = m.addRound(icon, tip, move, mx, y0 + grow / 2, moveW);
               b.panel = Menu::kBrowser;
               b.bare = true;
+              b.radius = kit::kCorner;
               b.side = true;
               b.disabled = l.inactive;
             }
-            mx += moveW + 6;
+            mx += moveW + gap;
           }
           break;
         }
-        const double w = l.exclude ? rowW - kExcludeW - 6 : rowW;
+        const double w = l.exclude ? rowW - kExcludeW - kit::kSpacePiece : rowW;
         Button b = facetButton(m, l.label, l.count, l.state, l.include, x, y0, w, kRowBox);
         if (b.tooltip.empty()) b.tooltip = t.tipFilter;
         b.side = true;
         m.buttons_.push_back(b);
         if (l.exclude) {
-          Button ex = excludeButton(m, l.state, l.exclude, x + w + 6, y0, kExcludeW, kRowBox);
+          Button ex = excludeButton(m, l.state, l.exclude, x + w + kit::kSpacePiece, y0, kExcludeW,
+                                    kRowBox);
           ex.side = true;
           m.buttons_.push_back(ex);
         }
@@ -1735,47 +1663,57 @@ void StashPages::wantThumbnails(Menu& m, int first, int end, int page, double pi
   m.thumbnailer_->want(frames, stashPixels(pictureW));
 }
 
-StashPages::Button StashPages::sceneTile(const Menu& m, const StashCatalog& c, const StashScene& s,
-                                         int plays, double x, double y, double w, double h) {
+StashPages::Button StashPages::sceneCard(const Menu& m, const StashCatalog& c, const StashScene& s,
+                                         int plays, float rating, double x, double y, double w) {
   Button b;
   b.panel = Menu::kBrowser;
   b.x = x;
   b.y = y;
   b.w = w;
-  b.h = h;
+  b.h = cardHeight(w);
+  b.radius = kCardCorner;
+  b.card = true;
   b.label = title(m, s);
-  b.detail = performers(m, s);
-  b.date = studioDate(c, s);
-  b.caption = badge(s);
+  b.byline = performers(m, s);
+  // The studio's mark on the picture names it.
+  b.detail = stashJoined({s.studio >= 0 && !m.stashCoversShown() ? c.studios()[s.studio].name : "",
+                          s.date, s.duration > 0 ? formatTime(s.duration) : ""});
   const std::string location = stashSceneLocation(s, m.offline_);
   b.selected = location == m.view_.currentFile;
-  b.card = true;
-  b.stashLook = static_cast<int>(StashLook::Tile);
+  ListItem item{};
+  item.thumbPath = location;
+  m.setThumbnailOrIcon(b, item);
   b.offlinePath = location;
-  if (m.view_.thumbnails || m.stashCoversShown())
-    b.thumbPath = location;
-  else
-    b.icon = Menu::Icon::Video;
-  if (plays > 0) b.plays = std::to_string(plays);
-  if (m.textWidth(b.label, 26, false) > b.w - 28) b.tooltip = b.label;
+  if (plays > 0) b.plays = stashNumber(plays);
+  b.rating = rating;
+  // A title longer than its line shows in full while pointed at.
+  const double nameW = w - 2 * kit::kSpace - (b.selected ? kPlayMarkW : 0);
+  if (m.shortened(b.label, kit::kRowSize, nameW, b.byline.empty() ? 2 : 1)) b.tooltip = b.label;
   return b;
 }
 
-StashPages::Button StashPages::tileStars(const Menu& m, Button& tile, const std::string& path,
-                                         float rating) {
-  tile.rating = rating;
-  return m.cardRating(path, rating, tile);
+double StashPages::cardHeight(double w) {
+  return kCardIn + std::round((w - 2 * kCardIn) * 9 / 16) + kCardNameGap + 3 * kCardLine + kit::kSpace;
 }
 
-// Tiles from `top` down, about the gallery's size: three columns beside the
+void StashPages::addSceneCard(Menu& m, const Button& card, const StashScene& s) {
+  m.buttons_.push_back(card);
+  m.addOfflineButtons(card, 0, card.y + card.h - kit::kSpace - kCardLine);
+  m.buttons_.push_back(m.cardBadge(card, badge(s)));
+  Button stars = m.cardRating(card.offlinePath, card.rating, card);
+  stars.scrolls = card.scrolls;
+  stars.side = card.side;
+  m.buttons_.push_back(stars);
+}
+
+// Cards from `top` down, as the File explorer's: three columns beside the
 // rail, four without it (fewer beside a performer's profile).
 void StashPages::layoutGrid(Menu& m, double x0, double top) {
   StashMenu& st = state(m);
   const StashCatalog& c = *catalog(m);
   const int columns = gridColumns(x0, m.listRight_);
   const double cardW = (m.listRight_ - 30 - x0 - (columns - 1) * kTileGap) / columns;
-  const double thumbH = (cardW - 16) * 9 / 16;
-  const double rowH = std::round(8 + thumbH + 6 + 34 + 30 + 30 + 10 + kTileGap);
+  const double rowH = cardHeight(cardW) + kTileGap;
   const std::vector<int>& scenes = st.result.scenes;
   const int count = static_cast<int>(scenes.size());
   m.listTop_ = top;
@@ -1789,103 +1727,105 @@ void StashPages::layoutGrid(Menu& m, double x0, double top) {
   for (int i = first; i < end; ++i) {
     const int cell = i - first, index = scenes[i];
     const StashScene& s = c.scenes()[index];
-    Button b = sceneTile(m, c, s, history ? st.history[index].plays : 0,
+    Button b = sceneCard(m, c, s, history ? st.history[index].plays : 0,
+                         history ? st.history[index].rating : 0,
                          x0 + (cell % columns) * (cardW + kTileGap),
-                         top + (cell / columns - m.scrollFraction_) * rowH, cardW, rowH - kTileGap);
+                         top + (cell / columns - m.scrollFraction_) * rowH, cardW);
     b.scrolls = true;
     b.action = [&m, path = b.offlinePath] { return open(m, path, false); };
-    Button stars = tileStars(m, b, b.offlinePath, history ? st.history[index].rating : 0);
-    stars.scrolls = true;
-    m.buttons_.push_back(b);
-    m.addOfflineButtons(b, 0, tileLastLine(b));
-    m.buttons_.push_back(stars);
+    addSceneCard(m, b, s);
   }
-  wantThumbnails(m, first, end, m.visibleRows_ * columns, cardW - 16);
+  wantThumbnails(m, first, end, m.visibleRows_ * columns, cardW - 2 * kCardIn);
   m.addScrollbar();
 }
 
-namespace {
-
-constexpr double kStudioW = 230, kReleasedW = 130, kLengthW = 90;
-
-}  // namespace
-
-// Rating, plays, studio, release date and length.
-StashPages::SceneColumns StashPages::sceneColumns(double x0, double x1) {
+// Rating, plays, release date and length; further apart where their
+// headings need it (sceneApart()).
+StashPages::SceneColumns StashPages::sceneColumns(const Menu& m, double x1) {
+  const std::array<double, 3>& apart = sceneApart(m);
   SceneColumns c;
-  c.length = x1 - 16 - kLengthW;
-  c.released = c.length - 20 - kReleasedW;
-  c.studio = x1 - x0 < 1100 ? c.released : c.released - 20 - kStudioW;
-  c.plays = c.studio - 16 - kPlaysColumnW;
-  c.rating = c.plays - 16 - kRatingColumnW;
-  c.status = c.rating - 8 - kStatusColumnW;
+  c.length = x1 - kit::kSpace - kLengthColumnW;
+  c.released = c.length - kColumnGap - apart[2] - kReleasedColumnW;
+  c.plays = c.released - kColumnGap - apart[1] - kPlaysColumnW;
+  c.rating = c.plays - kColumnGap - apart[0] - kRatingColumnW;
+  c.status = c.rating - kStatusGap - kStatusColumnW;
   return c;
 }
 
-// Rows from under their column headings down (the headings sort).
+// Rating's and the release date's headings start at their columns, Plays'
+// and Length's end at theirs (layoutList()); measured once a language.
+const std::array<double, 3>& StashPages::sceneApart(const Menu& m) {
+  Menu::Apart& a = m.sceneApart_;
+  if (a.strings == &strings()) return a.apart;
+  const StashStrings& t = strings().stash;
+  a.strings = &strings();
+  a.apart = {};
+  const SceneColumns c = sceneColumns(m, 0);
+  a.apart = {m.headingsApart(t.columns[1], c.rating + 2, false, t.columns[2],
+                             c.plays + kPlaysColumnW, true),
+             m.headingsApart(t.columns[2], c.plays + kPlaysColumnW, true, t.columns[3], c.released,
+                             false),
+             m.headingsApart(t.columns[3], c.released, false, t.columns[4], c.length + kLengthColumnW,
+                             true)};
+  return a.apart;
+}
+
+// The column headings (sorting by theirs), then the rows: the File
+// explorer's, their names up to the columns, which are drawn over them.
 void StashPages::layoutList(Menu& m, double x0, double top) {
   StashMenu& st = state(m);
   const StashStrings& t = strings().stash;
   const StashCatalog& c = *catalog(m);
   const double rowW = m.listRight_ - x0 - 30;
-  const SceneColumns cols = sceneColumns(x0, x0 + rowW);
+  const SceneColumns cols = sceneColumns(m, x0 + rowW);
   auto heading = [&](int column, double x, double w, bool rightAligned, int sort) {
     const bool on = sort >= 0 && static_cast<int>(st.list.sort) == sort;
-    std::string label = t.columns[column];
-    if (on) label += st.list.descending ? "  ▼" : "  ▲";
-    Button b = m.textButton(label, Menu::Icon::None, [&m, sort] {
-      StashMenu& s = state(m);
-      const StashSort by = static_cast<StashSort>(sort);
-      if (s.list.sort == by)
-        s.list.descending = !s.list.descending;
-      else
-        s.list.descending = by != StashSort::Title;
-      s.list.sort = by;
-      s.stale = true;
-      m.scrollOffset_ = 0;
-      m.scrollFraction_ = 0;
-      return MenuCommand{};
-    });
-    if (sort < 0) b.action = nullptr;  // a heading only
-    b.panel = Menu::kBrowser;
-    b.bare = true;
-    b.on = on;
-    b.fontSize = 24;
-    b.w = m.textWidth(label, 24, false) + 24;
-    b.x = rightAligned ? x + w - b.w + 12 : x - 12;
-    b.y = top;
-    b.h = kListHeaderH;
-    b.radius = 10;
-    b.tooltip = strings().tipSortColumn;
+    std::function<MenuCommand()> by;
     if (sort >= 0)
-      m.buttons_.push_back(b);
-    else
-      m.addLabel(b.x + 12, b.y, b.w, b.h, label, 24, true);
+      by = [&m, sort] {
+        StashMenu& s = state(m);
+        const StashSort sorted = static_cast<StashSort>(sort);
+        if (s.list.sort == sorted)
+          s.list.descending = !s.list.descending;
+        else
+          s.list.descending = sorted != StashSort::Title;
+        s.list.sort = sorted;
+        s.stale = true;
+        m.scrollOffset_ = 0;
+        m.scrollFraction_ = 0;
+        return MenuCommand{};
+      };
+    m.listHeading(t.columns[column], x, w, rightAligned, top, on, !st.list.descending,
+                  sort >= 0 ? strings().tipSortColumn : "", std::move(by));
   };
   Button probe;
+  probe.x = x0;
   probe.h = kFileRowH - kRowGap;
-  heading(0, x0 + 10 + m.listThumbW(probe) + 16, 400, false, static_cast<int>(StashSort::Title));
-  if (m.offline_) {  // the status column's: the Offline place
-    Button& place = m.addRound(Menu::Icon::Download, strings().offline.nav,
-                               [&m] {
-                                 m.showOffline();
-                                 return MenuCommand{};
-                               },
-                               cols.status, top + 2, kStatusColumnW);
-    place.panel = Menu::kBrowser;
-    place.bare = true;
-  }
-  heading(1, cols.rating + 6, kRatingColumnW, false,
-          static_cast<int>(StashSort::Rating));
-  heading(2, cols.plays, kPlaysColumnW, true, static_cast<int>(StashSort::Plays));
-  if (cols.studio < cols.released) heading(3, cols.studio, kStudioW, false, -1);
-  heading(4, cols.released, kReleasedW, false, static_cast<int>(StashSort::Released));
-  heading(5, cols.length, kLengthW, true, static_cast<int>(StashSort::Duration));
-
+  double px, py, pw, ph;
+  m.listPicture(probe, px, py, pw, ph);
   const std::vector<int>& scenes = st.result.scenes;
-  m.listTop_ = top + kListHeaderH + 6;
+  if (!scenes.empty()) {  // none over an empty list
+    heading(0, px + pw + kRowNameGap, 400, false, static_cast<int>(StashSort::Title));
+    if (m.offline_) {  // the status column's: the Offline place
+      Button& place = m.addRound(Menu::Icon::Download, strings().offline.nav,
+                                 [&m] {
+                                   m.showOffline();
+                                   return MenuCommand{};
+                                 },
+                                 cols.status, top, kListHeaderH);
+      place.panel = Menu::kBrowser;
+      place.bare = true;
+      place.iconSize = 22;
+    }
+    heading(1, cols.rating + 2, kRatingColumnW, false, static_cast<int>(StashSort::Rating));
+    heading(2, cols.plays, kPlaysColumnW, true, static_cast<int>(StashSort::Plays));
+    heading(3, cols.released, kReleasedColumnW, false, static_cast<int>(StashSort::Released));
+    heading(4, cols.length, kLengthColumnW, true, static_cast<int>(StashSort::Duration));
+  }
+  m.listTop_ = top + kListHeaderH + kit::kSpacePiece;
   m.rowHeight_ = kFileRowH;
   m.visibleRows_ = std::max(1, static_cast<int>((m.listBottom_ - m.listTop_) / kFileRowH));
+  m.endOnWholeRow();
   m.listCount_ = static_cast<int>(scenes.size());
   int first, end;
   m.clampScroll(m.listCount_, m.visibleRows_, first, end);
@@ -1893,39 +1833,52 @@ void StashPages::layoutList(Menu& m, double x0, double top) {
   for (int i = first; i < end; ++i) {
     const int index = scenes[i];
     const StashScene& s = c.scenes()[index];
+    const std::string location = stashSceneLocation(s, m.offline_);
     Button b;
     b.panel = Menu::kBrowser;
     b.x = x0;
     b.y = m.listTop_ + (i - m.scrollOffset_ - m.scrollFraction_) * kFileRowH;
     b.w = rowW;
     b.h = kFileRowH - kRowGap;
+    b.radius = kit::kCorner;
     b.label = title(m, s);
-    b.detail = performers(m, s);
-    b.size = s.studio >= 0 ? c.studios()[s.studio].name : "";
-    b.date = s.date;
-    b.caption = s.duration > 0 ? formatTime(s.duration) : "";
-    const std::string location = stashSceneLocation(s, m.offline_);
+    b.byline = performers(m, s);
     b.selected = location == m.view_.currentFile;
     b.listRow = true;
     b.scrolls = true;
-    b.fontSize = Menu::kTextSize;
-    b.stashLook = static_cast<int>(StashLook::Row);
-    if (m.view_.thumbnails || m.stashCoversShown())
-      b.thumbPath = location;
-    else
-      b.icon = Menu::Icon::Video;
-    if (history && st.history[index].plays > 0) b.plays = std::to_string(st.history[index].plays);
+    b.fontSize = kit::kRowSize;
+    ListItem item{};
+    item.thumbPath = location;
+    m.setThumbnailOrIcon(b, item);
+    b.inner = x0 + rowW - kit::kSpace - (cols.status - kColumnGap);  // the columns' room
     b.action = [&m, location] { return open(m, location, false); };
-    b.tooltip = b.label + (b.detail.empty() ? "" : "  ·  " + b.detail);
+    b.tooltip = b.label + (b.byline.empty() ? "" : "  ·  " + b.byline);
     b.offlinePath = location;
     m.buttons_.push_back(b);
     m.addOfflineButtons(b, cols.status, 0);
+    Button columns;
+    columns.panel = Menu::kBrowser;
+    columns.x = b.x;
+    columns.y = b.y;
+    columns.w = b.w;
+    columns.h = b.h;
+    columns.listLook = static_cast<int>(ListLook::Overlay);
+    columns.stashLook = static_cast<int>(StashLook::SceneColumns);
+    if (history && st.history[index].plays > 0) columns.plays = stashNumber(st.history[index].plays);
+    columns.date = s.date;
+    columns.caption = s.duration > 0 ? formatTime(s.duration) : "";
+    columns.offlinePath = location;
+    columns.scrolls = true;
+    m.buttons_.push_back(columns);
+    // Unrated, shown only while the row is pointed at (hoverLook()).
     Button stars = m.ratingButton(location, history ? st.history[index].rating : 0, Menu::kBrowser,
-                                  cols.rating, b.y + 2, kRowStarW, b.h - 4);
+                                  cols.rating, b.y + kRowPictureIn, kRowStarW, b.h - 2 * kRowPictureIn);
     stars.scrolls = true;
+    stars.iconSize = kRowStarSize;
+    stars.listLook = static_cast<int>(ListLook::RowStars);
     m.buttons_.push_back(stars);
   }
-  wantThumbnails(m, first, end, m.visibleRows_, m.listThumbW(probe));
+  wantThumbnails(m, first, end, m.visibleRows_, pw);
   m.addScrollbar();
 }
 
@@ -1949,14 +1902,15 @@ std::string fullTitle(const StashMenu& st, bool cards) {
 
 }  // namespace
 
-// A full list in place of the results: Back, its order and search, a row of
-// letters while A–Z, then its rows in two columns.
+// A full list in place of the results: its tools row (Back, its title, its
+// order and search), a row of letters while A–Z, then its rows in two
+// columns.
 void StashPages::layoutFull(Menu& m, double x0, double top) {
   StashMenu& st = state(m);
   const StashStrings& t = strings().stash;
   if (st.fullStale) buildFull(m);
-  const double right = m.listRight_ - 6;  // the page's, or a performer's profile's left
-  const double h = 56;
+  const double right = m.listRight_ - kListRightPad;  // the page's, or a performer's profile's left
+  const double h = kBrowserToolsH;
   const bool cards = m.page_ == Menu::Page::StashPerformers;  // in place of its cards
   Button back = actionButton(
       m, cards ? t.backToPerformers : t.back, StashIcon::Back,
@@ -1971,108 +1925,85 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
       },
       x0, top, h);
   m.buttons_.push_back(back);
-  st.fullTitleX = back.x + back.w + 20;
-  double listTop = top + h + 10;
+  st.fullTitleX = back.x + back.w + kit::kSpaceEdge;
+  double listTop = top + h + kit::kSpace;
   const bool searchable = st.full != StashFull::Pins;
   st.fullTitleRight = right;
   if (searchable) {
-    // Most first or A–Z; years: one button, newest or oldest first, that flips.
+    // Most first or A–Z in a well; years: one button, newest or oldest
+    // first, that turns it around.
     const bool years = st.full == StashFull::Years;
-    std::vector<Button> sorts;
+    auto order = [&m, years](int byName) {
+      return [&m, byName, years] {
+        StashMenu& s = state(m);
+        s.fullByName = years ? !s.fullByName : byName == 1;
+        s.fullStale = true;
+        m.scrollOffset_ = 0;
+        m.scrollFraction_ = 0;
+        return MenuCommand{};
+      };
+    };
+    std::vector<Menu::ToolPiece> orders;
+    Button flip;
     double sortW = 0;
-    for (int byName = years ? 1 : 0; byName <= 1; ++byName) {
-      const char* label = years ? t.yearOrder[st.fullByName ? 1 : 0]
-                          : byName ? t.alphabetical
-                                   : t.byCount;
-      Button b = m.textButton(
-          label, Menu::Icon::None,
-          [&m, byName, years] {
-            StashMenu& s = state(m);
-            s.fullByName = years ? !s.fullByName : byName == 1;
-            s.fullStale = true;
-            m.scrollOffset_ = 0;
-            m.scrollFraction_ = 0;
-            return MenuCommand{};
-          },
-          !years && st.fullByName == (byName == 1));
-      b.panel = Menu::kBrowser;
-      b.w = m.textWidth(label, Menu::kTextSize, false) + 40;
-      b.h = h;
-      b.radius = h / 2;
-      b.tooltip = years ? t.tipYearSort : t.tipFullSort[byName];
-      if (!sorts.empty()) sortW += 6;
-      sortW += b.w;
-      sorts.push_back(std::move(b));
+    if (years) {
+      flip = actionButton(m, t.yearOrder[st.fullByName ? 1 : 0], StashIcon::None, order(1), 0, 0, h);
+      flip.tooltip = t.tipYearSort;
+      sortW = flip.w;
+    } else {
+      for (int byName = 0; byName <= 1; ++byName) {
+        Menu::ToolPiece p;
+        p.label = byName ? t.alphabetical : t.byCount;
+        p.tooltip = t.tipFullSort[byName];
+        p.chosen = st.fullByName == (byName == 1);
+        p.action = order(byName);
+        orders.push_back(std::move(p));
+      }
+      sortW = m.toolsWellWidth(orders);
     }
-    double x = right - 420 - 16 - sortW;
+    double x = right - 420 - kColumnGap - sortW;
     double toolsY = top;
-    st.fullTitleRight = x - 18;
+    st.fullTitleRight = x - kit::kSpaceEdge;
     // Allow long titles to ellipsize, but reserve enough space to read one.
     // On a narrow pane, the tools lead a second row and search fills it.
-    const double titleW = std::min(240.0, m.textWidth(fullTitle(st, cards), 27, true));
+    const double titleW = std::min(240.0, m.textWidth(fullTitle(st, cards), kit::kRowSize, true));
     if (st.fullTitleRight - st.fullTitleX < titleW) {
       x = x0;
       toolsY = listTop;
-      listTop += h + 10;
+      listTop += h + kit::kSpace;
       st.fullTitleRight = right;
     }
-    double sortX = x;
-    for (Button& b : sorts) {
-      b.x = sortX;
-      b.y = toolsY;
-      sortX += b.w + 6;
-      m.buttons_.push_back(std::move(b));
+    if (years) {
+      flip.x = x;
+      flip.y = toolsY;
+      m.buttons_.push_back(flip);
+    } else {
+      m.toolsWell(x, toolsY, orders);
     }
 
+    // Its own search, as the tools row's (which has the page's search).
     const int kind = st.full == StashFull::Performers ? 0
                      : st.full == StashFull::Tags     ? 1
                      : st.full == StashFull::Studios  ? 2
                                                       : 3;
     const char* hint = st.full == StashFull::Look ? t.findLooks[static_cast<int>(st.fullLook)]
                                                   : t.find[kind];
-    const bool editing = m.editing_ && st.typing == StashMenu::Typing::FullSearch;
-    const std::string& text = st.fullSearch;
-    Button search = m.textButton(
-        text.empty() && !editing ? std::string(hint) : text,
-        Menu::Icon::Search, [&m] {
-          StashMenu& s = state(m);
-          s.typing = StashMenu::Typing::FullSearch;
+    m.toolsSearch(
+        x + sortW + kColumnGap, toolsY, right, st.fullSearch, hint,
+        m.editing_ && st.typing == StashMenu::Typing::FullSearch,
+        [&m] {
+          state(m).typing = StashMenu::Typing::FullSearch;
           m.editing_ = true;
           return MenuCommand{};
+        },
+        [&m] {
+          state(m).typing = StashMenu::Typing::FullSearch;
+          setText(m, "");
+          return MenuCommand{};
         });
-    search.panel = Menu::kBrowser;
-    search.x = x + sortW + 16;
-    search.w = right - search.x;
-    search.y = toolsY;
-    search.h = h;
-    search.field = true;
-    search.on = editing;
-    search.caret = editing ? m.caret() : -1;
-    search.placeholder = text.empty() && !editing;
-    search.tooltip = hint;
-    search.radius = 12;
-    m.buttons_.push_back(search);
-    if (!text.empty()) {
-      Button clear = m.textButton(strings().clear, Menu::Icon::None, [&m] {
-        StashMenu& s = state(m);
-        s.typing = StashMenu::Typing::FullSearch;
-        setText(m, "");
-        return MenuCommand{};
-      });
-      clear.panel = Menu::kBrowser;
-      clear.bare = true;
-      clear.on = true;
-      clear.fontSize = 26;
-      clear.w = m.textWidth(strings().clear, 26, false) + 40;
-      clear.x = right - clear.w - 6;
-      clear.y = toolsY + 4;
-      clear.h = h - 8;
-      clear.radius = clear.h / 2;
-      m.buttons_.push_back(clear);
-    }
   }
   const int columns = 2;
-  // A–Z: a row of the letters the list has; one scrolls to its first row.
+  // A–Z: the letters the list has, in a well; one scrolls to its first row.
   if (st.fullByName && st.full != StashFull::Years && st.full != StashFull::Pins) {
     std::vector<std::pair<std::string, int>> letters;  // letter, first row
     for (size_t i = 0; i < st.fullRows.size(); ++i) {
@@ -2085,26 +2016,38 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
                          [&](const auto& l) { return l.first == letter; }))
           letters.emplace_back(letter, static_cast<int>(i));
     }
-    const double w = std::min(56.0, (right - x0 - 30) / std::max<size_t>(1, letters.size()) - 4);
-    double lx = x0;
+    constexpr double in = kit::kSpacePiece, wellH = 48;
+    const size_t n = std::max<size_t>(1, letters.size());
+    const double w = std::min(kViewPieceW, (right - x0 - in) / n - in);
+    Button well;
+    well.panel = Menu::kBrowser;
+    well.well = true;
+    well.x = x0;
+    well.y = listTop;
+    well.w = in + n * (w + in);
+    well.h = wellH;
+    well.radius = kit::kCorner;
+    m.buttons_.push_back(well);
+    double lx = x0 + in;
     for (const auto& [letter, row] : letters) {
-      Button b = m.textButton(letter, Menu::Icon::None, [&m, row = row, columns] {
+      Button b = m.textButton(letter, Menu::Icon::None, [&m, row = row] {
         m.scrollOffset_ = row / columns;
         m.scrollFraction_ = 0;
         return MenuCommand{};
       });
       b.panel = Menu::kBrowser;
+      b.piece = true;
       b.x = lx;
-      b.y = listTop;
+      b.y = listTop + in;
       b.w = w;
-      b.h = 48;
-      b.radius = 10;
-      b.fontSize = 24;
+      b.h = wellH - 2 * in;
+      b.radius = kit::kPieceCorner;
+      b.fontSize = kit::kWellSize;
       b.tooltip = t.tipJumpLetter;
       m.buttons_.push_back(b);
-      lx += w + 4;
+      lx += w + in;
     }
-    listTop += 58;
+    listTop += wellH + kit::kSpace;
   }
 
   const std::vector<StashMenu::FullRow>& rows = st.fullRows;
@@ -2114,19 +2057,19 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
   m.listCount_ = (static_cast<int>(rows.size()) + columns - 1) / columns;
   int firstRow, endRow;
   m.clampScroll(m.listCount_, m.visibleRows_, firstRow, endRow);
-  const double cellW = (m.listRight_ - 30 - x0 - 16) / columns;
+  const double cellW = (m.listRight_ - 30 - x0 - kit::kSpace) / columns;
   const int end = std::min(static_cast<int>(rows.size()), endRow * columns);
   for (int i = firstRow * columns; i < end; ++i) {
     const StashMenu::FullRow& r = rows[i];
-    const double cx = x0 + (i % columns) * (cellW + 16);
+    const double cx = x0 + (i % columns) * (cellW + kit::kSpace);
     const double cy = listTop + (i / columns - m.scrollOffset_ - m.scrollFraction_) * kRowStep;
-    const double w = r.exclude ? cellW - kExcludeW - 6 : cellW;
+    const double w = r.exclude ? cellW - kExcludeW - kit::kSpacePiece : cellW;
     Button b = facetButton(m, r.label, r.count, r.state, r.include, cx, cy, w, kRowBox);
     if (st.full != StashFull::Pins && b.tooltip.empty()) b.tooltip = t.tipFilter;
     b.scrolls = true;
     m.buttons_.push_back(b);
     if (r.exclude) {
-      Button ex = excludeButton(m, r.state, r.exclude, cx + w + 6, cy, kExcludeW, kRowBox);
+      Button ex = excludeButton(m, r.state, r.exclude, cx + w + kit::kSpacePiece, cy, kExcludeW, kRowBox);
       ex.scrolls = true;
       m.buttons_.push_back(ex);
     }
@@ -2134,18 +2077,19 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
   m.addScrollbar();
 }
 
+// The rail at the left, then in the rest the chips and the results (or a
+// full list), the File explorer's list or cards.
 void StashPages::layoutResults(Menu& m, double top, double right) {
   StashMenu& st = state(m);
   const bool editing = m.editingFilter();
   const double bottom = editing ? kKeyboardY - 16 : kListBottom;
-  const double x0 = Menu::kPageX + kPagePad;
-  double resultsX = x0;
+  double resultsX = kContentLeft;
   if (st.railShown && catalog(m)) {
     layoutRail(m, st.rail, st.railHeight, top, bottom);
-    resultsX = x0 + kRailW + kRailGap;
+    resultsX = kContentLeft + kRailW + kRailGap;
   }
   m.listLeft_ = resultsX;
-  m.listRight_ = right + 6;
+  m.listRight_ = right + kListRightPad;
   m.listShowsFolder_ = false;
   m.listColumns_ = false;
   m.listBottom_ = bottom;
@@ -2175,10 +2119,11 @@ void StashPages::layoutResults(Menu& m, double top, double right) {
   if (editing) m.layoutKeyboard();
 }
 
+// The header row, the tools row, then the rail and the results.
 void StashPages::layoutScenes(Menu& m) {
   refresh(m);
-  layoutResults(m, kGridTop, Menu::kPageX + Menu::kPageWidth - kPagePad);
-  layoutHeader(m, Menu::kPageX + kPagePad);
+  layoutResults(m, kGridTop, kContentRight);
+  layoutHeader(m, kContentLeft);
   layoutTools(m);
 }
 
@@ -2196,11 +2141,6 @@ std::string StashPages::performers(const Menu& m, const StashScene& s) {
     names += (names.empty() ? "" : ", ") + performer.name;
   }
   return names;
-}
-
-std::string StashPages::studioDate(const StashCatalog& c, const StashScene& s) {
-  return stashJoined({s.studio >= 0 ? c.studios()[s.studio].name : "", s.date,
-                      s.duration > 0 ? formatTime(s.duration) : ""});
 }
 
 // "VR · 8K", "2D · 1080p": the resolution band the filter has it in.
@@ -2245,34 +2185,28 @@ void StashPages::drawScenesHeading(const Menu& m, cairo_t* cr) {
     heading = st.pins[st.pin].name;
   if (m.editing_ && st.typing == StashMenu::Typing::PinName)  // being renamed
     heading.insert(heading == m.filterText() ? m.cursorAt() : heading.size(), "▏");
-  const double x = st.titleX;
-  // Shorter on a performer's or studio's page, where Back comes first.
-  const double titleW = std::min(m.textWidth(heading, 30, true) + 4,
-                                 m.page_ == Menu::Page::StashPerformer ||
-                                         m.page_ == Menu::Page::StashStudio
-                                     ? 520.0
-                                     : 700.0);
-  m.drawText(cr, heading, x, kBrowserRowY, titleW, kBrowserRowH, 30, true, false, pal.text.r,
-             pal.text.g, pal.text.b);
+  // The title as a page's, how many after it while there is room.
+  constexpr int countSize = 23;
+  std::string count;
   if (c) {
     const long shown = static_cast<long>(st.result.scenes.size());
     const long all = st.result.formats[static_cast<int>(st.list.format)];
-    const std::string count = shown == all
-                                  ? stashPrinted(t.count, stashNumber(shown))
-                                  : stashPrinted(t.countOf, stashNumber(shown), stashNumber(all));
-    m.drawText(cr, count, x + titleW + 20, kBrowserRowY, 360, kBrowserRowH, 24, false, false,
-               pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a);
+    count = shown == all ? stashScenes(shown)
+                         : stashPrinted(t.countOf, stashNumber(shown), stashNumber(all));
   }
-  const char* empty = nullptr;
+  const double x = st.titleX, room = st.titleRight - x;
+  const double countW = count.empty() ? 0 : m.textWidth(count, countSize, false) + kit::kSpaceEdge;
+  const double titleW = std::min(m.textWidth(heading, kit::kTitleSize, true) + 4,
+                                 std::max(std::min(room, 200.0), room - countW));
+  m.drawText(cr, heading, x, kBrowserRowY, titleW, kBrowserRowH, kit::kTitleSize, true, false,
+             pal.text.r, pal.text.g, pal.text.b);
+  if (!count.empty() && titleW + countW <= room)
+    m.drawText(cr, count, x + titleW + kit::kSpaceEdge, kBrowserRowY, countW, kBrowserRowH, countSize,
+               false, false, pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a);
   if (!c)
-    drawWaiting(m, cr, st.resultsX + 24, st.resultsTop + 20,
-                Menu::kPageX + Menu::kPageWidth - kPagePad - st.resultsX - 48);
+    drawWaiting(m, cr, st.resultsX + 24, st.resultsTop + 20, kContentRight - st.resultsX - 48);
   else if (st.full == StashFull::None && st.result.scenes.empty() && !st.notHere)
-    empty = t.noScenes;
-  if (empty)
-    m.drawText(cr, empty, st.resultsX + 24, st.resultsTop + 20,
-               Menu::kPageX + Menu::kPageWidth - kPagePad - st.resultsX - 48, kFileRowH, 27, false,
-               false, pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a);
+    m.drawEmptyPage(cr, Menu::Icon::Film, t.noScenes);
   drawFullHeading(m, cr);
 }
 
@@ -2282,10 +2216,8 @@ void StashPages::drawFullHeading(const Menu& m, cairo_t* cr) {
   const StashStrings& t = strings().stash;
   const Palette& pal = m.palette();
   const std::string title = fullTitle(st, m.page_ == Menu::Page::StashPerformers);
-  m.drawText(cr, title, st.fullTitleX, st.resultsTop, st.fullTitleRight - st.fullTitleX, 56, 27,
-             true, false, pal.text.r, pal.text.g, pal.text.b);
+  m.drawText(cr, title, st.fullTitleX, st.resultsTop, st.fullTitleRight - st.fullTitleX,
+             kBrowserToolsH, kit::kRowSize, true, false, pal.text.r, pal.text.g, pal.text.b);
   if (st.fullRows.empty() && !st.fullSearch.empty())
-    m.drawText(cr, stashPrinted(t.noMatches, st.fullSearch), st.resultsX + 24, m.listTop_, 900,
-               kFileRowH, 27, false, false, pal.textDim.r, pal.textDim.g, pal.textDim.b,
-               pal.textDim.a);
+    m.drawEmptyPage(cr, Menu::Icon::Search, stashPrinted(t.noMatches, st.fullSearch));
 }

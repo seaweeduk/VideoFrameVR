@@ -16,6 +16,8 @@
 // in pinned_folders.conf; a drive taken out keeps its place there.
 class Places {
  public:
+  // What a place is, for its icon.
+  enum class Kind { Folder, Home, Videos, Card, Usb, Drive };
   struct Place {
     std::string label;  // its name, else its own
     std::string path;
@@ -23,6 +25,7 @@ class Places {
     bool available = true;
     bool hidden = false;   // not in the navigation
     std::string ownName;   // the folder's or the drive's
+    Kind kind = Kind::Folder;
   };
   // What home, videos and the file system are called, and drives without a label.
   struct Names {

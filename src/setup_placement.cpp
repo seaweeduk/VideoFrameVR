@@ -18,8 +18,9 @@ constexpr double kHintAfter = 2;
 constexpr float kLyingBack = 40 * kDegree, kSittingUp = 25 * kDegree;  // looking up
 constexpr double kLyingAfter = 2, kSittingAfter = 1;
 constexpr double kFade = 0.2;  // seconds out, and as long in
-// The cues hang this far in front of the eyes, as GazeNotice's, sized as the
-// prototype draws them at 1.5 m; the arrow out at about these angles.
+// The cues hang this far in front of the eyes, as the messages' (notices.h),
+// sized as the prototype draws them at 1.5 m; the arrow out at about these
+// angles.
 constexpr float kNear = 0.7f, kCueScale = kNear / 1.5f / 1000;
 constexpr float kEdgeX = 0.53f, kEdgeY = 0.36f;  // tangents: 28° across, 20° up or down
 

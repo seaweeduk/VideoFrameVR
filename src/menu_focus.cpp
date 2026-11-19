@@ -1,9 +1,10 @@
-// The menu's stereo focus page, in groups like the other settings pages: on
-// the left what holds for all videos (stereo focus on or off, what aims it,
-// its marker in the view, the viewer's IPD, motion), on the right the running
-// video's own focus (mode, camera separation, manual distance, automatic
-// tuning, and the default handling).
-#include "menu_style.h"
+// Stereo focus: a page like Video settings, built from the menu's parts, in
+// three columns: what holds for all videos (stereo focus on or off, what
+// aims it, its marker in the view, the viewer's IPD), the running video's
+// own focus (mode, camera separation, manual distance, automatic tuning,
+// and the defaults), and motion. It never scrolls (the debug fit check says
+// where it would).
+#include "menu_parts.h"
 #include "motion.h"
 
 #include <algorithm>
@@ -36,6 +37,13 @@ std::string distanceText(int cm) {
 std::string hundredths(int v) {
   char buf[16];
   std::snprintf(buf, sizeof(buf), "%.2f", v / 100.0);
+  return buf;
+}
+
+// Tenths of a unit, as the unit: millimetres as centimetres, an IPD's.
+std::string tenths(int v, const char* unit) {
+  char buf[32];
+  std::snprintf(buf, sizeof(buf), "%.1f%s", v / 10.0, unit);
   return buf;
 }
 
@@ -72,155 +80,215 @@ void Menu::focusChanged(const FocusView& view) {
 }
 
 void Menu::layoutFocus() {
-  const FocusStrings& t = text().focus;
+#ifndef NDEBUG
+  if (focusFitChecked_ != &text()) checkFocusFit();
+#endif
+  const Strings& strings = text();
+  const FocusStrings& t = strings.focus;
   const FocusView& f = view_.focus;
   const FocusSettings& s = f.settings;
   const FocusPreferences& p = f.preferences;
-  const double w = (Menu::kPageWidth - 2 * kPagePad - kGap) / 2;
-  const double rowW = w - 2 * kGroupPad, labelW = 330;
-  const double left = Menu::kPageX + kPagePad, right = left + w + kGap;
   auto next = [](FocusControl c, int value, int direction) {
     return focusCommand(c, nextFocusStep(c, value, direction));
   };
   auto toggle = [](FocusControl c, bool on) { return focusCommand(c, on ? 0 : 1); };
+  // A value of the focus: its control is the command's option, so that a
+  // change redraws only its row (focusChanged()).
+  auto value = [&](GroupLayout& group, const char* label, FocusControl c, int now, int lo, int hi,
+                   const std::string& text, std::function<std::string(int)> format) {
+    Row row = group.value(label, MenuCommand::SetFocus, now, lo, hi, text, 1, next(c, now, -1),
+                          next(c, now, 1));
+    row.option(static_cast<int>(c)).format([format](int v, bool) { return format(v); });
+    return row;
+  };
   // A control that changes nothing now is greyed out.
   const bool on = p.enabled;
   const bool manual = on && s.mode == FocusMode::Manual;
   const bool automatic = on && s.mode == FocusMode::Automatic;
   // Rows only for those tuning it; hidden ones keep working as set.
   const bool advanced = view_.advancedSettings;
-  const double pageTop = layoutAdvancedSwitch();
+  // The player keeps a closed video's title: no file, no title.
+  const bool open = !view_.currentFile.empty();
+  PageLayout page(*this, strings.stereoFocus, open ? view_.playback.title : std::string());
+  page.pageSwitch(strings.advancedSettings, advanced,
+                  command(MenuCommand::ToggleAdvancedSettings), strings.tipAdvanced);
 
-  double x, y;
-  // Something the viewer should know, as a row of its own.
-  auto note = [&](const std::string& words) {
-    addLabel(x + 12, y, rowW - 12, kSettingRowH, words, kHintSize, true);
-    y += kSettingStep;
-  };
-
-  // For all videos.
-  x = left + kGroupPad, y = firstRow(pageTop);
-  addToggleRow(x, y, rowW, t.enabled, on, toggle(FocusControl::Enabled, on)).tooltip =
-      t.enabledHint;
-  y += kSettingStep;
-  addChoiceRow(x, y, rowW, 170, t.target, {t.targets[0], t.targets[1]}, p.eyeTracking ? 1 : 0,
-               [](int i) { return focusCommand(FocusControl::Target, i)(); }, !on, t.targetHint);
-  y += kSettingStep;
-  // The eyes were chosen but the head aims: why.
-  if (on && !f.targetNotice.empty()) note(f.targetNotice);
-  addToggleRow(x, y, rowW, t.showTarget, p.showTarget,
-               toggle(FocusControl::ShowTarget, p.showTarget), !on).tooltip = t.showTargetHint;
-  y += kSettingStep;
-  addToggleRow(x, y, rowW, t.gazeCorrect, p.gazeCorrect,
-               toggle(FocusControl::GazeCorrect, p.gazeCorrect)).tooltip = t.gazeCorrectHint;
-  y += kSettingStep;
-  if (advanced) {
-    // The viewer's IPD: the headset's, or a value of its own.
-    addToggleRow(x, y, rowW, t.autoIpd, p.autoIpd, toggle(FocusControl::AutoIpd, p.autoIpd), !on)
-        .tooltip = t.autoIpdHint;
-    y += kSettingStep;
-    const int ipd = p.autoIpd && f.headsetIpdTenthMm > 0 ? f.headsetIpdTenthMm : p.ipdTenthMm;
-    char ipdText[16];
-    std::snprintf(ipdText, sizeof(ipdText), "%.1f mm", ipd / 10.0);
-    addValueRow(x, y, rowW, labelW, t.ipd, ipdText, ipd, 400, 900,
-                next(FocusControl::Ipd, ipd, -1), next(FocusControl::Ipd, ipd, 1), !on, false,
-                t.ipdHint);
-    y += kSettingStep;
+  // For all videos: stereo focus on or off, what aims it, its marker, the
+  // gaze correction, and (advanced) the viewer's IPD: the headset's, or a
+  // value of its own.
+  {
+    GroupLayout all = page.group(0, t.allTitle);
+    all.labelsFor({t.target, t.ipd});
+    all.toggle(t.enabled, on, toggle(FocusControl::Enabled, on)).tip(t.enabledHint);
+    all.choice(t.target, {t.targets[0], t.targets[1]}, p.eyeTracking ? 1 : 0,
+               [](int i) { return focusCommand(FocusControl::Target, i)(); })
+        .tip(t.targetHint)
+        .disable(!on);
+    // The eyes were chosen but the head aims: why.
+    if (on && !f.targetNotice.empty()) all.note(f.targetNotice, true);
+    all.toggle(t.showTarget, p.showTarget, toggle(FocusControl::ShowTarget, p.showTarget))
+        .tip(t.showTargetHint)
+        .disable(!on);
+    all.toggle(t.gazeCorrect, p.gazeCorrect, toggle(FocusControl::GazeCorrect, p.gazeCorrect))
+        .tip(t.gazeCorrectHint);
+    if (advanced) {
+      all.toggle(t.autoIpd, p.autoIpd, toggle(FocusControl::AutoIpd, p.autoIpd))
+          .tip(t.autoIpdHint)
+          .disable(!on);
+      const int ipd = p.autoIpd && f.headsetIpdTenthMm > 0 ? f.headsetIpdTenthMm : p.ipdTenthMm;
+      value(all, t.ipd, FocusControl::Ipd, ipd, 400, 900, tenths(ipd, " mm"),
+            [](int v) { return tenths(v, " mm"); })
+          .tip(t.ipdHint)
+          .disable(!on);
+    }
   }
-  addGroup(left, pageTop, w, y + 10 - pageTop, t.allTitle);
+
+  // This video's own (or the defaults it follows): why it does nothing,
+  // where that is so; its mode, camera separation, manual distance and the
+  // automatic focus's minimum distance; (advanced) the rest of its tuning;
+  // and the defaults.
+  {
+    GroupLayout video = page.group(1, t.videoTitle);
+    if (!f.supported)
+      video.note(t.unsupported, true);
+    else if (automatic && f.unavailable)
+      video.note(strings.focusStatus.unavailable, true);
+    // The modes' well as wide as it can be (its label's own width), the
+    // values' fields lined up under it.
+    video.labelsFor({t.mode});
+    Row mode = video.choice(t.mode, {t.modes[0], t.modes[1], t.modes[2]}, static_cast<int>(s.mode),
+                            [](int i) { return focusCommand(FocusControl::Mode, i)(); });
+    for (int i = 0; i < 3; ++i) mode.piece(i).tooltip = t.modeTips[i];
+    mode.disable(!on);
+    std::vector<std::string> labels{t.baseline, t.distance, t.tuningLabels[0]};
+    if (advanced)
+      labels.insert(labels.end(), std::begin(t.tuningLabels) + 1, std::end(t.tuningLabels));
+    video.labelsFor(labels);
+    value(video, t.baseline, FocusControl::Baseline, s.baselineMm, 10, 120,
+          tenths(s.baselineMm, " cm"), [](int v) { return tenths(v, " cm"); })
+        .tip(t.baselineHint)
+        .disable(!manual && !automatic);
+    value(video, t.distance, FocusControl::Distance, s.distanceCm, 10, 1000,
+          distanceText(s.distanceCm), distanceText)
+        .logarithmic()
+        .tip(t.distanceHint)
+        .disable(!manual);
+    {
+      auto degrees = [](int v) {
+        char text[16];
+        std::snprintf(text, sizeof(text), "%+d°", v);
+        return std::string(text);
+      };
+      struct Tuning {
+        FocusControl control;
+        int now, lo, hi;
+        bool logarithmic;
+        std::function<std::string(int)> format;
+      };
+      const Tuning tuning[] = {
+          {FocusControl::MinDistance, s.minCm, 5, 100000, true, distanceText},
+          {FocusControl::MaxDistance, s.maxCm, 5, 100000, true, distanceText},
+          {FocusControl::Transition, s.speed, 10, 1000, true, hundredths},
+          {FocusControl::Sensitivity, s.sensitivity, 50, 200, false, hundredths},
+          {FocusControl::Accuracy, s.accuracy, 1, 128, true, [](int v) { return std::to_string(v); }},
+          {FocusControl::Pitch, s.pitchDeg, -45, 45, false, degrees},
+          {FocusControl::Yaw, s.yawDeg, -45, 45, false, degrees}};
+      // The minimum distance always; the rest with Advanced settings on.
+      const size_t shown = advanced ? std::size(tuning) : 1;
+      for (size_t i = 0; i < shown; ++i) {
+        const Tuning& r = tuning[i];
+        Row row = value(video, t.tuningLabels[i], r.control, r.now, r.lo, r.hi, r.format(r.now),
+                        r.format);
+        if (r.logarithmic) row.logarithmic();
+        row.tip(t.tuningHints[i]).disable(!automatic);
+      }
+    }
+    video.buttons({{t.makeDefault, t.makeDefaultHint, focusCommand(FocusControl::MakeDefault), !on},
+                   {t.useDefault, t.useDefaultHint, focusCommand(FocusControl::UseDefault),
+                    !on || !f.own}});
+    video.note(f.own ? t.ownHint : t.defaultHint, true).disable(!on);
+  }
 
   // Motion: head translation emulation, for all surround video (not part of
-  // the stereo focus, but shown here alongside it).
-  const double motionTop = y + 10 + kGap;
-  y = firstRow(motionTop);
-  addToggleRow(x, y, rowW, t.motion, view_.motionEmulation,
-               [] { return MenuCommand{MenuCommand::ToggleMotion}; }).tooltip = t.motionHint;
-  y += kSettingStep;
-  auto motionDistance = [](int cm) {
-    return [cm] {
-      MenuCommand c;
-      c.type = MenuCommand::SetMotionDistance;
-      c.value = cm;
-      return c;
-    };
-  };
-  const int md = view_.motionDistance;
-  if (advanced) {
-    addValueRow(x, y, rowW, labelW, t.motionDistance, distanceText(md), md, 5, 1000,
-                motionDistance(nextMotionDistance(md, -1)), motionDistance(nextMotionDistance(md, 1)),
-                !view_.motionEmulation, true, t.motionHint);
-    y += kSettingStep;
-    addLabel(x + 12, y, rowW - 12, 0, t.motionHint, kHintSize, true, 2);
-    y += hintHeight(2);
+  // the stereo focus, but shown beside it), and how far away the picture is
+  // taken to be.
+  {
+    GroupLayout motion = page.group(2, t.motionTitle);
+    motion.labelsFor({t.motionDistance});
+    motion.toggle(t.motion, view_.motionEmulation, command(MenuCommand::ToggleMotion))
+        .tip(t.motionHint);
+    const int md = view_.motionDistance;
+    motion
+        .value(t.motionDistance, MenuCommand::SetMotionDistance, md, 5, 1000, distanceText(md), 1,
+               command(MenuCommand::SetMotionDistance, nextMotionDistance(md, -1)),
+               command(MenuCommand::SetMotionDistance, nextMotionDistance(md, 1)))
+        .format([](int v, bool) { return distanceText(v); })
+        .logarithmic()
+        .tip(t.motionHint)
+        .disable(!view_.motionEmulation);
   }
-  addGroup(left, motionTop, w, y + 10 - motionTop, t.motionTitle);
-
-  // This video's own (or the defaults it follows).
-  x = right + kGroupPad;
-  y = firstRow(pageTop);
-  // Why its focus does nothing, where that is so.
-  if (!f.supported)
-    note(t.unsupported);
-  else if (automatic && f.unavailable)
-    note(text().focusStatus.unavailable);
-  addChoiceRow(x, y, rowW, 170, t.mode, {t.modes[0], t.modes[1], t.modes[2]},
-               static_cast<int>(s.mode), [](int i) { return focusCommand(FocusControl::Mode, i)(); },
-                !on);
-  for (size_t i = 0; i < 3; ++i) buttons_[buttons_.size() - 3 + i].tooltip = t.modeTips[i];
-  y += kSettingStep;
-  char camera[16];
-  std::snprintf(camera, sizeof(camera), "%.1f cm", s.baselineMm / 10.0);
-  addValueRow(x, y, rowW, labelW, t.baseline, camera, s.baselineMm, 10, 120,
-              next(FocusControl::Baseline, s.baselineMm, -1),
-              next(FocusControl::Baseline, s.baselineMm, 1), !manual && !automatic, false, t.baselineHint);
-  y += kSettingStep;
-  addValueRow(x, y, rowW, labelW, t.distance, distanceText(s.distanceCm),
-              s.distanceCm, 10, 1000, next(FocusControl::Distance, s.distanceCm, -1),
-              next(FocusControl::Distance, s.distanceCm, 1), !manual, true, t.distanceHint);
-  y += kSettingStep;
-  char pitch[16], yaw[16];
-  std::snprintf(pitch, sizeof(pitch), "%+d°", s.pitchDeg);
-  std::snprintf(yaw, sizeof(yaw), "%+d°", s.yawDeg);
-  struct Row {
-    std::string value;
-    FocusControl control;
-    int current, lo, hi;
-    bool logarithmic;
-  };
-  const Row tuning[] = {
-      {distanceText(s.minCm), FocusControl::MinDistance, s.minCm, 5, 100000, true},
-      {distanceText(s.maxCm), FocusControl::MaxDistance, s.maxCm, 5, 100000, true},
-      {hundredths(s.speed), FocusControl::Transition, s.speed, 10, 1000, true},
-      {hundredths(s.sensitivity), FocusControl::Sensitivity, s.sensitivity, 50, 200, false},
-      {std::to_string(s.accuracy), FocusControl::Accuracy, s.accuracy, 1, 128, true},
-      {pitch, FocusControl::Pitch, s.pitchDeg, -45, 45, false},
-      {yaw, FocusControl::Yaw, s.yawDeg, -45, 45, false}};
-  for (size_t i = 0; advanced && i < std::size(tuning); ++i) {
-    const Row& r = tuning[i];
-    addValueRow(x, y, rowW, labelW, t.tuningLabels[i], r.value, r.current, r.lo, r.hi,
-                next(r.control, r.current, -1), next(r.control, r.current, 1), !automatic,
-                r.logarithmic, t.tuningHints[i]);
-    y += kSettingStep;
-  }
-  Button makeDefault = textButton(t.makeDefault, Icon::None, focusCommand(FocusControl::MakeDefault));
-  Button useDefault = textButton(t.useDefault, Icon::None, focusCommand(FocusControl::UseDefault));
-  makeDefault.tooltip = t.makeDefaultHint;
-  useDefault.tooltip = t.useDefaultHint;
-  makeDefault.x = x;
-  useDefault.x = x + makeDefault.w + kGap;
-  makeDefault.disabled = !on;
-  useDefault.disabled = !on || !f.own;
-  for (Button* b : {&makeDefault, &useDefault}) {
-    b->panel = kBrowser;
-    b->y = y;
-    b->h = kSettingRowH;
-    b->fontSize = kTextSize;
-    buttons_.push_back(*b);
-  }
-  const double hintX = useDefault.x + useDefault.w + 20;
-  addLabel(hintX, y, x + rowW - hintX, kSettingRowH, f.own ? t.ownHint : t.defaultHint, kHintSize,
-           true)
-      .disabled = !on;
-  y += kSettingStep;
-  addGroup(right, pageTop, w, y + 10 - pageTop, t.videoTitle);
 }
+
+// The page with every row that can show at once: on, the notes that can
+// show (each of the two that exclude each other), laid out and taken away
+// again.
+double Menu::focusBottom(bool advanced, bool check) {
+  const MenuView saved = view_;
+  const PageHead head = pageHead_;
+  const double top = pageTop_;
+  const size_t buttons = buttons_.size(), groups = groups_.size();
+  const FocusStatusStrings& fs = text().focusStatus;
+
+  // A new row that shows only in some state: switch that state on here too.
+  // Forgotten, the panel grows to fit the first time the row shows
+  // (layoutBrowser()) and stays that tall.
+  MenuView& v = view_;
+  FocusView& f = v.focus;
+  v.advancedSettings = advanced;
+  f.preferences.enabled = true;
+  f.settings.mode = FocusMode::Automatic;
+  f.targetNotice = *std::max_element(std::begin(fs.targets), std::end(fs.targets),
+                                     [this](const char* a, const char* b) {
+                                       return textWidth(a, kit::kNoteSize, false) <
+                                              textWidth(b, kit::kNoteSize, false);
+                                     });
+  pageTop_ = 0;
+  double bottom = 0;
+  auto measure = [&] {
+    const size_t first = groups_.size();
+    layoutFocus();
+    for (size_t i = first; i < groups_.size(); ++i) bottom = std::max(bottom, groups_[i].y + groups_[i].h);
+  };
+  f.supported = false;
+  f.own = true;
+#ifndef NDEBUG
+  if (check) fitCase_ = " (every row, unsupported)";
+#endif
+  measure();
+  f.supported = f.unavailable = true;
+  f.own = false;
+#ifndef NDEBUG
+  if (check) fitCase_ = " (every row, unavailable)";
+#endif
+  measure();
+#ifndef NDEBUG
+  fitCase_ = nullptr;
+#endif
+  (void)check;
+
+  buttons_.erase(buttons_.begin() + static_cast<std::ptrdiff_t>(buttons), buttons_.end());
+  groups_.erase(groups_.begin() + static_cast<std::ptrdiff_t>(groups), groups_.end());
+  pageHead_ = head;
+  pageTop_ = top;
+  view_ = saved;
+  return bottom;
+}
+
+#ifndef NDEBUG
+// Says loudly where Stereo focus with every row doesn't fit (Advanced
+// settings on).
+void Menu::checkFocusFit() {
+  focusFitChecked_ = &text();
+  focusBottom(true, true);
+}
+#endif

@@ -44,15 +44,11 @@ Strings japaneseStrings(const Strings& english) {
   s.quitTitle = "プレーヤーを終了しますか？";
   s.quit = "終了";
   s.picture = "画質";
-  s.pictureHint = "この動画にのみ保存されます。";
   s.brightness = "明るさ";
   s.contrast = "コントラスト";
   s.saturation = "彩度";
   s.zoom = "ズーム (180°/360°)";
   s.reset = "リセット";
-  s.design = "デザイン";
-  s.themes[0] = "半透明";
-  s.themes[1] = "不透明";
   s.projectionShort[0] = "スクリーン";
   s.projectionShort[1] = "180°";
   s.projectionShort[2] = "360°";
@@ -114,7 +110,7 @@ Strings japaneseStrings(const Strings& english) {
   s.tipSearchFolder = "このフォルダを検索";
   s.clear = "クリア";
   s.noMatches = "このフォルダに「%s」に一致する項目はありません";
-  s.matches = "このフォルダ内 %d / %d件";
+  s.matches = "このフォルダ内 %s / %s件";
   s.greenScreen = "グリーンバック";
   s.greenScreenHint = "下の設定で動画の背景を除去。";
   s.greenScreenOwnMask = "この動画には専用マスクがあります。";
@@ -148,7 +144,7 @@ Strings japaneseStrings(const Strings& english) {
   s.halfSbs = "ハーフSBS";
   s.halfTb = "ハーフTB";
   s.halfPackedHint = "半分に圧縮された左右の映像を元の比率に復元。平面3D専用。";
-  s.allVideos = "すべての動画";
+  s.display = "表示方法";
   s.videoMipmaps = "動画のミップマップ";
   s.antiShimmer = "ちらつき抑制";
   s.antiShimmerLevels[0] = "オフ";
@@ -158,7 +154,6 @@ Strings japaneseStrings(const Strings& english) {
   s.antiShimmerFrameHint = "縮小時の細線を滑らかに。「強」はぼやけ、FrameのGPU負荷も増加。";
   s.antiShimmerMipmaps = "ミップマップで平滑化中。ちらつき抑制は使いません。";
   s.sharpen = "シャープ化";
-  s.sharpenOff = "シャープ化オフ";
   s.toneLook = "色調補正";
   s.toneLookHint = "中間調を明るく、コントラストを強め、周辺をやや暗くします。";
   s.tvGamma = "TVガンマ";
@@ -169,7 +164,6 @@ Strings japaneseStrings(const Strings& english) {
   s.resolutionOverride = "起動引数で片目%d画素に指定中。ここで変更すると置き換わります。";
   s.resolutionLimited = "SteamVRまたはGPUにより%.2f×に制限";
   s.resolutionChanged = "1× = パネル%d画素に変更。最も近い設定：%.2f×。";
-  s.resolutionPending = "離すと解像度が切り替わります。";
   s.refreshRate = "リフレッシュレート";
   s.refreshRateChoice = "%d Hz";
   s.foveation = "Foveation";
@@ -202,9 +196,13 @@ Strings japaneseStrings(const Strings& english) {
   s.readingFolder = "フォルダを読み込み中…";
   s.groupMenu = "メニュー";
   s.groupView = "表示";
+  s.general = "一般";
   s.stereoFocus = "立体フォーカス";
   s.groupScreen = "スクリーン";
-  s.imageAllVideos = "画質（全動画）";
+  s.image = "画質";
+  s.thisVideo = "この動画";
+  s.thisVideoClosed = "設定を変更するには動画を再生してください。";
+  s.performance = "性能";
   s.greenScreenOn = "背景を除去";
   s.videoSettings = "動画設定";
   s.tabMainMenu = "メインメニュー";
@@ -224,7 +222,6 @@ Strings japaneseStrings(const Strings& english) {
   s.resumeHint = "停止位置から再開。終わりに近い場合は最初から再生。";
   s.seekPreview = "シークプレビュー";
   s.seekPreviewHint = "再生バーを指すとプレビュー。ファイルのサムネイルは「メニュー」で設定。";
-  s.seekPreviewUnavailable = "Steam Frameでは使用不可。フルサイズのデコーダーがもう1つ必要です。";
   s.showPerformance = "性能情報を表示";
   s.showPerformanceHint = "メニューを閉じても左下にフレームレートとコマ落ちを表示。";
   s.vibration = "コントローラーの振動";
@@ -249,13 +246,15 @@ Strings japaneseStrings(const Strings& english) {
   s.library = "ライブラリ";
   s.tipSearchLibrary = "ライブラリを検索";
   s.libraryEmpty = "固定したフォルダにはまだ動画がありません";
-  s.libraryEmptyStash = "固定したフォルダにはまだ動画がありません。Stashのシーンは同期後にここに表示されます。";
+  s.libraryEmptyStash = "Stashのシーンは同期後にここに表示されます。";
   s.libraryNoPinsStash = "Stashのシーンは同期後にここに表示されます。フォルダを固定することもできます。ファイル一覧でフォルダを開き、右上のピンを押してください。";
   s.libraryNoMatches = "ライブラリに「%s」に一致する動画はありません";
-  s.libraryCount = "動画%d本";
+  s.libraryShowsNone = "表示する動画はありません";
+  s.lengthColumn = "時間";
+  s.libraryCount = "動画%s本";
   s.libraryCountOne = "動画1本";
-  s.libraryMatches = "動画 %d / %d本";
-  s.libraryCountSoFar = "現在 %d本";
+  s.libraryMatches = "動画 %s / %s本";
+  s.libraryCountSoFar = "現在 %s本";
   s.libraryShows[0] = "すべて";
   s.libraryShows[1] = "未再生";
   s.libraryShows[2] = "再生済み";
@@ -273,7 +272,7 @@ Strings japaneseStrings(const Strings& english) {
   s.screenDistance = "距離";
   s.screenHeight = "高さ";
   s.screenCurve = "湾曲度";
-  s.screenHint = "全動画共通。スティックで距離、グリップ＋スティックで高さ。角をつかんでサイズ変更。";
+  s.screenHint = "スティックで距離、グリップ＋スティックで高さ。角をつかんでサイズ変更。";
   s.screenResetHint = "初期値：高さ300 cm、距離300 cm、湾曲度1";
 
   s.stash.group = "Stash";
@@ -286,7 +285,7 @@ Strings japaneseStrings(const Strings& english) {
   s.stash.apiKeySet = "設定済み";
   s.stash.folders = "フォルダ";
   s.stash.covers = "Stashのカバーをサムネイルに使う";
-  s.stash.titles = "ファイル名の代わりにStashの題名を表示";
+  s.stash.titles = "ファイル名の代わりに\u200bStashの題名を表示";  // U+200B: two lines part after に
   s.stash.malePerformers = "男性出演者を表示";
   s.stash.status = "%sシーン、うち%s件がここに · 一致%s件 / ライブラリ%s本";
   s.stash.statusStreamed = "%sシーン、ここに%s件、Stashから再生%s件 · 一致%s件 / ライブラリ%s本";
@@ -299,6 +298,7 @@ Strings japaneseStrings(const Strings& english) {
   s.stash.minutesAgo = "%d分前";
   s.stash.hoursAgo = "%d時間前";
   s.stash.daysAgo = "%d日前";
+  s.stash.oneDayAgo = "1日前";
   s.stash.editTitle = "Stashサーバー";
   s.stash.fieldNames[0] = "サーバー";
   s.stash.fieldNames[1] = "APIキー（必要な場合のみ）";
@@ -477,13 +477,13 @@ Strings japaneseStrings(const Strings& english) {
   s.stash.columns[0] = "題名";
   s.stash.columns[1] = "評価";
   s.stash.columns[2] = "回数";
-  s.stash.columns[3] = "スタジオ";
-  s.stash.columns[4] = "公開日";
-  s.stash.columns[5] = "時間";
+  s.stash.columns[3] = "公開日";
+  s.stash.columns[4] = "時間";
   s.stash.tipExclude = "これらを除外";
   s.stash.vr = "VR";
   s.stash.flat = "2D";
   s.stash.performersCount = "出演者%s人";
+  s.stash.onePerformer = "出演者1人";
   s.stash.performersCountOf = "出演者 %s / %s人";
   s.stash.searchPerformers = "名前・別名を検索";
   s.stash.performerSorts[0] = "シーン数";
@@ -518,6 +518,7 @@ Strings japaneseStrings(const Strings& english) {
   s.stash.and_ = "・";
   s.stash.tipCoStar = "この共演者のシーンを含めます。再選択で解除。";
   s.stash.studiosCount = "%sスタジオ";
+  s.stash.oneStudio = "1スタジオ";
   s.stash.studioSorts[0] = "再生回数";
   s.stash.studioSorts[1] = "シーン数";
   s.stash.studioSorts[2] = "最新公開日";
@@ -590,11 +591,12 @@ Strings japaneseStrings(const Strings& english) {
   s.stashScene.with = "出演：%s";
   s.stashScene.sameStudio = "同じスタジオ · %s";
   s.stashScene.tagsInCommon = "共通タグ%d件";
+  s.stashScene.oneTagInCommon = "共通タグ1件";
   s.stashScene.notInStash = "この動画はStashにありません";
   s.stashScene.outsideFolders = "Stashの対象フォルダ (%s) 外です。出演者・スタジオ・タグは表示できません。";
   s.stashScene.notScanned = "このファイルのシーンがありません。Stashでスキャン後に同期してください。";
   s.stashScene.notLocal = "Stash連携はこのPC上の動画のみ対応。";
-  s.stashScene.lastSync = "最終同期：%s · %sシーン";
+  s.stashScene.lastSync = "最終同期：%s · %s";
   s.stashScene.nothingPlaying = "再生中の動画はありません";
   s.stashScene.fromStash = "Stashから再生";
   s.stashScene.tipTagOrders[0] = "多くのシーンに付いているタグから表示。";
@@ -630,6 +632,7 @@ Strings japaneseStrings(const Strings& english) {
   s.stashWriteBack.sent = "起動後に評価%d件・再生%d回を送信済み";
   s.stashWriteBack.sendAll = "評価と再生履歴を送信…";
   s.stashWriteBack.title = "評価と再生履歴をStashに送信";
+  s.stashWriteBack.group = "Stashに送信";
   s.stashWriteBack.checking = "ライブラリとStashを比較中…";
   s.stashWriteBack.ready = "評価%s件・再生%s回を%sシーン分送信します。";
   s.stashWriteBack.found = "Stashに登録済みの再生%s回分は除外。";
@@ -772,7 +775,8 @@ Strings japaneseStrings(const Strings& english) {
   s.diagnostics.crashedHint = "前回、アプリが予期せず終了しました。報告するには、診断情報を保存してファイルを添付してください。";
   s.network.nav = "ネットワーク";
   s.network.looking = "サーバーを検索中…";
-  s.network.none = "サーバーが見つかりません。名前またはアドレスで追加してください。";
+  s.network.none = "サーバーが見つかりません";
+  s.network.noneHint = "名前またはアドレスで追加してください。";
   s.network.lookAgain = "再検索";
   s.network.addServer = "サーバーを追加";
   s.network.forget = "このサーバーとパスワードを削除";
@@ -886,10 +890,12 @@ Strings japaneseStrings(const Strings& english) {
   s.offline.nav = "オフライン";
   s.offline.toGo = "ダウンロード待ち";
   s.offline.onDevice = "このデバイス上";
-  s.offline.summary = "残り %d 件 · あと %s";
-  s.offline.summaryTime = "残り %d 件 · あと %s · 約 %s";
-  s.offline.summaryDone = "このデバイスに %d 件 · %s";
-  s.offline.empty = "まだダウンロードした動画はありません。ファイル一覧、ライブラリ、Stash で動画を指して「ダウンロード」を選ぶと、このデバイスにコピーを保存できます。";
+  s.offline.summary = "残り %s 件 · あと %s";
+  s.offline.summaryTime = "残り %s 件 · あと %s · 約 %s";
+  s.offline.summaryDone = "このデバイスに %s 件 · %s";
+  s.offline.empty = "まだダウンロードした動画はありません";
+  s.offline.emptyHint = "ファイル一覧、ライブラリ、Stash で動画を指して「ダウンロード」を選ぶと、このデバイスにコピーを保存できます。";
+  s.offline.emptyHintNoStash = "ファイル一覧やライブラリで動画を指して「ダウンロード」を選ぶと、このデバイスにコピーを保存できます。";
   s.offline.pauseAll = "すべて一時停止";
   s.offline.resumeAll = "すべて再開";
   s.offline.pause = "一時停止";
@@ -901,7 +907,6 @@ Strings japaneseStrings(const Strings& english) {
   s.offline.internal = "内部ストレージ";
   s.offline.internalHeadset = "ヘッドセット内";
   s.offline.internalComputer = "このPC内";
-  s.offline.queued = "順番待ち";
   s.offline.queuedSize = "順番待ち · %s";
   s.offline.copying = "%d %% · %s / %s · %s/s · 残り %s · %s へ";
   s.offline.copyingStart = "%d %% · %s / %s · %s へ";
@@ -947,8 +952,6 @@ Strings japaneseStrings(const Strings& english) {
   s.places.edit = "場所を編集";
   s.places.title = "場所";
   s.places.hint = "ナビゲーションでの並び順と表示・非表示を設定します。名前を選ぶと変更できます。";
-  s.places.name = "名前";
-  s.places.location = "パス";
   s.places.show = "表示";
   s.places.tipRename = "名前を変更";
   s.places.tipMoveUp = "上へ移動";
@@ -959,7 +962,6 @@ Strings japaneseStrings(const Strings& english) {
   s.places.renameHint = "空欄にすると元の名前に戻ります。";
   s.places.save = "保存";
   s.accent.group = "外観";
-  s.accent.colour = "色";
   s.accent.names[0] = "青";
   s.accent.names[1] = "ティール";
   s.accent.names[2] = "緑";
@@ -1096,9 +1098,9 @@ Strings japaneseStrings(const Strings& english) {
   s.setup.wholeDrive = "ドライブ全体";
   s.setup.opening = "開いています…";
   s.setup.oneVideoToo = "このフォルダ直下にも動画1本";
-  s.setup.videosToo = "このフォルダ直下にも動画%d本";
+  s.setup.videosToo = "このフォルダ直下にも動画%s本";
   s.setup.oneVideo = "動画1本";
-  s.setup.videos = "動画%d本";
+  s.setup.videos = "動画%s本";
   s.setup.empty = "空";
   s.setup.cantOpen = "開けません";
   s.setup.addComputerTitle = "PCを追加";

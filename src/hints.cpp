@@ -1,5 +1,7 @@
 #include "hints.h"
 
+#include "notices.h"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -11,9 +13,6 @@ const char* const kNames[kHints] = {"menu", "scroll", "recenter", "volume"};
 constexpr int kTimes = 3;
 constexpr double kShown = 5, kFade = 0.2;
 constexpr double kAwayFor = 3, kVolumeFor = 1;  // seconds the situation lasts first
-// As setup's line (setup_placement.cpp): this far in front of the eyes,
-// sized as at 1.5 m; lower, about 16° down, as the prototype has them.
-constexpr float kNear = 0.7f, kScale = kNear / 1.5f / 1000, kLow = -0.2f;
 
 }  // namespace
 
@@ -106,6 +105,7 @@ void Hints::addTo(std::vector<OverlayDraw>& overlays, const Texture* texture, in
   if (showing_ == Hint::Count || !texture) return;
   const float in = static_cast<float>((now - shownAt_) / kFade);
   const float out = static_cast<float>((hideAt_ + kFade - now) / kFade);
+  using namespace notice_place;
   const Mat4 gaze = rotation(headRot);
   PanelItem item;
   item.texture = texture;

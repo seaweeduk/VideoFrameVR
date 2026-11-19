@@ -1,4 +1,4 @@
-#include "menu_style.h"
+#include "menu_parts.h"
 
 #include "menu_setup.h"
 #include "menu_stash.h"  // stashPrinted
@@ -40,8 +40,6 @@ int typedPort(const std::string& text) {
   const int port = text.empty() ? 22 : std::atoi(text.c_str());
   return port >= 1 && port <= 65535 ? port : 0;
 }
-
-constexpr double kRed[4] = {1.0, 0.45, 0.4, 1};
 
 }  // namespace
 
@@ -123,31 +121,22 @@ void Menu::openServer(const remote::Server& server) {
 // end: a key login asks whether to take the key off the server too.
 void Menu::layoutNetworkPage() {
   const NetworkStrings& t = text().network;
-  const double x = kPageX + kPagePad, right = kPageX + kPageWidth - kPagePad;
-  addLabel(x + 12, kBrowserRowY, 600, kBrowserRowH, t.nav, 30);
-  double buttonX = right;
-  for (auto [label, action] : {std::pair<const char*, std::function<MenuCommand()>>{
-                                   t.addServer,
-                                   [this] {
-                                     openSmbForm(SmbForm::Kind::AddServer, "");
-                                     return MenuCommand{};
-                                   }},
-                               {t.lookAgain, [this] {
-                                  discovery_.scan();
-                                  dirty_ = true;
-                                  return MenuCommand{};
-                                }}}) {
-    Button b = textButton(label, Icon::None, action, label == t.addServer);
-    b.panel = kBrowser;
-    b.x = buttonX - b.w;
-    b.y = kBrowserRowY;
-    b.h = kBrowserRowH;
-    b.disabled = label == t.lookAgain && discovery_.scanning();
-    buttons_.push_back(b);
-    buttonX = b.x - kGap;
-  }
+  contentEdges();
+  listShowsFolder_ = false;
+  listColumns_ = false;
+  double right = kContentRight;
+  headerButton(right, t.addServer, [this] {
+    openSmbForm(SmbForm::Kind::AddServer, "");
+    return MenuCommand{};
+  }, true);
+  headerButton(right, t.lookAgain, [this] {
+    discovery_.scan();
+    dirty_ = true;
+    return MenuCommand{};
+  }).disabled = discovery_.scanning();
+  contentTitle(t.nav, "", right);
   if (smbForm_.kind != SmbForm::Kind::None) {
-    layoutSmbForm(kBrowserToolsY);
+    layoutSmbForm();
     return;
   }
   std::vector<ListItem> items;
@@ -175,8 +164,10 @@ void Menu::layoutNetworkPage() {
   }
   listTop_ = kBrowserToolsY;
   listBottom_ = kListBottom;
-  listRight_ = right + 6;
-  addList(items, x, kFileRowH, kFileRows);
+  const size_t from = buttons_.size();
+  addList(items, listLeft_, kFileRowH, static_cast<int>((listBottom_ - listTop_) / kFileRowH));
+  for (size_t i = from; i < buttons_.size(); ++i)  // a server's icon
+    if (buttons_[i].listRow) buttons_[i].icon = Icon::Computer;
 }
 
 // Over the page: what an empty Network page means.
@@ -206,31 +197,28 @@ void Menu::openSmbForm(SmbForm::Kind kind, const std::string& root) {
   dirty_ = true;
 }
 
-// The form's fields (the one typed into outlined blue), Remember password,
-// the error if any, then Cancel and Sign in (or Open); the keyboard under it.
-// Add server chooses SMB or SFTP first; an SFTP server's sign-in, how.
-void Menu::layoutSmbForm(double top) {
+// The form, a group under the page's header (the kit's): Add server's type
+// first, an SFTP server's sign-in how; the fields (the one typed into ringed
+// in the accent), Remember password, the error if any, then Sign in (or
+// Open) and Cancel; the keyboard under it.
+void Menu::layoutSmbForm() {
+  static_assert(kBrowserToolsY == PageLayout::kTop, "the form's group is under a content page's header");
   const NetworkStrings& t = text().network;
   const SmbForm& f = smbForm_;
-  const double x0 = kPageX + kPagePad, w = kPageWidth - 2 * kPagePad;
-  const double x = x0 + kGroupPad, inner = w - 2 * kGroupPad;
-  constexpr double labelW = 300, h = 56, step = 66;
   const bool share = f.kind == SmbForm::Kind::Share;
   const bool signing = f.signing != nullptr;
   pageScrollMax_ = 0;  // drawGroups() mustn't cut it off as a scrolled settings page
-  double y = firstRow(top);
-  // A hint (an error not dim) under a row, on two lines if it needs them.
-  auto hint = [&](const std::string& text, bool dim) {
-    const int lines = wrappedLines(text, inner - 12, kHintSize, 2);
-    addLabel(x + 12, lines > 1 ? y - 15 : y, inner - 12, 0, text, kHintSize, dim, lines);
-    y += hintHeight(lines);
-  };
-  if (share) {
-    addLabel(x + 12, y, inner - 12, 0, t.sharesRefused, kHintSize, true, 1);
-    y += hintHeight(1) + 8;
-  }
+  std::string title = share ? t.shareTitle : t.addTitle;
+  if (f.kind != SmbForm::Kind::AddServer && !share) title = stashPrinted(t.signInTitle, serverName(f.root));
+  auto label = [&](int i) -> std::string { return share ? t.shareField : i == 3 ? t.port : t.fields[i]; };
+  PageLayout page(*this, PageLayout::UnderHeader{}, t.nav);
+  GroupLayout form = page.group(0, title);
+  std::vector<std::string> labels = {t.type, t.signInWith};
+  for (const int i : smbFields()) labels.push_back(label(i));
+  form.labelsFor(labels);
+  if (share) form.note(t.sharesRefused, true, 2);
   if (f.kind == SmbForm::Kind::AddServer) {
-    addChoiceRow(x, y, inner, labelW, t.type, {t.types[0], t.types[1]}, f.sftp, [this](int i) {
+    form.choice(t.type, {t.types[0], t.types[1]}, f.sftp, [this](int i) {
       smbForm_.sftp = i == 1;
       smbForm_.field = 0;
       smbForm_.error.clear();
@@ -238,165 +226,114 @@ void Menu::layoutSmbForm(double top) {
       editing_ = true;
       return MenuCommand{};
     });
-    // The hint belongs to the row above: clear of its buttons, nearer them
-    // than the fields under it.
-    y += kSettingStep + 12;
-    hint(t.typeHint, true);
-    y -= 10;
+    form.note(t.typeHint);
   } else if (f.sftp) {
-    layoutSftpForm(x, y, inner);
+    layoutSftpForm(form);
   }
   for (const int i : smbFields()) {
     const bool active = f.field == i && editing_;
-    const std::string& typed = f.text[i];
-    const char* placeholder = i == 0 && !share ? (f.sftp ? t.sftpServerHint : t.serverHint)
-                              : i == 1         ? (f.sftp ? t.sftpUserHint : t.userHint)
-                                               : "";
-    addLabel(x + 12, y, labelW - 12, h, share ? t.shareField : i == 3 ? t.port : t.fields[i]);
-    std::string shown = i == 2 && !f.showPassword ? hidden(typed) : typed;
-    Button b = textButton(typed.empty() && !active ? std::string(placeholder) : shown,
-                          Icon::None, [this, i] {
-                            smbForm_.field = i;
-                            editing_ = true;
-                            return MenuCommand{};
-                          });
-    b.panel = kBrowser;
-    b.x = x + labelW;
-    b.y = y;
-    b.w = i == 3 ? 200 : inner - labelW - (i == 2 ? 130 : 0);
-    b.h = h;
-    b.field = true;
-    b.placeholder = typed.empty() && !active;
-    b.on = active;
-    b.caret = active ? caret() : -1;
-    b.radius = 12;
-    b.fontSize = kTextSize;
-    buttons_.push_back(b);
+    Field field;
+    field.text = i == 2 && !f.showPassword ? hidden(f.text[i]) : f.text[i];
+    field.example = i == 0 && !share ? (f.sftp ? t.sftpServerHint : t.serverHint)
+                    : i == 1         ? (f.sftp ? t.sftpUserHint : t.userHint)
+                                     : "";
+    field.typing = active;
+    field.action = [this, i] {
+      smbForm_.field = i;
+      editing_ = true;
+      return MenuCommand{};
+    };
     if (i == 2) {
-      Button eye = textButton(f.showPassword ? text().hide : t.show, Icon::None, [this] {
+      field.inner = f.showPassword ? text().hide : t.show;
+      field.innerAction = [this] {
         smbForm_.showPassword = !smbForm_.showPassword;
         return MenuCommand{};
-      });
-      eye.panel = kBrowser;
-      eye.x = x + inner - 120;
-      eye.y = y;
-      eye.w = 120;
-      eye.h = h;
-      buttons_.push_back(eye);
+      };
     }
-    y += step;
+    form.field(label(i), field);
   }
   // SFTP: only a password sign-in can be remembered (a key login keeps no secret).
   const bool remember = !share && (!f.sftp || (f.kind == SmbForm::Kind::SignIn && !f.byKey));
   if (remember) {
-    addToggleRow(x, y, inner, t.remember, f.remember, [this] {
+    form.toggle(t.remember, f.remember, [this] {
       smbForm_.remember = !smbForm_.remember;
       return MenuCommand{};
     });
-    y += kSettingStep;
-    hint(t.rememberHint, true);
+    form.note(t.rememberHint);
   }
   // A key-only form's error is under its command while it shows.
-  if (!f.error.empty() && f.command.empty()) {
-    if (!remember && f.kind != SmbForm::Kind::KeyOnly) y += 12;  // clear of the field above
-    hint(f.error, false);
-  }
-  if (!f.hint.empty() && f.command.empty()) {
-    hint(f.hint, true);
-  }
-  y += 8;
-  std::string label = signing ? t.signingIn : share ? t.open : t.signIn;
+  if (!f.error.empty() && f.command.empty()) form.status(Lamp::Failed, f.error);
+  if (!f.hint.empty() && f.command.empty()) form.note(f.hint, true);
+  std::string go = signing ? t.signingIn : share ? t.open : t.signIn;
   bool ready = true;
   if (f.sftp && f.kind == SmbForm::Kind::AddServer) {
-    label = signing ? t.connecting : t.connect;
+    go = signing ? t.connecting : t.connect;
     const TypedServer typed = splitServer(f.text[0]);
     ready = !typed.host.empty() && (!f.text[1].empty() || !typed.user.empty()) && typedPort(f.text[3]);
   } else if (f.sftp && f.kind == SmbForm::Kind::SignIn && f.byKey && signing) {
-    label = t.settingUpKey;
+    go = t.settingUpKey;
   } else if (f.kind == SmbForm::Kind::KeyOnly && !signing) {
-    label = t.tryAgain;
+    go = t.tryAgain;
   }
   // An SFTP server's button signs in (connects) from any field, as setup's.
-  Button go = textButton(label, Icon::None, [this] {
-    if (smbForm_.sftp && !smbFields().empty()) smbForm_.field = smbFields().back();
-    return submitSmbForm();
-  }, true);
-  go.panel = kBrowser;
-  go.x = x + inner - go.w;
-  go.y = y;
-  go.h = h;
-  go.disabled = signing || !ready;
-  buttons_.push_back(go);
-  Button cancel = textButton(strings().cancel, Icon::None, [this] {
-    const bool adding = smbForm_.kind == SmbForm::Kind::AddServer;
-    smbForm_ = {};
-    editing_ = false;
-    if (!adding) showNetwork();
-    dirty_ = true;
-    return MenuCommand{};
-  });
-  cancel.panel = kBrowser;
-  cancel.x = go.x - kGap - cancel.w;
-  cancel.y = y;
-  cancel.h = h;
-  buttons_.push_back(cancel);
-  y += h + 16;
-  std::string title = share ? t.shareTitle : t.addTitle;
-  if (f.kind != SmbForm::Kind::AddServer && !share) title = stashPrinted(t.signInTitle, serverName(f.root));
-  addGroup(x0, top, w, y - top, title);
+  Action submit{go, "", [this] {
+                  if (smbForm_.sftp && !smbFields().empty()) smbForm_.field = smbFields().back();
+                  return submitSmbForm();
+                }};
+  submit.disabled = signing || !ready;
+  submit.primary = true;
+  form.buttons({submit, {strings().cancel, "", [this] {
+                           const bool adding = smbForm_.kind == SmbForm::Kind::AddServer;
+                           smbForm_ = {};
+                           editing_ = false;
+                           if (!adding) showNetwork();
+                           dirty_ = true;
+                           return MenuCommand{};
+                         }}});
   if (editing_) layoutKeyboard();
 }
 
 // Above the fields of an SFTP server's sign-in: how to sign in, when it
 // offers both. A server taking keys only: this device's key to add to the
 // account, and where; while it is served (key_share.h), first the command
-// that adds it from the server.
-void Menu::layoutSftpForm(double x, double& y, double inner) {
+// that adds it from the server. The key and the command are in boxes as a
+// field's (drawSmbForm()).
+void Menu::layoutSftpForm(GroupLayout& form) {
   const NetworkStrings& t = text().network;
   SmbForm& f = smbForm_;
-  constexpr double labelW = 300;
   const std::string name = serverName(f.root), user = f.text[1];
-  auto hint = [&](const std::string& text, bool dim = true) {  // as layoutSmbForm()'s
-    const int lines = wrappedLines(text, inner - 12, kHintSize, 2);
-    addLabel(x + 12, lines > 1 ? y - 15 : y, inner - 12, 0, text, kHintSize, dim, lines);
-    y += hintHeight(lines);
-  };
   if (f.kind == SmbForm::Kind::SignIn && f.keyChoice) {
-    addChoiceRow(x, y, inner, labelW, t.signInWith, {t.methods[0], t.methods[1]}, f.byKey ? 0 : 1,
-                 [this](int i) {
-                   smbForm_.byKey = i == 0;
-                   return MenuCommand{};
-                 });
-    y += kSettingStep + 12;  // as Add server's type row
-    hint(f.byKey ? stashPrinted(t.keyHint, user) : std::string(t.passwordHint));
-    y -= 10;
+    form.choice(t.signInWith, {t.methods[0], t.methods[1]}, f.byKey ? 0 : 1, [this](int i) {
+      smbForm_.byKey = i == 0;
+      return MenuCommand{};
+    });
+    form.note(f.byKey ? stashPrinted(t.keyHint, user) : std::string(t.passwordHint));
   } else if (f.kind == SmbForm::Kind::KeyOnly) {
+    const double ink[4] = {};
+    // Its box, the text in it the field's (drawSmbForm()).
+    auto box = [&](const std::string& text, double* to) {
+      const double h = drawMono(nullptr, text, 0, 0, form.rowWidth() - 2 * kit::kSpace, 24, ink) + 24;
+      const GroupLayout::Box room = form.room(h);
+      to[0] = room.x, to[1] = room.y, to[2] = room.w, to[3] = room.h;
+    };
     // With the command, what it's for goes without saying.
-    const std::string line = f.command.empty() ? stashPrinted(t.keyOnly, name, user) : stashPrinted(t.keysOnly, name);
-    addLabel(x + 12, y, inner - 12, 0, line, kTextSize, false, 2);
-    y += 18 + wrappedLines(line, inner - 12, kTextSize, 2) * 34;
-    const double rgba[4] = {};
+    form.note(f.command.empty() ? stashPrinted(t.keyOnly, name, user) : stashPrinted(t.keysOnly, name),
+              true, 3);
     if (!f.command.empty()) {
-      const std::string run = stashPrinted(t.runCommand, name, user);
-      addLabel(x + 12, y, inner - 12, 0, run, kTextSize, false, 2);
-      y += 6 + wrappedLines(run, inner - 12, kTextSize, 2) * 34;
-      const double h = drawMono(nullptr, f.command, 0, 0, inner - 12 - 32, 24, rgba) + 24;
-      f.commandBox[0] = x + 12, f.commandBox[1] = y, f.commandBox[2] = inner - 12, f.commandBox[3] = h;
-      y += h + 10 + hintHeight(1) / 2;
+      form.note(stashPrinted(t.runCommand, name, user), true, 3);
+      box(f.command, f.commandBox);
       // How it stands, or why Try again failed (its hint, about adding the
       // key by hand, left out).
-      if (f.error.empty())
-        hint(keyFetched() ? std::string(t.keyFetched) : stashPrinted(t.waitingForKey, name), !keyFetched());
+      if (!f.error.empty())
+        form.status(Lamp::Failed, f.error);
+      else if (keyFetched())
+        form.status(Lamp::Ok, t.keyFetched);
       else
-        hint(f.error, false);
-      y += 2;
+        form.status(Lamp::Busy, stashPrinted(t.waitingForKey, name));
     }
-    addLabel(x + 12, y, labelW - 12, 56, t.deviceKey);
-    const double w = inner - labelW;
-    const double h = drawMono(nullptr, f.publicKey, 0, 0, w - 32, 24, rgba) + 24;
-    f.keyBox[0] = x + labelW, f.keyBox[1] = y, f.keyBox[2] = w, f.keyBox[3] = h;
-    y += h + 10 + hintHeight(1) / 2;
-    hint(stashPrinted(t.addKeyLine, name, user));
+    form.note(t.deviceKey, true, 1);
+    box(f.publicKey, f.keyBox);
+    form.note(stashPrinted(t.addKeyLine, name, user));
   }
 }
 
@@ -409,9 +346,7 @@ void Menu::drawSmbForm(cairo_t* cr) {
   const double ink[4] = {pal.text.r, pal.text.g, pal.text.b, pal.text.a};
   for (const auto& [text, box] : {std::pair{&f.publicKey, f.keyBox}, {&f.command, f.commandBox}}) {
     if (text->empty()) continue;
-    roundedRect(cr, box[0], box[1], box[2], box[3], 12);
-    setColor(cr, pal.field);
-    cairo_fill(cr);
+    drawFinish(cr, Finish::Sunk, box[0], box[1], box[2], box[3], kit::kCorner);
     drawMono(cr, *text, box[0] + 16, box[1] + 12, box[2] - 32, 24, ink);
   }
 }
@@ -624,7 +559,21 @@ void Menu::openSignedIn() {
 // A sign-in finished, or the folder being browsed asks for one (or doesn't
 // list its shares).
 void Menu::updateNetwork() {
-  if (discovery_.poll() && (page_ == Page::Network || setup_)) dirty_ = true;
+  // A search ending changes the page even with the same servers found (none
+  // again): it no longer says it is looking, and Look again works again.
+  // Only what shows the search or the servers: setup's Folders step, the
+  // Network page's list; over a form, its title (a server's name) and Look
+  // again in the header.
+  const bool searching = discovery_.scanning();
+  const bool found = discovery_.poll();
+  if (found || (searching && !discovery_.scanning())) {
+    if (setup_ ? setup_->step == SetupMenu::Step::Folders : networkList() || (page_ == Page::Network && found)) {
+      dirty_ = true;
+    } else if (page_ == Page::Network) {
+      for (const Button& b : buttons_)
+        if (b.panel == kBrowser && b.label == text().network.lookAgain) hoverOnlyChanged(b);  // its box
+    }
+  }
   updateKeyShare();
   if (!smbForm_.signing || !smbForm_.signing->done) return;
   const std::shared_ptr<RemoteJob> job = std::move(smbForm_.signing);
@@ -835,9 +784,10 @@ void Menu::smbFolderRead() {
 
 // An SFTP server's dialogs: signed in with the password, its key changed,
 // and Forget for a key login.
-void Menu::layoutNetworkDialog(std::vector<Button>& row) {
+void Menu::layoutNetworkDialog(DialogLayout& dialog) {
+  using Ink = DialogLayout::Ink;
   const NetworkStrings& t = text().network;
-  const std::string root = dialogPath_;
+  const std::string root = dialogPath_, name = serverName(root);
   auto close = [this] {
     dialog_ = Dialog::None;
     return MenuCommand{};
@@ -848,91 +798,71 @@ void Menu::layoutNetworkDialog(std::vector<Button>& row) {
     return MenuCommand{};
   };
   if (dialog_ == Dialog::KeyRefused) {
-    row.push_back(textButton(t.notNow, Icon::None, close));
-    row.push_back(textButton(t.remember, Icon::None, [this, root] {
+    dialog.title(t.keyRefusedTitle);
+    dialog.line(stashPrinted(t.keyRefusedText, name));
+    dialog.line(t.keyRefusedHint, Ink::Dim, 2);
+    dialog.button(textButton(t.notNow, Icon::None, close));
+    dialog.button(textButton(t.remember, Icon::None, [this, root] {
       remote::remember(root);
       dialog_ = Dialog::None;
       return MenuCommand{};
     }, true));
   } else if (dialog_ == Dialog::HostKeyChanged) {
-    row.push_back(textButton(t.dontConnect, Icon::None, [this] {
-      dialog_ = Dialog::None;
-      showNetwork();
-      return MenuCommand{};
-    }, true));
+    // Don't connect is the one to take, at the right; trusting the new key
+    // left of it, red only when pointed.
+    dialog.title(stashPrinted(t.changedTitle, name), Icon::Warning);
+    dialog.line(t.changedText, Ink::Warn);
+    const double labelW =
+        std::max(textWidth(t.trustedKey, DialogLayout::kLineSize, false),
+                 textWidth(t.nowKey, DialogLayout::kLineSize, false)) + kit::kSpaceEdge;
+    dialog.key(t.trustedKey, labelW, smbForm_.trusted);
+    dialog.key(t.nowKey, labelW, smbForm_.fingerprint);
     Button trust = textButton(t.trustNewKey, Icon::None, [this] {
       dialog_ = Dialog::None;
       connectSftp(smbForm_.fingerprint);
       return MenuCommand{};
     });
-    trust.danger = true;
+    trust.dangerHover = true;
     trust.disabled = smbForm_.signing != nullptr;
-    row.push_back(trust);
-  } else if (dialog_ == Dialog::ForgetServer) {
-    const bool removing = smbForm_.signing != nullptr;
-    Button cancel = textButton(strings().cancel, Icon::None, close);
-    Button only = textButton(t.forgetOnly, Icon::None, forget);
-    Button remove = textButton(removing ? t.removingKey : t.removeKeyForget, Icon::Trash, [this, root] {
-      smbForm_ = {};
-      auto job = std::make_shared<RemoteJob>();
-      job->task = RemoteJob::Task::RemoveKey;
-      smbForm_.signing = job;
-      // Forgotten here, not when the menu takes the result: closing the
-      // menu meanwhile drops the form, and with it the job.
-      std::thread([job, root] {
-        job->status = sftp::removeKey(root);
-        if (job->status == remote::Status::Ok) remote::forget(root);
-        job->done = true;
-      }).detach();
+    dialog.button(trust);
+    dialog.button(textButton(t.dontConnect, Icon::None, [this] {
+      dialog_ = Dialog::None;
+      showNetwork();
       return MenuCommand{};
-    }, true);
-    for (Button* b : {&cancel, &only, &remove}) {
-      b->disabled = removing;
-      row.push_back(*b);
-    }
-  } else {
-    row.push_back(textButton(strings().cancel, Icon::None, close));
-    row.push_back(textButton(t.forgetAnyway, Icon::None, forget, true));
-  }
-}
-
-void Menu::drawNetworkDialog(cairo_t* cr, double textX, double boxY) {
-  const NetworkStrings& t = text().network;
-  const double textW = kDialogW - 100, dim[4] = {0.75, 0.75, 0.8, 1};
-  const std::string name = serverName(dialogPath_);
-  // The text, on up to three lines; what follows it moves down for a third.
-  auto body = [&](const std::string& s, int size, const double rgba[4], bool bold) {
-    drawTextLines(cr, s, textX, boxY + 100, textW, size, 3, rgba, true, 0, bold);
-    return wrappedLines(s, textW, size, 3, bold) > 2 ? size * 1.36 : 0.0;
-  };
-  if (dialog_ == Dialog::KeyRefused) {
-    drawText(cr, t.keyRefusedTitle, textX, boxY + 30, textW, 60, 38, true, true, 1, 1, 1);
-    const double more = body(stashPrinted(t.keyRefusedText, name), 27, dim, false);
-    const double hint[4] = {0.7, 0.7, 0.75, 1};
-    drawTextLines(cr, t.keyRefusedHint, textX, boxY + 200 + more, textW, 23, 2, hint, true);
-  } else if (dialog_ == Dialog::HostKeyChanged) {
-    const std::string title = stashPrinted(t.changedTitle, name);
-    const double titleW = textWidth(title, 38, true), iconX = kPageCenterX - (titleW + 60) / 2;
-    drawIcon(cr, Icon::Warning, iconX + 22, boxY + 60, 44, kRed[0], kRed[1], kRed[2]);
-    drawText(cr, title, iconX + 60, boxY + 30, titleW + 4, 60, 38, true, false, 1, 1, 1);
-    const double more = body(t.changedText, 26, kRed, true);
-    const double labelW = std::max(textWidth(t.trustedKey, 26, false), textWidth(t.nowKey, 26, false)) + 30;
-    const double x = textX + 60, ink[4] = {1, 1, 1, 1};
-    double y = boxY + 200 + more;
-    for (const auto& [label, key] : {std::pair{t.trustedKey, smbForm_.trusted}, {t.nowKey, smbForm_.fingerprint}}) {
-      drawText(cr, label, x, y, labelW, 40, 26, false, false, dim[0], dim[1], dim[2]);
-      drawMono(cr, key, x + labelW, y + 5, textX + textW - 60 - x - labelW, 24, ink);
-      y += 48;
-    }
+    }, true));
   } else {
     remote::Login login;
     bool remembered = false;
-    remote::knownLogin(dialogPath_, login, remembered);
-    drawText(cr, stashPrinted(t.forgetTitle, name), textX, boxY + 30, textW, 60, 38, true, true, 1, 1, 1);
-    const double more = body(stashPrinted(t.forgetKeyText, login.user), 27, dim, false);
-    if (dialog_ == Dialog::ForgetOffline)
-      drawTextLines(cr, stashPrinted(t.forgetOffline, name), textX, boxY + 200 + more, textW, 25, 2, kRed, true,
-                    0, true);
+    remote::knownLogin(root, login, remembered);
+    dialog.title(stashPrinted(t.forgetTitle, name));
+    dialog.line(stashPrinted(t.forgetKeyText, login.user));
+    if (dialog_ == Dialog::ForgetOffline) dialog.line(stashPrinted(t.forgetOffline, name), Ink::Warn, 2);
+    if (dialog_ == Dialog::ForgetServer) {
+      const bool removing = smbForm_.signing != nullptr;
+      Button cancel = textButton(strings().cancel, Icon::None, close);
+      Button only = textButton(t.forgetOnly, Icon::None, forget);
+      Button remove = textButton(removing ? t.removingKey : t.removeKeyForget, Icon::Trash, [this, root] {
+        smbForm_ = {};
+        auto job = std::make_shared<RemoteJob>();
+        job->task = RemoteJob::Task::RemoveKey;
+        smbForm_.signing = job;
+        // Forgotten here, not when the menu takes the result: closing the
+        // menu meanwhile drops the form, and with it the job.
+        std::thread([job, root] {
+          job->status = sftp::removeKey(root);
+          if (job->status == remote::Status::Ok) remote::forget(root);
+          job->done = true;
+        }).detach();
+        return MenuCommand{};
+      }, true);
+      for (Button* b : {&cancel, &only, &remove}) {
+        b->disabled = removing;
+        dialog.button(*b);
+      }
+    } else {
+      dialog.button(textButton(strings().cancel, Icon::None, close));
+      dialog.button(textButton(t.forgetAnyway, Icon::None, forget, true));
+    }
   }
 }
 

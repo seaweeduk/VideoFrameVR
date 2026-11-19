@@ -4,7 +4,6 @@
 
 #include <cstdint>
 // The SPIR-V headers declare bare arrays: <cstdint> first.
-#include "shaders/blur.frag.h"
 #include "shaders/fullscreen.vert.h"
 #include "shaders/foveation.frag.h"
 #include "shaders/key_distance.frag.h"
@@ -37,6 +36,9 @@ namespace {
 // surround.frag's pipeline constants (projection, source, cut, sharpening)
 // for its general pipelines: -1, from the draw.
 constexpr int32_t kMaskFirst[] = {-1, -1, 1, 0};
+constexpr int32_t kPanelPointedLook[] = {1};  // panel.frag's kLook
+constexpr int32_t kPanelFadedLook[] = {2};
+constexpr int32_t kPanelStarsLook[] = {3};
 constexpr int32_t kSharpened[] = {-1, -1, -1, 1};
 constexpr int32_t kMaskFirstSharpened[] = {-1, -1, 1, 1};
 // ... with the mask's other colours (Pipelines::SurroundCut's values).
@@ -69,8 +71,6 @@ Pipelines::~Pipelines() {
   VkDevice d = gpu_->device();
   std::vector<VkPipeline> pipelines(std::begin(pipelines_), std::end(pipelines_));
   pipelines.insert(pipelines.end(), std::begin(plain_), std::end(plain_));
-  pipelines.insert(pipelines.end(), std::begin(glass_), std::end(glass_));
-  pipelines.push_back(blur_);
   pipelines.insert(pipelines.end(), std::begin(foveation_), std::end(foveation_));
   pipelines.insert(pipelines.end(), std::begin(tp10_), std::end(tp10_));
   pipelines.insert(pipelines.end(), std::begin(tp10Plain_), std::end(tp10Plain_));
@@ -168,6 +168,12 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
       {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_surround_colour_key_frag,
        sizeof(kSpirv_surround_colour_key_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false,
        kColourKeyedSharpened, 4},
+      {kSpirv_panel_vert, sizeof(kSpirv_panel_vert), kSpirv_panel_frag, sizeof(kSpirv_panel_frag),
+       VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, true, kPanelPointedLook, 1},
+      {kSpirv_panel_vert, sizeof(kSpirv_panel_vert), kSpirv_panel_frag, sizeof(kSpirv_panel_frag),
+       VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, true, kPanelFadedLook, 1},
+      {kSpirv_panel_vert, sizeof(kSpirv_panel_vert), kSpirv_panel_frag, sizeof(kSpirv_panel_frag),
+       VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, true, kPanelStarsLook, 1},
   };
   static const char* names[kCount] = {"surround",
                                       "screen",
@@ -181,10 +187,12 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
                                       "surround (mask first, red and blue)",
                                       "surround (mask first, red and blue, sharpened)",
                                       "surround (colour key)",
-                                      "surround (colour key, sharpened)"};
+                                      "surround (colour key, sharpened)",
+                                      "panel (pointed)",
+                                      "panel (value held)",
+                                      "panel (pointed, stars)"};
   std::vector<Job> jobs;
   for (int i = 0; i < kCount; ++i) {
-    descs_[i] = descs[i];
     const VkPipelineLayout layout = layoutOf(static_cast<Id>(i));
     add(jobs, descs[i], eyePass, names[i], &pipelines_[i], layout);
     // A pass with a density map is not compatible with one without.
@@ -204,18 +212,6 @@ bool Pipelines::init(GpuContext& gpu, VkRenderPass eyePass, VkRenderPass plainEy
     add(jobs, debug, eyePass, "foveation view", &foveation_[0]);
     add(jobs, debug, plainEyePass, "foveation view (off)", &foveation_[1]);
   }
-  return createAll(jobs);
-}
-
-bool Pipelines::initGlass(VkRenderPass glassPass) {
-  std::vector<Job> jobs;
-  for (int i = 0; i < kCount; ++i)
-    add(jobs, descs_[i], glassPass, "glass backdrop pipeline", &glass_[i],
-        layoutOf(static_cast<Id>(i)));
-  add(jobs,
-      {kSpirv_fullscreen_vert, sizeof(kSpirv_fullscreen_vert), kSpirv_blur_frag,
-       sizeof(kSpirv_blur_frag), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false},
-      glassPass, "glass blur pipeline", &blur_);
   return createAll(jobs);
 }
 
@@ -548,7 +544,7 @@ bool Pipelines::createSamplers() {
          make(kVideoBase, 1.0f, 0.0f, clamp, "video base level sampler") &&
          make(kCanvas, 8.0f, VK_LOD_CLAMP_NONE, clamp, "canvas sampler") &&
          make(kSky, 1.0f, VK_LOD_CLAMP_NONE, VK_SAMPLER_ADDRESS_MODE_REPEAT, "sky sampler") &&
-         make(kGlass, 1.0f, 0.0f, clamp, "glass sampler");
+         make(kChroma, 1.0f, 0.0f, clamp, "chroma sampler");
 }
 
 bool Pipelines::createDummy() {
@@ -585,13 +581,13 @@ bool Pipelines::createDummy() {
 }
 
 void Pipelines::bindTextures(VkCommandBuffer cmd, const Texture* texture, SamplerId sampler,
-                             const Texture* glass) const {
+                             const Texture* second) const {
   VkDescriptorImageInfo images[2] = {};
   images[0].sampler = samplers_[sampler];
   images[0].imageView = texture ? texture->view : dummy_.view;
   images[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-  images[1].sampler = samplers_[kGlass];
-  images[1].imageView = glass ? glass->view : dummy_.view;
+  images[1].sampler = samplers_[kChroma];
+  images[1].imageView = second ? second->view : dummy_.view;
   images[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   VkWriteDescriptorSet writes[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET},
                                     {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
@@ -607,7 +603,7 @@ void Pipelines::bindTextures(VkCommandBuffer cmd, const Texture* texture, Sample
 void Pipelines::bindQ08c(VkCommandBuffer cmd, int siting, const Texture& frame) const {
   const VkDescriptorImageInfo images[2] = {
       {VK_NULL_HANDLE, frame.view, VK_IMAGE_LAYOUT_GENERAL},  // the set layout's sampler
-      {samplers_[kGlass], dummy_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+      {samplers_[kChroma], dummy_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
   VkWriteDescriptorSet writes[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET},
                                     {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
   for (uint32_t i = 0; i < 2; ++i) {

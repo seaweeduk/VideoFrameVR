@@ -1,9 +1,12 @@
 // The one-line hints after first-run setup (hints.h): each line with the
-// glyphs and names of the controls it is about, as the runtime binds them.
+// glyphs and names of the controls it is about, as the runtime binds them;
+// and the messages over the video (notices.h) in the same pill.
 
 #include "menu_setup.h"
 
 #include "menu_style.h"
+
+#include <cassert>
 
 namespace {
 
@@ -11,7 +14,7 @@ using Source = ControllerBindings::Source;
 using PillGlyph = SetupPages::PillGlyph;
 
 // The hint's canvas, in layout pixels: room for a longer line than setup's.
-constexpr int kHintW = 1400, kHintH = 96;
+constexpr int kHintW = 1400 + 2 * kPillShadow, kHintH = kPillHeight;
 
 }  // namespace
 
@@ -85,6 +88,58 @@ const Texture* Menu::drawHint(Hint hint, int& width, int& height) {
   width = kHintW;
   height = kHintH;
   return h.canvas.texture();
+}
+
+void Menu::drawNotice(cairo_t* cr, double w, double h, NoticeIcon icon, const std::string& text,
+                      double drawn[4]) {
+  static_assert(kNoticeH[0] == kPillH && kNoticeShadow == kPillShadow, "the hints' pill");
+  // The icon from the pill's left, then the text; at its right as the hints'.
+  constexpr double kIconX = 28, kIconSize = 34, kIconGap = 16, kEnd = 38;
+  constexpr int kSecondSize = kit::kRowSize;
+  const size_t newline = text.find('\n');
+  const bool two = newline != std::string::npos;
+  const std::string first = text.substr(0, newline);
+  const std::string second = two ? text.substr(newline + 1) : std::string();
+  Icon shown = Icon::None;
+  switch (icon) {
+    case NoticeIcon::None: break;
+    case NoticeIcon::Recenter: shown = Icon::Recenter; break;
+    case NoticeIcon::Viewpoint: shown = Icon::FormatDome; break;
+    case NoticeIcon::Passthrough: shown = Icon::Headset; break;
+    case NoticeIcon::Card: shown = Icon::Card; break;
+    case NoticeIcon::Usb: shown = Icon::Usb; break;
+    case NoticeIcon::Drive: shown = Icon::Storage; break;
+    case NoticeIcon::Warning: shown = Icon::Warning; break;
+  }
+  const double textX = shown != Icon::None ? kIconX + kIconSize + kIconGap : kEnd;
+  const double textW = std::max(textWidth(first, kPillSize, two),
+                                two ? textWidth(second, kSecondSize, false) : 0.0);
+  const double pillH = kNoticeH[two];
+  const double pillW = std::min({w - 2 * kNoticeShadow, double(kNoticeMaxW), textX + textW + kEnd});
+  const double x = std::round((w - pillW) / 2), y = std::round((h - pillH) / 2);
+  assert(MenuFinishes::reach(Finish::Pop) <= kNoticeShadow && h >= pillH + 2 * kNoticeShadow);
+  drawFinish(cr, Finish::Pop, x, y, pillW, pillH, kPillH / 2.0);
+  const Palette pal = palette();
+  if (shown != Icon::None) {
+    const Rgba& ink = icon == NoticeIcon::Warning ? pal.danger : pal.text;
+    drawIcon(cr, shown, x + kIconX + kIconSize / 2, y + pillH / 2, kIconSize, ink.r, ink.g, ink.b);
+  }
+  // Two lines: the first in the semibold, the second dimmer and smaller.
+  const double lineW = pillW - textX - kEnd + 4;
+  if (!two) {
+    drawText(cr, first, x + textX, y, lineW, pillH, kPillSize, false, false, pal.text.r, pal.text.g,
+             pal.text.b);
+  } else {
+    drawText(cr, first, x + textX, y + 20, lineW, 44, kPillSize, true, false, pal.text.r,
+             pal.text.g, pal.text.b);
+    drawText(cr, second, x + textX, y + 64, lineW, 36, kSecondSize, false, false, pal.textDim.r,
+             pal.textDim.g, pal.textDim.b);
+  }
+  const double reach = kNoticeShadow;
+  drawn[0] = std::max(0.0, x - reach);
+  drawn[1] = std::max(0.0, y - reach);
+  drawn[2] = std::min(w, x + pillW + reach) - drawn[0];
+  drawn[3] = std::min(h, y + pillH + reach) - drawn[1];
 }
 
 bool Menu::pointingAtLongList(int& page) const {

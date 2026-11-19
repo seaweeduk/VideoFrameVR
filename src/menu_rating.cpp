@@ -1,5 +1,7 @@
 #include "menu_style.h"
 
+#include "menu_list_parts.h"
+
 // Star ratings: five stars are one control, and where the
 // pointer is along all of it picks the rating in half stars. Pointed at, the
 // stars show in white what a press would choose; holding the trigger shows it
@@ -123,22 +125,26 @@ MenuCommand Menu::dragRating(bool held) {
 // The stars under the pointer (`hovered`, a button or -1), while the trigger
 // is not held on any: only their pixels are drawn again as that changes.
 void Menu::pointAtRating(int hovered) {
-  RatingDrag next;
+  const Button* stars = nullptr;
   if (hovered >= 0 && !ratingDrag_.active && !buttons_[hovered].ratingPath.empty()) {
     const Button& b = buttons_[hovered];
-    if (!b.scrolls || steadySeconds() - listMovedAt_ > kPointAfterScroll) {
-      next = ratingControl(b);
-      next.active = true;
-    }
+    if (!b.scrolls || steadySeconds() - listMovedAt_ > kPointAfterScroll) stars = &b;
   }
   RatingDrag& now = ratingHover_;
-  const bool same = now.active && next.active && now.is(next);
-  if (next.active) next.rating = ratingAtPointer(next, same ? now.rating : 0);
-  if (!now.active && !next.active) return;
-  if (same && now.rating == next.rating) return;
-  if (now.active && !same) ratingChanged(now);
-  now = next;
+  if (!now.active && !stars) return;
+  if (now.active && stars && now.is(*stars)) {  // the same stars: only where along them
+    const float rating = ratingAtPointer(now, now.rating);
+    if (rating == now.rating) return;
+    now.rating = rating;
+    ratingChanged(now);
+    return;
+  }
   if (now.active) ratingChanged(now);
+  now = stars ? ratingControl(*stars) : RatingDrag{};
+  if (!stars) return;
+  now.active = true;
+  now.rating = ratingAtPointer(now, 0);
+  ratingChanged(now);
 }
 
 bool Menu::clearRatingAtPointer() {
@@ -167,12 +173,23 @@ void Menu::rate(const std::string& path, int64_t video, float rating) {
 
 // Redraws only what the control covers (on a tile, with the strip under it).
 void Menu::ratingChanged(const RatingDrag& control) {
-  if (control.panel == kMain)
+  if (control.panel == kMain) {
     stripDirty_ = true;
-  else if (control.card)
-    browserChanged(control.y - 8, control.y + control.h + 8);
-  else
-    browserChanged(control.y - 2, control.y + control.h + 2);
+    return;
+  }
+  double box[4];
+  ratingBox(control, box);
+  browserChanged(box[1], box[3], box[0], box[2]);
+}
+
+void Menu::ratingBox(const RatingDrag& control, double box[4]) const {
+  if (control.card) {
+    box[0] = 0, box[1] = control.y - 8, box[2] = kBrowserWidth, box[3] = control.y + control.h + 8;
+    return;
+  }
+  // A row's in its column, or one alone: only the stars' box.
+  box[0] = control.x - kButtonReachX, box[1] = control.y - 2;
+  box[2] = control.x + control.w + kButtonReachX, box[3] = control.y + control.h + 2;
 }
 
 // A star of this size, empty (0), half (1) or full (2), filled in gold or
@@ -203,7 +220,7 @@ cairo_surface_t* Menu::starImage(int size, int fill, StarInk ink) const {
 // Five stars in equal cells: the saved rating in gold, the rest outlined.
 // Pointed at, white up to the pointer; held, gold up to it; either on the
 // saved rating, all five empty, as letting go there leaves them. A tile
-// shows no stars while unrated and not pointed at.
+// or a list row shows no stars while unrated and not pointed at.
 void Menu::drawRating(cairo_t* cr, const Button& b) const {
   const bool held = ratingDrag_.active && ratingDrag_.is(b);
   const bool pointed = !held && ratingHover_.active && ratingHover_.is(b);
@@ -213,12 +230,13 @@ void Menu::drawRating(cairo_t* cr, const Button& b) const {
     const float at = held ? ratingDrag_.rating : ratingHover_.rating;
     shown = at == b.rating ? 0 : at;
     if (pointed) ink = StarInk::White;
-  } else if (b.card && b.rating <= 0) {
-    return;
+  } else if ((b.card || b.listLook == static_cast<int>(ListLook::RowStars)) && b.rating <= 0) {
+    return;  // a row's are shown by the panel shader while the row is pointed at (hoverLook())
   }
   const double cell = b.w / 5, cy = b.y + b.h / 2;
-  const int size = b.card ? static_cast<int>(kCardStarSize)
-                          : static_cast<int>(std::min(cell * 1.05, b.h * 0.9));
+  const int size = b.card            ? static_cast<int>(kCardStarSize)
+                   : b.iconSize > 0 ? static_cast<int>(b.iconSize)
+                                    : static_cast<int>(std::min(cell * 1.05, b.h * 0.9));
   for (int i = 0; i < 5; ++i) {
     const double cx = b.x + cell * (i + 0.5);
     const int fill = shown >= i + 1 ? 2 : shown > i ? 1 : 0;

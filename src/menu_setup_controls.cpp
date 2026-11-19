@@ -16,13 +16,14 @@ using Label = SetupControls::Label;
 using Source = ControllerBindings::Source;
 
 constexpr double kW = Menu::kSetupWidth;
-constexpr double kTop = 200, kBottom = 756;  // under the head, over the footer
+constexpr double kTop = setup::kTop, kBottom = setup::kBottom;  // under the head, over the footer
 // With the drawings: a column of labels for each controller outside them,
 // one for what either does between them.
-constexpr double kLabelsX[3] = {40, 544, 1068}, kLabelsW[3] = {252, 272, 252};
-constexpr double kDrawingX[2] = {302, 828}, kDrawingW = 230, kDrawingTop = 216, kDrawingH = 520;
+constexpr double kLabelsX[3] = {setup::kTextLeft, 544, 1068}, kLabelsW[3] = {252, 272, 252};
+constexpr double kDrawingX[2] = {302, 828}, kDrawingW = 230, kDrawingTop = kTop + kit::kSpace,
+                 kDrawingH = kBottom - kit::kSpace - kDrawingTop;
 // Without: the columns side by side, each under its heading.
-constexpr double kListW = 400, kListGap = 40, kRowsTop = 262;
+constexpr double kListW = 400, kListGap = 40, kRowsTop = kTop + 6 + kit::kGroupTitle + kit::kSpaceTight;
 // A label: the glyph, its title beside it, the line under the title.
 constexpr double kTextX = kSetupGlyph + 12, kTitleH = 38, kLabelGap = 22;
 constexpr int kTitleSize = 28, kLineSize = 23, kLineLines = 4;
@@ -283,7 +284,7 @@ void SetupPages::drawControls(Menu& m, cairo_t* cr) {
   const SetupControls& c = m.setup_->controls;
   if (!c.art) return;
   if (c.labels.empty()) {  // no controller is on
-    m.drawText(cr, st.turnOnControllers, 0, 400, kW, 50, 28, false, true, pal.text.r, pal.text.g,
+    m.drawText(cr, st.turnOnControllers, 0, (kTop + kBottom) / 2 - 25, kW, 50, 28, false, true, pal.text.r, pal.text.g,
                pal.text.b);
     return;
   }
@@ -347,8 +348,8 @@ void SetupPages::drawControls(Menu& m, cairo_t* cr) {
     const char* headings[3] = {t.left, t.either, t.right};
     for (int column = 0; column < 3; ++column)
       if (used[column])
-        m.drawText(cr, headings[column], x[column], kTop + 6, kListW, 36, 24, true, false,
-                   pal.textDim.r, pal.textDim.g, pal.textDim.b);
+        m.drawText(cr, headings[column], x[column], kTop + 6, kListW, kit::kGroupTitle, kit::kGroupTitleSize,
+                   true, false, pal.textDim.r, pal.textDim.g, pal.textDim.b);
   }
 
   const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};

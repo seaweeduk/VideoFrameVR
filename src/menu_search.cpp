@@ -263,7 +263,7 @@ void Menu::keyHeld(bool held) {
     }
   }
   if (on || now - k.at < 0.12) return;
-  browserChanged(k.y - 4, k.y + kKeyH + 4, k.x - 4, k.x + k.w + 4);
+  keyChanged(k.x, k.y, k.w);
   keyDown_ = {};
 }
 
@@ -336,12 +336,15 @@ MenuCommand Menu::pickFromKeyPopup(size_t index) {
   return useLayouts(chosen, chosen == 0 ? otherLayout() : chosen);
 }
 
-// The on-screen keyboard, in its own panel at the bottom of the
-// browser's page (it never covers the fields or results above it): the
-// number row with Backspace, the letters with what addresses and paths need
-// (/ : @ _ . -) in the layout's letters (kLayouts), Enter at the right,
-// Shift, a key to all the other symbols and back, then Hide, Clear, the
-// layout key, Space, ← and → (the text cursor) and Paste.
+// The on-screen keyboard (the kit's): raised keys in a sunk well at the
+// bottom of the browser's page (it never covers the fields or results above
+// it). The number row with Backspace, the letters with what addresses and
+// paths need (/ : @ _ . -) in the layout's letters (kLayouts), Done at the
+// right, Shift, a key to all the other symbols and back, then Hide, Clear,
+// the layout key, Space, ← and → (the text cursor) and Paste. Letters are
+// large; the other keys say what they do, dim; Done is filled in the accent
+// and Shift latched while it is on. A key pressed is drawn pushed in
+// (keyDown_, drawnPressed()).
 void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
   const Strings& t = text();
   static const std::vector<std::string> kNumbers = {"1", "2", "3", "4", "5", "6",
@@ -351,42 +354,47 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
       {"!", "@", "#", "$", "%", "^", "&", "*", "(", ")", "/", ":"},
       {"+", "=", "_", "\\", ";", "\"", "'", "<", ">", "?", "~"},
       {"[", "]", "{", "}", "|", "`", ",", ".", "-", "€"}};
+  constexpr int kLetterSize = 30, kKeySize = 23, kDoneSize = 24;
   const KeyLayout& layout = kLayouts[activeLayout()];
   const std::vector<std::string>* kRows[4] = {&kNumbers, &layout.rows[0], &layout.rows[1], &layout.rows[2]};
   if (symbols_)
     for (int r = 0; r < 3; ++r) kRows[r + 1] = &kSymbols[r];
-  if (top < 0) top = kKeyboardY;
-  constexpr double gap = 10;
+  if (top < 0) top = kKeyboardY + kKeyboardPadY;
+  constexpr double gap = kit::kSpaceTight;
   const double unit = keyW + gap;
   const double width = 13 * unit - gap;  // twelve and a half keys, Backspace included
   const double x0 = cx - width / 2;
-  keyboardRect_[0] = x0 - 20;
-  keyboardRect_[1] = top - kKeyboardPadY;
-  keyboardRect_[2] = width + 40;
-  keyboardRect_[3] = 4 * kKeyStep + kKeyH + 2 * kKeyboardPadY;
-  // A key lights up while pressed (keyHeld()); its action redraws what it changes.
+  // On the page, a well kKeyboardPadY around the keys; on a panel of its
+  // own (setup's), that panel, kit::kSpace around them.
+  const double padX = panel == kBrowser ? kKeyboardPadY : kit::kSpace;
+  keyboardRect_[0] = x0 - padX;
+  keyboardRect_[1] = top - padX;
+  keyboardRect_[2] = width + 2 * padX;
+  keyboardRect_[3] = 4 * kKeyStep + kKeyH + 2 * padX;
+  // Its action redraws what it changes (keyChanged()); `fn`: a key that
+  // isn't a letter, its label dim.
   auto key = [&](const std::string& label, double x, int row, double w,
-                 std::function<MenuCommand()> action, bool chosen = false,
+                 std::function<MenuCommand()> action, bool fn,
                  std::function<void()> repeat = nullptr) {
     const double y = top + row * kKeyStep;
-    const bool down = keyDown_.at >= 0 && keyDown_.x == x && keyDown_.y == y;
-    Button b = textButton(label, Icon::None, nullptr, chosen || down);
+    Button b = textButton(label, Icon::None, nullptr);
     b.action = [this, x, y, w, repeat, action = std::move(action)] {
-      const KeyDown& k = keyDown_;  // the key before goes out
-      if (k.at >= 0) browserChanged(k.y - 4, k.y + kKeyH + 4, k.x - 4, k.x + k.w + 4);
+      const KeyDown& k = keyDown_;  // the key before comes back up
+      if (k.at >= 0) keyChanged(k.x, k.y, k.w);
       const double now = steadySeconds();
       keyDown_ = {x, y, w, now, now + 0.5, repeat};
-      browserChanged(y - 4, y + kKeyH + 4, x - 4, x + w + 4);
+      keyChanged(x, y, w);
       return action();
     };
-    b.key = true;
+    b.key = b.keyCap = true;
     b.panel = panel;
     b.x = x;
     b.y = y;
     b.w = w;
     b.h = kKeyH;
-    b.radius = 10;
-    b.fontSize = 28;
+    b.radius = kit::kPieceCorner;
+    b.fontSize = fn ? kKeySize : kLetterSize;
+    b.dimInk = fn;
     buttons_.push_back(b);
   };
   auto letter = [&](const std::string& k, double x, int row, double w) {
@@ -406,8 +414,7 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
         keysChanged();
       }
       return MenuCommand{};
-    });
-    buttons_.back().fontSize = 34;  // larger, so that . , ' and : read
+    }, false);
   };
   // The rows are staggered like a real keyboard's; the second's last key
   // reaches its right edge.
@@ -420,12 +427,14 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
   key(t.backspace, x0 + 11 * unit, 0, 2 * unit - gap, [this] {
     backspace();
     return MenuCommand{};
-  }, false, [this] { backspace(); });
-  // Enter: the folder search keeps its words and hides the keyboard;
-  // Stash's fields are kept (submitText()).
+  }, true, [this] { backspace(); });
+  // Done: the folder search keeps its words and hides the keyboard; Stash's
+  // fields are kept (submitText()).
   key(t.done, x0 + indent[2] + 11 * unit, 2, width - indent[2] - 11 * unit,
-      [this] { return submitText(); }, true);
+      [this] { return submitText(); }, false);
   buttons_.back().key = false;
+  buttons_.back().primary = true;
+  buttons_.back().fontSize = kDoneSize;
   // Shift: one capital; tapped twice, caps lock until tapped again.
   key(capsLock_ ? t.keyboard.capsLock : t.shift, x0, 3, indent[3] - gap, [this] {
     const double now = steadySeconds();
@@ -439,7 +448,8 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
     shiftAt_ = now;
     keysChanged();
     return MenuCommand{};
-  }, shift_);
+  }, true);
+  buttons_.back().latched = shift_ || capsLock_;
   buttons_.back().disabled = symbols_;
   buttons_.back().tooltip = t.keyboard.tipShift;
   key(symbols_ ? t.letterKeys : t.symbolKeys, x0 + indent[3] + 10 * unit, 3,
@@ -448,26 +458,26 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
         shift_ = capsLock_ = false;
         keysChanged();
         return MenuCommand{};
-      });
+      }, true);
   // Bottom row: Hide, Clear, the layout key, Space, the arrows and Paste (the
   // desktop clipboard, e.g. a name copied on the PC).
   const double sideW = 2 * unit - gap;
   key(t.hide, x0, 4, sideW, [this] {
     stopEditing();
     return MenuCommand{};
-  });
+  }, true);
   buttons_.back().key = false;
   buttons_.back().tooltip = stashMenu_ && stashMenu_->typing == StashMenu::Typing::Server
                                 ? t.tipHideServerKeyboard : t.tipHideKeyboard;
   key(t.clear, x0 + 2 * unit, 4, sideW, [this] {
     setFilter("");
     return MenuCommand{};
-  });
+  }, true);
   // The layout key: what it does is decided when let go or held (keyHeld()).
   key(layout.key, x0 + 4 * unit, 4, keyW, [this] {
     keyDown_.hold = KeyDown::Hold::Layouts;
     return MenuCommand{};
-  });
+  }, true);
   if (otherLayout() == 0) {
     buttons_.back().tooltip = t.keyboard.tipLayouts;
   } else {
@@ -479,16 +489,17 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
   key(t.space, x0 + 5 * unit, 4, 4 * unit - gap, [this] {
     typeText(" ");
     return MenuCommand{};
-  });
+  }, true);
   for (const int step : {-1, 1}) {
     key("", x0 + (step < 0 ? 9 : 10) * unit, 4, keyW, [this, step] {
       moveCursor(step);
       return MenuCommand{};
-    }, false, [this, step] { moveCursor(step); });
+    }, true, [this, step] { moveCursor(step); });
     buttons_.back().icon = step < 0 ? Icon::Arrow : Icon::ArrowRight;
+    buttons_.back().iconSize = 26;
     buttons_.back().tooltip = step < 0 ? t.keyboard.tipLeft : t.keyboard.tipRight;
   }
-  key(t.paste, x0 + 11 * unit, 4, sideW, command(MenuCommand::Paste));
+  key(t.paste, x0 + 11 * unit, 4, sideW, command(MenuCommand::Paste), true);
   // The popup's row covers the one above the key it came from, within the
   // keyboard; drawPopups() puts its pane behind it.
   if (keyPopup_.open) {
@@ -508,10 +519,25 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
       b.y = p.y - kKeyStep;
       b.w = w;
       b.h = kKeyH;
-      b.radius = 10;
-      b.fontSize = p.accents ? 34 : 28;
+      b.radius = kit::kPieceCorner;
+      b.fontSize = p.accents ? kLetterSize : kit::kRowSize;
       buttons_.push_back(b);
     }
   }
   keyboardShown_ = true;
+}
+
+void Menu::drawKeyboard(cairo_t* cr) const {
+  if (!keyboardShown_) return;
+  drawFinish(cr, Finish::Sunk, keyboardRect_[0], keyboardRect_[1], keyboardRect_[2],
+             keyboardRect_[3], kit::kGroupCorner);
+}
+
+// Its box and the shadow its finish at rest casts (Done's is the widest),
+// which goes as it is pushed in.
+void Menu::keyChanged(double x, double y, double w) {
+  static const double reach =
+      std::max({MenuFinishes::reach(Finish::Raised), MenuFinishes::reach(Finish::Primary),
+                MenuFinishes::reach(Finish::Latched), MenuFinishes::reach(Finish::Pressed)}) + 2;
+  browserChanged(y - reach, y + kKeyH + reach, x - reach, x + w + reach);
 }

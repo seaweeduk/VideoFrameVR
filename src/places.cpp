@@ -76,7 +76,8 @@ std::vector<Places::Entry> readEntries() {
 // The places other than pins, in their default order.
 std::vector<Places::Place> lookAround(const std::string& library, const Places::Names& names) {
   std::vector<Places::Place> places;
-  auto add = [&](const std::string& label, const std::string& path) {
+  using Kind = Places::Kind;
+  auto add = [&](const std::string& label, const std::string& path, Kind kind) {
     if (!isDirectory(path)) return;
     if (std::any_of(places.begin(), places.end(),
                     [&](const Places::Place& p) { return p.path == path; }))
@@ -84,20 +85,24 @@ std::vector<Places::Place> lookAround(const std::string& library, const Places::
     Places::Place place;
     place.label = place.ownName = label;
     place.path = path;
+    place.kind = kind;
     places.push_back(place);
   };
   const char* home = std::getenv("HOME");
   const std::string homeDir = home ? home : "";
-  add(names.home, homeDir);
+  add(names.home, homeDir, Kind::Home);
   const char* videos = g_get_user_special_dir(G_USER_DIRECTORY_VIDEOS);
-  add(names.videos, videos ? videos : homeDir + "/Videos");
-  add(labelFor(library), library);
+  add(names.videos, videos ? videos : homeDir + "/Videos", Kind::Videos);
+  add(labelFor(library), library, Kind::Folder);
   // microSD cards and USB drives, by their labels (else what they are).
   for (const RemovableDrives::Drive& d : mountedDrives()) {
     std::string label = d.label;
     if (label.empty() && d.kind == RemovableDrives::Kind::Card) label = names.card;
     if (label.empty() && d.kind == RemovableDrives::Kind::Usb) label = names.usbDrive;
-    add(label.empty() ? names.drive : label, d.mountPoint);
+    const Kind kind = d.kind == RemovableDrives::Kind::Card  ? Kind::Card
+                      : d.kind == RemovableDrives::Kind::Usb ? Kind::Usb
+                                                             : Kind::Drive;
+    add(label.empty() ? names.drive : label, d.mountPoint, kind);
   }
   // Other mounted drives: what is in the usual mount folders.
   const char* user = std::getenv("USER");
@@ -111,9 +116,9 @@ std::vector<Places::Place> lookAround(const std::string& library, const Places::
     std::sort(found.begin(), found.end(), [](const fs::path& a, const fs::path& b) {
       return fileNameLess(a.filename().string(), b.filename().string());
     });
-    for (const fs::path& p : found) add(p.filename().string(), p.string());
+    for (const fs::path& p : found) add(p.filename().string(), p.string(), Kind::Drive);
   }
-  add(names.fileSystem, "/");
+  add(names.fileSystem, "/", Kind::Drive);
   return places;
 }
 

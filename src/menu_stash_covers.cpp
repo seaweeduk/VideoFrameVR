@@ -57,6 +57,163 @@ void boxBlur(const std::vector<float>& in, std::vector<float>& out, int length, 
   }
 }
 
+// Many studios' logos come on an opaque white or light box while others
+// have none. When the w × h logo at (x0, y0) has such a box (most of its
+// opaque edge light, and most of the edge opaque), the box becomes
+// see-through: the area of its colour joined to the edge, and the holes
+// of its colour in black or grey letters (the inside of an O). Each of
+// those pixels and the ones next to them keep only what differs from the
+// box's colour, so that the edges of the letters blend into what is behind
+// instead of leaving a pale fringe. Other areas of the box's colour, such
+// as light letters on a coloured band, stay.
+bool clearLightBox(uint32_t* pixels, int stride, int x0, int y0, int w, int h) {
+  if (w < 3 || h < 3) return false;
+  const auto at = [&](int x, int y) -> uint32_t& {
+    return pixels[static_cast<size_t>(y0 + y) * stride + x0 + x];
+  };
+  const auto channel = [](uint32_t p, int shift) {
+    const uint32_t a = p >> 24;
+    return a ? ((p >> shift) & 255) / static_cast<float>(a) : 0.0f;
+  };
+  int edge = 0, opaque = 0, light = 0;
+  float key[3] = {0, 0, 0};
+  const auto count = [&](int x, int y) {
+    const uint32_t p = at(x, y);
+    ++edge;
+    if ((p >> 24) < 217) return;  // 0.85
+    ++opaque;
+    float least = 1;
+    for (int i = 0; i < 3; ++i) least = std::min(least, channel(p, 16 - 8 * i));
+    if (least < 0.85f) return;
+    ++light;
+    for (int i = 0; i < 3; ++i) key[i] += channel(p, 16 - 8 * i);
+  };
+  for (int x = 0; x < w; ++x) count(x, 0), count(x, h - 1);
+  for (int y = 1; y < h - 1; ++y) count(0, y), count(w - 1, y);
+  if (opaque < edge / 2 || light < opaque * 0.7) return false;
+  for (float& k : key) k /= light;
+  // How much of a pixel is not the box: the least coverage of a colour
+  // that over the box's colour gives it, 0-1.
+  const auto unlike = [&](uint32_t p) {
+    float most = 0;
+    for (int i = 0; i < 3; ++i) {
+      const float c = channel(p, 16 - 8 * i), k = key[i];
+      if (c < k)
+        most = std::max(most, (k - c) / k);
+      else if (k < 0.98f)
+        most = std::max(most, (c - k) / (1 - k));
+    }
+    return most < 0.04f ? 0.0f : std::min(1.0f, most);  // compression noise
+  };
+  const auto boxLike = [&](uint32_t p) { return (p >> 24) >= 217 && unlike(p) < 0.5f; };
+  // 0 not reached, 1 the box, 2 next to it, 3 looked at for a hole.
+  std::vector<uint8_t> state(static_cast<size_t>(w) * h, 0);
+  const auto index = [&](int x, int y) { return static_cast<size_t>(y) * w + x; };
+  std::vector<std::pair<int, int>> todo;
+  const auto reach = [&](int x, int y) {
+    uint8_t& s = state[index(x, y)];
+    if (s == 1) return;
+    if (boxLike(at(x, y))) {
+      s = 1;
+      todo.emplace_back(x, y);
+    } else {
+      s = 2;
+    }
+  };
+  const auto spread = [&] {
+    while (!todo.empty()) {
+      const auto [x, y] = todo.back();
+      todo.pop_back();
+      if (x > 0) reach(x - 1, y);
+      if (x < w - 1) reach(x + 1, y);
+      if (y > 0) reach(x, y - 1);
+      if (y < h - 1) reach(x, y + 1);
+    }
+  };
+  for (int x = 0; x < w; ++x) reach(x, 0), reach(x, h - 1);
+  for (int y = 1; y < h - 1; ++y) reach(0, y), reach(w - 1, y);
+  spread();
+  // Holes: areas of the box's colour inside, all around them black or grey,
+  // and the box within a letter's stroke of them (light letters on a black
+  // band are further from it).
+  const auto darkGrey = [&](uint32_t p) {
+    const float r = channel(p, 16), g = channel(p, 8), b = channel(p, 0);
+    return (p >> 24) >= 128 && std::max({r, g, b}) - std::min({r, g, b}) < 0.12f &&
+           0.2126f * r + 0.7152f * g + 0.0722f * b < 0.75f;  // its edge's blend too
+  };
+  const int stroke = std::max(3, static_cast<int>(std::lround(h * 0.075 + 1.5)));
+  std::vector<int> seen(state.size(), 0);
+  int hole = 0;
+  std::vector<std::pair<int, int>> ring;
+  const auto nearBox = [&](const std::vector<std::pair<int, int>>& from) {
+    ++hole;
+    ring = from;
+    for (const auto& [x, y] : from) seen[index(x, y)] = hole;
+    for (int step = 0; step < stroke && !ring.empty(); ++step) {
+      std::vector<std::pair<int, int>> next;
+      for (const auto& [x, y] : ring) {
+        const std::pair<int, int> around[] = {{x - 1, y}, {x + 1, y}, {x, y - 1}, {x, y + 1}};
+        for (const auto& [nx, ny] : around) {
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const size_t i = index(nx, ny);
+          if (seen[i] == hole) continue;
+          if (state[i] == 1) return true;
+          seen[i] = hole;
+          next.emplace_back(nx, ny);
+        }
+      }
+      ring = std::move(next);
+    }
+    return false;
+  };
+  std::vector<std::pair<int, int>> area;
+  for (int y = 1; y < h - 1; ++y)
+    for (int x = 1; x < w - 1; ++x) {
+      if (state[index(x, y)] || !boxLike(at(x, y))) continue;
+      area.clear();
+      area.emplace_back(x, y);
+      state[index(x, y)] = 3;
+      int around = 0, dark = 0;
+      for (size_t i = 0; i < area.size(); ++i) {
+        const auto [ax, ay] = area[i];
+        const std::pair<int, int> next[] = {{ax - 1, ay}, {ax + 1, ay}, {ax, ay - 1}, {ax, ay + 1}};
+        for (const auto& [nx, ny] : next) {
+          uint8_t& s = state[index(nx, ny)];
+          if (s == 3) continue;
+          if (s != 1 && boxLike(at(nx, ny))) {
+            s = 3;
+            area.emplace_back(nx, ny);
+          } else {
+            ++around;
+            if (darkGrey(at(nx, ny))) ++dark;
+          }
+        }
+      }
+      if (dark < around * 0.85 || !nearBox(area)) continue;
+      for (const auto& [ax, ay] : area) state[index(ax, ay)] = 0;
+      for (const auto& [ax, ay] : area) reach(ax, ay);
+      spread();
+    }
+  for (int y = 0; y < h; ++y)
+    for (int x = 0; x < w; ++x) {
+      const uint8_t s = state[index(x, y)];
+      if (s != 1 && s != 2) continue;
+      uint32_t& p = at(x, y);
+      const uint32_t a = p >> 24;
+      if (!a) continue;
+      // Premultiplied, a channel c of the colour that over the box's
+      // colour k with coverage `keep` gives it is c - k (1 - keep).
+      const float keep = unlike(p);
+      uint32_t out = static_cast<uint32_t>(std::lround(keep * a)) << 24;
+      for (int i = 0; i < 3; ++i) {
+        const float c = std::clamp(channel(p, 16 - 8 * i) - key[i] * (1 - keep), 0.0f, keep);
+        out |= static_cast<uint32_t>(std::lround(c * a)) << (16 - 8 * i);
+      }
+      p = out;
+    }
+  return true;
+}
+
 // The logo fitted into boxW × boxH pixels, on a soft shadow of its own
 // shape: dark under a light logo, light around a dark one, so that both
 // read on any cover. kShadowPad pixels of room on each side.
@@ -74,7 +231,10 @@ cairo_surface_t* shadowedLogo(cairo_surface_t* source, int boxW, int boxH) {
     cairo_scale(cr, static_cast<double>(lw) / sw, static_cast<double>(lh) / sh);
     cairo_set_source_surface(cr, source, 0, 0);
     cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);  // BEST: 3-10 times as long
-    cairo_paint(cr);
+    // Edges as opaque as the picture's own, for clearLightBox to see a box.
+    cairo_pattern_set_extend(cairo_get_source(cr), CAIRO_EXTEND_PAD);
+    cairo_rectangle(cr, 0, 0, sw, sh);
+    cairo_fill(cr);
     cairo_destroy(cr);
   }
   cairo_surface_flush(logo);
@@ -82,17 +242,62 @@ cairo_surface_t* shadowedLogo(cairo_surface_t* source, int boxW, int boxH) {
   const int stride = cairo_image_surface_get_stride(logo) / 4;
   // How light it is, weighted by coverage (premultiplied: the colour is
   // already scaled by it).
-  double light = 0, cover = 0;
+  const auto luminance = [](uint32_t p) {
+    return 0.2126f * ((p >> 16) & 255) + 0.7152f * ((p >> 8) & 255) + 0.0722f * (p & 255);
+  };
+  // Grey: little difference between the channels for its coverage.
+  const auto grey = [](uint32_t p) {
+    const uint32_t r = (p >> 16) & 255, g = (p >> 8) & 255, b = p & 255;
+    return std::max({r, g, b}) - std::min({r, g, b}) < 0.25f * (p >> 24);
+  };
+  bool dark = false, lighten = false;
+  const auto measure = [&] {
+    double light = 0, lightCover = 0, darkCover = 0, cover = 0;
+    for (int y = 0; y < h; ++y)
+      for (int x = 0; x < w; ++x) {
+        const uint32_t p = pixels[static_cast<size_t>(y) * stride + x];
+        const float l = luminance(p);
+        light += l;
+        cover += p >> 24;
+        if (l > 0.6f * (p >> 24)) lightCover += p >> 24;
+        if (grey(p) && l < 0.35f * (p >> 24)) darkCover += p >> 24;
+      }
+    dark = cover > 0 && light / cover < 0.3;
+    // Black, grey or nearly grey lettering with nothing light (often a
+    // logo that came on a white box) is drawn light, as most logos are,
+    // rather than dark on the dark menu: its grey parts get the opposite
+    // lightness, coloured parts stay. A logo with light parts too, such as
+    // light letters on a dark badge, keeps its own look.
+    lighten = lightCover < 0.08 * cover && darkCover > 0.25 * cover;
+  };
+  std::vector<uint32_t> boxed(static_cast<size_t>(stride) * h);
+  std::copy(pixels, pixels + boxed.size(), boxed.begin());
+  const bool cleared = clearLightBox(pixels, stride, kShadowPad, kShadowPad, lw, lh);
+  measure();
+  // A dark logo that can't be made light keeps its box, to stay readable.
+  if (cleared && dark && !lighten) {
+    std::copy(boxed.begin(), boxed.end(), pixels);
+    measure();
+  }
+  if (lighten) {
+    for (int y = 0; y < h; ++y)
+      for (int x = 0; x < w; ++x) {
+        uint32_t& p = pixels[static_cast<size_t>(y) * stride + x];
+        const uint32_t a = p >> 24;
+        if (!a || !grey(p)) continue;
+        const float shift = a - 2 * luminance(p);
+        const auto flip = [&](int s) {
+          const float c = ((p >> s) & 255) + shift;
+          return static_cast<uint32_t>(std::lround(std::clamp(c, 0.0f, static_cast<float>(a)))) << s;
+        };
+        p = a << 24 | flip(16) | flip(8) | flip(0);
+      }
+    dark = false;
+  }
   std::vector<float> alpha(static_cast<size_t>(w) * h), blurred(alpha.size());
   for (int y = 0; y < h; ++y)
-    for (int x = 0; x < w; ++x) {
-      const uint32_t p = pixels[static_cast<size_t>(y) * stride + x];
-      const float a = (p >> 24) / 255.0f;
-      alpha[static_cast<size_t>(y) * w + x] = a;
-      light += 0.2126 * ((p >> 16) & 255) + 0.7152 * ((p >> 8) & 255) + 0.0722 * (p & 255);
-      cover += p >> 24;
-    }
-  const bool dark = cover > 0 && light / cover < 0.3;
+    for (int x = 0; x < w; ++x)
+      alpha[static_cast<size_t>(y) * w + x] = (pixels[static_cast<size_t>(y) * stride + x] >> 24) / 255.0f;
   for (int pass = 0; pass < 3; ++pass) {
     boxBlur(alpha, blurred, w, h, 1, w, kShadowRadius);
     boxBlur(blurred, alpha, h, w, w, 1, kShadowRadius);
@@ -288,7 +493,7 @@ void Menu::setStash(Stash* stash) {
   if (stash)
     StashPages::attach(*this);
   else if (stashListPage())
-    showPage(Page::Settings);
+    showStashSettings();
   else if (page_ == Page::StashSceneDetails)
     showPage(Page::Main);
   dirty_ = true;
@@ -312,7 +517,7 @@ void Menu::updateStash() {
   }
   // Drawn in batches, as the frame thumbnails.
   if (stash.stash().imagesArrived() &&
-      (page_ == Page::Files || page_ == Page::Library || stashPage()))
+      (page_ == Page::Files || page_ == Page::Library || page_ == Page::Offline || stashPage()))
     thumbnailsPending_ = true;
 }
 
@@ -352,17 +557,23 @@ void Menu::drawStudioMark(cairo_t* cr, const std::string& path, double x, double
       stashCovers_->logo(path, static_cast<int>(std::lround(w * kLogoWidth * scale)),
                          static_cast<int>(std::lround(h * kLogoHeight * scale)), pad, name, y,
                          y + h * kLogoHeight + 2 * kLogoInset, coming);
+  const double right = x + w - kLogoInset, top = y + kLogoInset;
+  // No logo: the studio's name, as the play count is shown.
+  constexpr int nameSize = 22;
+  constexpr double nameH = 40;
+  const double nameW = name.empty() ? 0 : std::min(textWidth(name, nameSize, true) + 28, w * 0.6);
   if (coming) {
     logosComing_.insert(path);
   } else if (const auto it = logosComing_.find(path); it != logosComing_.end()) {
-    // As a picture (pictureOf()), a logo that came is shown once a paint
-    // reached all of its corner; until then picturesChanged() redraws the tile.
+    // As a picture (pictureOf()), a logo that came, or the name in place of
+    // one that failed, is shown once a paint reached all of it; until then
+    // picturesChanged() redraws the tile.
     const double cornerW = w * kLogoWidth + kLogoInset + kShadowPad / scale;
-    if (!logo || paintedPart(cr, x + w - cornerW, y, cornerW, h * kLogoHeight + 2 * kLogoInset) ==
-                     Painted::All)
+    if (logo ? paintedPart(cr, x + w - cornerW, y, cornerW, h * kLogoHeight + 2 * kLogoInset) ==
+                   Painted::All
+             : name.empty() || paintedPart(cr, right - nameW, top, nameW, nameH) == Painted::All)
       logosComing_.erase(it);
   }
-  const double right = x + w - kLogoInset, top = y + kLogoInset;
   if (logo) {
     // At its pixels' size, on the texture's pixel grid: as sharp as it gets.
     const double lw = cairo_image_surface_get_width(logo);
@@ -372,14 +583,12 @@ void Menu::drawStudioMark(cairo_t* cr, const std::string& path, double x, double
     cairo_set_source_surface(cr, logo, 0, 0);
     cairo_paint_with_alpha(cr, kLogoOpacity);
     cairo_restore(cr);
-  } else if (!name.empty()) {  // no logo: the name, as the play count is shown
-    constexpr int size = 22;
-    constexpr double ph = 40;
-    const double pw = std::min(textWidth(name, size, true) + 28, w * 0.6);
-    roundedRect(cr, right - pw, top, pw, ph, 14);
+  } else if (!name.empty()) {
+    roundedRect(cr, right - nameW, top, nameW, nameH, 14);
     cairo_set_source_rgba(cr, 0, 0, 0, 0.6);
     cairo_fill(cr);
-    drawText(cr, name, right - pw + 14, top, pw - 28, ph, size, true, false, 1, 1, 1, 0.9);
+    drawText(cr, name, right - nameW + 14, top, nameW - 28, nameH, nameSize, true, false, 1, 1, 1,
+             0.9);
   }
 }
 
