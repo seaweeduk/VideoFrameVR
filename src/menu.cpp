@@ -601,7 +601,10 @@ MenuCommand Menu::drag(bool held) {
     }
     closeKeyPopup();
   }
-  if (held && pointerPanel_ == kBrowser && browserRow_ >= 0) return {};
+  // While a new page is drawn, held input waits, except a slider already held:
+  // its rows are laid out, and the last stop before letting go is the one kept.
+  if (held && pointerPanel_ == kBrowser && browserRow_ >= 0 && draggingSlider_ == MenuCommand::None)
+    return {};
   if (setup_ && setup_->folders && setup_->folders->drag.pressed)
     return SetupPages::drag(*this, held);
   if (ratingDrag_.active) return dragRating(held);
