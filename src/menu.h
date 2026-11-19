@@ -828,7 +828,8 @@ class Menu {
     std::string from, to;
     std::vector<WhatsNewPiece> pieces;
     double width = 0, height = 0;  // as laid out; width 0: not yet
-    double scroll = 0, max = 0;
+    double scroll = 0, max = 0, remainder = 0;
+    double drawn = -1;  // the visible texture's position; -1 until its first complete drawing
   } whatsNew_;
   // Where the dialog is, as its notes were laid out: its left, top and
   // height, and its notes' height.
@@ -840,6 +841,7 @@ class Menu {
   void layoutWhatsNew();
   void drawWhatsNew(cairo_t* cr);
   void scrollWhatsNew(double pixels);
+  bool shiftWhatsNew();
   bool overWhatsNewNotes() const;
   // The Scene tab's box (menu_stash_scene.cpp): Download, or the state.
   void addOfflineBox(const std::string& path, double x, double y, double w, double h);

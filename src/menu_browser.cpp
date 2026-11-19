@@ -538,6 +538,7 @@ void Menu::scrollToPointer(const Button& bar) {
   const double fraction = std::clamp((pointerY_ - bar.y - thumb / 2) / (bar.h - thumb), 0.0, 1.0);
   const double position = fraction * std::max(0.0, e.total - e.shown);
   if (dialog_ == Dialog::WhatsNew) {
+    whatsNew_.remainder = 0;  // an absolute position, not another stick/drag increment
     scrollWhatsNew(position - whatsNew_.scroll);
     return;
   }
