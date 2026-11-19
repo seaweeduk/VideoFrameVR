@@ -642,6 +642,7 @@ std::shared_ptr<const StashCatalog> StashCatalog::build(const StashData& data,
     s.duration = file.duration;
     s.fps = file.fps;
     s.codec = file.codec;
+    s.streamFile = d.files[0].id;
     for (size_t f = 0; f < d.files.size(); ++f) {
       const StashData::File& each = d.files[f];
       if (!each.oshash.empty()) {
@@ -664,7 +665,8 @@ std::shared_ptr<const StashCatalog> StashCatalog::build(const StashData& data,
     if (own) s.vrBy = own->projection != Projection::Flat ? VrBy::Own : VrBy::None;
     else if (isVrFrame(s.width, s.height)) s.vrBy = VrBy::Shape;
     else if (hasVrNameTag(s.stashPath)) s.vrBy = VrBy::Name;
-    else if (std::any_of(d.tags.begin(), d.tags.end(), [&](int64_t t) { return vrTags.count(t) > 0; }))
+    else if (d.vr ||
+             std::any_of(d.tags.begin(), d.tags.end(), [&](int64_t t) { return vrTags.count(t) > 0; }))
       s.vrBy = VrBy::Tag;
     s.vr = s.vrBy != VrBy::None;
     stats.vr += s.vr;

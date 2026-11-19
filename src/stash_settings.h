@@ -1,5 +1,7 @@
 #pragma once
 
+#include "server_kind.h"
+
 #include <array>
 #include <string>
 #include <vector>
@@ -77,10 +79,17 @@ std::string stashMapped(const StashFolderMap& map, const std::string& path);
 std::vector<StashFolderMap> stashFoldersWith(std::vector<StashFolderMap> list,
                                              const std::string& folder, StashFolderMap map);
 
-// The Stash integration's preferences (docs/stash.md), kept in settings.conf
-// as stash_* keys. Off by default: with it off no Stash code runs.
+// A media server's setup (docs/stash.md): the Stash integration's
+// preferences, and another kind's the same. Each kind has one of its own,
+// kept in settings.conf under its id (stash_url, xbvr_url, ...): the one in
+// use, and the others as they were left, so that going from one kind to
+// another and back loses nothing of either. Off by default: with it off no
+// server code runs.
 struct StashSettings {
+  // On, and the menu's card: the app's, whichever kind's setup this is
+  // (useServer() takes them along).
   bool enabled = false;
+  ServerKind kind = ServerKind::Stash;  // whose setup this is
   std::string url;     // the server, without /graphql; empty: not set up
   std::string apiKey;  // empty: the server needs none
   // The host (stashHost()) whose certificate the user chose to accept
@@ -121,9 +130,37 @@ struct StashSettings {
   bool unverified() const;
 };
 
-// settings.conf: reads one stash_* key (false if the key is not one of
-// them), and the lines that keep them.
-bool readStashSetting(const std::string& key, const std::string& value, StashSettings& s);
-// The Scenes rail's sections and subgroups as stash_filters= keeps them.
+// `kind`'s setup made the one in use, the one it replaces put with the
+// others as it is. A kind never set up starts from the defaults.
+void useServer(StashSettings& inUse, std::vector<StashSettings>& others, ServerKind kind);
+// Whether `kind` has a server set up, in use or not.
+bool serverSetUp(const StashSettings& inUse, const std::vector<StashSettings>& others,
+                 ServerKind kind);
+
+// settings.conf's media server lines, read in any order: `stash` (on, with
+// the first kind, as builds from before there were kinds wrote it),
+// `media_server` (the id of another kind in use), `stash_card`, and each
+// kind's setup under its id.
+class StashSettingsReader {
+ public:
+  StashSettingsReader(StashSettings& inUse, std::vector<StashSettings>& others)
+      : inUse_(inUse), others_(others) {}
+  bool read(const std::string& key, const std::string& value);  // false: not one of them
+  void finish();  // after the last line
+
+ private:
+  StashSettings& inUse_;
+  std::vector<StashSettings>& others_;
+  int on_ = -1;  // `stash`, -1 while not read: on or off is then left as it is
+  std::string chosen_;
+};
+// One of a setup's lines by its name without the kind's id ("filters",
+// "scenes_sort"); false if there is no such line.
+bool readServerSetting(const std::string& name, const std::string& value, StashSettings& s);
+// The Scenes rail's sections and subgroups as <id>_filters= keeps them.
 std::string stashSectionsText(const StashSettings& s);
-std::string stashSettingLines(const StashSettings& s);
+// Every line: the setup in use whole, another only once it has a server.
+std::string stashSettingLines(const StashSettings& inUse, const std::vector<StashSettings>& others);
+// Each kind's lines as a setup never changed has them: what settings.conf
+// leaves out.
+std::string stashDefaultLines();

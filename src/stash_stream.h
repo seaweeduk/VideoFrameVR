@@ -1,5 +1,6 @@
 #pragma once
 
+#include "media_server.h"
 #include "oshash.h"
 
 #include <atomic>
@@ -13,22 +14,25 @@
 struct mpv_handle;
 struct mpv_stream_cb_info;
 
-// Stash's scenes played straight from its server, without SMB or a mount
-// (docs/alpha/stash-streaming.md): the original file at
-// <server>/scene/<id>/stream, read with byte ranges, never a transcoded one.
-// The ApiKey goes in a header, never in an address.
+// A media server's scenes played straight from it, without SMB or a mount
+// (docs/alpha/stash-streaming.md): the original file where the server's
+// kind has it (MediaServer::streamPath()), read with byte ranges, never a
+// transcoded one. A key goes in a header, never in an address.
 //
 // A scene is named by a locator, stashscene://<server>/<id>/<file name>,
-// <server> a number for Stash's server in this run, the name its file's, for
-// what is told from a name (the format, passthrough). It reads only while
-// Stash is on with that server, and is never saved.
+// <server> a number for the server in this run, the name its file's, for
+// what is told from a name (the format, passthrough). Where the server
+// serves files by ids of their own, the id is <scene>.<file>. It reads only
+// while the server is on, and is never saved.
 
 // The server scenes are read from: the Stash facade's while it runs, none
 // with an empty url; `unverified`: its certificate is accepted unverified.
 // Any thread.
-void stashServe(const std::string& url, const std::string& apiKey, bool unverified);
-// Scene `id`'s locator on the server served now; empty if none.
-std::string stashSceneLocator(int64_t id, std::string_view fileName);
+void stashServe(ServerKind kind, const std::string& url, const std::string& apiKey,
+                bool unverified);
+// Scene `id`'s locator on the server served now, `file` the server's id of
+// the file its stream serves (0: it has none); empty if none is served.
+std::string stashSceneLocator(int64_t id, std::string_view fileName, int64_t file = 0);
 bool isStashScene(std::string_view location);
 // The scene a locator names on the server served now; 0 if none.
 int64_t stashSceneId(std::string_view location);
@@ -51,9 +55,9 @@ void addStashStreams(mpv_handle* mpv, bool background = false,
 bool openStashScene(const std::string& locator, mpv_stream_cb_info& info);
 
 // Downloads (offline.h) keep a scene as a source, never as its locator:
-// stash:<server>/<id>/<file name>, <server> a hash of Stash's address as
-// typed (as its outbox's file name), the same after a restart. It holds
-// neither the host nor the key.
+// stash:<server>/<id>/<file name>, <server> a hash of the server's address
+// as typed (as its outbox's file name), the same after a restart, <id> as a
+// locator's. It holds neither the host nor the key.
 // A locator's source; empty if it isn't one on the server served now.
 std::string stashSource(std::string_view locator);
 bool isStashSource(std::string_view source);
@@ -63,22 +67,17 @@ std::string stashSourceLocator(std::string_view source);
 // and the oshash of its ends. No oshash if it wasn't read, and `gone` if
 // Stash has no such scene. Blocks: worker threads only.
 FileFingerprint stashFingerprint(const std::string& source, bool& gone);
-// Whether the server served now answers a small GraphQL request (true if
-// none is served). Blocks for up to 5 s: worker threads only.
+// Whether the server served now answers a small request (true if none is
+// served). Blocks for up to 5 s: worker threads only.
 bool stashAnswers();
 
-// A scene's captions (its .srt and .vtt files Stash found), for a locator or
-// a source, from the server served now. Stash serves each as WebVTT,
-// whatever its file. Blocks: worker threads only.
-struct StashCaption {
-  std::string language;  // empty for none
-  std::string type;      // its file's: srt or vtt
-  std::string text;
-};
+// A scene's captions (the subtitle files the server found for it), for a
+// locator or a source, from the server served now. Blocks: worker threads
+// only.
+using StashCaption = ServerCaption;
 std::vector<StashCaption> stashCaptions(std::string_view location);
-// A scene's funscript (funscript.h), the file Stash found beside its first
-// file, for a locator or a source; empty if it has none. Blocks: worker
-// threads only.
+// A scene's funscript (funscript.h), the one the server has for it, for a
+// locator or a source; empty if it has none. Blocks: worker threads only.
 std::string stashFunscript(std::string_view location);
 
 // A source's file read in order from `offset`, by playback's reader (two

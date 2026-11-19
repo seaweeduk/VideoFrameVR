@@ -109,7 +109,10 @@ struct Settings {
   std::string downloadsTo;
   // The flat screen of videos without their own size: the last one set.
   ScreenSize screen;
-  StashSettings stash;  // the optional Stash integration (stash_settings.h)
+  // The optional media server (stash_settings.h): the setup in use, Stash's
+  // or another kind's, and the other kinds' as they were left.
+  StashSettings stash;
+  std::vector<StashSettings> otherServers;
   ScriptSettings scripts;  // funscripts played on a device through Intiface (script_player.h)
 };
 

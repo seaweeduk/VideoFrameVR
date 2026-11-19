@@ -1,7 +1,7 @@
 #include "stash_sync.h"
 
 #include "settings.h"
-#include "stash_client.h"
+#include "media_client.h"
 #include "stash_store.h"
 
 #include <chrono>
@@ -10,7 +10,7 @@
 
 namespace {
 
-// stash.db is used by one StashStore at a time, of every StashSync: a
+// A local copy is used by one StashStore at a time, of every StashSync: a
 // stopped one's worker may still be at it when the next one's starts. A
 // save checks under it that its sync was not stopped, so a stopped sync's
 // copy never replaces a later one's, and a load never waits on a write
@@ -40,11 +40,13 @@ std::shared_ptr<const StashCatalog> loadCopy(const StashSettings& settings,
   StashData data;
   {
     std::lock_guard<std::mutex> lock(storeMutex);
-    StashStore store;
+    StashStore store(mediaServer(settings.kind));
     if (!store.load(data)) return nullptr;
   }
   // Another server's: none until this one's sync.
-  if (data.server != StashClient(settings.url, settings.apiKey).server()) return nullptr;
+  if (data.server != StashAddress(settings.url).server ||
+      data.kind != mediaServer(settings.kind).id())
+    return nullptr;
   auto catalog = StashCatalog::build(data, settings, library);
   describe(*catalog, status);
   return catalog;
@@ -52,19 +54,21 @@ std::shared_ptr<const StashCatalog> loadCopy(const StashSettings& settings,
 
 // Fetches, keeps and builds, telling `step` as each starts; null (and
 // status.error) if the fetch failed.
-std::shared_ptr<const StashCatalog> sync(StashClient& client, const StashSettings& settings,
+std::shared_ptr<const StashCatalog> sync(MediaClient& client, const StashSettings& settings,
                                          const StashLibraryFormats& library, StashStatus& status,
                                          const std::function<void(const StashStatus&)>& step) {
   StashData data;
-  StashClient::Timings timings;
+  MediaClient::Timings timings;
   status.step = StashStatus::Step::Fetching;
   status.received = 0;
   step(status);
   const bool fetched = client.fetch(data, timings);
+  data.kind = client.kind().id();
   status.fetchMs = timings.fetchMs;
   status.parseMs = timings.parseMs;
   status.bytes = timings.bytes;
   status.problem = client.problem();
+  status.otherAnswered = !fetched && client.reached() && status.problem == StashProblem::Other;
   if (!fetched) {
     status.error = client.error();
     status.synced = false;
@@ -79,13 +83,13 @@ std::shared_ptr<const StashCatalog> sync(StashClient& client, const StashSetting
     // Stopped (Stash off, or another server): the copy may already be the
     // next sync's.
     if (client.cancelled()) {
-      status.error = "Stash: stopped";
+      status.error = std::string(client.kind().name()) + ": stopped";
       status.synced = false;
       return nullptr;
     }
     // Not kept, it is still used: the next start syncs again anyway. Nor
     // while --first-run's setup holds the profile as it was.
-    StashStore store;
+    StashStore store(client.kind());
     status.error = settingsHeld() || store.save(data) ? std::string() : store.error();
   }
   status.storeMs = msSince(storeStart);
@@ -105,7 +109,7 @@ struct StashSync::Shared {
   std::condition_variable wake;
   bool load = false, sync = false, stop = false;
   StashLibraryFormats library;
-  StashClient* client = nullptr;  // the request under way, to stop it
+  MediaClient* client = nullptr;  // the request under way, to stop it
   // What the worker finished, for poll().
   bool changed = false;
   std::shared_ptr<const StashCatalog> catalog;
@@ -202,8 +206,9 @@ void StashSync::work(std::shared_ptr<Shared> shared) {
       lock.unlock();
       auto catalog = loadCopy(settings, library, status);
       if (catalog)
-        std::printf("Stash: local copy, %d scenes (%d here, %d streamed)\n", status.scenes,
-                    status.listed, status.streamed);
+        std::printf("%s: local copy, %d scenes (%d here, %d streamed)\n",
+                    mediaServer(settings.kind).name(), status.scenes, status.listed,
+                    status.streamed);
       lock.lock();
       if (catalog) shared->catalog = std::move(catalog);
       shared->status = status;
@@ -213,21 +218,23 @@ void StashSync::work(std::shared_ptr<Shared> shared) {
     status.syncing = true;
     shared->status = status;
     shared->changed = true;
-    StashClient client(settings.url, settings.apiKey, settings.unverified());
-    shared->client = &client;
+    const MediaServer& kind = mediaServer(settings.kind);
+    const std::unique_ptr<MediaClient> client =
+        kind.client(settings.url, settings.apiKey, settings.unverified());
+    shared->client = client.get();
     lock.unlock();
     const auto start = std::chrono::steady_clock::now();
-    auto catalog = sync(client, settings, library, status, [&shared](const StashStatus& now) {
+    auto catalog = sync(*client, settings, library, status, [&shared](const StashStatus& now) {
       std::lock_guard<std::mutex> stepLock(shared->mutex);
       shared->status = now;
       shared->changed = true;
     });
     status.syncing = false;
     if (catalog)
-      std::printf("Stash: synced, %d scenes (%d here, %d streamed) in %.0f ms\n", status.scenes,
-                  status.listed, status.streamed, msSince(start));
+      std::printf("%s: synced, %d scenes (%d here, %d streamed) in %.0f ms\n", kind.name(),
+                  status.scenes, status.listed, status.streamed, msSince(start));
     else
-      std::fprintf(stderr, "Stash: sync failed: %s\n", status.error.c_str());
+      std::fprintf(stderr, "%s: sync failed: %s\n", kind.name(), status.error.c_str());
     lock.lock();
     shared->client = nullptr;
     if (catalog) shared->catalog = std::move(catalog);
@@ -239,6 +246,7 @@ void StashSync::work(std::shared_ptr<Shared> shared) {
 std::shared_ptr<const StashCatalog> stashSyncOnce(const StashSettings& settings,
                                                   const StashLibraryFormats& library,
                                                   StashStatus& status) {
-  StashClient client(settings.url, settings.apiKey, settings.unverified());
-  return sync(client, settings, library, status, [](const StashStatus&) {});
+  const std::unique_ptr<MediaClient> client =
+      mediaServer(settings.kind).client(settings.url, settings.apiKey, settings.unverified());
+  return sync(*client, settings, library, status, [](const StashStatus&) {});
 }

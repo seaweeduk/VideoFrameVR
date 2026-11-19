@@ -164,8 +164,12 @@ struct StashScene {
   double duration = 0, fps = 0;
   std::string codec;
   std::vector<std::string> oshashes;  // of all its files
+  // The server's id of its first file, which its stream serves, where the
+  // server has files by id (StashData::File::id); else 0.
+  int64_t streamFile = 0;
   // VR or 2D (docs/stash.md), by the first answer of: the format chosen in
-  // the player, the frame's shape, the file name, Stash's VR tag.
+  // the player, the frame's shape, the file name, Stash's VR tag (or the
+  // server's own word that it is VR).
   enum class VrBy : uint8_t { None, Own, Shape, Name, Tag };
   bool vr = false;
   VrBy vrBy = VrBy::None;

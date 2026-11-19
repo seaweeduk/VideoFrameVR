@@ -1,5 +1,6 @@
 #pragma once
 
+#include "media_server.h"
 #include "stash_data.h"
 
 #include <cstdint>
@@ -9,13 +10,16 @@
 
 struct sqlite3;
 
-// The local copy of a Stash server's data: stash.db in dataDir(), SQLite.
-// Everything in it can be fetched again, so it is no library: a file from
-// another version of this layout is simply made anew, and each sync
-// replaces all of it in one transaction. Not touched while Stash is off.
-// Blocks on the file: worker threads only, one at a time.
+// The local copy of a media server's data: a file per kind in dataDir()
+// (stash.db, xbvr.db), SQLite, so that going to another kind and back
+// finds the copy as it was. Everything in it can be fetched again, so it is
+// no library: a file from another version of this layout is simply made
+// anew, and each sync replaces all of it in one transaction. Not touched
+// while its kind isn't in use. Blocks on the file: worker threads only, one
+// at a time.
 class StashStore {
  public:
+  explicit StashStore(const MediaServer& kind);
   // The copy, if there is one; false (and error() says why) if there is
   // none or it can't be read.
   bool load(StashData& data);
@@ -25,13 +29,16 @@ class StashStore {
   // The copy's scene of each oshash, and each scene's name (its title, else
   // its first file's name), if the copy is `server`'s; false if there is no
   // such copy. Reads only.
-  bool scenes(const std::string& server, std::unordered_map<std::string, int64_t>& byOshash,
+  bool scenes(const std::string& server, const std::string& kind,
+              std::unordered_map<std::string, int64_t>& byOshash,
               std::unordered_map<int64_t, std::string>& names);
   const std::string& error() const { return error_; }
 
-  static std::string path();  // dataDir()/stash.db
+  // dataDir()/<the kind's id>.db
+  static std::string path(const MediaServer& kind);
 
  private:
+  std::string path_;
   std::string error_;
 };
 
@@ -47,7 +54,10 @@ class StashStore {
 class StashOutbox {
  public:
   // `server` as StashClient::server() has it.
-  explicit StashOutbox(const std::string& server);
+  // `server`: what its file is named by (serverIdentity()). `original`:
+  // the one outbox from before there was one per server may be taken over
+  // (the first kind's only: it was that kind's).
+  StashOutbox(const std::string& server, bool original);
   ~StashOutbox();
   StashOutbox(const StashOutbox&) = delete;
   StashOutbox& operator=(const StashOutbox&) = delete;
@@ -91,6 +101,7 @@ class StashOutbox {
   // Takes the single file over if it is there; false if it can't be yet.
   bool adopt();
   std::string path_;
+  bool original_ = false;
   sqlite3* db_ = nullptr;
   std::string error_;
 };

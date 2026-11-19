@@ -53,7 +53,7 @@ void Menu::updatePreview() {
   VideoSettings saved;
   if (library_ && library_->settings(preview_.path, saved) && saved.hasFormat) format = saved.format;
   stash_->preview().request(
-      scene->id, format, static_cast<int>(std::ceil(preview_.w * menu_geometry::kRasterScale)));
+      scene->id, scene->code, format, static_cast<int>(std::ceil(preview_.w * menu_geometry::kRasterScale)));
 }
 
 cairo_surface_t* Menu::previewFrame(const std::string& path, double x, double y) const {

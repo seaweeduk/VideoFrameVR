@@ -37,6 +37,18 @@ std::vector<StashFolderMap> with(std::vector<StashFolderMap> list, const StashCa
   return list;
 }
 
+// Both give the same place here for each of the files: /a → /b and
+// /a/c → /b/c are one.
+bool samePlace(const StashFolderFinder::Mapping& a, const StashFolderFinder::Mapping& b,
+               const std::vector<StashFolderFinder::File>& files) {
+  StashSettings one, other;
+  one.folders = {{a.pathFrom, a.pathTo}};
+  other.folders = {{b.pathFrom, b.pathTo}};
+  for (const StashFolderFinder::File& f : files)
+    if (one.localPath(f.path) != other.localPath(f.path)) return false;
+  return true;
+}
+
 std::vector<StashHistory> historyOf(const StashCatalog& catalog, const Library& library) {
   std::vector<StashHistory> history(catalog.scenes().size());
   for (size_t i = 0; i < history.size(); ++i) {
@@ -66,13 +78,17 @@ Stash::Stash(const StashSettings& settings, Library& library)
     : settings_(settings),
       library_(library),
       sync_(std::make_unique<StashSync>(settings)),
-      images_(std::make_unique<StashImages>(cacheDir() / "stash", settings.url, settings.apiKey,
+      // A cache per kind, as the copy: each kind's ids are its own.
+      images_(std::make_unique<StashImages>(cacheDir() / mediaServer(settings.kind).id(),
+                                            settings.kind, settings.url, settings.apiKey,
                                             settings.unverified())),
-      preview_(std::make_unique<StashPreview>(settings.url, settings.apiKey, settings.unverified())),
+      preview_(std::make_unique<StashPreview>(settings.kind, settings.url, settings.apiKey,
+                                              settings.unverified())),
       finder_(std::make_unique<StashFolderFinder>()) {
-  hideInRunLog(urlHost(settings.url), "<Stash server>");
-  if (settings.unverified()) std::printf("Stash: its certificate is not verified, as chosen\n");
-  stashServe(settings.url, settings.apiKey, settings.unverified());
+  const char* name = mediaServer(settings.kind).name();
+  hideInRunLog(urlHost(settings.url), kHiddenServer);
+  if (settings.unverified()) std::printf("%s: its certificate is not verified, as chosen\n", name);
+  stashServe(settings.kind, settings.url, settings.apiKey, settings.unverified());
   library_.setFingerprintSource([this](const std::string& path, uint64_t size, int64_t mtime) {
     const auto& catalog = sync_->catalog();
     return catalog ? catalog->oshashFor(path, size, mtime) : std::string();
@@ -87,7 +103,7 @@ Stash::Stash(const StashSettings& settings, Library& library)
 }
 
 Stash::~Stash() {
-  stashServe({}, {}, false);
+  stashServe(settings_.kind, {}, {}, false);
   library_.setFingerprintSource(nullptr);
   library_.setRatingPlayObserver(nullptr);
   sync_->stop();
@@ -129,6 +145,7 @@ bool Stash::poll() {
   bool changed = sync_->poll();
   if (finder_->poll()) {
     ++folderSearches_;
+    foldersLookedThrough_ = foldersLookedThrough_ || folderSearching_;
     folderSearching_ = false;
     changed = true;
   }
@@ -330,9 +347,13 @@ std::vector<StashFolderMap> Stash::foundFolders() const {
   if (!catalog) return list;
   for (const StashCatalogFolder& f : catalog->folders()) {
     const auto& found = finder_->foundFor(f.folder);
-    if (f.listed > 0 || found.empty() ||
-        found.front().found < static_cast<int>(f.samples.size() + 1) / 2)
-      continue;
+    const int half = static_cast<int>(f.samples.size() + 1) / 2;
+    if (f.listed > 0 || found.empty() || found.front().found < half) continue;
+    // In several places: which one is for the user to say.
+    bool only = true;
+    for (size_t i = 1; i < found.size(); ++i)
+      only = only && (found[i].found < half || samePlace(found.front(), found[i], f.samples));
+    if (!only) continue;
     list = with(std::move(list), *catalog, f.folder, {found.front().pathFrom, found.front().pathTo});
   }
   return list;
@@ -342,6 +363,44 @@ std::vector<StashFolderMap> Stash::foldersWith(const std::string& folder, StashF
   const auto& catalog = sync_->catalog();
   if (!catalog) return {map};
   return with(settings_.folders, *catalog, folder, std::move(map));
+}
+
+const StashFolderMap* Stash::folderMapping(const std::string& folder) const {
+  return mappingIn(settings_, folder);
+}
+
+const StashFolderMap* Stash::mappingIn(const StashSettings& settings,
+                                       const std::string& folder) const {
+  if (!folder.empty()) return settings.mappingFor(folder);
+  const auto& catalog = sync_->catalog();
+  if (!catalog) return nullptr;
+  for (const StashCatalogFolder& f : catalog->folders())
+    if (f.folder.empty() && !f.samples.empty()) return settings.mappingFor(f.samples.front().path);
+  return nullptr;
+}
+
+std::vector<StashFolderMap> Stash::foldersWithout(const std::string& folder) const {
+  StashSettings left = settings_;
+  const auto& catalog = sync_->catalog();
+  // Each mapping it goes by in turn: its own, then one for a folder above.
+  for (size_t tries = left.folders.size(); tries > 0; --tries) {
+    const StashFolderMap* map = mappingIn(left, folder);
+    if (!map) break;
+    const StashFolderMap gone = *map;
+    std::vector<StashFolderMap> kept;
+    if (catalog)
+      for (const StashCatalogFolder& f : catalog->folders()) {
+        if (f.folder.empty() || f.folder == folder) continue;
+        const StashFolderMap* by = left.mappingFor(f.folder);
+        if (by && *by == gone) kept.push_back({f.folder, stashMapped(gone, f.folder)});
+      }
+    left.folders.erase(std::remove(left.folders.begin(), left.folders.end(), gone),
+                       left.folders.end());
+    for (StashFolderMap& k : kept)
+      if (std::find(left.folders.begin(), left.folders.end(), k) == left.folders.end())
+        left.folders.push_back(std::move(k));
+  }
+  return left.folders;
 }
 
 void Stash::setVideoOpen(bool open) {
@@ -361,7 +420,8 @@ std::string stashSceneLocation(const StashScene& scene, const Offline* offline) 
 
 std::string stashStream(const StashScene& scene) {
   return stashSceneLocator(scene.id,
-                           scene.stashPath.substr(scene.stashPath.find_last_of("/\\") + 1));
+                           scene.stashPath.substr(scene.stashPath.find_last_of("/\\") + 1),
+                           scene.streamFile);
 }
 
 std::string stashStreamOf(const StashScene& scene, const std::string& oshash) {
@@ -415,12 +475,13 @@ double timeQuery(const StashCatalog& catalog, const StashFilter& filter, const S
 }  // namespace
 
 int runStashSyncDiagnostic(const StashSettings& settings) {
+  const char* name = mediaServer(settings.kind).name();
   if (settings.url.empty()) {
-    std::printf("Stash: %s\n", strings().stash.setupHint);
+    std::printf("%s: %s\n", name, strings().stash.setupHint);
     return 0;
   }
-  hideInRunLog(urlHost(settings.url), "<Stash server>");
-  std::printf("Stash: syncing from %s\n", settings.url.c_str());
+  hideInRunLog(urlHost(settings.url), kHiddenServer);
+  std::printf("%s: syncing from %s\n", name, settings.url.c_str());
   // The library's formats and history, if it is free (not open in a
   // running VideoFrameVR).
   Library library;
@@ -432,23 +493,23 @@ int runStashSyncDiagnostic(const StashSettings& settings) {
   const auto catalog = stashSyncOnce(settings, formats, status);
   const double totalMs = msSince(start);
   if (!catalog) {
-    std::printf("Stash: sync failed: %s\n", status.error.c_str());
+    std::printf("%s: sync failed: %s\n", name, status.error.c_str());
     return 1;
   }
-  if (!status.error.empty()) std::printf("Stash: %s\n", status.error.c_str());
+  if (!status.error.empty()) std::printf("%s: %s\n", name, status.error.c_str());
   const StashCatalogStats& stats = catalog->stats();
 
-  std::printf("Server: Stash %s\n", catalog->version().c_str());
-  std::printf("Scenes: %d in Stash, %d with a file here, %d from its stream, %d not listed\n",
+  std::printf("Server: %s %s\n", name, catalog->version().c_str());
+  std::printf("Scenes: %d on the server, %d with a file here, %d from its stream, %d not listed\n",
               stats.stashScenes, stats.listed, stats.streamed,
               stats.stashScenes - stats.listed - stats.streamed);
   for (const StashCatalogFolder& f : catalog->folders()) {
     const std::string here = f.folder.empty() ? "" : settings.localPath(f.folder);
     std::printf("  %s: %d scenes, %d here, %d from its stream%s%s\n",
-                f.folder.empty() ? "in none of Stash's folders" : f.folder.c_str(), f.scenes,
+                f.folder.empty() ? "in none of the server's folders" : f.folder.c_str(), f.scenes,
                 f.listed, f.streamed, here.empty() ? "" : ", at ", here.c_str());
   }
-  std::printf("  VR %d (own format %d, frame %d, name %d, Stash tag %d), 2D %d\n", stats.vr,
+  std::printf("  VR %d (own format %d, frame %d, name %d, the server's tag %d), 2D %d\n", stats.vr,
               stats.vrBy[1], stats.vrBy[2], stats.vrBy[3], stats.vrBy[4], stats.listed + stats.streamed - stats.vr);
   int covers = 0;
   for (const StashScene& s : catalog->scenes()) covers += !s.cover.empty();
@@ -469,11 +530,11 @@ int runStashSyncDiagnostic(const StashSettings& settings) {
               withScenes, logos);
   int mergedGroups = 0;
   for (const StashTag& t : catalog->tags()) mergedGroups += t.ids.size() > 1;
-  std::printf("Tags: %d in Stash, %zu after merging duplicates (%d merged from 2 or more)\n",
+  std::printf("Tags: %d on the server, %zu after merging duplicates (%d merged from 2 or more)\n",
               stats.stashTags, catalog->tags().size(), mergedGroups);
   std::printf("Groups: %zu\n", catalog->groups().size());
   if (library.available())
-    std::printf("Library: %d fingerprinted videos, %d of them in Stash\n", stats.libraryVideos,
+    std::printf("Library: %d fingerprinted videos, %d of them on the server\n", stats.libraryVideos,
                 stats.libraryMatched);
   else
     std::printf("Library: not available (in use?): no own formats, no history\n");
@@ -484,7 +545,7 @@ int runStashSyncDiagnostic(const StashSettings& settings) {
               stats.buildMs, totalMs);
   {
     const auto loadStart = std::chrono::steady_clock::now();
-    StashStore store;
+    StashStore store(mediaServer(settings.kind));
     StashData data;
     if (store.load(data)) {
       const double loadMs = msSince(loadStart);
@@ -560,8 +621,9 @@ int runStashSyncDiagnostic(const StashSettings& settings) {
   }
 
   std::error_code ec;
-  std::printf("Files: stash.db %.1f MB", fs::file_size(StashStore::path(), ec) / 1e6);
-  const fs::path imageCache = cacheDir() / "stash";
+  const fs::path copy = StashStore::path(mediaServer(settings.kind));
+  std::printf("Files: %s %.1f MB", copy.filename().c_str(), fs::file_size(copy, ec) / 1e6);
+  const fs::path imageCache = cacheDir() / mediaServer(settings.kind).id();
   if (fs::is_directory(imageCache, ec))
     std::printf(", image cache %.0f MB\n", folderSize(imageCache) / 1e6);
   else

@@ -1,5 +1,6 @@
 #include "diagnostics.h"
 
+#include "media_server.h"
 #include "platform.h"
 #include "run_log.h"
 #include "settings.h"
@@ -157,9 +158,11 @@ class Zip {
 }  // namespace
 
 std::string saveDiagnostics(std::string& error) {
-  // Logs from before the Stash server was hidden still name it.
+  // Logs from before the media server was hidden still name it.
   const Settings settings = loadSettings();
-  hideInRunLog(urlHost(settings.stash.url), "<Stash server>");
+  hideInRunLog(urlHost(settings.stash.url), kHiddenServer);
+  for (const StashSettings& other : settings.otherServers)
+    hideInRunLog(urlHost(other.url), kHiddenServer);
 
   const std::time_t now = std::time(nullptr);
   std::tm local{};
@@ -174,7 +177,7 @@ std::string saveDiagnostics(std::string& error) {
               "logs/          the last runs' logs, newest last\n"
               "settings.conf  the settings\n\n"
               "Anonymised: the home folder shows as ~, the user name as <user>, servers as\n"
-              "<Stash server>, files and folders as <path> or <video>. File names, folders,\n"
+              "<media server>, files and folders as <path> or <video>. File names, folders,\n"
               "titles, server addresses and keys are left out.\n",
           now);
   std::error_code ec;

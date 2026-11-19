@@ -1,6 +1,6 @@
 #include "stash_client.h"
 
-#include "run_log.h"
+#include "server_json.h"
 #include "strings.h"
 
 #include <curl/curl.h>
@@ -17,6 +17,11 @@
 #include <unordered_set>
 
 using json = nlohmann::json;
+using server_json::array;
+using server_json::member;
+using server_json::number;
+using server_json::text;
+using server_json::unixTime;
 
 namespace {
 
@@ -102,19 +107,6 @@ constexpr const char* kQueryActivity =
 constexpr const char* kQuerySceneActivity =
     "query Activity($id: ID!) { findScene(id: $id) { id rating100 play_history } }";
 
-// Connecting may take this long; a transfer that stalls (under 1 KB/s) for
-// kStallSeconds is given up, as is one that takes longer than kMaxSeconds.
-// Every scene at once (the sync's two queries, write-back's activity) may
-// take a big library on a slow computer minutes before Stash sends
-// anything: those wait longer, and can be stopped meanwhile.
-constexpr long kConnectSeconds = 10;
-constexpr long kStallSeconds = 20;
-constexpr long kMaxSeconds = 180;
-constexpr long kSlowStallSeconds = 600;
-constexpr long kSlowMaxSeconds = 3600;
-// Each of Connect's tries (check()).
-constexpr long kQuickConnectSeconds = 3, kQuickMaxSeconds = 8;
-
 // A release's version ("v0.31.1") as major × 10⁶ + minor × 10³ + patch; -1
 // for anything else, such as a development build ("v0.31.1-12-gabcdef0").
 long releaseNumber(const std::string& version) {
@@ -140,54 +132,18 @@ bool mentions(const std::string& body, const char* word) {
   return lower.find(word) != std::string::npos;
 }
 
-// An HTTP status that isn't Stash's answer, in a few words.
-std::string httpProblem(long status, const std::string& body, const std::string& base) {
-  const StashSetupStrings& t = strings().stashSetup;
-  // A server that speaks only https, asked over http (Go's and nginx's 400).
-  if (status == 400 && base.compare(0, 7, "http://") == 0 && mentions(body, "https"))
-    return t.tryHttps;
-  if (status == 403) return t.forbidden;
-  if (status == 404 || status == 405) return t.notStash;
-  return printed(t.httpError, static_cast<int>(status));
-}
-
 // Stash's 403 for an address outside its network while it has no login
 // (its "external access" check, and its tripwire after one).
 bool publicRefusal(long status, const std::string& body) {
   return status == 403 && mentions(body, "internet");
 }
 
+// Signing in: connecting may take this long.
+constexpr long kConnectSeconds = 10;
+
 size_t appendToString(char* data, size_t size, size_t count, void* target) {
   static_cast<std::string*>(target)->append(data, size * count);
   return size * count;
-}
-
-// One request's progress: what it adds to the client's bytes received, and
-// whether the client was cancelled.
-struct Transfer {
-  const std::atomic<bool>* cancelled;
-  std::atomic<size_t>* received;
-  curl_off_t counted = 0;
-};
-
-int progress(void* transfer, curl_off_t, curl_off_t now, curl_off_t, curl_off_t) {
-  Transfer& t = *static_cast<Transfer*>(transfer);
-  if (now > t.counted) {
-    *t.received += static_cast<size_t>(now - t.counted);
-    t.counted = now;
-  }
-  return t.cancelled->load() ? 1 : 0;
-}
-
-std::string text(const json& object, const char* key) {
-  const auto it = object.find(key);
-  return it != object.end() && it->is_string() ? it->get<std::string>() : std::string();
-}
-
-template <typename T>
-T number(const json& object, const char* key, T fallback = 0) {
-  const auto it = object.find(key);
-  return it != object.end() && it->is_number() ? it->get<T>() : fallback;
 }
 
 // An id, which GraphQL sends as a string; 0 if there is none.
@@ -203,52 +159,10 @@ int64_t linkedId(const json& object, const char* key) {
   return it != object.end() && it->is_object() ? id(*it) : 0;
 }
 
-const json& array(const json& object, const char* key) {
-  static const json empty = json::array();
-  const auto it = object.find(key);
-  return it != object.end() && it->is_array() ? *it : empty;
-}
-
-// A member object, or an empty one.
-const json& member(const json& object, const char* key) {
-  static const json empty = json::object();
-  const auto it = object.find(key);
-  return it != object.end() && it->is_object() ? *it : empty;
-}
-
 // An image URL; empty for Stash's placeholder ("&default=true").
 std::string image(const json& object, const char* key) {
   std::string url = text(object, key);
   return url.find("default=true") != std::string::npos ? std::string() : url;
-}
-
-// Days from 1970-01-01 to a date of the proleptic Gregorian calendar.
-int64_t daysFromCivil(int64_t y, int m, int d) {
-  y -= m <= 2;
-  const int64_t era = (y >= 0 ? y : y - 399) / 400;
-  const int64_t yoe = y - era * 400;
-  const int64_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
-  const int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-  return era * 146097 + doe - 719468;
-}
-
-// Stash's times are RFC 3339 ("2019-10-04T22:37:47+01:00", "...Z", maybe
-// with a fraction): Unix seconds, the fraction dropped (as stat's st_mtime
-// does). 0 if it can't be read.
-int64_t unixTime(const std::string& t) {
-  int y, mo, d, h, mi, s;
-  if (std::sscanf(t.c_str(), "%4d-%2d-%2dT%2d:%2d:%2d", &y, &mo, &d, &h, &mi, &s) != 6) return 0;
-  size_t at = 19;
-  if (at < t.size() && t[at] == '.')
-    while (++at < t.size() && t[at] >= '0' && t[at] <= '9') {
-    }
-  int64_t offset = 0;
-  if (at < t.size() && (t[at] == '+' || t[at] == '-')) {
-    int oh = 0, om = 0;
-    if (std::sscanf(t.c_str() + at + 1, "%2d:%2d", &oh, &om) != 2) return 0;
-    offset = (t[at] == '-' ? -1 : 1) * (oh * 3600 + om * 60);
-  }
-  return daysFromCivil(y, mo, d) * 86400 + h * 3600 + mi * 60 + s - offset;
 }
 
 // Stash's way of saying "no date" for groups.
@@ -341,21 +255,22 @@ void readRest(const json& d, StashData& data) {
 }
 
 // The response's data, or false with the server's first error.
-bool parseResponse(const std::string& body, json& data, std::string& error) {
+bool parseResponse(const std::string& body, json& data, std::string& error,
+                   const StashSetupStrings& t) {
   json root = json::parse(body, nullptr, false);
   if (root.is_discarded() || !root.is_object()) {
-    error = strings().stashSetup.notStash;
+    error = t.notStash;
     return false;
   }
   const json& errors = array(root, "errors");
   if (!errors.empty()) {
     const std::string message = errors[0].is_object() ? text(errors[0], "message") : std::string();
-    error = printed(strings().stashSetup.stashSaid, message.empty() ? "error" : message.c_str());
+    error = printed(t.stashSaid, message.empty() ? "error" : message.c_str());
     return false;
   }
   const auto d = root.find("data");
   if (d == root.end() || !d->is_object()) {
-    error = strings().stashSetup.notStash;
+    error = t.notStash;
     return false;
   }
   data = std::move(*d);
@@ -366,8 +281,8 @@ double msSince(std::chrono::steady_clock::time_point start) {
   return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 }
 
-StashClient::Activity activityOf(const json& scene) {
-  StashClient::Activity a;
+MediaClient::Activity activityOf(const json& scene) {
+  MediaClient::Activity a;
   a.rating100 = number<int>(scene, "rating100", -1);
   for (const json& t : array(scene, "play_history"))
     if (t.is_string())
@@ -387,13 +302,10 @@ std::string rfc3339(int64_t seconds) {
 
 }  // namespace
 
+const MediaServer& stashServer();
+
 StashClient::StashClient(const std::string& url, std::string apiKey, bool unverified)
-    : typed_(url), address_(url, unverified), apiKey_(std::move(apiKey)) {
-  // curl's messages name the host: hidden before any request, also for an
-  // address only tried in setup or Settings. A scheme typed alone has none.
-  if (address_.server.find("://") != std::string::npos)
-    hideInRunLog(urlHost(address_.server), "<Stash server>");
-}
+    : MediaClient(stashServer(), url, std::move(apiKey), unverified) {}
 
 bool StashClient::post(const std::string& query, std::string& body, std::string& error,
                        StashProblem& problem, const std::string& variables, bool slow) {
@@ -415,71 +327,24 @@ bool StashClient::post(const std::string& query, std::string& body, std::string&
       return false;
     }
   }
-  CURL* curl = curl_easy_init();
-  if (!curl) {
-    error = "Stash: no HTTP client";
-    return false;
-  }
-  const std::string request = payload.dump();
-  curl_slist* headers = curl_slist_append(nullptr, "Content-Type: application/json");
-  headers = curl_slist_append(headers, "Accept: application/json");
-  if (!apiKey_.empty()) headers = curl_slist_append(headers, ("ApiKey: " + apiKey_).c_str());
-  char message[CURL_ERROR_SIZE] = "";
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request.c_str());
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(request.size()));
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
-  curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");  // compressed if the server can
-  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, quick_ ? kQuickConnectSeconds : kConnectSeconds);
-  curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
-  curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, slow ? kSlowStallSeconds : kStallSeconds);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT, quick_ ? kQuickMaxSeconds : slow ? kSlowMaxSeconds : kMaxSeconds);
-  curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);  // a server gone while it works is noticed
-  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-  curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-  Transfer transfer{&cancelled_, &received_};
-  curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress);
-  curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &transfer);
-  curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, message);
-  // Deleting's go only where Stash answered (address_.base()), never on to
-  // the fallback port after a failed try.
-  StashAddress at = address_;
-  if (deleting) at.fallback.clear();
-  const StashReply reply = stashPerform(curl, at, "/graphql", [&] {
-    body.clear();
-    message[0] = '\0';
-  });
-  curl_slist_free_all(headers);
-  curl_easy_cleanup(curl);
-  reached_ = reply.code == CURLE_OK;
-  if (reply.code != CURLE_OK) {
-    if (reply.code == CURLE_ABORTED_BY_CALLBACK) {
-      error = "Stash: stopped";
-      return false;
-    }
-    error = stashUnreachable(reply.code);
-    if (stashUntrusted(reply.code)) problem = StashProblem::Certificate;
-    std::fprintf(stderr, "Stash: %s\n", *message ? message : curl_easy_strerror(reply.code));
-    return false;
-  }
-  const StashSetupStrings& t = strings().stashSetup;
-  if (reply.elsewhere) {
-    error = t.elsewhere;
-    return false;
-  }
+  // Deleting's go only where Stash answered, never on to the fallback port
+  // after a failed try.
+  Call call{"/graphql", payload.dump(), true, slow, deleting};
+  long status = 0;
+  if (!send(call, status, body, error, problem)) return false;
+  const StashSetupStrings& t = said();
   // GraphQL errors come with 200, or with 422 and a body that says why.
-  if (publicRefusal(reply.status, body)) {
+  if (publicRefusal(status, body)) {
     error = t.publicRefused;
     return false;
   }
-  if (reply.status == 401) {
+  if (status == 401) {
     problem = apiKey_.empty() ? StashProblem::NeedsSignIn : StashProblem::KeyRefused;
     error = apiKey_.empty() ? t.needsSignIn : t.keyRefused;
     return false;
   }
-  if (reply.status != 200 && reply.status != 422) {
-    error = httpProblem(reply.status, body, address_.base());
+  if (status != 200 && status != 422) {
+    error = httpProblem(status, body);
     return false;
   }
   problem = StashProblem::None;
@@ -495,13 +360,13 @@ bool StashClient::fetch(StashData& data, Timings& timings) {
   std::string versionBody;
   json versionData;
   if (!post(kQueryVersion, versionBody, error_, problem_) ||
-      !parseResponse(versionBody, versionData, error_)) {
+      !parseResponse(versionBody, versionData, error_, said())) {
     if (problem_ == StashProblem::None) problem_ = StashProblem::Other;
     return false;
   }
   const long release = releaseNumber(text(member(versionData, "version"), "version"));
   if (release >= 0 && release < kMinimumRelease) {
-    error_ = strings().stashSetup.tooOld;
+    error_ = said().tooOld;
     problem_ = StashProblem::TooOld;
     return false;
   }
@@ -526,11 +391,12 @@ bool StashClient::fetch(StashData& data, Timings& timings) {
 
   const auto parseStart = std::chrono::steady_clock::now();
   json restData, scenesData;
-  if (!parseResponse(restBody, restData, error_) || !parseResponse(scenesBody, scenesData, error_)) {
+  if (!parseResponse(restBody, restData, error_, said()) ||
+      !parseResponse(scenesBody, scenesData, error_, said())) {
     problem_ = StashProblem::Other;
     // A development build without the fields a release from 0.31.0 has.
     if (release < 0 && error_.find("Cannot query field") != std::string::npos) {
-      error_ = strings().stashSetup.tooOld;
+      error_ = said().tooOld;
       problem_ = StashProblem::TooOld;
     }
     return false;
@@ -546,53 +412,24 @@ bool StashClient::fetch(StashData& data, Timings& timings) {
   return true;
 }
 
-StashClient::Answer StashClient::check() {
-  const StashSetupStrings& t = strings().stashSetup;
-  quick_ = true;  // short timeouts, until it returns
-  struct Reset {
-    bool& quick;
-    ~Reset() { quick = false; }
-  } reset{quick_};
-  int best = -1;  // how far the try whose error() is kept got
-  std::string error;
-  StashProblem problem = StashProblem::Other;
-  const bool unverified = address_.unverified;
-  for (const std::string& url : stashTries(typed_)) {
-    address_ = StashAddress(url, unverified);
-    error_.clear();
-    std::string body;
-    json data;
-    if (post(kQueryVersion, body, error_, problem_)) {
-      if (parseResponse(body, data, error_)) {
-        const long release = releaseNumber(text(member(data, "version"), "version"));
-        if (release < 0 || release >= kMinimumRelease) return Answer::Open;
-        error_ = t.tooOld;
-        return Answer::Failed;
-      }
-      if (error_ != t.notStash) return Answer::Failed;  // Stash's own error
-    } else if (problem_ == StashProblem::NeedsSignIn) {
-      return Answer::NeedsSignIn;
-    } else if (error_ == t.publicRefused) {
+MediaClient::Answer StashClient::identify() {
+  const StashSetupStrings& t = said();
+  std::string body;
+  json data;
+  if (post(kQueryVersion, body, error_, problem_)) {
+    if (parseResponse(body, data, error_, said())) {
+      const long release = releaseNumber(text(member(data, "version"), "version"));
+      if (release < 0 || release >= kMinimumRelease) return Answer::Open;
+      error_ = t.tooOld;
       return Answer::Failed;
     }
-    if (cancelled_) break;
-    // Nothing there, as against a server that answers in a way that can't be
-    // used (its certificate, https on plain http, an address that isn't one),
-    // or answers but not as Stash: the first that got furthest says why. A
-    // certificate that isn't trusted comes first, as it can be accepted.
-    const bool there = error_ == t.certificate || error_ == t.noSecure || error_ == t.badAddress;
-    const int got = problem_ == StashProblem::Certificate ? 3 : reached_ ? 2 : there ? 1 : 0;
-    if (got > best) {
-      best = got;
-      error = error_;
-      problem = problem_;
-    }
-    if (error_ == t.noHost) break;  // the same name in each
+    if (error_ != t.notStash) return Answer::Failed;  // Stash's own error
+  } else if (problem_ == StashProblem::NeedsSignIn) {
+    return Answer::NeedsSignIn;
+  } else if (error_ == t.publicRefused) {
+    return Answer::Failed;
   }
-  address_ = StashAddress(typed_, unverified);
-  error_ = error;
-  problem_ = problem;
-  return best > 0 ? Answer::Failed : Answer::Unreached;
+  return Answer::Unreached;
 }
 
 bool StashClient::request(const char* query, const std::string& variables, std::string& data,
@@ -601,7 +438,7 @@ bool StashClient::request(const char* query, const std::string& variables, std::
   std::string body;
   json d;
   if (!post(query, body, error_, problem_, variables, slow)) return false;
-  if (!parseResponse(body, d, error_)) {
+  if (!parseResponse(body, d, error_, said())) {
     problem_ = StashProblem::Other;
     return false;
   }
@@ -691,7 +528,7 @@ bool StashClient::signIn(const std::string& user, const std::string& password, s
     error_ = "Stash: no HTTP client";
     return false;
   }
-  const StashSetupStrings& t = strings().stashSetup;
+  const StashSetupStrings& t = said();
   std::string body;
   char message[CURL_ERROR_SIZE] = "";
   curl_easy_setopt(curl, CURLOPT_COOKIEFILE, "");  // the session cookie, for the requests after
@@ -718,7 +555,7 @@ bool StashClient::signIn(const std::string& user, const std::string& password, s
         std::string(path) != "/login");
     reached_ = reply.code == CURLE_OK;
     if (reply.code != CURLE_OK) {
-      error_ = stashUnreachable(reply.code);
+      error_ = stashUnreachable(reply.code, t);
       if (stashUntrusted(reply.code)) problem_ = StashProblem::Certificate;
       std::fprintf(stderr, "Stash: %s\n", *message ? message : curl_easy_strerror(reply.code));
       return 0L;
@@ -750,10 +587,10 @@ bool StashClient::signIn(const std::string& user, const std::string& password, s
       return false;
     }
     if (status != 200 && status != 422) {
-      error_ = httpProblem(status, body, address_.base());
+      error_ = httpProblem(status, body);
       return false;
     }
-    return parseResponse(body, data, error_);
+    return parseResponse(body, data, error_, said());
   };
 
   // Stash's login form answers 200 (older ones a redirect) and sets the

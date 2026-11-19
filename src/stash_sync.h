@@ -29,6 +29,9 @@ struct StashStatus {
   std::string version;       // Stash's
   std::string error;         // why the last sync failed; empty if it didn't
   StashProblem problem = StashProblem::None;  // ... the kind the menu acts on
+  // ... because something answered, but not as this kind of server would:
+  // another kind may be there (Settings looks when the server is saved).
+  bool otherAnswered = false;
   // The last sync's steps, in milliseconds.
   double fetchMs = 0, parseMs = 0, storeMs = 0, checkMs = 0, buildMs = 0;
   size_t bytes = 0;          // received

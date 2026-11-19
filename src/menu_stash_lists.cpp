@@ -151,7 +151,9 @@ std::vector<int64_t> splitIds(const std::string& s) {
   return ids;
 }
 
-fs::path pinsPath() { return configDir() / "stash_lists.conf"; }
+fs::path pinsPath(ServerKind kind) {
+  return configDir() / (std::string(mediaServer(kind).id()) + "_lists.conf");
+}
 
 // The catalog's indexes of the ids it still has.
 template <typename Lookup>
@@ -170,9 +172,9 @@ std::vector<int> indexes(const std::vector<int64_t>& ids, Lookup lookup) {
 // id lists by commas, names by '|'. The cast's sizes and mixes of older
 // files ("cast", "mix") become the women and men they mean, where they do:
 // Solo one woman and no men, Women only no men.
-std::vector<StashPin> loadStashPins() {
+std::vector<StashPin> loadStashPins(ServerKind kind) {
   std::vector<StashPin> pins;
-  std::ifstream in(pinsPath());
+  std::ifstream in(pinsPath(kind));
   std::string line;
   while (std::getline(in, line)) {
     const size_t eq = line.find('=');
@@ -247,8 +249,8 @@ std::vector<StashPin> loadStashPins() {
   return pins;
 }
 
-static void writeStashPins(const std::vector<StashPin>& pins) {
-  const fs::path path = pinsPath();
+static void writeStashPins(const std::vector<StashPin>& pins, ServerKind kind) {
+  const fs::path path = pinsPath(kind);
   std::error_code ec;
   fs::create_directories(path.parent_path(), ec);
   std::ofstream out(path);
@@ -283,8 +285,8 @@ static void writeStashPins(const std::vector<StashPin>& pins) {
   }
 }
 
-void saveStashPins(const std::vector<StashPin>& pins) {
-  queueConfigWork([pins] { writeStashPins(pins); });
+void saveStashPins(const std::vector<StashPin>& pins, ServerKind kind) {
+  queueConfigWork([pins, kind] { writeStashPins(pins, kind); });
 }
 
 StashFilter stashFilterOf(const StashList& l, const StashCatalog& c, bool malePerformers,

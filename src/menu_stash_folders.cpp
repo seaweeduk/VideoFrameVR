@@ -9,8 +9,9 @@
 // Where Stash's videos are here, so that nobody has to type the folder
 // mappings: Stash looks for each of its library folders once per sync while
 // Settings shows, and the Settings group offers what it found, a row per
-// folder; Choose… opens the file browser to pick a folder's place here,
-// which is looked in at once.
+// folder; after a server is first connected, a folder found in one place
+// only is used without asking. Choose… opens the file browser to pick a
+// folder's place here, which is looked in at once, or to stop using one.
 
 namespace {
 
@@ -46,12 +47,14 @@ void Menu::findStashFolders(bool on, std::vector<std::string> places) {
 void Menu::updateStashFolders() {
   StashFolders& f = stashFolders_;
   if (!stash_) return;
-  if ((page_ == Page::Settings && !f.picking) || f.automatic) stash_->lookForFolders(f.places);
-  // Stash connected in setup: what a search found is saved as it is, once
-  // setup has ended (saving starts Stash anew).
-  if (f.automatic && !setup_ && f.saved != stash_->folderSearches() &&
+  // Not while a folder is chosen: its check would be replaced.
+  if ((page_ == Page::Settings || f.automatic) && !f.picking) stash_->lookForFolders(f.places);
+  // A server newly connected (in setup, or saved in Settings): what its
+  // first search found is saved as it is, once setup has ended (saving
+  // starts Stash anew). Only that one: later searches offer what they find.
+  if (f.automatic && !setup_ && !f.picking && stash_->foldersLookedThrough() &&
       !stash_->folderFinder().running()) {
-    f.saved = stash_->folderSearches();
+    f.automatic = false;
     const std::vector<StashFolderMap> found = stash_->foundFolders();
     if (found != view_.stash.folders) command_ = stashFolders(found);
   }
@@ -74,15 +77,14 @@ void Menu::updateStashFolders() {
 
 MenuCommand Menu::stashFolders(const std::vector<StashFolderMap>& folders) const {
   MenuCommand c;
-  c.type = MenuCommand::SetStashServer;  // as the server editor's Save and sync
-  c.path = view_.stash.url + "\n" + view_.stash.apiKey;
-  for (const StashFolderMap& m : folders) c.path += "\n" + m.from + "\n" + m.to;
-  c.option = view_.stash.unverified() ? 1 : 0;
+  c.type = MenuCommand::SetStashFolders;
+  for (const StashFolderMap& m : folders) c.path += m.from + "\n" + m.to + "\n";
   return c;
 }
 
 // The browser, where Stash's folder is meant to be, else where it was.
 void Menu::chooseStashFolder(const std::string& folder) {
+  stashFolders_.automatic = false;  // chosen by hand from here on
   stashFolders_.picking = true;
   stashFolders_.notThere = false;
   stashFolders_.folder = folder;
@@ -100,8 +102,9 @@ void Menu::chooseStashFolder(const std::string& folder) {
   showPage(Page::Files);
 }
 
-// The browser's heading while choosing: Cancel and Use this folder where the
-// pin is; `right` is where the location must end.
+// The browser's heading while choosing: Cancel, Play from Stash (while the
+// folder has a place here: no more) and Use this folder where the pin is;
+// `right` is where the location must end.
 double Menu::layoutStashFolderChoice() {
   const StashFoldersStrings& t = text().stashFolders;
   double right = kPageX + kPageWidth - kPagePad;
@@ -125,6 +128,13 @@ double Menu::layoutStashFolderChoice() {
     return MenuCommand{};
   });
   buttons_.back().disabled = checking || page_ != Page::Files;
+  if (stash_ && stash_->folderMapping(stashFolders_.folder))
+    add(t.playFromServer, false, [this] {
+      const MenuCommand c = stash_ ? stashFolders(stash_->foldersWithout(stashFolders_.folder))
+                                   : MenuCommand{};
+      showStashSettings();
+      return c;
+    });
   add(strings().cancel, false, [this] {
     showStashSettings();  // which stops choosing
     return MenuCommand{};
@@ -132,78 +142,77 @@ double Menu::layoutStashFolderChoice() {
   return right - 16;
 }
 
-// The Folders rows: one per Stash library folder with scenes (its place
-// here, tapped to type it, and Choose…), each followed by where it is here
-// and the other places its videos were found in, with Use, or that they
-// were found nowhere. Before the first sync, or with one folder: one row,
-// as there is one.
+// The Folders rows, once a sync has listed Stash's library folders: one per
+// folder with scenes, named above its field when there are several; the
+// field says where its videos play from here, or that they play from Stash,
+// with Change… or Choose…; under it what isn't as chosen, and the other
+// places its videos were found in, with Use.
 void StashPages::shownFolders(Menu& m, StashSettingsShown& shown) {
-  const StashStrings& t = strings().stash;
   const StashFoldersStrings& tf = strings().stashFolders;
   const StashSettings& s = m.view_.stash;
   const StashCatalog* c = catalog(m);
-  std::vector<const StashCatalogFolder*> rows;
-  if (c)
-    for (const StashCatalogFolder& f : c->folders()) rows.push_back(&f);
+  if (!c) return;
+  const std::vector<StashCatalogFolder>& rows = c->folders();
   const bool several = rows.size() > 1;
-  const StashFolderFinder* finder = m.stash_ ? &m.stash_->folderFinder() : nullptr;
-  const bool looking = finder && finder->running() && !m.stashFolders_.checking;
-  for (size_t i = 0; i < std::max<size_t>(rows.size(), 1); ++i) {
-    const StashCatalogFolder* row = rows.empty() ? nullptr : rows[i];
-    const std::string folder = row ? row->folder : std::string();
-    const StashFolderMap* map = mappingOf(s, folder, row ? row->samples : std::vector<StashFolderFinder::File>());
+  const StashFolderFinder& finder = m.stash_->folderFinder();
+  const bool looking = finder.running() && !m.stashFolders_.checking;
+  for (const StashCatalogFolder& row : rows) {
+    const std::string& folder = row.folder;
+    const StashFolderMap* map = mappingOf(s, folder, row.samples);
     std::string from = folder, here = folder.empty() ? "" : s.localPath(folder);
     if (map && folder.empty()) {
       here = map->to;
       from = map->from;
     }
-    const bool foundHere = !row || row->listed * 2 >= row->scenes;
-    const std::string shownHere = here.empty() ? "?" : m.shownLocation(here);
-    const std::string mapping = from.empty() && here.empty() ? "" : from + "  →  " + shownHere;
+    const bool foundHere = row.listed * 2 >= row.scenes;
+    const bool streamed = row.streamed > 0;
+    const std::string shownHere = here.empty() ? "" : m.shownPlace(here);
     StashSettingsShown::Folder& f = shown.folders.emplace_back();
     f.folder = folder;
-    f.label = !several ? mapping : folder.empty() ? tf.otherFiles : from;
-    f.tooltip = (mapping.empty() ? "" : mapping + "\n") + t.tipFields[2];
+    if (several) f.name = folder.empty() ? tf.otherFiles : from;
+    if (foundHere) f.here = shownHere;
+    if (streamed) f.fromServer = tf.fromServer;
+    f.tooltip = (from.empty() ? "" : from + "\n") + (f.here.empty() ? "" : f.here + "\n") +
+                tf.tipChoose;
 
     // Places, not mappings: /a → /b and /a/c → /b/c are the same one.
     std::vector<const StashFolderFinder::Mapping*> places;
-    const int half = row ? static_cast<int>(row->samples.size() + 1) / 2 : 0;
+    const int half = static_cast<int>(row.samples.size() + 1) / 2;
     const std::vector<StashFolderFinder::Mapping> none;
-    for (const StashFolderFinder::Mapping& found :
-         row && finder && !looking ? finder->foundFor(folder) : none) {
-      if (found.found < half || sameMapping(s, found, row->samples)) continue;
+    for (const StashFolderFinder::Mapping& found : !looking ? finder.foundFor(folder) : none) {
+      if (found.found < half || sameMapping(s, found, row.samples)) continue;
       bool known = false;
       for (const StashFolderFinder::Mapping* p : places) {
         StashSettings other;
         other.folders = {{p->pathFrom, p->pathTo}};
-        known |= sameMapping(other, found, row->samples);
+        known |= sameMapping(other, found, row.samples);
       }
-      if (!known && places.size() < (several ? 2 : 3)) places.push_back(&found);
+      // One for each of several folders, so the rows fit the page (Choose…
+      // reaches any other).
+      if (!known && places.size() < (several ? 1 : 3)) places.push_back(&found);
     }
-    // Several: where each is here, under it (unless found elsewhere). Its
-    // scenes not here play from Stash's stream.
-    const bool streamed = row && row->streamed > 0;
-    if (several && foundHere && !here.empty()) {
-      f.lines.push_back(stashPrinted(tf.folderHere, shownHere.c_str()));
+    // What isn't as its field says: some of its scenes play from Stash;
+    // its videos aren't where they were chosen to be; or they are nowhere,
+    // and Stash can't play them either.
+    if (foundHere) {
       if (streamed) f.lines.push_back(tf.folderRest);
-    } else if (!several && foundHere && streamed) {
-      f.lines.push_back(tf.streamed);
-    } else if (places.empty() && !foundHere && (several || !looking)) {
-      f.lines.push_back(streamed ? (several ? tf.folderStreamed : tf.streamed)
-                                 : several ? tf.folderNotHere : tf.notFound);
+    } else if (map && !shownHere.empty()) {
+      f.lines.push_back(stashPrinted(tf.notIn, shownHere.c_str()));
+    } else if (!streamed && places.empty() && !looking) {
+      f.lines.push_back(tf.folderNotHere);
     }
     for (const StashFolderFinder::Mapping* p : places) {
       const bool first = p == places.front() && !foundHere;
-      const std::string place = m.shownLocation(stashMapped({p->pathFrom, p->pathTo},
-                                                            folder.empty() ? p->pathFrom : folder));
+      const std::string place = m.shownPlace(stashMapped({p->pathFrom, p->pathTo},
+                                                         folder.empty() ? p->pathFrom : folder));
       f.uses.push_back({stashPrinted(first ? tf.foundIn : tf.alsoIn, place.c_str()),
                         stashPrinted(tf.tipUse, place.c_str()), folder,
                         {p->pathFrom, p->pathTo}, first});
     }
   }
-  if (looking) {
-    const int jobs = finder->jobs();
-    shown.looking = jobs > 1 ? stashPrinted(tf.lookingFolders, finder->done() + 1, jobs)
+  if (looking && !shown.folders.empty()) {
+    const int jobs = finder.jobs();
+    shown.looking = jobs > 1 ? stashPrinted(tf.lookingFolders, finder.done() + 1, jobs)
                              : std::string(tf.looking);
   }
 }

@@ -1,10 +1,11 @@
 #include "stash_settings.h"
 
-#include "stash_http.h"
+#include "media_server.h"
 
 #include <algorithm>
 #include <cctype>
 #include <sstream>
+#include <utility>
 
 namespace {
 
@@ -186,39 +187,102 @@ bool StashSettings::unverified() const {
   return !unverifiedHost.empty() && stashHost(url) == unverifiedHost;
 }
 
-bool readStashSetting(const std::string& key, const std::string& value, StashSettings& s) {
-  if (key == "stash") s.enabled = value == "1";
-  else if (key == "stash_url") s.url = value;
-  else if (key == "stash_api_key") s.apiKey = value;
-  else if (key == "stash_unverified_host") s.unverifiedHost = value;
-  else if (key == "stash_path_from" || key == "stash_path_to") {
+void useServer(StashSettings& inUse, std::vector<StashSettings>& others, ServerKind kind) {
+  if (inUse.kind == kind) return;
+  StashSettings next;
+  next.kind = kind;
+  for (auto it = others.begin(); it != others.end(); ++it)
+    if (it->kind == kind) {
+      next = std::move(*it);
+      others.erase(it);
+      break;
+    }
+  next.enabled = inUse.enabled;
+  next.card = inUse.card;
+  others.push_back(std::move(inUse));
+  inUse = std::move(next);
+}
+
+bool serverSetUp(const StashSettings& inUse, const std::vector<StashSettings>& others,
+                 ServerKind kind) {
+  if (inUse.kind == kind) return !inUse.url.empty();
+  return std::any_of(others.begin(), others.end(), [kind](const StashSettings& s) {
+    return s.kind == kind && !s.url.empty();
+  });
+}
+
+bool readServerSetting(const std::string& key, const std::string& value, StashSettings& s) {
+  if (key == "url") s.url = value;
+  else if (key == "api_key") s.apiKey = value;
+  else if (key == "unverified_host") s.unverifiedHost = value;
+  else if (key == "path_from" || key == "path_to") {
     if (s.folders.empty()) s.folders.emplace_back();
-    (key == "stash_path_from" ? s.folders[0].from : s.folders[0].to) = value;
-  } else if (key == "stash_folder") {  // "<Stash's folder>\t<here>", after the first
+    (key == "path_from" ? s.folders[0].from : s.folders[0].to) = value;
+  } else if (key == "folder") {  // "<the server's folder>\t<here>", after the first
     const size_t tab = value.find('\t');
     if (tab == std::string::npos) return true;
     if (s.folders.empty()) s.folders.emplace_back();
     s.folders.push_back({value.substr(0, tab), value.substr(tab + 1)});
   }
-  else if (key == "stash_covers") s.covers = value != "0";
-  else if (key == "stash_titles") s.titles = value != "0";
-  else if (key == "stash_male_performers") s.malePerformers = value == "1";
-  else if (key == "stash_write_back") s.writeBack = value == "1";
-  else if (key == "stash_card") s.card = value == "1";
-  else if (key == "stash_filters") readSections(value, s);
-  else if (key == "stash_scenes_sort")
+  else if (key == "covers") s.covers = value != "0";
+  else if (key == "titles") s.titles = value != "0";
+  else if (key == "male_performers") s.malePerformers = value == "1";
+  else if (key == "write_back") s.writeBack = value == "1";
+  else if (key == "filters") readSections(value, s);
+  else if (key == "scenes_sort")
     s.scenesSort = readSort(value, kStashSortNames, StashSort::Released);
-  else if (key == "stash_performers_sort")
+  else if (key == "performers_sort")
     s.performersSort = readSort(value, kPerformerSortNames, StashPerformerSort::Scenes);
-  else if (key == "stash_studios_sort")
+  else if (key == "studios_sort")
     s.studiosSort = readSort(value, kStudioSortNames, StudioSort::Plays);
-  else if (key == "stash_scenes_descending") s.scenesDescending = value != "0";
-  else if (key == "stash_performers_descending") s.performersDescending = value != "0";
-  else if (key == "stash_studios_descending") s.studiosDescending = value != "0";
-  else if (key == "stash_format")
+  else if (key == "scenes_descending") s.scenesDescending = value != "0";
+  else if (key == "performers_descending") s.performersDescending = value != "0";
+  else if (key == "studios_descending") s.studiosDescending = value != "0";
+  else if (key == "format")
     s.format = value == "all" ? StashFormat::All : value == "2d" ? StashFormat::Flat : StashFormat::VR;
   else return false;
   return true;
+}
+
+bool StashSettingsReader::read(const std::string& key, const std::string& value) {
+  if (key == "stash") on_ = value == "1" ? 1 : 0;
+  else if (key == "media_server") chosen_ = value;
+  else if (key == "stash_card") inUse_.card = value == "1";
+  else {
+    for (const MediaServer* server : mediaServers()) {
+      const std::string prefix = std::string(server->id()) + "_";
+      if (key.compare(0, prefix.size(), prefix) != 0) continue;
+      StashSettings* setup = inUse_.kind == server->kind() ? &inUse_ : nullptr;
+      for (StashSettings& other : others_)
+        if (!setup && other.kind == server->kind()) setup = &other;
+      if (!setup) {
+        setup = &others_.emplace_back();
+        setup->kind = server->kind();
+      }
+      return readServerSetting(key.substr(prefix.size()), value, *setup);
+    }
+    return false;
+  }
+  return true;
+}
+
+void StashSettingsReader::finish() {
+  if (on_ >= 0) inUse_.enabled = on_ == 1;
+  // Another kind in use; one this build doesn't know leaves the first, as
+  // `stash` has it.
+  for (const MediaServer* server : mediaServers())
+    if (chosen_ == server->id()) {
+      useServer(inUse_, others_, server->kind());
+      inUse_.enabled = true;
+    }
+  // <id>_path_from left empty: none (the same paths on both).
+  auto tidy = [](StashSettings& s) {
+    s.folders.erase(std::remove_if(s.folders.begin(), s.folders.end(),
+                                   [](const StashFolderMap& m) { return m.from.empty(); }),
+                    s.folders.end());
+  };
+  tidy(inUse_);
+  for (StashSettings& other : others_) tidy(other);
 }
 
 std::string stashSectionsText(const StashSettings& s) {
@@ -238,8 +302,13 @@ std::string stashSectionsText(const StashSettings& s) {
   return text;
 }
 
-std::string stashSettingLines(const StashSettings& s) {
-  std::ostringstream out;
+namespace {
+
+// `card`: the app's stash_card line, written where builds from before there
+// were kinds have it.
+void setupLines(std::ostringstream& out, const StashSettings& s, const std::string& card = {}) {
+  const MediaServer& server = mediaServer(s.kind);
+  const std::string id = server.id();
   // The first mapping as older builds have it, the others after it.
   std::vector<StashFolderMap> folders;
   for (const StashFolderMap& m : s.folders)
@@ -247,27 +316,57 @@ std::string stashSettingLines(const StashSettings& s) {
         m.to.find_first_of("\t\n") == std::string::npos)
       folders.push_back(m);
   const StashFolderMap first = folders.empty() ? StashFolderMap{} : folders.front();
-  out << "stash=" << (s.enabled ? 1 : 0) << "\nstash_url=" << s.url
-      << "\nstash_api_key=" << s.apiKey << "\nstash_path_from=" << first.from
-      << "\nstash_path_to=" << first.to << "\n";
+  out << id << "_url=" << s.url << "\n";
+  if (server.abilities().signIn) out << id << "_api_key=" << s.apiKey << "\n";
+  out << id << "_path_from=" << first.from << "\n" << id << "_path_to=" << first.to << "\n";
   for (size_t i = 1; i < folders.size(); ++i)
-    out << "stash_folder=" << folders[i].from << '\t' << folders[i].to << "\n";
-  if (!s.unverifiedHost.empty()) out << "stash_unverified_host=" << s.unverifiedHost << "\n";
-  out << "stash_covers=" << (s.covers ? 1 : 0)
-      << "\nstash_titles=" << (s.titles ? 1 : 0)
-      << "\nstash_male_performers=" << (s.malePerformers ? 1 : 0)
-      << "\nstash_write_back=" << (s.writeBack ? 1 : 0) << "\nstash_card=" << (s.card ? 1 : 0)
-      << "\nstash_format="
-      << (s.format == StashFormat::All ? "all" : s.format == StashFormat::Flat ? "2d" : "vr")
-      << "\nstash_scenes_sort=" << kStashSortNames[static_cast<int>(s.scenesSort)]
-      << "\nstash_scenes_descending=" << s.scenesDescending
-      << "\nstash_performers_sort=" << stashSortName(s.performersSort)
-      << "\nstash_performers_descending=" << s.performersDescending
-      << "\nstash_studios_sort=" << stashSortName(s.studiosSort)
-      << "\nstash_studios_descending=" << s.studiosDescending << "\n";
+    out << id << "_folder=" << folders[i].from << '\t' << folders[i].to << "\n";
+  if (!s.unverifiedHost.empty()) out << id << "_unverified_host=" << s.unverifiedHost << "\n";
+  out << id << "_covers=" << (s.covers ? 1 : 0) << "\n"
+      << id << "_titles=" << (s.titles ? 1 : 0) << "\n"
+      << id << "_male_performers=" << (s.malePerformers ? 1 : 0) << "\n"
+      << id << "_write_back=" << (s.writeBack ? 1 : 0) << "\n"
+      << card
+      << id << "_format="
+      << (s.format == StashFormat::All ? "all" : s.format == StashFormat::Flat ? "2d" : "vr") << "\n"
+      << id << "_scenes_sort=" << kStashSortNames[static_cast<int>(s.scenesSort)] << "\n"
+      << id << "_scenes_descending=" << s.scenesDescending << "\n"
+      << id << "_performers_sort=" << stashSortName(s.performersSort) << "\n"
+      << id << "_performers_descending=" << s.performersDescending << "\n"
+      << id << "_studios_sort=" << stashSortName(s.studiosSort) << "\n"
+      << id << "_studios_descending=" << s.studiosDescending << "\n";
   // Only once changed, so a new default order reaches those who never did.
   if (s.sections != kStashDefaultSections || s.hiddenSections ||
       s.subgroups != kStashDefaultSubgroups || s.hiddenSubgroups)
-    out << "stash_filters=" << stashSectionsText(s) << "\n";
+    out << id << "_filters=" << stashSectionsText(s) << "\n";
+}
+
+}  // namespace
+
+std::string stashSettingLines(const StashSettings& inUse, const std::vector<StashSettings>& others) {
+  std::ostringstream out;
+  const bool first = originalKind(inUse.kind);
+  out << "stash=" << (inUse.enabled && first ? 1 : 0) << "\n";
+  if (inUse.enabled && !first) out << "media_server=" << mediaServer(inUse.kind).id() << "\n";
+  // In the kinds' order, whichever is in use: the first kind's lines are
+  // then where builds from before there were kinds wrote them, the card's
+  // among them.
+  std::string card = std::string("stash_card=") + (inUse.card ? "1" : "0") + "\n";
+  for (const MediaServer* server : mediaServers()) {
+    if (server->kind() == inUse.kind) setupLines(out, inUse, std::exchange(card, {}));
+    for (const StashSettings& other : others)
+      if (other.kind == server->kind() && !other.url.empty())
+        setupLines(out, other, std::exchange(card, {}));
+  }
+  return out.str();
+}
+
+std::string stashDefaultLines() {
+  std::ostringstream out;
+  for (const MediaServer* server : mediaServers()) {
+    StashSettings setup;
+    setup.kind = server->kind();
+    setupLines(out, setup);
+  }
   return out.str();
 }

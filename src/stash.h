@@ -40,7 +40,7 @@ class Stash {
   bool poll();
   void syncNow();  // "Sync now"
 
-  // Covers, portraits and logos, kept in cacheDir() / "stash". Views ask
+  // Covers, portraits and logos, kept in cacheDir() / the kind's id. Views ask
   // it for what they show (want(), find()); poll() takes what arrives.
   StashImages& images() { return *images_; }
   // Whether the last poll() took new images (or failures): views showing
@@ -104,15 +104,24 @@ class Stash {
   void lookForFolder(const std::string& folder, const std::string& root);
   const StashFolderFinder& folderFinder() const { return *finder_; }
   uint64_t folderSearches() const { return folderSearches_; }
+  // A lookForFolders() search has run to its end (not one a video stopped).
+  bool foldersLookedThrough() const { return foldersLookedThrough_; }
   bool folderCheck() const { return folderCheck_; }
   // The settings' mappings with what the last search found put to use: each
   // of Stash's folders none of whose scenes are here gets the mapping that
-  // found the most of its files (at least half). Unchanged if none did.
+  // found its files (at least half), where they were found in one place
+  // only. Unchanged if none was.
   std::vector<StashFolderMap> foundFolders() const;
   // The settings' mappings with `map` as the one for Stash's `folder`
   // (stashFoldersWith(); for scenes in none of Stash's folders, beside some
   // in them, one more).
   std::vector<StashFolderMap> foldersWith(const std::string& folder, StashFolderMap map) const;
+  // The mapping one of Stash's folders goes by (the files in none of its
+  // folders, "": their first's), or null; and the settings' mappings
+  // without it, so that the folder's scenes play from Stash again. Stash's
+  // other folders that went by the same mapping keep their places.
+  const StashFolderMap* folderMapping(const std::string& folder) const;
+  std::vector<StashFolderMap> foldersWithout(const std::string& folder) const;
   // A video is open: no background search (one under way stops, and runs
   // again once it closes).
   void setVideoOpen(bool open);
@@ -135,6 +144,7 @@ class Stash {
   static void finishStopping();
 
  private:
+  const StashFolderMap* mappingIn(const StashSettings& settings, const std::string& folder) const;
   StashSettings settings_;
   Library& library_;
   // Held apart, to be handed to the thread that waits for them.
@@ -146,6 +156,7 @@ class Stash {
   int64_t foldersLookedFor_ = -1;  // the catalog (syncedAt) last looked for
   uint64_t folderSearches_ = 0;
   bool folderCheck_ = false, folderSearching_ = false, videoOpen_ = false;
+  bool foldersLookedThrough_ = false;
   int64_t deliveredAfter_ = 0;                 // the sync write-back last sent after
   int64_t tagsSavedAt_ = 0;                    // the tag save last synced after
   void ratedOrPlayed(const std::string& oshash, bool rated, float rating, int plays,

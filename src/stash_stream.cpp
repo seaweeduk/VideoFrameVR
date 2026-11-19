@@ -1,11 +1,10 @@
 #include "stash_stream.h"
 
+#include "media_server.h"
 #include "read_ahead.h"
-#include "stash_http.h"
 
 #include <curl/curl.h>
 #include <mpv/stream_cb.h>
-#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -27,9 +26,32 @@ constexpr std::string_view kScheme = "stashscene://";
 struct Server {
   int number = 0;
   uint64_t hash = 0;  // of address.server, for downloads' sources
+  const MediaServer* kind = nullptr;
   StashAddress address;
   std::string apiKey;
+  ServerLink link() const { return {address, apiKey}; }
+  curl_slist* keyHeader() const { return kind ? kind->authorized(nullptr, apiKey) : nullptr; }
 };
+
+// What a locator (stashscene://<server>/<scene>[.<file>]/<name>) or a
+// source (stash:<hash>/<scene>[.<file>]/<name>) names.
+struct Named {
+  int number = 0;               // a locator's server
+  unsigned long long hash = 0;  // a source's
+  long long scene = 0, file = 0;
+};
+bool locatorNamed(std::string_view location, Named& named) {
+  return std::sscanf(std::string(location).c_str(), "stashscene://%d/%lld.%lld", &named.number,
+                     &named.scene, &named.file) >= 2;
+}
+bool sourceNamed(std::string_view source, Named& named) {
+  return std::sscanf(std::string(source).c_str(), "stash:%16llx/%lld.%lld", &named.hash,
+                     &named.scene, &named.file) >= 2;
+}
+// "<scene>" or, with the file's id on the server, "<scene>.<file>".
+std::string sceneAndFile(long long scene, long long file) {
+  return std::to_string(scene) + (file ? "." + std::to_string(file) : std::string());
+}
 std::mutex servedMutex;
 Server served;
 std::map<std::string, int> serverNumbers;  // each server's in this run
@@ -39,9 +61,10 @@ std::unordered_map<int64_t, FileFingerprint> knownFiles;  // the served server's
 std::atomic<int> opening{0};
 
 struct Stream : ReadAhead {
+  const char* name = "";  // the server's kind, for the log
   StashAddress address;
   std::string path;
-  curl_slist* headers = nullptr;  // the ApiKey
+  curl_slist* headers = nullptr;  // the key's
   uint64_t length = 0;
   uint64_t chunk = ReadAhead::kBlock;  // playback's (a download's larger)
   bool background = false;
@@ -140,7 +163,7 @@ class Service {
       // for up to 10 s.
       if (s.retryUntil == Clock::time_point{}) {
         s.retryUntil = now + std::chrono::seconds(10);
-        std::fprintf(stderr, "Stash stream: %s (HTTP %ld), reconnecting\n",
+        std::fprintf(stderr, "%s stream: %s (HTTP %ld), reconnecting\n", s.name,
                      curl_easy_strerror(code), status);
       }
       s.retryAt = now + std::chrono::milliseconds(250);
@@ -149,7 +172,7 @@ class Service {
       s.failed = true;
       s.changed = status == 200;
     }
-    if (s.failed && !failed) std::fprintf(stderr, "Stash stream: failed (HTTP %ld)\n", status);
+    if (s.failed && !failed) std::fprintf(stderr, "%s stream: failed (HTTP %ld)\n", s.name, status);
     s.cv.notify_all();
   }
   void run() {
@@ -232,20 +255,20 @@ struct MpvStream {
   std::atomic<bool>* failed;
 };
 int openMpv(void* data, char* uri, mpv_stream_cb_info* info) {
-  int number = 0;
-  long long id = 0;
-  if (std::sscanf(uri, "stashscene://%d/%lld", &number, &id) != 2) return MPV_ERROR_LOADING_FAILED;
+  Named named;
+  if (!locatorNamed(uri, named)) return MPV_ERROR_LOADING_FAILED;
+  const long long id = named.scene;
   Server server;
   {
     std::lock_guard lock(servedMutex);
     server = served;
   }
-  if (!server.number || server.number != number) return MPV_ERROR_LOADING_FAILED;
+  if (!server.number || server.number != named.number) return MPV_ERROR_LOADING_FAILED;
   auto s = std::make_shared<Stream>();
+  s->name = server.kind->name();
   s->address = server.address;
-  s->path = server.address.pathOn("/scene/" + std::to_string(id) + "/stream");
-  if (!server.apiKey.empty())
-    s->headers = curl_slist_append(nullptr, ("ApiKey: " + server.apiKey).c_str());
+  s->path = server.kind->streamPath(named.scene, named.file);
+  s->headers = server.keyHeader();
   s->background = data == &backgroundReader || data == &fileReader;
   // Seek previews' requests are as asked; FFmpeg's half a block at least:
   // fewer round trips, about as many bytes as SMB's (measured).
@@ -267,7 +290,7 @@ int openMpv(void* data, char* uri, mpv_stream_cb_info* info) {
   if (!s->background) --opening;
   curl_easy_cleanup(curl);
   if (reply.code != CURLE_OK || reply.status != 206 || !s->length) {
-    std::fprintf(stderr, "Stash stream: scene %lld didn't open: %s (HTTP %ld)\n", id,
+    std::fprintf(stderr, "%s stream: scene %lld didn't open: %s (HTTP %ld)\n", s->name, id,
                  curl_easy_strerror(reply.code), reply.status);
     return MPV_ERROR_LOADING_FAILED;
   }
@@ -334,7 +357,8 @@ int openMpv(void* data, char* uri, mpv_stream_cb_info* info) {
 }
 }  // namespace
 
-void stashServe(const std::string& url, const std::string& apiKey, bool unverified) {
+void stashServe(ServerKind kind, const std::string& url, const std::string& apiKey,
+                bool unverified) {
   std::lock_guard lock(servedMutex);
   knownFiles.clear();
   if (url.empty()) {
@@ -342,30 +366,30 @@ void stashServe(const std::string& url, const std::string& apiKey, bool unverifi
     return;
   }
   const StashAddress address(url, unverified);
-  int& number = serverNumbers[address.server];
+  // By kind too: another kind at the same address has other scenes under
+  // its numbers, which no locator or saved source of this one's may reach.
+  const std::string identity = serverIdentity(kind, address.server);
+  int& number = serverNumbers[identity];
   if (!number) number = static_cast<int>(serverNumbers.size());
   uint64_t hash = 14695981039346656037ull;  // FNV-1a, as StashOutbox's
-  for (const unsigned char c : address.server) hash = (hash ^ c) * 1099511628211ull;
-  served = {number, hash, address, apiKey};
+  for (const unsigned char c : identity) hash = (hash ^ c) * 1099511628211ull;
+  served = {number, hash, &mediaServer(kind), address, apiKey};
 }
 
-std::string stashSceneLocator(int64_t id, std::string_view fileName) {
+std::string stashSceneLocator(int64_t id, std::string_view fileName, int64_t file) {
   std::lock_guard lock(servedMutex);
   if (!served.number) return {};
-  return std::string(kScheme) + std::to_string(served.number) + "/" + std::to_string(id) + "/" +
-         std::string(fileName);
+  return std::string(kScheme) + std::to_string(served.number) + "/" + sceneAndFile(id, file) +
+         "/" + std::string(fileName);
 }
 
 bool isStashScene(std::string_view location) { return location.substr(0, kScheme.size()) == kScheme; }
 
 int64_t stashSceneId(std::string_view location) {
-  int number = 0;
-  long long id = 0;
-  if (!isStashScene(location) ||
-      std::sscanf(std::string(location).c_str(), "stashscene://%d/%lld", &number, &id) != 2)
-    return 0;
+  Named named;
+  if (!isStashScene(location) || !locatorNamed(location, named)) return 0;
   std::lock_guard lock(servedMutex);
-  return served.number && served.number == number ? id : 0;
+  return served.number && served.number == named.number ? named.scene : 0;
 }
 
 void stashKnowFiles(std::unordered_map<int64_t, FileFingerprint> files) {
@@ -393,19 +417,13 @@ bool openStashScene(const std::string& locator, mpv_stream_cb_info& info) {
 namespace {
 constexpr std::string_view kSource = "stash:";
 
-// The server served now and the scene a source names on it; false if the
-// source is another server's.
-bool servedFor(std::string_view source, Server& server, long long& id) {
-  unsigned long long hash = 0;
-  if (std::sscanf(std::string(source).c_str(), "stash:%16llx/%lld/", &hash, &id) != 2) return false;
+// The server served now and the scene (and file) a source names on it;
+// false if the source is another server's.
+bool servedFor(std::string_view source, Server& server, Named& named) {
+  if (!sourceNamed(source, named)) return false;
   std::lock_guard lock(servedMutex);
   server = served;
-  return server.number && server.hash == hash;
-}
-
-curl_slist* keyHeader(const Server& server) {
-  return server.apiKey.empty() ? nullptr
-                               : curl_slist_append(nullptr, ("ApiKey: " + server.apiKey).c_str());
+  return server.number && server.hash == named.hash;
 }
 
 // An HTTP date (If-Range), in English whatever the locale.
@@ -432,39 +450,37 @@ size_t keep(char* data, size_t size, size_t count, void* to) {
 }  // namespace
 
 std::string stashSource(std::string_view locator) {
-  int number = 0;
-  long long id = 0;
-  if (!isStashScene(locator) ||
-      std::sscanf(std::string(locator).c_str(), "stashscene://%d/%lld", &number, &id) != 2)
-    return {};
+  Named named;
+  if (!isStashScene(locator) || !locatorNamed(locator, named)) return {};
   const size_t slash = locator.find('/', locator.find('/', kScheme.size()) + 1);
   const std::string_view name = slash == std::string_view::npos ? "" : locator.substr(slash + 1);
   std::lock_guard lock(servedMutex);
-  if (!served.number || served.number != number) return {};
+  if (!served.number || served.number != named.number) return {};
   char hash[17];
   std::snprintf(hash, sizeof(hash), "%016llx", static_cast<unsigned long long>(served.hash));
-  return std::string(kSource) + hash + "/" + std::to_string(id) + "/" + std::string(name);
+  return std::string(kSource) + hash + "/" + sceneAndFile(named.scene, named.file) + "/" +
+         std::string(name);
 }
 
 bool isStashSource(std::string_view source) { return source.substr(0, kSource.size()) == kSource; }
 
 std::string stashSourceLocator(std::string_view source) {
   Server server;
-  long long id = 0;
-  if (!servedFor(source, server, id)) return {};
-  return stashSceneLocator(id, source.substr(source.find_last_of('/') + 1));
+  Named named;
+  if (!servedFor(source, server, named)) return {};
+  return stashSceneLocator(named.scene, source.substr(source.find_last_of('/') + 1), named.file);
 }
 
 FileFingerprint stashFingerprint(const std::string& source, bool& gone) {
   gone = false;
   FileFingerprint print;
   Server server;
-  long long id = 0;
-  if (!servedFor(source, server, id)) return print;
+  Named named;
+  if (!servedFor(source, server, named)) return print;
   CURL* curl = curl_easy_init();
   if (!curl) return print;
-  curl_slist* headers = keyHeader(server);
-  const std::string path = server.address.pathOn("/scene/" + std::to_string(id) + "/stream");
+  curl_slist* headers = server.keyHeader();
+  const std::string path = server.kind->streamPath(named.scene, named.file);
   std::string bytes;
   uint64_t length = 0;
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, contentRange);
@@ -485,8 +501,10 @@ FileFingerprint stashFingerprint(const std::string& source, bool& gone) {
     return r.code == CURLE_OK ? r.status : 0;
   };
   // Its start, then its end if the file is still the same.
+  // Gone: no such file, or (a server that answers for one it doesn't have)
+  // an answer without a byte in it.
   const long status = get(0, 64 * 1024 - 1);
-  gone = status == 404;
+  gone = status == 404 || (status == 200 && bytes.empty());
   const uint64_t size = length;
   const int64_t chunk = oshashChunk(size);
   curl_off_t date = -1;
@@ -512,113 +530,33 @@ bool stashAnswers() {
     std::lock_guard lock(servedMutex);
     server = served;
   }
-  if (!server.number) return true;
-  CURL* curl = curl_easy_init();
-  if (!curl) return true;
-  curl_slist* headers = curl_slist_append(keyHeader(server), "Content-Type: application/json");
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, R"({"query":"{version{version}}"})");
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, discard);
-  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 3000L);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);
-  const StashReply r = stashPerform(curl, server.address, "/graphql", {}, false);
-  curl_easy_cleanup(curl);
-  curl_slist_free_all(headers);
-  return r.code == CURLE_OK && r.status == 200;
+  return !server.number || server.kind->answers(server.link());
 }
 
 namespace {
 // The server served now and the scene a locator or a source names on it;
 // false if it is another server's.
-bool sceneAt(std::string_view location, Server& server, long long& id) {
-  if (isStashSource(location)) return servedFor(location, server, id);
-  int number = 0;
-  if (std::sscanf(std::string(location).c_str(), "stashscene://%d/%lld", &number, &id) != 2)
-    return false;
+bool sceneAt(std::string_view location, Server& server, Named& named) {
+  if (isStashSource(location)) return servedFor(location, server, named);
+  if (!locatorNamed(location, named)) return false;
   std::lock_guard lock(servedMutex);
   server = served;
-  return server.number && server.number == number;
+  return server.number && server.number == named.number;
 }
 }  // namespace
 
 std::vector<StashCaption> stashCaptions(std::string_view location) {
-  std::vector<StashCaption> captions;
   Server server;
-  long long id = 0;
-  if (!sceneAt(location, server, id)) return captions;
-  CURL* curl = curl_easy_init();
-  if (!curl) return captions;
-  curl_slist* headers = curl_slist_append(keyHeader(server), "Content-Type: application/json");
-  std::string bytes;
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, +[](char* data, size_t size, size_t count, void* to) {
-    auto& bytes = *static_cast<std::string*>(to);
-    if (bytes.size() > 16 * 1024 * 1024) return size_t(0);
-    bytes.append(data, size * count);
-    return size * count;
-  });
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &bytes);
-  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 3000L);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 10000L);
-  auto get = [&](const std::string& path) {
-    const StashReply r = stashPerform(curl, server.address, path, [&] { bytes.clear(); }, false);
-    return r.code == CURLE_OK && r.status == 200;
-  };
-  const std::string query = R"({findScene(id:")" + std::to_string(id) +
-                            R"("){captions{language_code caption_type}}})";
-  const std::string body = nlohmann::json{{"query", query}}.dump();
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
-  nlohmann::json list;
-  if (get("/graphql")) list = nlohmann::json::parse(bytes, nullptr, false);
-  for (const char* key : {"data", "findScene", "captions"})
-    list = list.is_object() && list.contains(key) ? nlohmann::json(list[key]) : nlohmann::json();
-  curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
-  for (auto c : list.is_array() ? list : nlohmann::json::array()) {
-    if (!c.is_object() || !c["language_code"].is_string() || !c["caption_type"].is_string()) continue;
-    StashCaption caption{c["language_code"].get<std::string>(), c["caption_type"].get<std::string>(), {}};
-    char* lang = curl_easy_escape(curl, caption.language.c_str(), 0);
-    char* type = curl_easy_escape(curl, caption.type.c_str(), 0);
-    const bool got = get(server.address.pathOn("/scene/" + std::to_string(id) + "/caption?lang=" +
-                                               lang + "&type=" + type));
-    curl_free(lang);
-    curl_free(type);
-    if (!got || bytes.empty()) continue;  // Stash answers nothing for one it can't read
-    if (caption.language == "00") caption.language.clear();
-    caption.text = std::move(bytes);
-    captions.push_back(std::move(caption));
-  }
-  curl_easy_cleanup(curl);
-  curl_slist_free_all(headers);
-  return captions;
+  Named named;
+  if (!sceneAt(location, server, named)) return {};
+  return server.kind->captions(server.link(), named.scene);
 }
 
 std::string stashFunscript(std::string_view location) {
   Server server;
-  long long id = 0;
-  if (!sceneAt(location, server, id)) return {};
-  CURL* curl = curl_easy_init();
-  if (!curl) return {};
-  curl_slist* headers = keyHeader(server);
-  std::string bytes;
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, +[](char* data, size_t size, size_t count, void* to) {
-    auto& bytes = *static_cast<std::string*>(to);
-    if (bytes.size() > 16 * 1024 * 1024) return size_t(0);
-    bytes.append(data, size * count);
-    return size * count;
-  });
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &bytes);
-  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 3000L);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 10000L);
-  const StashReply r =
-      stashPerform(curl, server.address, server.address.pathOn("/scene/" + std::to_string(id) + "/funscript"),
-                   [&] { bytes.clear(); }, false);
-  curl_easy_cleanup(curl);
-  curl_slist_free_all(headers);
-  return r.code == CURLE_OK && r.status == 200 ? bytes : std::string();
+  Named named;
+  if (!sceneAt(location, server, named)) return {};
+  return server.kind->funscript(server.link(), named.scene);
 }
 
 struct StashReader::Impl {
@@ -628,12 +566,13 @@ struct StashReader::Impl {
 std::unique_ptr<StashReader> StashReader::open(const std::string& source, uint64_t offset,
                                                const FileFingerprint& file) {
   Server server;
-  long long id = 0;
-  if (!servedFor(source, server, id)) return nullptr;
+  Named named;
+  if (!servedFor(source, server, named)) return nullptr;
   auto s = std::make_shared<Stream>();
+  s->name = server.kind->name();
   s->address = server.address;
-  s->path = server.address.pathOn("/scene/" + std::to_string(id) + "/stream");
-  s->headers = keyHeader(server);
+  s->path = server.kind->streamPath(named.scene, named.file);
+  s->headers = server.keyHeader();
   if (file.mtime > 0) s->headers = curl_slist_append(s->headers, ("If-Range: " + httpDate(file.mtime)).c_str());
   s->length = file.size;
   s->position = offset;

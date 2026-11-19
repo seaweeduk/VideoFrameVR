@@ -69,9 +69,10 @@ StashReply stashPerform(CURL* curl, const StashAddress& address, const std::stri
 // proxy for a private address, the certificate not verified if `unverified`.
 void stashSetUp(CURL* curl, const StashAddress& address);
 
-// A failed transfer in a few words (strings().stashSetup), not libcurl's:
-// nothing answers, no such host, no answer in time, the certificate.
-std::string stashUnreachable(CURLcode code);
+// A failed transfer in a few words (`text`'s), not libcurl's: nothing
+// answers, no such host, no answer in time, the certificate.
+struct StashSetupStrings;
+std::string stashUnreachable(CURLcode code, const StashSetupStrings& text);
 // Whether a transfer failed on the server's certificate alone (self-signed,
 // another issuer, expired, another name), which the user may accept.
 bool stashUntrusted(CURLcode code);

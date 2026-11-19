@@ -5,6 +5,10 @@
 // and unknown members fail compilation. Keep printf conversions unchanged.
 // Register the new table in strings.cpp and its source in CMakeLists.txt.
 // strings() is a pointer lookup, from any thread; locale detection runs only when selecting a language.
+//
+// Every table writes the media server's name as "Stash", in each language:
+// setServerName() shows another server's in its place. For that, Strings
+// and the structs in it hold nothing but const char* (singly or in arrays).
 
 #include <string>
 
@@ -14,14 +18,14 @@
 struct StashStrings {
   // Settings.
   const char* group;
-  const char* use;
   const char* offHint;
   const char* setupHint;
   const char* server;
   const char* apiKey;
   const char* apiKeyNone;
   const char* apiKeySet;
-  const char* folders;
+  const char* folders;      // the group of the server's folders here
+  const char* foldersHint;  // ... what choosing one is for
   const char* covers;
   const char* titles;
   const char* malePerformers;
@@ -38,8 +42,7 @@ struct StashStrings {
   const char* daysAgo;       // printf: days
   const char* oneDayAgo;
   const char* editTitle;
-  const char* fieldNames[4];  // URL, API key, Stash's folder, this computer's
-  const char* editHint;
+  const char* fieldNames[2];  // URL, API key
   const char* save;
   // Navigation.
   const char* navHome;
@@ -190,7 +193,7 @@ struct StashStrings {
   const char* noPins;
   const char* searchStash;
   const char* tipUse;
-  const char* tipFields[4];
+  const char* tipFields[2];
   const char* tipSync;
   const char* tipPin;
   const char* tipShuffle;
@@ -236,6 +239,12 @@ struct StashWriteBackStrings {
   const char* tipSendAll;
   const char* tipDryRun;
   const char* group;  // Settings → Stash: the group with the switch and the one-off send
+  // toggle, hint, rules and tipToggle for a server that takes only a rating
+  // and that a scene was watched (ServerAbilities::ratingsAndWatchedOnly()).
+  const char* toggleBasic;
+  const char* hintBasic;
+  const char* rulesBasic;
+  const char* tipToggleBasic;
 };
 
 // The strip's Scene tab (docs/stash.md): the playing video's Stash details.
@@ -458,7 +467,8 @@ struct NetworkStrings {
 
 // Where Stash's videos are here (menu_stash_folders.cpp): found, or chosen.
 struct StashFoldersStrings {
-  const char* choose;       // beside Stash's folders field
+  const char* choose;       // beside a folder's field: nothing chosen for it yet
+  const char* change;       // ... one is
   const char* tipChoose;
   const char* looking;
   const char* foundIn;      // printf: the folder here; Stash's videos found nowhere else
@@ -470,13 +480,13 @@ struct StashFoldersStrings {
   const char* notInFolder;  // ... once one without them was chosen
   const char* useFolder;
   const char* checking;
-  // Several of Stash's folders: under each, where it is here or that it
-  // wasn't found; and the search's progress.
-  const char* folderHere;      // printf: the folder here
+  const char* fromServer;      // a folder's field, while its scenes play from Stash's stream
+  const char* playFromServer;  // choosing: no folder here for it any more
+  // Under a folder's field: its videos aren't where they were chosen to be
+  // (printf: there), or anywhere; and the search's progress.
+  const char* notIn;
   const char* folderNotHere;
-  const char* folderRest;      // under that, when some of its scenes play from Stash's stream
-  const char* folderStreamed;  // not here, its scenes play from Stash's stream
-  const char* streamed;        // one folder: those not here play from Stash's stream
+  const char* folderRest;      // some of its scenes play from Stash's stream
   const char* lookingFolders;  // printf: the folder looked for, how many
   const char* otherFiles;      // the row of Stash's files in none of its library folders
 };
@@ -699,6 +709,12 @@ struct StashSetupStrings {
   const char* verify;
   const char* untrustedStatus;
   const char* untrustedTip;
+  // Saved as another kind than its fields were for (printf: the kind that
+  // answered at the address).
+  const char* foundOther;
+  // Between the kinds of server where a sentence names them all, as no
+  // server is set up yet: "Stash or XBVR".
+  const char* orKind;
 };
 
 // First-run setup (docs/alpha/first-run.md, menu_setup.cpp).
@@ -1271,6 +1287,17 @@ const char* languageCode(int choice);
 std::string languageName(int choice);
 int languageChoice();
 void setLanguage(const std::string& code);
+// The media server's name wherever the strings name it: "Stash" as they are
+// written, another server's ("XBVR"), or every kind's ("Stash or XBVR")
+// while none is set up. Main thread; strings read before keep their text.
+void setServerName(const std::string& name);
+const std::string& serverNameShown();  // ... as set
+// The strings as they are written, naming Stash: for what only Stash has
+// (its login and API key), whichever server strings() names. Main thread.
+const Strings& stashOwnStrings();
+// ... and naming `name` in Stash's place: for what is said of a kind of
+// server that isn't the one in use (its fields, before it is). Main thread.
+const Strings& stringsNamed(const char* name);
 // The code of the language shown, Automatic resolved ("de", "pt_BR").
 const char* shownLanguageCode();
 

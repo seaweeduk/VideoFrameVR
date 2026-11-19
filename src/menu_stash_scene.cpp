@@ -193,7 +193,8 @@ void StashPages::layoutSceneDetails(Menu& m) {
   const bool male = m.view_.stash.malePerformers;
   // Editing tags needs write-back on; turned off, the edits go, as they do
   // for another video.
-  const bool canEdit = s && m.view_.stash.writeBack && m.stash_->writeBack();
+  const bool canEdit = s && m.view_.stash.writeBack && m.stash_->writeBack() &&
+                       mediaServer(m.view_.stash.kind).abilities().editTags;
   if (path != d.path || (s ? s->id : 0) != d.scene || (d.editing && !canEdit)) {
     if (d.editing && st.typing == StashMenu::Typing::Tags) m.editing_ = false;
     d.editing = d.adding = d.confirm = d.saving = false;

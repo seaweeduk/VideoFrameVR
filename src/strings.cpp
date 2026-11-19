@@ -4,7 +4,15 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <deque>
 #include <iterator>
+#include <map>
+#include <mutex>
+#include <memory>
+#include <string_view>
+#include <type_traits>
+#include <utility>
 
 Strings germanStrings(const Strings& english);
 Strings spanishStrings(const Strings& english);
@@ -263,14 +271,14 @@ const Strings kEnglish = {
     "Defaults: 300 cm high, 300 cm away, curve 1",
     {
         "Stash",
-        "Use Stash",
         "Browse Stash by performer, tag or studio. Off: nothing sent or stored.",
         "Set a server to start syncing.",
         "Server",
         "API key",
         "None",
         "Set",
-        "Folders",
+        "Play from a folder",
+        "Optional. Videos you also have here seek faster.",
         "Stash covers as thumbnails",
         "Stash titles instead of file names",
         "Show male performers",
@@ -287,9 +295,7 @@ const Strings kEnglish = {
         "%d days ago",
         "1 day ago",
         "Stash server",
-        {"Server", "API key (only if Stash has one)", "Folder in Stash", "The same folder here"},
-        "Optional: match Stash's folder to its location here, to play its files from there. "
-        "Saving syncs again.",
+        {"Server", "API key (only if Stash has one)"},
         "Save and sync",
         "Home",
         "Scenes",
@@ -433,8 +439,8 @@ const Strings kEnglish = {
         "Lists pinned on the Scenes page appear here.",
         "Search Stash",
         "Browse scenes from your Stash server.",
-        {"Stash's address, like stash.example.com or 192.168.1.20:9999.", "API key, only if your Stash server requires one.",
-         "Folder prefix used by Stash.", "The matching folder on this computer."},
+        {"Stash's address, like server.example.com or 192.168.1.20:9999.",
+         "API key, only if your Stash server requires one."},
         "Refresh the local catalog from Stash.",
         "Save these filters as a pinned list.",
         "Play these scenes in random order.",
@@ -543,6 +549,12 @@ const Strings kEnglish = {
         "Review existing ratings and plays before sending them to Stash.",
         "Preview what would be sent without sending it.",
         "Send to Stash",
+        "Send ratings and plays to Stash",
+        "Plays mark a scene as watched. Back up Stash first.",
+        "Existing Stash ratings stay unchanged. Scenes you have played are marked as watched in "
+        "Stash, which keeps no time for a play. Your local library stays unchanged.",
+        "Send new ratings to Stash and mark the scenes you play as watched there. Back up Stash "
+        "first.",
     },
     {
         "Focus (all videos)", "Focus (this video)", "Stereo focus",
@@ -707,7 +719,9 @@ const Strings kEnglish = {
     },
     {
         "Choose…",
-        "Find the folder with Stash's videos in the file browser.",
+        "Change…",
+        "Find the folder with Stash's videos in the file browser. For a shared drive, add its "
+        "computer under Network first.",
         "Looking for Stash's videos …",
         "Stash's videos are on this device in %s.",
         "Stash's videos are also on this device in %s. Use plays them from there.",
@@ -718,11 +732,11 @@ const Strings kEnglish = {
         "Stash's videos aren't in this folder:",
         "Use this folder",
         "Checking …",
-        "Here: %s",
+        "Plays from Stash",
+        "Play from Stash",
+        "Its videos weren't found in %s.",
         "Not found on this device. Choose its folder.",
         "Its other scenes play from Stash.",
-        "Not found on this device. Its scenes play from Stash.",
-        "Scenes not found here play from Stash.",
         "Looking for Stash's videos … (folder %d of %d)",
         "Videos outside Stash's library folders",
     },
@@ -893,7 +907,7 @@ const Strings kEnglish = {
         "Finding Stash's videos on this device …",
         "This first sync runs in the background: you can leave this page or play something. "
         "Stash's pages fill in when it's done.",
-        "Like stash.example.com or 192.168.1.20:9999",
+        "Like server.example.com or 192.168.1.20:9999",
         "This Stash is too old for VideoFrameVR. Update it to 0.31 or newer.",
         "This Stash needs a sign-in.",
         "Stash refused the API key. Sign in again to get the current one.",
@@ -920,6 +934,8 @@ const Strings kEnglish = {
         "Verify certificate",
         "Untrusted certificate",
         "Stash's certificate isn't trusted. Choose whether to connect anyway.",
+        "%s answers at this address, so that's what was set up.",
+        " or ",
     },
     {
         "Put on your headset",
@@ -946,7 +962,7 @@ const Strings kEnglish = {
          "Works with Stash off", "What it knows is kept on this headset"},
         "What it knows is kept on this computer",
         "For scenes you download",
-        "Don't use Stash? You're all set with your folders. It's free at stashapp.cc.",
+        "Don't use Stash? You're all set with your folders.",
         "Don't use Stash? Add folders any time in Settings.",
         "Not now",
         "Connect Stash",
@@ -1169,7 +1185,51 @@ struct Language {
 const Language kLanguages[] = {{"en", &kEnglish}, {"de", &kGerman}, {"es", &kSpanish}, {"pt_BR", &kBrazilianPortuguese}, {"fr", &kFrench}, {"zh_CN", &kSimplifiedChinese}, {"ja", &kJapanese}};
 // Stash's workers read it for their error messages.
 std::atomic<const Strings*> current{&kEnglish};
+// The table `current` is, or is made from.
+std::atomic<const Strings*> language{&kEnglish};
 int choice = 0;
+
+// The tables name the server "Stash"; `language` with `name` in its place
+// is made once and kept for good, as strings handed out stay in use.
+constexpr std::string_view kServerName = "Stash";
+std::string serverName(kServerName);
+
+static_assert(std::is_standard_layout<Strings>::value &&
+                  std::has_unique_object_representations<Strings>::value &&
+                  alignof(Strings) == alignof(const char*) &&
+                  sizeof(Strings) % sizeof(const char*) == 0,
+              "Strings holds only const char*: setServerName() reads it as an array of them");
+constexpr size_t kStringCount = sizeof(Strings) / sizeof(const char*);
+
+// From any thread: a server's worker asks for its own kind's (stringsNamed()).
+const Strings* named(const Strings* table, const std::string& name) {
+  if (name == kServerName) return table;
+  static std::mutex mutex;
+  std::lock_guard<std::mutex> lock(mutex);
+  struct Made {
+    Strings text;
+    std::deque<std::string> changed;  // the strings that name the server
+  };
+  // Never taken down: a worker may read a table as the app quits.
+  static auto& made = *new std::map<std::pair<const Strings*, std::string>, std::unique_ptr<Made>>;
+  std::unique_ptr<Made>& entry = made[{table, name}];
+  if (entry) return &entry->text;
+  entry = std::make_unique<Made>();
+  entry->text = *table;
+  const char* from[kStringCount];
+  std::memcpy(from, table, sizeof(from));
+  const char* to[kStringCount];
+  for (size_t i = 0; i < kStringCount; ++i) {
+    to[i] = from[i];
+    if (!from[i] || !std::strstr(from[i], kServerName.data())) continue;
+    std::string text = from[i];
+    for (size_t at = 0; (at = text.find(kServerName, at)) != std::string::npos; at += name.size())
+      text.replace(at, kServerName.size(), name);
+    to[i] = entry->changed.emplace_back(std::move(text)).c_str();
+  }
+  std::memcpy(&entry->text, to, sizeof(to));
+  return &entry->text;
+}
 
 int findLanguage(const std::string& code) {
   for (size_t i = 0; i < std::size(kLanguages); ++i)
@@ -1214,11 +1274,19 @@ std::string languageName(int i) {
 }
 void setLanguage(const std::string& code) {
   choice = findLanguage(code);
-  current = kLanguages[(choice ? choice : automaticLanguage()) - 1].text;
+  language = kLanguages[(choice ? choice : automaticLanguage()) - 1].text;
+  current = named(language, serverName);
 }
+void setServerName(const std::string& name) {
+  serverName = name.empty() ? std::string(kServerName) : name;
+  current = named(language, serverName);
+}
+const std::string& serverNameShown() { return serverName; }
+const Strings& stashOwnStrings() { return *language.load(); }
+const Strings& stringsNamed(const char* name) { return *named(language, name); }
 const char* shownLanguageCode() {
   for (const Language& l : kLanguages)
-    if (l.text == current.load()) return l.code;
+    if (l.text == language) return l.code;
   return "en";
 }
 

@@ -17,19 +17,24 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// The layout this build reads and writes (PRAGMA user_version). A file with
-// another is made anew at the next sync, and meanwhile counts as no copy.
-constexpr int kVersion = 1;
+// The layout this build writes (PRAGMA user_version). A file with another
+// is made anew at the next sync, and meanwhile counts as no copy; but for
+// kVersionBefore's, which is read as it is: the same without files.id and
+// scenes.vr.
+constexpr int kVersion = 2;
+constexpr int kVersionBefore = 1;
+bool readable(int version) { return version == kVersion || version == kVersionBefore; }
 
 // Lists (URLs, aliases) are kept one per line.
 constexpr const char* kSchema = R"(
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
 CREATE TABLE scenes (
   id INTEGER PRIMARY KEY, title TEXT, code TEXT, details TEXT, director TEXT, date TEXT,
-  created_at INTEGER, studio_id INTEGER, urls TEXT, cover TEXT);
+  created_at INTEGER, studio_id INTEGER, urls TEXT, cover TEXT, vr INTEGER);
 CREATE TABLE files (
   scene_id INTEGER NOT NULL, position INTEGER NOT NULL, path TEXT NOT NULL, size INTEGER,
   mod_time INTEGER, width INTEGER, height INTEGER, duration REAL, fps REAL, codec TEXT, oshash TEXT,
+  id INTEGER,
   PRIMARY KEY (scene_id, position)) WITHOUT ROWID;
 CREATE TABLE scene_performers (
   scene_id INTEGER NOT NULL, performer_id INTEGER NOT NULL,
@@ -128,27 +133,33 @@ int userVersion(sqlite3* db) {
 
 }  // namespace
 
-std::string StashStore::path() { return (dataDir() / "stash.db").string(); }
+std::string StashStore::path(const MediaServer& kind) {
+  return (dataDir() / (std::string(kind.id()) + ".db")).string();
+}
+
+StashStore::StashStore(const MediaServer& kind) : path_(path(kind)) {}
 
 bool StashStore::load(StashData& data) {
   error_.clear();
   std::error_code ec;
-  if (!fs::exists(path(), ec)) {
+  if (!fs::exists(path_, ec)) {
     error_ = "no local copy yet";
     return false;
   }
   sqlite3* db = nullptr;
-  if (sqlite3_open_v2(path().c_str(), &db, SQLITE_OPEN_READWRITE, nullptr) != SQLITE_OK) {
+  if (sqlite3_open_v2(path_.c_str(), &db, SQLITE_OPEN_READWRITE, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
-    error_ = "stash.db could not be opened";
+    error_ = "The local copy could not be opened";
     return false;
   }
   sqlite3_busy_timeout(db, 1000);
-  if (userVersion(db) != kVersion) {
+  const int version = userVersion(db);
+  if (!readable(version)) {
     sqlite3_close(db);
-    error_ = "stash.db is from another version";
+    error_ = "The local copy is from another version";
     return false;
   }
+  const bool before = version == kVersionBefore;
   data = StashData{};
   bool ok = exec(db, "BEGIN");  // one consistent read
   {
@@ -157,6 +168,7 @@ bool StashStore::load(StashData& data) {
     while (ok && meta.next()) {
       const std::string key = meta.text(0);
       if (key == "server") data.server = meta.text(1);
+      else if (key == "kind") data.kind = meta.text(1);
       else if (key == "version") data.version = meta.text(1);
       else if (key == "vr_tag") data.vrTag = meta.text(1);
       else if (key == "synced_at") data.syncedAt = std::stoll("0" + meta.text(1));
@@ -168,9 +180,10 @@ bool StashStore::load(StashData& data) {
     }
 
     std::unordered_map<int64_t, size_t> at;  // scene id -> index
-    Statement scenes(db,
-                     "SELECT id, title, code, details, director, date, created_at, studio_id, urls, "
-                     "cover FROM scenes ORDER BY id");
+    Statement scenes(db, before ? "SELECT id, title, code, details, director, date, created_at, "
+                                  "studio_id, urls, cover, 0 FROM scenes ORDER BY id"
+                                : "SELECT id, title, code, details, director, date, created_at, "
+                                  "studio_id, urls, cover, vr FROM scenes ORDER BY id");
     ok = ok && scenes.ok();
     while (ok && scenes.next()) {
       StashData::Scene s;
@@ -184,6 +197,7 @@ bool StashStore::load(StashData& data) {
       s.studio = scenes.integer(7);
       s.urls = splitLines(scenes.text(8));
       s.cover = scenes.text(9);
+      s.vr = scenes.integer(10) != 0;
       at[s.id] = data.scenes.size();
       data.scenes.push_back(std::move(s));
     }
@@ -191,9 +205,10 @@ bool StashStore::load(StashData& data) {
       const auto it = at.find(id);
       return it != at.end() ? &data.scenes[it->second] : nullptr;
     };
-    Statement files(db,
-                    "SELECT scene_id, path, size, mod_time, width, height, duration, fps, codec, "
-                    "oshash FROM files ORDER BY scene_id, position");
+    Statement files(db, before ? "SELECT scene_id, path, size, mod_time, width, height, duration, "
+                                 "fps, codec, oshash, 0 FROM files ORDER BY scene_id, position"
+                               : "SELECT scene_id, path, size, mod_time, width, height, duration, "
+                                 "fps, codec, oshash, id FROM files ORDER BY scene_id, position");
     ok = ok && files.ok();
     while (ok && files.next()) {
       StashData::Scene* s = scene(files.integer(0));
@@ -208,6 +223,7 @@ bool StashStore::load(StashData& data) {
       f.fps = files.real(7);
       f.codec = files.text(8);
       f.oshash = files.text(9);
+      f.id = files.integer(10);
       s->files.push_back(std::move(f));
     }
     Statement performers(db, "SELECT scene_id, performer_id FROM scene_performers");
@@ -268,7 +284,7 @@ bool StashStore::load(StashData& data) {
   exec(db, "COMMIT");
   sqlite3_close(db);
   if (!ok) {
-    error_ = "stash.db could not be read";
+    error_ = "The local copy could not be read";
     data = StashData{};
   }
   return ok;
@@ -278,7 +294,7 @@ bool StashStore::save(const StashData& data) {
   error_.clear();
   std::error_code ec;
   fs::create_directories(dataDir(), ec);
-  const std::string file = path();
+  const std::string& file = path_;
   sqlite3* db = nullptr;
   auto open = [&] {
     sqlite3_close(db);
@@ -291,7 +307,7 @@ bool StashStore::save(const StashData& data) {
     sqlite3_close(db);
     return false;
   };
-  if (!open()) return fail("stash.db could not be opened");
+  if (!open()) return fail("The local copy could not be opened");
   sqlite3_busy_timeout(db, 1000);
   const int version = userVersion(db);
   if (version != kVersion) {
@@ -305,12 +321,12 @@ bool StashStore::save(const StashData& data) {
       sqlite3_close(db);
       db = nullptr;
       for (const char* tail : {"", "-wal", "-shm", "-journal"}) fs::remove(file + tail, ec);
-      if (!open()) return fail("stash.db could not be created");
+      if (!open()) return fail("The local copy could not be created");
     }
     const std::string bump = "PRAGMA user_version = " + std::to_string(kVersion);
     if (!exec(db, "PRAGMA journal_mode = WAL") || !exec(db, "BEGIN") || !exec(db, kSchema) ||
         !exec(db, bump.c_str()) || !exec(db, "COMMIT"))
-      return fail("stash.db could not be created");
+      return fail("The local copy could not be created");
   }
   exec(db, "PRAGMA synchronous = NORMAL");
 
@@ -321,11 +337,12 @@ bool StashStore::save(const StashData& data) {
     Statement meta(db, "INSERT INTO meta (key, value) VALUES (?1, ?2)");
     Statement scene(db,
                     "INSERT INTO scenes (id, title, code, details, director, date, created_at, "
-                    "studio_id, urls, cover) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)");
+                    "studio_id, urls, cover, vr) "
+                    "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)");
     Statement file(db,
                    "INSERT INTO files (scene_id, position, path, size, mod_time, width, height, "
-                   "duration, fps, codec, oshash) "
-                   "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)");
+                   "duration, fps, codec, oshash, id) "
+                   "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)");
     Statement performer(db, "INSERT OR IGNORE INTO scene_performers VALUES (?1, ?2)");
     Statement tag(db, "INSERT OR IGNORE INTO scene_tags VALUES (?1, ?2)");
     Statement group(db, "INSERT OR IGNORE INTO scene_groups VALUES (?1, ?2, ?3)");
@@ -342,26 +359,34 @@ bool StashStore::save(const StashData& data) {
     ok = ok && meta.ok() && scene.ok() && file.ok() && performer.ok() && tag.ok() && group.ok() &&
          p.ok() && studio.ok() && t.ok() && g.ok();
 
-    ok = ok && meta.bind(1, std::string("server")).bind(2, data.server).run() &&
-         meta.bind(1, std::string("version")).bind(2, data.version).run() &&
-         meta.bind(1, std::string("vr_tag")).bind(2, data.vrTag).run() &&
-         meta.bind(1, std::string("synced_at")).bind(2, std::to_string(data.syncedAt)).run();
+    // What the server has none of (a VR tag, folders) is left out: a value
+    // can't be empty.
+    auto keep = [&](const char* key, const std::string& value) {
+      if (ok && !value.empty()) ok = meta.bind(1, std::string(key)).bind(2, value).run();
+    };
+    keep("server", data.server);
+    keep("kind", data.kind);
+    keep("version", data.version);
+    keep("vr_tag", data.vrTag);
+    keep("synced_at", std::to_string(data.syncedAt));
     {
       std::string folders;
       for (const std::string& f : data.libraryFolders) folders += f + "\n";
-      ok = ok && meta.bind(1, std::string("library_folders")).bind(2, folders).run();
+      keep("library_folders", folders);
     }
     for (const StashData::Scene& s : data.scenes) {
       if (!ok) break;
       ok = scene.bind(1, s.id).bind(2, s.title).bind(3, s.code).bind(4, s.details)
                .bind(5, s.director).bind(6, s.date).bind(7, s.createdAt).bind(8, s.studio)
-               .bind(9, joinLines(s.urls)).bind(10, s.cover).run();
+               .bind(9, joinLines(s.urls)).bind(10, s.cover)
+               .bind(11, static_cast<int64_t>(s.vr)).run();
       for (size_t i = 0; ok && i < s.files.size(); ++i) {
         const StashData::File& f = s.files[i];
         ok = file.bind(1, s.id).bind(2, static_cast<int64_t>(i)).bind(3, f.path)
                  .bind(4, static_cast<int64_t>(f.size)).bind(5, f.modified)
                  .bind(6, static_cast<int64_t>(f.width)).bind(7, static_cast<int64_t>(f.height))
-                 .bind(8, f.duration).bind(9, f.fps).bind(10, f.codec).bind(11, f.oshash).run();
+                 .bind(8, f.duration).bind(9, f.fps).bind(10, f.codec).bind(11, f.oshash)
+                 .bind(12, f.id).run();
       }
       for (const int64_t id : s.performers) ok = ok && performer.bind(1, s.id).bind(2, id).run();
       for (const int64_t id : s.tags) ok = ok && tag.bind(1, s.id).bind(2, id).run();
@@ -385,7 +410,7 @@ bool StashStore::save(const StashData& data) {
   }
   ok = ok && exec(db, "COMMIT");
   if (!ok) {
-    const std::string why = std::string("stash.db could not be written (") + sqlite3_errmsg(db) + ")";
+    const std::string why = std::string("The local copy could not be written (") + sqlite3_errmsg(db) + ")";
     if (!sqlite3_get_autocommit(db)) exec(db, "ROLLBACK");
     error_ = why;
     sqlite3_close(db);
@@ -395,7 +420,7 @@ bool StashStore::save(const StashData& data) {
   return true;
 }
 
-bool StashStore::scenes(const std::string& server,
+bool StashStore::scenes(const std::string& server, const std::string& kind,
                         std::unordered_map<std::string, int64_t>& byOshash,
                         std::unordered_map<int64_t, std::string>& names) {
   error_.clear();
@@ -403,17 +428,21 @@ bool StashStore::scenes(const std::string& server,
   names.clear();
   std::error_code ec;
   sqlite3* db = nullptr;
-  if (!fs::exists(path(), ec) ||
-      sqlite3_open_v2(path().c_str(), &db, SQLITE_OPEN_READWRITE, nullptr) != SQLITE_OK) {
+  if (!fs::exists(path_, ec) ||
+      sqlite3_open_v2(path_.c_str(), &db, SQLITE_OPEN_READWRITE, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
     error_ = "no copy of Stash's scenes yet";
     return false;
   }
   sqlite3_busy_timeout(db, 1000);
-  bool ok = userVersion(db) == kVersion && exec(db, "BEGIN");
+  bool ok = readable(userVersion(db)) && exec(db, "BEGIN");
   if (ok) {
     Statement meta(db, "SELECT value FROM meta WHERE key = 'server'");
     ok = meta.ok() && meta.next() && meta.text(0) == server;
+    // Another kind's at the same address has other scenes under its ids. A
+    // copy from before kinds were kept is the first kind's (StashData::kind).
+    Statement of(db, "SELECT value FROM meta WHERE key = 'kind'");
+    ok = ok && of.ok() && (of.next() ? of.text(0) : StashData().kind) == kind;
     if (!ok) error_ = "the copy of Stash's scenes is another server's";
   } else {
     error_ = "no copy of Stash's scenes yet";
@@ -429,7 +458,7 @@ bool StashStore::scenes(const std::string& server,
     }
     while (ok && titles.next())
       if (const std::string title = titles.text(1); !title.empty()) names[titles.integer(0)] = title;
-    if (!ok) error_ = "stash.db could not be read";
+    if (!ok) error_ = "The local copy could not be read";
   }
   exec(db, "COMMIT");
   sqlite3_close(db);
@@ -457,7 +486,7 @@ int64_t unixNow() { return static_cast<int64_t>(std::time(nullptr)); }
 
 }  // namespace
 
-StashOutbox::StashOutbox(const std::string& server) {
+StashOutbox::StashOutbox(const std::string& server, bool original) : original_(original) {
   uint64_t hash = 14695981039346656037ull;  // FNV-1a
   for (const unsigned char c : server) hash = (hash ^ c) * 1099511628211ull;
   char name[48];
@@ -470,7 +499,7 @@ StashOutbox::~StashOutbox() { sqlite3_close(db_); }
 bool StashOutbox::adopt() {
   std::error_code ec;
   const std::string single = (dataDir() / "stash_outbox.db").string();
-  if (fs::exists(path_, ec) || !fs::exists(single, ec)) return true;
+  if (!original_ || fs::exists(path_, ec) || !fs::exists(single, ec)) return true;
   // Its write-ahead log folded in first, so it moves as one file; not while
   // another connection has it open (a stopping write-back's).
   sqlite3* db = nullptr;

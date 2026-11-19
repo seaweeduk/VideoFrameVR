@@ -276,14 +276,14 @@ Strings japaneseStrings(const Strings& english) {
   s.screenResetHint = "初期値：高さ300 cm、距離300 cm、湾曲度1";
 
   s.stash.group = "Stash";
-  s.stash.use = "Stashを使う";
   s.stash.offHint = "出演者・タグ・スタジオでStashを検索。オフでは送信も保存もしません。";
   s.stash.setupHint = "サーバーを設定すると同期を開始。";
   s.stash.server = "サーバー";
   s.stash.apiKey = "APIキー";
   s.stash.apiKeyNone = "なし";
   s.stash.apiKeySet = "設定済み";
-  s.stash.folders = "フォルダ";
+  s.stash.folders = "フォルダから再生";
+  s.stash.foldersHint = "任意です。この端末にもある動画はシークが速くなります。";
   s.stash.covers = "Stashのカバーをサムネイルに使う";
   s.stash.titles = "ファイル名の代わりに\u200bStashの題名を表示";  // U+200B: two lines part after に
   s.stash.malePerformers = "男性出演者を表示";
@@ -302,9 +302,6 @@ Strings japaneseStrings(const Strings& english) {
   s.stash.editTitle = "Stashサーバー";
   s.stash.fieldNames[0] = "サーバー";
   s.stash.fieldNames[1] = "APIキー（必要な場合のみ）";
-  s.stash.fieldNames[2] = "Stash側フォルダ";
-  s.stash.fieldNames[3] = "このPCの対応フォルダ";
-  s.stash.editHint = "任意：StashのフォルダをこのPCの場所に対応付けると、そこからファイルを再生します。保存時に再同期。";
   s.stash.save = "保存して同期";
   s.stash.navHome = "ホーム";
   s.stash.navScenes = "シーン";
@@ -544,10 +541,8 @@ Strings japaneseStrings(const Strings& english) {
   s.stash.noPins = "シーン画面で固定したリストがここに表示されます。";
   s.stash.searchStash = "Stashを検索";
   s.stash.tipUse = "Stashサーバーのシーンを閲覧。";
-  s.stash.tipFields[0] = "Stashのアドレス（例：stash.example.com や 192.168.1.20:9999）。";
+  s.stash.tipFields[0] = "Stashのアドレス（例：server.example.com や 192.168.1.20:9999）。";
   s.stash.tipFields[1] = "Stashサーバーが要求する場合のみAPIキーを入力。";
-  s.stash.tipFields[2] = "Stash側のフォルダパスの先頭部分。";
-  s.stash.tipFields[3] = "このPCの対応するフォルダ。";
   s.stash.tipSync = "Stashからローカルカタログを更新。";
   s.stash.tipPin = "この絞り込み条件を固定リストとして保存。";
   s.stash.tipShuffle = "対象シーンをランダムな順番で再生。";
@@ -655,6 +650,10 @@ Strings japaneseStrings(const Strings& english) {
   s.stashWriteBack.tipToggle = "新しい評価、再生履歴、タグの変更をStashに送信し、ここで削除したファイルをStashでも削除します。先にStashをバックアップ。";
   s.stashWriteBack.tipSendAll = "既存の評価と再生履歴を確認してからStashに送信。";
   s.stashWriteBack.tipDryRun = "実際には送信せず、送信予定の内容を確認。";
+  s.stashWriteBack.toggleBasic = "評価と再生履歴をStashに送信";
+  s.stashWriteBack.hintBasic = "再生したシーンは視聴済みになります。先にStashをバックアップ。";
+  s.stashWriteBack.rulesBasic = "Stashの既存評価は変更しません。再生したシーンはStashで視聴済みになります。Stashは再生日時を保存しません。ローカルライブラリは変更しません。";
+  s.stashWriteBack.tipToggleBasic = "新しい評価をStashに送信し、再生したシーンをStashで視聴済みにします。先にStashをバックアップ。";
 
   s.focus.allTitle = "フォーカス（全動画）";
   s.focus.videoTitle = "フォーカス（この動画）";
@@ -848,7 +847,8 @@ Strings japaneseStrings(const Strings& english) {
   s.network.forgetOffline = "%s に接続できないため、今はキーを削除できません。";
   s.network.forgetAnyway = "それでも削除";
   s.stashFolders.choose = "選択…";
-  s.stashFolders.tipChoose = "ファイル一覧でStashの動画があるフォルダを探します。";
+  s.stashFolders.change = "変更…";
+  s.stashFolders.tipChoose = "ファイル一覧でStashの動画があるフォルダを探します。共有ドライブの場合は、先に「ネットワーク」でそのコンピューターを追加してください。";
   s.stashFolders.looking = "Stashの動画を検索中…";
   s.stashFolders.foundIn = "Stashの動画はこのデバイスの %s にあります。";
   s.stashFolders.alsoIn = "Stashの動画はこのデバイスの %s にもあります。「使用」でそこから再生します。";
@@ -859,11 +859,11 @@ Strings japaneseStrings(const Strings& english) {
   s.stashFolders.notInFolder = "このフォルダにStashの動画はありません：";
   s.stashFolders.useFolder = "このフォルダを使用";
   s.stashFolders.checking = "確認中…";
-  s.stashFolders.folderHere = "ローカル：%s";
+  s.stashFolders.fromServer = "Stashから再生";
+  s.stashFolders.playFromServer = "Stashから再生する";
+  s.stashFolders.notIn = "%s に動画が見つかりません。";
   s.stashFolders.folderNotHere = "このデバイスに見つかりません。フォルダを選択してください。";
   s.stashFolders.folderRest = "残りのシーンはStashから再生します。";
-  s.stashFolders.folderStreamed = "このデバイスに見つかりません。シーンはStashから再生します。";
-  s.stashFolders.streamed = "ここにないシーンはStashから再生します。";
   s.stashFolders.lookingFolders = "Stashの動画を検索中…（フォルダ %d / %d）";
   s.stashFolders.otherFiles = "Stashのライブラリフォルダ外の動画";
   s.viewpoint.label = "視点";
@@ -1012,7 +1012,7 @@ Strings japaneseStrings(const Strings& english) {
   s.stashSetup.saving = "このデバイスにコピーを保存中…";
   s.stashSetup.building = "このデバイス上のStash動画を検索中…";
   s.stashSetup.firstSync = "この初回同期はバックグラウンドで実行されます。このページを離れたり動画を再生したりしても構いません。完了するとStashの各ページが表示されます。";
-  s.stashSetup.serverHint = "例：stash.example.com や 192.168.1.20:9999";
+  s.stashSetup.serverHint = "例：server.example.com や 192.168.1.20:9999";
   s.stashSetup.tooOld = "このStashは古いためVideoFrameVRに対応していません。0.31以降に更新してください。";
   s.stashSetup.needsSignIn = "このStashにはサインインが必要です。";
   s.stashSetup.keyRefused = "APIキーが拒否されました。再度サインインして現在のキーを取得してください。";
@@ -1038,6 +1038,8 @@ Strings japaneseStrings(const Strings& english) {
   s.stashSetup.verify = "証明書を検証";
   s.stashSetup.untrustedStatus = "未信頼の証明書";
   s.stashSetup.untrustedTip = "Stashの証明書が信頼されていません。それでも接続するかを選べます。";
+  s.stashSetup.foundOther = "このアドレスで応答したのは %s のため、そちらを設定しました。";
+  s.stashSetup.orKind = "または";
   s.setup.putOnHeadset = "ヘッドセットを装着してください";
   s.setup.startsWhenWorn = "装着するとすぐにセットアップが始まります。";
   s.setup.setUpLater = "あとで設定";
@@ -1067,7 +1069,7 @@ Strings japaneseStrings(const Strings& english) {
   s.setup.stashFeatures[11] = "カタログはこのヘッドセットに保存";
   s.setup.keptOnComputer = "カタログはこのPCに保存";
   s.setup.forDownloads = "ダウンロードしたシーン用";
-  s.setup.stashFree = "Stashを使っていませんか？追加したフォルダですぐに始められます。Stashは stashapp.cc で無料公開されています。";
+  s.setup.stashFree = "Stashを使っていませんか？追加したフォルダですぐに始められます。";
   s.setup.stashFreeNoFolders = "Stashを使っていませんか？フォルダはいつでも「設定」から追加できます。";
   s.setup.notNow = "今はしない";
   s.setup.connectStash = "Stashを接続";

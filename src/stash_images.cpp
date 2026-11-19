@@ -1,6 +1,6 @@
 #include "stash_images.h"
 
-#include "stash_http.h"
+#include "media_server.h"
 #include "thumbnailer.h"  // scaleInto
 
 #include <cairo.h>
@@ -607,6 +607,7 @@ struct StashImages::State {
   };
 
   fs::path root;
+  const MediaServer* kind = nullptr;
   StashAddress address;
   std::string apiKey;
   std::vector<std::thread> threads;
@@ -695,10 +696,11 @@ StashImages::DiskUsage StashImages::diskUsage(const fs::path& root) {
   return usage;
 }
 
-StashImages::StashImages(fs::path root, const std::string& url, std::string apiKey,
-                         bool unverified)
+StashImages::StashImages(fs::path root, ServerKind kind, const std::string& url,
+                         std::string apiKey, bool unverified)
     : state_(std::make_unique<State>()) {
   state_->root = std::move(root);
+  state_->kind = &mediaServer(kind);
   state_->address = StashAddress(url, unverified);
   state_->apiKey = std::move(apiKey);
 }
@@ -1223,8 +1225,7 @@ void StashImages::State::queueDownload(const Job& job) {
 
 void StashImages::State::downloadLoop() {
   CURL* curl = curl_easy_init();
-  curl_slist* headers = nullptr;
-  if (!apiKey.empty()) headers = curl_slist_append(headers, ("ApiKey: " + apiKey).c_str());
+  curl_slist* headers = kind->authorized(nullptr, apiKey);
   while (true) {
     Download d;
     {
@@ -1262,9 +1263,9 @@ void StashImages::State::downloadLoop() {
       curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
       curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, stopWhenQuitting);
       curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &quit);
-      // On the server typed, whatever host Stash named.
-      const StashReply reply =
-          stashPerform(curl, address, address.pathOn(d.job.url), [&body] { body.clear(); });
+      // On the server typed, whatever host the image's URL names.
+      const StashReply reply = stashPerform(curl, address, kind->imagePath(address, d.job.url),
+                                            [&body] { body.clear(); });
       code = reply.code;
       status = reply.status;
     }
