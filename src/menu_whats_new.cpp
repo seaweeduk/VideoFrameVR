@@ -202,9 +202,11 @@ void Menu::drawWhatsNew(cairo_t* cr) {
   cairo_save(cr);
   cairo_rectangle(cr, x, top, w, box.notesH);
   cairo_clip(cr);
+  double clipX0, clipY0, clipX1, clipY1;
+  cairo_clip_extents(cr, &clipX0, &clipY0, &clipX1, &clipY1);
   for (const Piece& p : d.pieces) {
     const double y = top + p.y - d.scroll;
-    if (y + p.h < top - 4 || y > top + box.notesH + 4) continue;
+    if (y + p.h < clipY0 - 4 || y > clipY1 + 4) continue;
     switch (p.kind) {
       case Piece::ReleaseRule:
       case Piece::SectionRule:
@@ -262,16 +264,50 @@ void Menu::drawWhatsNew(cairo_t* cr) {
   cairo_fill(cr);
 }
 
-// By whole texture pixels. The notes and their scroll bar are drawn again,
-// in whole rows of the browser (a dialog alone is drawn on cleared rows).
+// By whole texture pixels, keeping the rest for the next frame as lists do.
 void Menu::scrollWhatsNew(double pixels) {
   WhatsNewDialog& d = whatsNew_;
-  const double position = std::clamp(onPixel(d.scroll + pixels), 0.0, d.max);
+  const double wanted = pixels + d.remainder;
+  const double step = onPixel(wanted);
+  const double position = std::clamp(d.scroll + step, 0.0, d.max);
+  d.remainder = position == d.scroll + step ? wanted - step : 0;
   if (position == d.scroll) return;
   d.scroll = position;
   hoverQuiet_ = true;
+  listMoved_ = true;
+}
+
+// Like shiftList(), but the bottom fade stays fixed. Never copy faded text
+// into the clear area: move only the unfaded part and repaint the fade and
+// the newly exposed edge. The title, footer and page behind it do not move.
+bool Menu::shiftWhatsNew() {
+  WhatsNewDialog& d = whatsNew_;
   const WhatsNewBox box = whatsNewBox();
-  browserChanged(box.y + kNotesY - 4, box.y + kNotesY + box.notesH + 4);
+  const int x0 = static_cast<int>(box.x + kPad), x1 = x0 + static_cast<int>(d.width);
+  const int y0 = static_cast<int>(box.y + kNotesY);
+  const int y1 = y0 + static_cast<int>(box.notesH);
+  const int clearEnd = y1 - static_cast<int>(kFadeH);
+  const double up = d.scroll - d.drawn;
+  const double pixels = up * menu_geometry::kRasterScale;
+  if (d.drawn >= 0 && std::abs(pixels - std::round(pixels)) < 1e-3 &&
+      std::abs(up) < clearEnd - y0 - 1) {
+    canvases_[kBrowser].shiftUp(x0, y0, x1, clearEnd, up);
+    if (up > 0)
+      drawBrowserPart(static_cast<int>(std::floor(clearEnd - up)), y1, x0, x1);
+    else if (up < 0) {
+      drawBrowserPart(y0, static_cast<int>(std::ceil(y0 - up)), x0, x1);
+      drawBrowserPart(clearEnd, y1, x0, x1);
+    }
+  } else {
+    // A large jump or an unknown texture position still updates immediately,
+    // without a complete browser replacement spread over several frames.
+    drawBrowserPart(y0, y1, x0, x1);
+  }
+  // The gutter between the notes and the bar is stationary too.
+  const int barX = static_cast<int>(box.x + kW - kPad - kBar);
+  drawBrowserPart(y0 - 1, y1 + 1, barX - 1, barX + static_cast<int>(kBar) + 1);
+  d.drawn = d.scroll;
+  return true;
 }
 
 bool Menu::overWhatsNewNotes() const {

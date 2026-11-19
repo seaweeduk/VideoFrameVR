@@ -1535,8 +1535,14 @@ void Menu::redraw() {
   const bool listMoved = listMoved_, sideMoved = sideMoved_;
   if (movedOnly) first = kBrowserHeight, end = 0;
   if (listMoved_) {
-    first = std::min(first, static_cast<int>(listTop_) - 4);
-    end = std::max(end, static_cast<int>(listBottom_) + 4);
+    if (dialog_ == Dialog::WhatsNew) {
+      const WhatsNewBox box = whatsNewBox();
+      first = std::min(first, static_cast<int>(box.y) - 4);
+      end = std::max(end, static_cast<int>(box.y + box.h) + 4);
+    } else {
+      first = std::min(first, static_cast<int>(listTop_) - 4);
+      end = std::max(end, static_cast<int>(listBottom_) + 4);
+    }
   }
   if (sideMoved_ && !movedOnly) {
     first = std::min(first, static_cast<int>(side_.y) - 4);
@@ -1572,13 +1578,16 @@ void Menu::redraw() {
     return;
   }
   if (!browser) return;
+  const auto shiftContent = [this] {
+    return dialog_ == Dialog::WhatsNew ? shiftWhatsNew() : shiftList();
+  };
   if (movedOnly) {
     if (sideMoved && !shiftSide()) {  // its columns alone
       drawBrowserPart(static_cast<int>(side_.y) - 4, static_cast<int>(side_.y + side_.h) + 4,
                       static_cast<int>(side_.x) - 4, static_cast<int>(side_.x + side_.w) + 4);
       drawnSide_ = side_.position;
     }
-    if (!listMoved || shiftList()) return;
+    if (!listMoved || shiftContent()) return;
   }
   int area = 0;
   for (const Damage& d : damage) area += (d.x1 - d.x0) * (d.y1 - d.y0);
@@ -1587,15 +1596,18 @@ void Menu::redraw() {
   // where they were and where it took them.
   if (!all && !movedOnly && (listMoved || sideMoved) &&
       area <= kBrowserWidth * kBrowserHeight / 4) {
-    const double listUp =
-        drawnScroll_ < 0 ? 0 : (scrollOffset_ + scrollFraction_ - drawnScroll_) * rowHeight_;
+    const double listUp = dialog_ == Dialog::WhatsNew
+                              ? whatsNew_.scroll - whatsNew_.drawn
+                              : drawnScroll_ < 0
+                                    ? 0
+                                    : (scrollOffset_ + scrollFraction_ - drawnScroll_) * rowHeight_;
     const double sideUp = drawnSide_ < 0 ? 0 : side_.position - drawnSide_;
     if (sideMoved && !shiftSide()) {
       drawBrowserPart(static_cast<int>(side_.y) - 4, static_cast<int>(side_.y + side_.h) + 4,
                       static_cast<int>(side_.x) - 4, static_cast<int>(side_.x + side_.w) + 4);
       drawnSide_ = side_.position;
     }
-    if (!listMoved || shiftList()) {
+    if (!listMoved || shiftContent()) {
       const int reach = static_cast<int>(std::ceil(std::max(std::abs(listUp), std::abs(sideUp))));
       for (const Damage& d : damage)
         drawBrowserPart(std::max(0, d.y0 - reach), std::min(kBrowserHeight, d.y1 + reach), d.x0,
@@ -1628,6 +1640,7 @@ void Menu::redraw() {
   }
   if (first <= listTop_ - 2 && end >= listBottom_) drawnScroll_ = scrollOffset_ + scrollFraction_;
   if (side_.w > 0 && first <= side_.y - 2 && end >= side_.y + side_.h) drawnSide_ = side_.position;
+  if (dialog_ == Dialog::WhatsNew && fullWidth) whatsNew_.drawn = whatsNew_.scroll;
 }
 
 // Draws the browser's rows [y0, y1) and columns [x0, x1) and uploads them.
@@ -1762,6 +1775,7 @@ const Texture* Menu::texture(PanelId panel) {
         browserColumn_ = pageAlone() ? kPageX : 0;
         drawnScroll_ = browserOffset_ + browserFraction_;
         drawnSide_ = browserSide_;
+        if (dialog_ == Dialog::WhatsNew) whatsNew_.drawn = browserWhatsNew_;
       }
     } else if (browserRow_ < 0 && !dirty_) {
       updatePreview();  // a new layout may have moved another tile under the pointer
