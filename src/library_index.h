@@ -46,7 +46,11 @@ class LibraryIndex {
   // May block on the network: workers only. Also first-run setup's count,
   // which may `stop` it between entries (cut short: Offline).
   struct Listing {
-    std::vector<std::string> folders;
+    struct Directory {
+      std::string path;
+      remote::DirectoryStamp stamp;
+    };
+    std::vector<Directory> folders;
     std::vector<std::pair<std::string, File>> videos;
   };
   static remote::Status list(const std::string& dir, Listing& out,

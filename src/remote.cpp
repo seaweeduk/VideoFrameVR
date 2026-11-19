@@ -273,6 +273,22 @@ Status list(const std::string& folder, std::vector<Entry>& entries) {
   return c->call([&] { return c->backend().list(folder, entries); });
 }
 
+std::future<Listing> listAsync(const std::string& folder) {
+  auto promise = std::make_shared<std::promise<Listing>>();
+  auto future = promise->get_future();
+  if (!isRemote(folder)) {
+    promise->set_value({Status::Missing, {}});
+    return future;
+  }
+  auto c = connection(root(folder));
+  c->post([c, folder, promise] {
+    c->backend().listAsync(folder, [promise](Listing result) {
+      promise->set_value(std::move(result));
+    });
+  });
+  return future;
+}
+
 Status stat(const std::string& locator, Entry& entry) {
   if (!isRemote(locator)) return Status::Missing;
   auto c = connection(root(locator));

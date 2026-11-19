@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -61,16 +62,39 @@ enum class Status {
   KeyRefused,
 };
 
+// Directory identity and change times from a listing. Unknown/coarse metadata
+// must not authorize skipping a directory.
+struct DirectoryStamp {
+  int64_t modified = 0, modifiedNs = 0, changed = 0, changedNs = 0;
+  uint64_t id = 0;
+  bool usable() const {
+    return modified > 0 && changed > 0 && id != 0 && (modifiedNs != 0 || changedNs != 0);
+  }
+  bool operator==(const DirectoryStamp& b) const {
+    return modified == b.modified && modifiedNs == b.modifiedNs && changed == b.changed &&
+           changedNs == b.changedNs && id == b.id;
+  }
+};
+
 struct Entry {
   std::string name;
   bool folder = false;
   uint64_t size = 0;
   int64_t modified = 0;  // seconds since 1970
   bool link = false;     // SFTP: a link to it, as what it points to
+  DirectoryStamp stamp;  // SMB directories; unknown on other backends
+};
+struct Listing {
+  Status status = Status::Offline;
+  std::vector<Entry> entries;
 };
 // smb://host: its shares (as folders; hidden "$" shares left out).
 // Any other locator: that folder's entries.
 Status list(const std::string& folder, std::vector<Entry>& entries);
+// A background listing on the same connection. Its future never blocks when
+// destroyed; disconnects complete it with a failure, never a partial success.
+// Callers bound their outstanding requests and stop submitting during playback.
+std::future<Listing> listAsync(const std::string& folder);
 Status stat(const std::string& locator, Entry& entry);
 // Deletes one file for good (docs/alpha/delete-file.md), never a folder and
 // never what a link points to, if it is still `size` bytes dated

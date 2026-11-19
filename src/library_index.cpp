@@ -31,19 +31,34 @@ using File = LibraryIndex::File;
 
 namespace {
 
-// library_index.db's layout (PRAGMA user_version); a file with another is made anew.
-constexpr int kVersion = 1;
+// The index is a disposable path cache, separate from playback history.
+constexpr int kVersion = 2;
 constexpr const char* kSchema = R"(
 CREATE TABLE roots (path TEXT PRIMARY KEY, looked_at INTEGER NOT NULL);
-CREATE TABLE folders (path TEXT PRIMARY KEY);
+CREATE TABLE folders (path TEXT PRIMARY KEY, mtime INTEGER NOT NULL DEFAULT 0,
+                     mtime_ns INTEGER NOT NULL DEFAULT 0, ctime INTEGER NOT NULL DEFAULT 0,
+                     ctime_ns INTEGER NOT NULL DEFAULT 0, file_id INTEGER NOT NULL DEFAULT 0,
+                     checked_at INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE files (path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime INTEGER NOT NULL,
                     added_at INTEGER NOT NULL, found_at INTEGER NOT NULL);
 CREATE TABLE todo (path TEXT NOT NULL);
 CREATE TABLE meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+CREATE TABLE failed_roots (path TEXT PRIMARY KEY);
+)";
+constexpr const char* kUpgrade = R"(
+ALTER TABLE folders ADD COLUMN mtime INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE folders ADD COLUMN mtime_ns INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE folders ADD COLUMN ctime INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE folders ADD COLUMN ctime_ns INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE folders ADD COLUMN file_id INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE folders ADD COLUMN checked_at INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE failed_roots (path TEXT PRIMARY KEY);
 )";
 
 // During a look, what it found is saved and shown every so often.
 constexpr auto kHandOver = std::chrono::seconds(2);
+constexpr size_t kOutstanding = 32;
+constexpr int64_t kVerifyAfter = 24 * 60 * 60;
 
 int64_t now() { return static_cast<int64_t>(std::time(nullptr)); }
 
@@ -67,16 +82,29 @@ bool skipped(const std::string& name, bool folder) {
   return name.empty() || name == "." || name == ".." || (folder ? binOrLost(name) : name[0] == '.');
 }
 
+void readEntries(const std::string& dir, const std::vector<remote::Entry>& entries,
+                 LibraryIndex::Listing& out) {
+  for (const auto& e : entries) {
+    if (skipped(e.name, e.folder)) continue;
+    if (e.folder) {
+      if (!e.link) out.folders.push_back({dir + "/" + e.name, e.stamp});
+    } else if (isVideoFile(e.name)) {
+      out.videos.push_back({dir + "/" + e.name, {e.size, e.modified}});
+    }
+  }
+}
+
 // Stash's generated folder, wherever its settings put it: Stash makes
 // screenshots/ (scene previews), vtt/, markers/, transcodes/,
 // interactive_heatmaps/ and download_stage/ in it at every start. A folder
 // with screenshots/ and two more of them is taken for one.
-bool stashGenerated(const std::vector<std::string>& folders) {
+bool stashGenerated(const std::vector<LibraryIndex::Listing::Directory>& folders) {
   static const char* const kMore[] = {"vtt", "markers", "transcodes", "interactive_heatmaps",
                                       "download_stage"};
   bool screenshots = false;
   int more = 0;
-  for (const std::string& path : folders) {
+  for (const auto& folder : folders) {
+    const std::string& path = folder.path;
     const size_t slash = path.rfind('/');
     const char* name = path.c_str() + (slash == std::string::npos ? 0 : slash + 1);
     if (std::strcmp(name, "screenshots") == 0)
@@ -97,14 +125,7 @@ remote::Status LibraryIndex::list(const std::string& dir, Listing& out,
   if (remote::isRemote(dir)) {
     std::vector<remote::Entry> entries;
     const remote::Status status = remote::list(dir, entries);
-    for (const remote::Entry& e : entries) {
-      if (skipped(e.name, e.folder)) continue;
-      if (e.folder) {
-        if (!e.link) out.folders.push_back(dir + "/" + e.name);
-      } else if (isVideoFile(e.name)) {
-        out.videos.push_back({dir + "/" + e.name, {e.size, e.modified}});
-      }
-    }
+    if (status == remote::Status::Ok) readEntries(dir, entries, out);
     return status;
   }
   DIR* d = opendir(dir.c_str());
@@ -123,7 +144,7 @@ remote::Status LibraryIndex::list(const std::string& dir, Listing& out,
     if (type == DT_UNKNOWN)
       type = ::lstat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode) ? DT_DIR : DT_REG;
     if (type == DT_DIR) {
-      if (!skipped(e->d_name, true)) out.folders.push_back(path);
+      if (!skipped(e->d_name, true)) out.folders.push_back({path, {}});
     } else if ((type == DT_REG || type == DT_LNK) && !skipped(e->d_name, false) && isVideoFile(e->d_name) &&
              ::stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode))
       out.videos.push_back({path, {static_cast<uint64_t>(st.st_size), st.st_mtime}});
@@ -150,17 +171,33 @@ struct LibraryIndex::Shared {
 
   struct Folder {
     std::unordered_set<std::string> folders, files;  // listed subfolders; videos
+    remote::DirectoryStamp stamp;
+    int64_t checkedAt = 0;
+    uint64_t revision = 0;
+  };
+  struct Visit {
+    std::string path;
+    remote::DirectoryStamp stamp;
+    int64_t beganAt = 0;
+    uint64_t revision = 0;
+  };
+  struct Pending {
+    Visit visit;
+    std::future<remote::Listing> result;
   };
   sqlite3* db = nullptr;  // none: kept in memory only (another instance has the file)
   std::map<std::string, int64_t> roots;  // the pins (none inside another): last fully looked at
   std::unordered_map<std::string, Folder> folders;  // those listed
   std::unordered_map<std::string, File> files;
-  std::vector<std::string> todo;  // folders this look has still to list, the next last
+  std::vector<Visit> todo;  // folders this look has still to list, the next last
+  std::vector<Pending> pending;  // also saved as todo until their results are applied
   std::unordered_set<std::string> failed;  // pins this look could not list
   std::shared_ptr<const StashCatalog> stash;
   std::unordered_set<std::string> generated;  // Stash's generated folders this start found
   int64_t done = 0, total = -1;  // folders this look listed, of those known before it (-1: not)
   bool pinsKnown = false;
+  bool fullLook = true;
+  int64_t verifiedAt = 0;
   std::unordered_set<std::string> toMain, dirtyFiles, dirtyFolders, dirtyRoots;
   bool dirtyTodo = false;
 
@@ -169,8 +206,16 @@ struct LibraryIndex::Shared {
   void handOver();
   void save();
   void setPins(std::vector<std::string> pins);
-  void startLook(const std::vector<std::string>& from);
+  void startLook(const std::vector<std::string>& from, bool full = false);
   void lookNext();
+  void received(const Visit& visit, remote::Status status, Listing& listing);
+  bool skip(const Listing::Directory& dir) const;
+  bool looking() const { return !todo.empty() || !pending.empty(); }
+  bool ready() const {
+    return std::any_of(pending.begin(), pending.end(), [](const Pending& p) {
+      return p.result.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    });
+  }
   void apply(const std::string& dir, const Listing& listing);
   void feed(const std::string& dir, const std::vector<FolderListing::Entry>& entries);
   void dropFolder(const std::string& dir);
@@ -209,10 +254,13 @@ void LibraryIndex::Shared::run() {
     std::vector<std::shared_ptr<const StashCatalog>> catalogs;
     {
       std::unique_lock<std::mutex> lock(mutex);
-      wake.wait(lock, [this] {
+      auto work = [this] {
         return quit || pinsChanged || again || !listings.empty() || !deleted.empty() ||
-               !stashes.empty() || (!todo.empty() && !videoOpen);
-      });
+               !stashes.empty() ||
+               (!todo.empty() && !videoOpen && pending.size() < kOutstanding) || ready();
+      };
+      if (pending.empty()) wake.wait(lock, work);
+      else wake.wait_for(lock, std::chrono::milliseconds(5), work);
       if (quit) break;
       pinsNew = std::exchange(pinsChanged, false);
       lookAgain = std::exchange(again, false);
@@ -227,20 +275,19 @@ void LibraryIndex::Shared::run() {
       dropStashCopies();
     }
     if (pinsNew) setPins(std::move(newPins));
-    if (lookAgain && todo.empty()) {
+    if (lookAgain && !looking()) {
       std::vector<std::string> all;
       for (const auto& root : roots) all.push_back(root.first);
-      startLook(all);
+      startLook(all, true);  // explicit refresh always verifies every directory
     }
     for (const auto& [dir, entries] : listed) feed(dir, entries);
     for (const std::string& path : gone) {
       if (const auto folder = folders.find(parentOf(path)); folder != folders.end())
-        folder->second.files.erase(path);
+        if (folder->second.files.erase(path)) ++folder->second.revision;
       if (files.erase(path)) touch(path);
     }
-    const bool open = videoIsOpen();
-    if (!todo.empty() && !open) lookNext();
-    if (pinsNew || lookAgain || todo.empty() || videoIsOpen() ||
+    if (looking()) lookNext();
+    if (pinsNew || lookAgain || !looking() || videoIsOpen() ||
         std::chrono::steady_clock::now() - last >= kHandOver) {
       handOver();
       last = std::chrono::steady_clock::now();
@@ -279,6 +326,16 @@ void LibraryIndex::Shared::load() {
     db = nullptr;
     return;
   }
+  if (version() == 1) {
+    if (!exec(db, "BEGIN") || !exec(db, kUpgrade) ||
+        !exec(db, "PRAGMA user_version = 2") || !exec(db, "COMMIT")) {
+      exec(db, "ROLLBACK");
+      std::fprintf(stderr, "Library index: cannot upgrade its cache; kept in memory only\n");
+      sqlite3_close(db);
+      db = nullptr;
+      return;
+    }
+  }
   if (version() != kVersion) {
     // Another layout, or not a database: made anew (it is only a cache).
     sqlite3_close(db);
@@ -306,7 +363,14 @@ void LibraryIndex::Shared::load() {
   };
   rows("SELECT path, looked_at FROM roots",
        [this](std::string path, sqlite3_stmt* st) { roots[path] = sqlite3_column_int64(st, 1); });
-  rows("SELECT path FROM folders", [this](std::string path, sqlite3_stmt*) { folders[path]; });
+  rows("SELECT path, mtime, mtime_ns, ctime, ctime_ns, file_id, checked_at FROM folders",
+       [this](std::string path, sqlite3_stmt* st) {
+         Folder& folder = folders[path];
+         folder.stamp = {sqlite3_column_int64(st, 1), sqlite3_column_int64(st, 2),
+                         sqlite3_column_int64(st, 3), sqlite3_column_int64(st, 4),
+                         static_cast<uint64_t>(sqlite3_column_int64(st, 5))};
+         folder.checkedAt = sqlite3_column_int64(st, 6);
+       });
   for (auto& [path, folder] : folders)
     if (!roots.count(path))
       if (const auto parent = folders.find(parentOf(path)); parent != folders.end())
@@ -322,16 +386,28 @@ void LibraryIndex::Shared::load() {
          toMain.insert(path);
        });
   rows("SELECT path FROM todo ORDER BY rowid",
-       [this](std::string path, sqlite3_stmt*) { todo.push_back(std::move(path)); });
+        [this](std::string path, sqlite3_stmt*) { todo.push_back({std::move(path), {}}); });
+  for (const Visit& visit : todo) {
+    if (folders.try_emplace(visit.path).second) dirtyFolders.insert(visit.path);
+    if (roots.count(visit.path)) continue;  // "/" is its own parent
+    if (const auto parent = folders.find(parentOf(visit.path)); parent != folders.end())
+      parent->second.folders.insert(visit.path);
+  }
   rows("SELECT key, value FROM meta", [this](std::string key, sqlite3_stmt* st) {
-    (key == "done" ? done : total) = sqlite3_column_int64(st, 1);
+    const int64_t value = sqlite3_column_int64(st, 1);
+    if (key == "done") done = value;
+    else if (key == "total") total = value;
+    else if (key == "full") fullLook = value != 0;
+    else if (key == "verified_at") verifiedAt = value;
   });
+  rows("SELECT path FROM failed_roots",
+       [this](std::string path, sqlite3_stmt*) { failed.insert(std::move(path)); });
 }
 
 // What changed goes to the main thread and into the file.
 void LibraryIndex::Shared::handOver() {
   State s;
-  s.looking = !todo.empty();
+  s.looking = looking();
   bool all = !roots.empty();
   int64_t oldest = 0;
   for (const auto& [path, lookedAt] : roots) {
@@ -401,10 +477,17 @@ void LibraryIndex::Shared::save() {
         step(st);
       }
   });
-  run("INSERT OR IGNORE INTO folders VALUES (?1)", [&](sqlite3_stmt* st) {
+  run("INSERT OR REPLACE INTO folders VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", [&](sqlite3_stmt* st) {
     for (const std::string& path : dirtyFolders)
-      if (folders.count(path)) {
+      if (const auto it = folders.find(path); it != folders.end()) {
         text(st, 1, path);
+        const Folder& f = it->second;
+        sqlite3_bind_int64(st, 2, f.stamp.modified);
+        sqlite3_bind_int64(st, 3, f.stamp.modifiedNs);
+        sqlite3_bind_int64(st, 4, f.stamp.changed);
+        sqlite3_bind_int64(st, 5, f.stamp.changedNs);
+        sqlite3_bind_int64(st, 6, static_cast<int64_t>(f.stamp.id));
+        sqlite3_bind_int64(st, 7, f.checkedAt);
         step(st);
       }
   });
@@ -433,8 +516,13 @@ void LibraryIndex::Shared::save() {
   if (dirtyTodo) {
     ok = ok && exec(db, "DELETE FROM todo");
     run("INSERT INTO todo VALUES (?1)", [&](sqlite3_stmt* st) {
-      for (const std::string& path : todo) {
-        text(st, 1, path);
+      // In-flight requests are not durable results. Revisit them after a restart.
+      for (const Pending& p : pending) {
+        text(st, 1, p.visit.path);
+        step(st);
+      }
+      for (const Visit& visit : todo) {
+        text(st, 1, visit.path);
         step(st);
       }
     });
@@ -443,12 +531,25 @@ void LibraryIndex::Shared::save() {
       sqlite3_bind_int64(st, 2, total);
       step(st);
     });
+    run("INSERT OR REPLACE INTO meta VALUES ('full', ?1), ('verified_at', ?2)", [&](sqlite3_stmt* st) {
+      sqlite3_bind_int64(st, 1, fullLook);
+      sqlite3_bind_int64(st, 2, verifiedAt);
+      step(st);
+    });
+    ok = ok && exec(db, "DELETE FROM failed_roots");
+    run("INSERT INTO failed_roots VALUES (?1)", [&](sqlite3_stmt* st) {
+      for (const std::string& path : failed) {
+        text(st, 1, path);
+        step(st);
+      }
+    });
   }
   ok = ok && exec(db, "COMMIT");
   if (!ok) {
     // Only a cache: the next look puts it right.
     std::fprintf(stderr, "Library index: not saved (%s)\n", sqlite3_errmsg(db));
     exec(db, "ROLLBACK");
+    return;  // retry the same dirty paths at the next handover
   }
   dirtyFiles.clear();
   dirtyFolders.clear();
@@ -484,12 +585,12 @@ void LibraryIndex::Shared::setPins(std::vector<std::string> pins) {
       if (!covered(folder.first)) left.push_back(folder.first);
     for (const std::string& dir : left) dropFolder(dir);
     const size_t before = todo.size();
-    todo.erase(std::remove_if(todo.begin(), todo.end(), [&](const std::string& p) { return !covered(p); }),
+    todo.erase(std::remove_if(todo.begin(), todo.end(), [&](const Visit& p) { return !covered(p.path); }),
                todo.end());
     dirtyTodo = dirtyTodo || todo.size() != before;
   }
   // Once per start: the look an earlier start did not finish goes on, else a new one.
-  if (!pinsKnown && todo.empty()) {
+  if (!pinsKnown && !looking()) {
     added.clear();
     for (const auto& root : roots) added.push_back(root.first);
   }
@@ -497,46 +598,122 @@ void LibraryIndex::Shared::setPins(std::vector<std::string> pins) {
   startLook(added);
 }
 
-void LibraryIndex::Shared::startLook(const std::vector<std::string>& from) {
+void LibraryIndex::Shared::startLook(const std::vector<std::string>& from, bool full) {
   if (from.empty()) return;
-  if (todo.empty()) {
+  if (!looking()) {
     done = 0;
     total = static_cast<int64_t>(folders.size());
     failed.clear();
+    const int64_t t = now();
+    fullLook = full || verifiedAt <= 0 || t < verifiedAt || t - verifiedAt >= kVerifyAfter;
   }
   for (const std::string& root : from)
     if (roots.at(root) == 0) total = -1;  // never looked through: how many is not known
-  todo.insert(todo.end(), from.begin(), from.end());
+  for (const std::string& path : from) todo.push_back({path, {}});
   dirtyTodo = true;
 }
 
 void LibraryIndex::Shared::lookNext() {
-  const std::string dir = todo.back();
-  todo.pop_back();
-  dirtyTodo = true;
-  ++done;
-  Listing listing;
-  const remote::Status status = list(dir, listing);
-  const bool root = roots.count(dir) > 0;
-  if (status == remote::Status::Ok) {
-    sift(dir, listing);
-    apply(dir, listing);
-    todo.insert(todo.end(), listing.folders.begin(), listing.folders.end());
-  } else if (status == remote::Status::Missing && !root) {
-    dropFolder(dir);
-  } else if (root) {
-    failed.insert(dir);  // a share that doesn't answer, a drive taken out: kept as it was
+  // Apply every completed result, not just the oldest request. A slow folder
+  // must not hold up the rest of discovery or the connection's playback jobs.
+  for (size_t i = 0; i < pending.size();) {
+    if (pending[i].result.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+      ++i;
+      continue;
+    }
+    auto result = pending[i].result.get();
+    Visit visit = std::move(pending[i].visit);
+    pending.erase(pending.begin() + static_cast<ptrdiff_t>(i));
+    Listing listing;
+    if (result.status == remote::Status::Ok) readEntries(visit.path, result.entries, listing);
+    received(visit, result.status, listing);
   }
-  if (!todo.empty()) return;
+  // Only submitting is paused. Results already in flight can finish and be
+  // saved without waiting on, or submitting work from, the render loop.
+  size_t local = 0;
+  while (!todo.empty() && pending.size() < kOutstanding && local < kOutstanding && !videoIsOpen()) {
+    Visit visit = std::move(todo.back());
+    todo.pop_back();
+    dirtyTodo = true;
+    if (!rootOf(visit.path)) continue;
+    if (!roots.count(visit.path) && !folders.count(visit.path)) continue;
+    visit.beganAt = now();
+    if (const auto f = folders.find(visit.path); f != folders.end())
+      visit.revision = f->second.revision;
+    if (visit.path.compare(0, 6, "smb://") == 0) {
+      auto future = remote::listAsync(visit.path);
+      pending.push_back({std::move(visit), std::move(future)});
+    } else {
+      Listing listing;
+      const auto status = list(visit.path, listing);
+      received(visit, status, listing);
+      ++local;
+      // SFTP's backend lists synchronously. Queueing a window of those
+      // requests would put browsing behind the entire scan window.
+      if (remote::isRemote(visit.path)) break;
+    }
+  }
+  if (looking()) return;
   const int64_t t = now();
   for (auto& [path, lookedAt] : roots)
     if (!failed.count(path)) {
       lookedAt = t;
       dirtyRoots.insert(path);
     }
+  if (fullLook && failed.empty()) verifiedAt = t;
   failed.clear();
   done = 0;
   total = -1;
+  dirtyTodo = true;
+}
+
+bool LibraryIndex::Shared::skip(const Listing::Directory& dir) const {
+  if (fullLook || !dir.stamp.usable()) return false;
+  const auto it = folders.find(dir.path);
+  if (it == folders.end()) return false;
+  const Folder& f = it->second;
+  const int64_t t = now();
+  // Never skip branches: an unchanged ancestor says nothing about changes
+  // deeper down. Always list videos too, since in-place edits need not change
+  // their directory. Only a verified, unchanged, video-free leaf qualifies.
+  return f.files.empty() && f.folders.empty() && f.stamp == dir.stamp &&
+         f.checkedAt > 0 && t >= f.checkedAt && t - f.checkedAt < kVerifyAfter &&
+         f.stamp.modified < f.checkedAt - 2 && f.stamp.changed < f.checkedAt - 2;
+}
+
+void LibraryIndex::Shared::received(const Visit& visit, remote::Status status,
+                                     Listing& listing) {
+  const std::string& dir = visit.path;
+  const auto owner = rootOf(dir);
+  if (!owner) return;  // the pin was removed while its request was in flight
+  if (!roots.count(dir) && !folders.count(dir)) return;  // its parent removed it
+  if (const auto f = folders.find(dir);
+      f != folders.end() && f->second.revision != visit.revision) {
+    todo.push_back({dir, {}});  // a newer browser listing/deletion won the race
+    dirtyTodo = true;
+    return;
+  }
+  ++done;
+  dirtyTodo = true;
+  const bool root = roots.count(dir) > 0;
+  if (status == remote::Status::Ok) {
+    sift(dir, listing);
+    apply(dir, listing);
+    const auto it = folders.find(dir);
+    if (it == folders.end()) return;  // inside Stash's generated folder
+    Folder& folder = it->second;
+    folder.stamp = visit.stamp;
+    folder.checkedAt = visit.beganAt;
+    dirtyFolders.insert(dir);
+    for (const auto& child : listing.folders) {
+      if (skip(child)) ++done;
+      else todo.push_back({child.path, child.stamp});
+    }
+  } else if (status == remote::Status::Missing && !root) {
+    dropFolder(dir);
+  } else {
+    failed.insert(owner->first);  // partial/offline/denied trees are never marked up to date
+  }
 }
 
 // A folder's listing: its new videos recorded, those gone and its subfolders
@@ -585,11 +762,18 @@ void LibraryIndex::Shared::apply(const std::string& dir, const Listing& listing)
     touch(*it);
     it = folder.files.erase(it);
   }
-  const std::unordered_set<std::string> there(listing.folders.begin(), listing.folders.end());
+  std::unordered_set<std::string> there;
+  for (const auto& child : listing.folders) there.insert(child.path);
   std::vector<std::string> gone;
   for (const std::string& sub : folder.folders)
     if (!there.count(sub)) gone.push_back(sub);
   for (const std::string& sub : gone) dropFolder(sub);
+  // Remember children even if their own listing later fails. Otherwise an
+  // unreadable child could make its parent look like a verified empty leaf.
+  for (const auto& child : listing.folders) {
+    folder.folders.insert(child.path);
+    if (folders.try_emplace(child.path).second) dirtyFolders.insert(child.path);
+  }
 }
 
 void LibraryIndex::Shared::feed(const std::string& dir,
@@ -599,12 +783,20 @@ void LibraryIndex::Shared::feed(const std::string& dir,
   for (const FolderListing::Entry& e : entries) {
     if (skipped(e.name, e.directory)) continue;
     if (e.directory)
-      listing.folders.push_back(e.path);
+      listing.folders.push_back({e.path, {}});
     else if (isVideoFile(e.name))
       listing.videos.push_back({e.path, {e.size, e.modified}});
   }
   sift(dir, listing);
   apply(dir, listing);
+  const auto it = folders.find(dir);
+  if (it == folders.end()) return;  // inside Stash's generated folder
+  // Browser folder dates may be synthetic; only a scan's metadata can
+  // authorize skipping its own future enumeration.
+  it->second.stamp = {};
+  it->second.checkedAt = 0;
+  ++it->second.revision;
+  dirtyFolders.insert(dir);
 }
 
 // Stash names a scene's preview (screenshots/<oshash>.mp4) and transcode
@@ -651,7 +843,7 @@ void LibraryIndex::Shared::sift(const std::string& dir, Listing& listing) {
   for (const std::string& sub : inside) dropFolder(sub);
   const size_t before = todo.size();
   todo.erase(std::remove_if(todo.begin(), todo.end(),
-                            [&](const std::string& p) { return p != dir && under(p, dir); }),
+                            [&](const Visit& v) { return v.path != dir && under(v.path, dir); }),
              todo.end());
   dirtyTodo = dirtyTodo || todo.size() != before;
 }
