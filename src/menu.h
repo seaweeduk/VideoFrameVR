@@ -1025,10 +1025,11 @@ class Menu {
     return view_.thumbnails || stashCoversShown() ? (row.h - 4) * 16 / 9 : row.h - 4;
   }
   double listNameWidth(const Button& row) const;
-  // A video's picture drawn w layout pixels wide: its Stash cover, else its
-  // frame thumbnail; null until there is one. Drawing asks for it, and what
-  // it got is kept in shownPictures_.
-  cairo_surface_t* pictureOf(const std::string& path, double w) const;
+  // A video's picture drawn in the box x, y, w × h: its Stash cover, else
+  // its frame thumbnail; null until there is one. Drawing asks for it under
+  // its clip, and what that painted of the box is kept in shownPictures_.
+  cairo_surface_t* pictureOf(cairo_t* cr, const std::string& path, double x, double y, double w,
+                             double h) const;
   // Whether a picture of path may still come: its Stash cover, or a frame
   // thumbnail not tried yet. Without one, its box shows the video icon.
   bool pictureComing(const std::string& path) const;
@@ -1037,8 +1038,16 @@ class Menu {
     double w = 0;
     cairo_surface_t* surface = nullptr;
     bool icon = false;  // none, and none coming: the video icon
+    // Changed by a paint that reached only part of the box (a scroll's new
+    // edge, a hover's or a logo's strip, a page drawn in bands): the rest
+    // may still show the picture before.
+    bool torn = false;
   };
   mutable std::unordered_map<std::string, ShownPicture> shownPictures_;  // by path
+  enum class Painted { None, Part, All };
+  // How much of a box in a list's rows (a picture, a logo's corner) the clip
+  // lets a paint reach, of what of it shows within the list's edges.
+  Painted paintedPart(cairo_t* cr, double x, double y, double w, double h) const;
   mutable std::unordered_set<std::string> logosComing_;  // tiles drawn before their studio's logo
   // Pages whose only pictures are those of pictureOf().
   bool picturesAlone() const {

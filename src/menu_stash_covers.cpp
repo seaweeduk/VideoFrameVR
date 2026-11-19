@@ -352,10 +352,16 @@ void Menu::drawStudioMark(cairo_t* cr, const std::string& path, double x, double
       stashCovers_->logo(path, static_cast<int>(std::lround(w * kLogoWidth * scale)),
                          static_cast<int>(std::lround(h * kLogoHeight * scale)), pad, name, y,
                          y + h * kLogoHeight + 2 * kLogoInset, coming);
-  if (coming)
+  if (coming) {
     logosComing_.insert(path);
-  else
-    logosComing_.erase(path);
+  } else if (const auto it = logosComing_.find(path); it != logosComing_.end()) {
+    // As a picture (pictureOf()), a logo that came is shown once a paint
+    // reached all of its corner; until then picturesChanged() redraws the tile.
+    const double cornerW = w * kLogoWidth + kLogoInset + kShadowPad / scale;
+    if (!logo || paintedPart(cr, x + w - cornerW, y, cornerW, h * kLogoHeight + 2 * kLogoInset) ==
+                     Painted::All)
+      logosComing_.erase(it);
+  }
   const double right = x + w - kLogoInset, top = y + kLogoInset;
   if (logo) {
     // At its pixels' size, on the texture's pixel grid: as sharp as it gets.
