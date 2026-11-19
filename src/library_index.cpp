@@ -389,6 +389,7 @@ void LibraryIndex::Shared::load() {
         [this](std::string path, sqlite3_stmt*) { todo.push_back({std::move(path), {}}); });
   for (const Visit& visit : todo) {
     if (folders.try_emplace(visit.path).second) dirtyFolders.insert(visit.path);
+    if (roots.count(visit.path)) continue;  // "/" is its own parent
     if (const auto parent = folders.find(parentOf(visit.path)); parent != folders.end())
       parent->second.folders.insert(visit.path);
   }
