@@ -937,6 +937,38 @@ struct WhatsNewStrings {
   const char* updatedFrom;       // printf: the version before, this one
 };
 
+// Funscripts played on a device through Intiface (script_player.h): the
+// Settings group, the address being typed, and the strip's label. "Intiface"
+// and "funscript" are names, and the quoted Intiface setting is English there.
+struct ScriptStrings {
+  const char* group;
+  const char* use;
+  const char* offHint;
+  const char* address;
+  const char* thisComputer;  // the address field while empty on a PC
+  const char* notSet;        // ... and on a headset
+  const char* addressHint;   // under the field being typed into
+  const char* addressLocal;  // ... on a PC, after it
+  const char* save;
+  // How far the way to a device has got (ScriptLink).
+  const char* connecting;
+  const char* noAddress;
+  const char* noServer;
+  const char* noDevice;
+  const char* ready;      // printf: the device's name
+  const char* readyMore;  // printf: a device's name, how many others
+  const char* offset;
+  const char* offsetHint;
+  const char* rangeLow;
+  const char* rangeHigh;
+  const char* rangeHint;
+  const char* motion;  // the group of the timing and the stroke
+  // The strip's label while the video has a script, and its tooltips.
+  const char* label;
+  const char* tipPlaying;  // printf: the device's name
+  const char* tipNoDevice;
+};
+
 // All text shown in VR.
 struct Strings {
   const char* noVideo;
@@ -1229,6 +1261,7 @@ struct Strings {
   ColourBalanceStrings colourBalance;
   WhatsNewStrings whatsNew;
   const char* foveationLearnedHint;
+  ScriptStrings scripts;
 };
 
 const Strings& strings();

@@ -51,7 +51,7 @@ std::string anonymisedSettings(const std::string& text) {
     if (eq != std::string::npos && eq + 1 < line.size()) {
       const std::string key = line.substr(0, eq), value = line.substr(eq + 1);
       bool secret = value.find('/') != std::string::npos;
-      for (const char* word : {"key", "url", "path", "folder", "password", "user", "host", "share"})
+      for (const char* word : {"key", "url", "path", "folder", "password", "user", "host", "share", "address"})
         secret = secret || key.find(word) != std::string::npos;
       if (secret) line = key + "=<removed>";
     }

@@ -173,6 +173,11 @@ void Menu::setFilter(const std::string& text) {
     typedChanged();
     return;
   }
+  if (page_ == Page::Settings && scriptAddress_.open) {
+    scriptAddress_.text = text.substr(0, 200);
+    typedChanged();
+    return;
+  }
   if (page_ == Page::VideoSettings && presetName_.open) {
     // Whether Save turns into Replace, or is refused, shows with each key.
     // At most 40 characters.
@@ -207,13 +212,14 @@ MenuCommand Menu::submitText() {
     return {};
   }
   if (page_ == Page::VideoSettings && presetName_.open) return submitPresetName();
+  if (page_ == Page::Settings && scriptAddress_.open) return submitScriptAddress();
   if (editingFilter() && stashTextPage()) return StashPages::submitText(*this);
   if (editingFilter()) stopEditing();
   return {};
 }
 
 void Menu::stopEditing() {
-  if (editingFilter() && stashTextPage()) {
+  if (editingFilter() && stashTextPage() && !scriptAddress_.open) {
     StashPages::stopEditing(*this);
   } else if (editingFilter()) {
     // The keyboard goes; the words and what they found stay.

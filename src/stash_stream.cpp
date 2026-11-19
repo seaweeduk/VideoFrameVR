@@ -528,20 +528,25 @@ bool stashAnswers() {
   return r.code == CURLE_OK && r.status == 200;
 }
 
+namespace {
+// The server served now and the scene a locator or a source names on it;
+// false if it is another server's.
+bool sceneAt(std::string_view location, Server& server, long long& id) {
+  if (isStashSource(location)) return servedFor(location, server, id);
+  int number = 0;
+  if (std::sscanf(std::string(location).c_str(), "stashscene://%d/%lld", &number, &id) != 2)
+    return false;
+  std::lock_guard lock(servedMutex);
+  server = served;
+  return server.number && server.number == number;
+}
+}  // namespace
+
 std::vector<StashCaption> stashCaptions(std::string_view location) {
   std::vector<StashCaption> captions;
   Server server;
   long long id = 0;
-  if (isStashSource(location)) {
-    if (!servedFor(location, server, id)) return captions;
-  } else {
-    int number = 0;
-    if (std::sscanf(std::string(location).c_str(), "stashscene://%d/%lld", &number, &id) != 2)
-      return captions;
-    std::lock_guard lock(servedMutex);
-    server = served;
-    if (!server.number || server.number != number) return captions;
-  }
+  if (!sceneAt(location, server, id)) return captions;
   CURL* curl = curl_easy_init();
   if (!curl) return captions;
   curl_slist* headers = curl_slist_append(keyHeader(server), "Content-Type: application/json");
@@ -587,6 +592,33 @@ std::vector<StashCaption> stashCaptions(std::string_view location) {
   curl_easy_cleanup(curl);
   curl_slist_free_all(headers);
   return captions;
+}
+
+std::string stashFunscript(std::string_view location) {
+  Server server;
+  long long id = 0;
+  if (!sceneAt(location, server, id)) return {};
+  CURL* curl = curl_easy_init();
+  if (!curl) return {};
+  curl_slist* headers = keyHeader(server);
+  std::string bytes;
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, +[](char* data, size_t size, size_t count, void* to) {
+    auto& bytes = *static_cast<std::string*>(to);
+    if (bytes.size() > 16 * 1024 * 1024) return size_t(0);
+    bytes.append(data, size * count);
+    return size * count;
+  });
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &bytes);
+  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 3000L);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 10000L);
+  const StashReply r =
+      stashPerform(curl, server.address, server.address.pathOn("/scene/" + std::to_string(id) + "/funscript"),
+                   [&] { bytes.clear(); }, false);
+  curl_easy_cleanup(curl);
+  curl_slist_free_all(headers);
+  return r.code == CURLE_OK && r.status == 200 ? bytes : std::string();
 }
 
 struct StashReader::Impl {

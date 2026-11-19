@@ -213,6 +213,8 @@ void Menu::update(const MenuView& view) {
       view.diagnostics != view_.diagnostics || view.diagnosticsFile != view_.diagnosticsFile ||
       view.crashedLastRun != view_.crashedLastRun || view.downloadsTo != view_.downloadsTo ||
       view.softwareDecoding != view_.softwareDecoding || view.stash.card != view_.stash.card ||
+      view.scripts.enabled != view_.scripts.enabled || view.scripts.address != view_.scripts.address ||
+      view.scriptStatus != view_.scriptStatus ||
       view.deletable != view_.deletable ||
       view.setupBanner != view_.setupBanner || view.showWhatsNew != view_.showWhatsNew ||
       a.chapters.size() != b.chapters.size() || a.chapter != b.chapter;
@@ -241,6 +243,12 @@ void Menu::update(const MenuView& view) {
   if (view.subtitleSize != view_.subtitleSize) sliderChanged(MenuCommand::SetSubtitleSize);
   if (view.subtitleRaise != view_.subtitleRaise) sliderChanged(MenuCommand::SetSubtitleRaise);
   if (view.subtitleDistance != view_.subtitleDistance) sliderChanged(MenuCommand::SetSubtitleDistance);
+  if (view.scripts.offsetMs != view_.scripts.offsetMs) sliderChanged(MenuCommand::SetScriptOffset);
+  // One pushes the other along to keep their gap.
+  if (view.scripts.rangeLow != view_.scripts.rangeLow || view.scripts.rangeHigh != view_.scripts.rangeHigh) {
+    sliderChanged(MenuCommand::SetScriptRangeLow);
+    sliderChanged(MenuCommand::SetScriptRangeHigh);
+  }
   // The eye size can change while playing (a later Auto resolution, or
   // --resolution-cycle, or the Resolution slider, which redraws nothing
   // itself): only the video settings page shows it.
@@ -996,6 +1004,7 @@ void Menu::showPage(Page page) {
   smbForm_ = {};
   placeRename_ = {};
   presetName_ = {};
+  scriptAddress_ = {};
   presetDeleting_.clear();
   // The user's presets as they are now (a file may have been copied in).
   if (page == Page::VideoSettings) command_.type = MenuCommand::ListUserPresets;

@@ -1,6 +1,7 @@
 #include "offline.h"
 
 #include "file_util.h"
+#include "funscript.h"
 #include "oshash.h"
 #include "removable_drives.h"
 #include "settings.h"
@@ -131,6 +132,7 @@ struct Offline::Shared {
   std::condition_variable wake, watchWake;
   bool quit = false, playing = false, pausedAll = false, rescan = false;
   bool watchStash = false, stashDown = false;
+  std::atomic<bool> scripts{false};  // funscripts are copied with their videos
   std::vector<Download> items;
   int64_t nextId = 1;
   std::vector<Drive> drives;
@@ -601,6 +603,11 @@ void Offline::Shared::copy(Download& d) {
   if (stash)
     for (const StashCaption& c : stashCaptions(d.source))
       keep(copyStem + (c.language.empty() ? "" : "." + c.language) + ".vtt", c.text);
+  // Its funscript, kept (and removed) as a subtitle is.
+  if (scripts && validUtf8(copyStem))
+    if (const std::string script = stash ? stashFunscript(d.source) : readFunscript(d.source);
+        !script.empty())
+      keep(copyStem + ".funscript", script);
   struct stat st {};
   ::stat(d.path.c_str(), &st);
   std::lock_guard lock(mutex);
@@ -879,6 +886,8 @@ void Offline::pauseAll(bool paused) {
   }
   sh.wake.notify_all();
 }
+
+void Offline::setScripts(bool on) { shared_->scripts = on; }
 
 void Offline::setPlaying(bool playing) {
   if (playing == playing_) return;

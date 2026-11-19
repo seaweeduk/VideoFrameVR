@@ -1126,6 +1126,34 @@ const Strings kEnglish = {
         "Updated from %s to %s",
     },
     "Move the sharp area using the correction learned from menu clicks. Off uses the runtime's gaze. Independent of stereo focus.",
+    {
+        "Funscripts",
+        "Play funscripts on a device",
+        "Moves a stroker in time with videos that have a funscript beside them or in Stash. Needs "
+        "Intiface Central.",
+        "Intiface address",
+        "This computer",
+        "Not set",
+        "The name or IP address of the computer or phone running Intiface Central, with its port if "
+        "it isn't 12345. There, switch on \"Listen on all network interfaces\" and start the server.",
+        "Leave it empty if Intiface Central runs on this computer.",
+        "Save",
+        "Connecting to Intiface …",
+        "Enter the address of the device running Intiface Central.",
+        "Intiface isn't answering. Check that its server is started.",
+        "Intiface has no stroker connected. Switch yours on.",
+        "Connected: %s",
+        "Connected: %s and %d more",
+        "Timing",
+        "Above 0 the device moves earlier, below 0 later.",
+        "Stroke from",
+        "Stroke to",
+        "The part of the device's stroke that is used.",
+        "Motion",
+        "Funscript",
+        "Playing this video's funscript on %s.",
+        "This video has a funscript, but no device is connected.",
+    },
 };
 
 const Strings kGerman = germanStrings(kEnglish);

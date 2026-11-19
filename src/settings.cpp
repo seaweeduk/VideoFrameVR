@@ -119,6 +119,11 @@ std::string allLines(const Settings& s) {
   out << "screen_height_cm=" << s.screen.height * 100 << "\n";
   out << "screen_curve=" << s.screen.curve << "\n";
   out << stashSettingLines(s.stash);
+  out << "script_enabled=" << (s.scripts.enabled ? 1 : 0) << "\n";
+  out << "script_address=" << s.scripts.address << "\n";
+  out << "script_offset_ms=" << s.scripts.offsetMs << "\n";
+  out << "script_range_low=" << s.scripts.rangeLow << "\n";
+  out << "script_range_high=" << s.scripts.rangeHigh << "\n";
   return out.str();
 }
 
@@ -292,6 +297,12 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "screen_distance_cm") s.screen.distance = std::atof(value.c_str()) / 100;
     else if (key == "screen_height_cm") s.screen.height = std::atof(value.c_str()) / 100;
     else if (key == "screen_curve") s.screen.curve = static_cast<float>(std::atof(value.c_str()));
+    else if (key == "script_enabled") s.scripts.enabled = value == "1";
+    else if (key == "script_address") s.scripts.address = value;
+    else if (key == "script_offset_ms")
+      s.scripts.offsetMs = std::clamp(std::atoi(value.c_str()), -kScriptOffsetLimit, kScriptOffsetLimit);
+    else if (key == "script_range_low") s.scripts.rangeLow = std::atoi(value.c_str());
+    else if (key == "script_range_high") s.scripts.rangeHigh = std::atoi(value.c_str());
     else if (!readStashSetting(key, value, s.stash)) focusRead |= focus.read(key, value);
   }
   // stash_path_from left empty: none (the same paths on both).
@@ -305,6 +316,8 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
                               s.foveationRing, s.foveationOutside);
   if (focusRead) focus.finish(s.focus, s.focusPrefs);
   s.screen = s.screen.clamped();
+  s.scripts.rangeLow = std::clamp(s.scripts.rangeLow, 0, 100 - kScriptRangeGap);
+  s.scripts.rangeHigh = std::clamp(s.scripts.rangeHigh, s.scripts.rangeLow + kScriptRangeGap, 100);
   return s;
 }
 

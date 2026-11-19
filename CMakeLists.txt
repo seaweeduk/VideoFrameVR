@@ -57,9 +57,11 @@ add_executable(videoframevr
   src/foveation.cpp
   src/frame_reuse.cpp
   src/frame_grabber.cpp
+  src/funscript.cpp
   src/gl_interop.cpp
   src/gpu_context.cpp
   src/hints.cpp
+  src/intiface.cpp
   src/key_mask.cpp
   src/key_picker.cpp
   src/key_share.cpp
@@ -87,6 +89,7 @@ add_executable(videoframevr
   src/menu_player.cpp
   src/menu_presets.cpp
   src/menu_rating.cpp
+  src/menu_scripts.cpp
   src/menu_search.cpp
   src/menu_settings.cpp
   src/menu_setup.cpp
@@ -132,6 +135,7 @@ add_executable(videoframevr
   src/run_log.cpp
   src/scene_renderer.cpp
   src/screen_control.cpp
+  src/script_player.cpp
   src/see_through.cpp
   src/seek_preview.cpp
   src/settings.cpp
