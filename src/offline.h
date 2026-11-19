@@ -19,7 +19,7 @@
 // connection or a card taken out: from its .part file's length less the
 // last 8 MiB, or from the start if the source changed. A copy is checked by
 // its size and oshash before it is renamed into place; its subtitles come
-// with it. Downloads pause while a video plays. A second thread asks the
+// with it, and its funscript while those are played. Downloads pause while a video plays. A second thread asks the
 // servers signed in to whether they answer (away from home they don't), and
 // Stash while a scene may play or download from its stream.
 // Main thread only; nothing here waits for a file or the network.
@@ -46,7 +46,7 @@ class Offline {
     uint64_t size = 0, copied = 0;
     int64_t mtime = 0;   // the source's, when copying started
     int64_t doneAt = 0;  // Unix seconds
-    std::vector<std::string> subtitles;  // copied beside it
+    std::vector<std::string> subtitles;  // copied beside it (its funscript too)
     State state = State::Queued;
     Why why = Why::None;
     bool present = false;   // done, and the copy is there now
@@ -92,6 +92,8 @@ class Offline {
   bool pausedAll() const { return pausedAll_; }
   // While a video plays, nothing is copied.
   void setPlaying(bool playing);
+  // Whether a video's funscript (funscript.h) is copied with it.
+  void setScripts(bool on);
   // Drives came or went: looked at again now.
   void drivesChanged();
 

@@ -4,10 +4,11 @@
 
 #include <cstdio>
 
-// Settings: a page in two sections, built from the menu's parts.
+// Settings: a page in three sections, built from the menu's parts.
 //   General: the menu and its colour, the view, playback, subtitles, Help.
 //   Stash: its server and folders, how it syncs, and sending to it
 //   (menu_stash_settings.cpp).
+//   Funscripts: played on a device through Intiface (menu_scripts.cpp).
 // Video settings (menu_video_settings.cpp) and stereo focus (menu_focus.cpp)
 // are tabs of the playback strip and show without the sources column. The
 // page never scrolls (the debug fit check says where it would).
@@ -24,6 +25,12 @@ std::string metres(int cm, bool unit = true) {
 }  // namespace
 
 void Menu::layoutSettings() {
+  // Intiface's address being typed in: alone, over the keyboard. Before
+  // Stash's panel, which takes any typing here for its own.
+  if (scriptAddress_.open) {
+    layoutScriptAddress();
+    return;
+  }
   // Stash's server being typed in (its fields over the keyboard), or its
   // ratings and plays being sent: alone.
   if (stashMenu_ && StashPages::layoutSettingsPanel(*this)) return;
@@ -41,15 +48,20 @@ void Menu::showStashSettings() {
 void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsShown* stash) {
   const Strings& t = text();
   PageLayout page(*this, t.settings);
-  page.sections({t.general, t.stash.group}, static_cast<int>(section), [this](int i) {
-    settingsSection_ = static_cast<SettingsSection>(i);
-    dropdown_ = Dropdown::None;
-    dirty_ = true;
-  });
+  page.sections({t.general, t.stash.group, t.scripts.group}, static_cast<int>(section),
+                [this](int i) {
+                  settingsSection_ = static_cast<SettingsSection>(i);
+                  dropdown_ = Dropdown::None;
+                  dirty_ = true;
+                });
   page.pageSwitch(t.advancedSettings, view_.advancedSettings,
                   command(MenuCommand::ToggleAdvancedSettings), t.tipAdvanced);
   if (section == SettingsSection::Stash) {
     StashPages::layoutSettings(*this, page, stash ? *stash : StashPages::settingsShown(*this));
+    return;
+  }
+  if (section == SettingsSection::Scripts) {
+    layoutScriptSettings(page);
     return;
   }
 #ifndef NDEBUG
@@ -253,6 +265,12 @@ void Menu::checkSettingsFit() {
   const StashSettingsShown fullest = StashPages::fullestSettings();
   fitCase_ = " (Stash, every row)";
   layoutSettingsSection(SettingsSection::Stash, &fullest);
+  // Funscripts: on, an address, the longest state.
+  v.scripts.enabled = true;
+  v.scripts.address = "192.168.100.200:12345";
+  v.scriptStatus.link = ScriptLink::NoDevice;
+  fitCase_ = " (Funscripts, every row)";
+  layoutSettingsSection(SettingsSection::Scripts);
   fitCase_ = nullptr;
 
   buttons_.erase(buttons_.begin() + static_cast<std::ptrdiff_t>(buttons), buttons_.end());

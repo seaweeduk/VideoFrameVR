@@ -908,6 +908,10 @@ int run(Options opts) {
   menu.setOffline(&offline);
   // Stash (optional, docs/stash.md): none while it is off or not set up.
   std::unique_ptr<Stash> stash;
+  // Funscripts on a device (script_player.h): nothing of it runs while off.
+  ScriptPlayer scripts;
+  scripts.configure(settings.scripts);
+  offline.setScripts(settings.scripts.enabled);
   if (settings.stash.enabled && !settings.stash.url.empty() && !setupForced)
     stash = std::make_unique<Stash>(settings.stash, library);
   menu.setStash(stash.get());
@@ -1261,6 +1265,7 @@ int run(Options opts) {
     dropDeleteDialog();
     app.currentFile = path;
     app.streamOshash = isStashScene(path) ? oshash : std::string();
+    scripts.open(isPhotoFile(path) ? std::string() : path);
     app.formatChosenByUser = false;
     app.format = guessVideoFormat(path, 0, 0);
     // Its settings from the library, else as kept before it (videos.conf),
@@ -1334,6 +1339,7 @@ int run(Options opts) {
     seekPreview.close();
     app.currentFile.clear();
     app.streamOshash.clear();
+    scripts.open({});
     app.video.passthrough = false;
     app.video.opacity = 100;  // the empty scene isn't blended; the video keeps its saved value
     opacityTwist.cancel();
@@ -1942,6 +1948,35 @@ int run(Options opts) {
         settings.vibration = !settings.vibration;
         saveSettings(settings);
         break;
+      case MenuCommand::ToggleScripts:
+      case MenuCommand::SetScriptAddress:
+      case MenuCommand::SetScriptOffset:
+      case MenuCommand::SetScriptRangeLow:
+      case MenuCommand::SetScriptRangeHigh: {
+        ScriptSettings& s = settings.scripts;
+        const int value = static_cast<int>(std::lround(c.value));
+        if (c.type == MenuCommand::ToggleScripts) {
+          s.enabled = !s.enabled;
+        } else if (c.type == MenuCommand::SetScriptAddress) {
+          const size_t first = c.path.find_first_not_of(" \t");
+          s.address = first == std::string::npos
+                          ? std::string()
+                          : c.path.substr(first, c.path.find_last_not_of(" \t") - first + 1);
+        } else if (c.type == MenuCommand::SetScriptOffset) {
+          s.offsetMs = std::clamp(value, -kScriptOffsetLimit, kScriptOffsetLimit);
+        } else if (c.type == MenuCommand::SetScriptRangeLow) {
+          // The other end keeps its distance.
+          s.rangeLow = std::clamp(value, 0, 100 - kScriptRangeGap);
+          s.rangeHigh = std::max(s.rangeHigh, s.rangeLow + kScriptRangeGap);
+        } else {
+          s.rangeHigh = std::clamp(value, kScriptRangeGap, 100);
+          s.rangeLow = std::min(s.rangeLow, s.rangeHigh - kScriptRangeGap);
+        }
+        saveSettings(settings);
+        scripts.configure(s);
+        offline.setScripts(s.enabled);
+        break;
+      }
       case MenuCommand::ToggleShowWhatsNew:
         settings.showWhatsNew = !settings.showWhatsNew;
         saveSettings(settings);
@@ -2315,6 +2350,13 @@ int run(Options opts) {
     glfwPollEvents();
     xr.pollEvents(xrQuit);
     player.pollEvents();
+    if (settings.scripts.enabled) {
+      // Held too while the headset is taken off, though the video plays on.
+      const PlaybackState& p = player.playback();
+      scripts.sync(p.position, !app.currentFile.empty() && !p.paused && !p.endReached &&
+                                   !player.seeking() && !player.loading() && !player.failed() &&
+                                   xr.userPresence() != 0);
+    }
     if (kStandaloneHeadset && opts.hwdec == "v4l2m2m") {
       if (!xr.isVisible() && heldSeek.active()) {
         if (heldSeekPaused) player.command("set pause no");
@@ -3489,6 +3531,8 @@ int run(Options opts) {
       else if (softwareSince < 0)
         softwareSince = now;
       view.softwareDecoding = softwareSince >= 0 && now - softwareSince >= 1.0;
+      view.scripts = settings.scripts;
+      view.scriptStatus = scripts.status();
       view.format = app.format;
       view.halfPacked = isHalfPacked(app.format);
       view.screen = ScreenView::of(app.screen.size);

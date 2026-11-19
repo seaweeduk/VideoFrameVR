@@ -5,6 +5,7 @@
 #include "flat_screen.h"
 #include "focus_settings.h"
 #include "foveation.h"
+#include "script_player.h"
 #include "stash_settings.h"
 
 #include <filesystem>
@@ -109,6 +110,7 @@ struct Settings {
   // The flat screen of videos without their own size: the last one set.
   ScreenSize screen;
   StashSettings stash;  // the optional Stash integration (stash_settings.h)
+  ScriptSettings scripts;  // funscripts played on a device through Intiface (script_player.h)
 };
 
 // The defaults; on the Frame (platform.h) what suits its hardware.

@@ -76,6 +76,10 @@ struct StashCaption {
   std::string text;
 };
 std::vector<StashCaption> stashCaptions(std::string_view location);
+// A scene's funscript (funscript.h), the file Stash found beside its first
+// file, for a locator or a source; empty if it has none. Blocks: worker
+// threads only.
+std::string stashFunscript(std::string_view location);
 
 // A source's file read in order from `offset`, by playback's reader (two
 // blocks ahead, again from where it stopped after a dropped connection).

@@ -106,6 +106,23 @@ void Menu::layoutMain() {
       }
     }
   }
+  // The video's funscript: red while no device plays it, and the way to
+  // its settings.
+  if (view_.scriptStatus.script) {
+    const bool ready = view_.scriptStatus.link == ScriptLink::Ready;
+    if (Button* b = chip(t.scripts.label, !ready, [this] {
+          showScriptSettings();
+          return MenuCommand{};
+        })) {
+      if (ready) {
+        char playing[512];
+        std::snprintf(playing, sizeof(playing), t.scripts.tipPlaying, view_.scriptStatus.device.c_str());
+        b->tooltip = playing;
+      } else {
+        b->tooltip = std::string(t.scripts.tipNoDevice) + "\n" + scriptStatusText();
+      }
+    }
+  }
   const bool update = view_.releaseUpdate == ReleaseUpdate::State::Available ||
                       view_.releaseUpdate == ReleaseUpdate::State::DownloadFailed;
   const bool notice = (update || view_.crashedLastRun) &&

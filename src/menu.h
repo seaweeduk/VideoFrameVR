@@ -123,7 +123,11 @@ struct MenuCommand {
                             // option 1: its certificate accepted unverified
               StashCard,  // the menu's "Use Stash?" card: value 1 used, 0 dismissed
               DismissSetupBanner,  // the Library's "You're all set" after setup
-              ToggleShowWhatsNew };  // What's new opens by itself after updates
+              ToggleShowWhatsNew,  // What's new opens by itself after updates
+              // Funscripts (script_player.h): on or off, Intiface's address
+              // (path), and the timing offset and stroke range (value).
+              ToggleScripts, SetScriptAddress, SetScriptOffset, SetScriptRangeLow,
+              SetScriptRangeHigh };
   Type type = None;
   // seconds (Seek, SeekTo), enum index, track id (0 = off), volume 0..100,
   // 1 = only the downloaded copy (DeleteFile), picture value
@@ -273,6 +277,8 @@ struct MenuView {
   std::string diagnosticsFile;  // Saved: the zip's name
   bool crashedLastRun = false;  // until its diagnostics are saved
   bool softwareDecoding = false;  // the video plays without hardware decoding
+  ScriptSettings scripts;       // funscripts on a device (script_player.h)
+  ScriptStatus scriptStatus;    // ... how far the way to one has got, and whether the video has a script
   std::string downloadsTo;      // Settings::downloadsTo
   // The strip's delete button (docs/alpha/delete-file.md): not shown
   // (nothing open, a link), shown, or shown disabled for a scene played
@@ -799,13 +805,28 @@ class Menu {
   struct Tile;
   struct Action;
   struct Field;
-  // Settings' sections: General, and Stash (menu_stash_settings.cpp).
-  enum class SettingsSection { General, Stash };
+  // Settings' sections: General, Stash (menu_stash_settings.cpp) and
+  // Funscripts (menu_scripts.cpp).
+  enum class SettingsSection { General, Stash, Scripts };
   SettingsSection settingsSection_ = SettingsSection::General;
   // `stash`: what the Stash section shows, if not what it shows now (the fit check).
   void layoutSettingsSection(SettingsSection section, const StashSettingsShown* stash = nullptr);
   void layoutHelpGroup(PageLayout& page, int column);  // What's new, Save diagnostics
   void showStashSettings();  // Settings, opened on its Stash section
+  // Funscripts played on a device (menu_scripts.cpp): Settings' Funscripts
+  // section, and Intiface's address being typed, alone on the page over the
+  // keyboard.
+  void layoutScriptSettings(PageLayout& page);
+  void layoutScriptAddress();
+  void openScriptAddress();
+  MenuCommand submitScriptAddress();
+  void showScriptSettings();  // Settings, opened on its Funscripts section
+  std::string scriptStatusText() const;  // how far the way to a device has got; empty while off
+  struct ScriptAddress {
+    bool open = false;
+    std::string text;  // typed
+  };
+  ScriptAddress scriptAddress_;
   // A page's header as laid out: its title and what it is about (drawn by
   // drawGroups()); no title: none.
   struct PageHead {
@@ -1135,7 +1156,8 @@ class Menu {
     if (setup_) return (smbForm_.kind != SmbForm::Kind::None || setupText()) && editing_;
     return (page_ == Page::Files || page_ == Page::Library || page_ == Page::Network ||
             page_ == Page::Places || stashTextPage() ||
-            (page_ == Page::VideoSettings && presetName_.open)) &&
+            (page_ == Page::VideoSettings && presetName_.open) ||
+            (page_ == Page::Settings && scriptAddress_.open)) &&
            editing_;
   }
   bool editing_ = false;
@@ -1145,6 +1167,7 @@ class Menu {
     if (smbForm_.kind != SmbForm::Kind::None) return smbForm_.text[smbForm_.field];
     if (page_ == Page::Places) return placeRename_.text;
     if (page_ == Page::VideoSettings && presetName_.open) return presetName_.text;
+    if (page_ == Page::Settings && scriptAddress_.open) return scriptAddress_.text;
     return stashTextPage() ? stashText() : page_ == Page::Library ? libraryFilter_ : fileFilter_;
   }
   // The text cursor in the field typed into: a byte of filterText(), kept
