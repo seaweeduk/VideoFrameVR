@@ -710,8 +710,10 @@ void Menu::layoutVideoSettings() {
       for (int i = 0; i < 4; ++i) slider(names[i], types[i], values[i], false, t.tipKey[i]);
     }
   }
-  // How far Match the room goes, under its switch while it is on.
-  const bool strengths = view_.roomMatch != RoomMatch::Hidden && view_.roomMatched;
+  // How far Match the room goes, under its switch while it is on and applies
+  // (the room is shown).
+  const bool strengths = view_.roomMatch != RoomMatch::Hidden &&
+                         view_.roomMatch != RoomMatch::Off && view_.roomMatched;
   Button resetKey = textButton(t.reset, Icon::None, command(MenuCommand::ResetPassthrough));
   resetKey.panel = kBrowser;
   resetKey.x = x;
@@ -751,9 +753,10 @@ void Menu::layoutVideoSettings() {
     // Its label and pill, but never into Reset (a longer label is cut short).
     const double left = std::max(right - (textWidth(label, kTextSize, false) + 104),
                                  resetShown ? resetKey.x + resetKey.w + 12 : x);
+    // A passthrough setting: with the room hidden it doesn't apply, and shows
+    // as set for when the room is shown again.
     Button& match = addToggleRow(left, y, right - left, label, view_.roomMatched,
-                                 command(MenuCommand::ToggleMatchRoom),
-                                 room == RoomMatch::Off && !view_.roomMatched && !view_.roomRead);
+                                 command(MenuCommand::ToggleMatchRoom), room == RoomMatch::Off);
     match.tooltip = match.disabled ? cb.tipMatchRoomHidden : cb.tipMatchRoom;
   }
   if (ownHint)
