@@ -324,6 +324,14 @@ void Menu::drawUpdateDialog(cairo_t* cr, double textX, double boxY) {
              textX, boxY + 180, textW, 44, 26, true, true, 0.85, 0.85, 0.9);
 }
 
+Menu::ResolutionStatus Menu::resolutionStatus(const MenuView& view, bool held) {
+  if (held) return ResolutionStatus::Pending;
+  if (view.resolutionOverride > 0) return ResolutionStatus::Override;
+  if (view.videoResolutionEffective < view.videoResolutionActive) return ResolutionStatus::Limited;
+  if (kStandaloneHeadset && view.resolutionNotice) return ResolutionStatus::Changed;
+  return ResolutionStatus::None;
+}
+
 void Menu::layoutVideoSettings() {
   const Strings& t = text();
   const double w = kColumnW - 2 * kGroupPad;
@@ -514,20 +522,18 @@ void Menu::layoutVideoSettings() {
     y += kSettingStep;
   }
   char hint[192];
-  bool resolutionStatus = true;
-  if (resolutionHeld_)
+  const ResolutionStatus status = resolutionStatus(view_, resolutionHeld_);
+  if (status == ResolutionStatus::Pending)
     std::snprintf(hint, sizeof(hint), "%s", t.resolutionPending);
-  else if (view_.resolutionOverride > 0)
+  else if (status == ResolutionStatus::Override)
     std::snprintf(hint, sizeof(hint), t.resolutionOverride, view_.resolutionOverride);
-  else if (view_.videoResolutionEffective < view_.videoResolutionActive)
+  else if (status == ResolutionStatus::Limited)
     std::snprintf(hint, sizeof(hint), t.resolutionLimited, view_.videoResolutionEffective / 100.0);
-  else if (kStandaloneHeadset && view_.resolutionNotice)
+  else if (status == ResolutionStatus::Changed)
     std::snprintf(hint, sizeof(hint), t.resolutionChanged, view_.resolutionBase,
                   view_.resolutionStops ? view_.videoResolution / double(view_.resolutionBase)
                                         : view_.videoResolution / 100.0);
-  else
-    resolutionStatus = false;
-  if (resolutionStatus) {
+  if (status != ResolutionStatus::None) {
     addLabel(x + 12, y, w - 12, 0, hint, kHintSize, true, 2);
     y += hintHeight(2) + 6;
   }
