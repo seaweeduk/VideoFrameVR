@@ -120,7 +120,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.greenScreenOwnMask = "此视频自带遮罩。";
   s.passthroughGroup = "透视";
   s.opacity = "不透明度";
-  s.opacityHint = "视频覆盖周围环境的程度。仅适用于头显本身，不适用于从电脑串流。观看 180° 或 360° 视频时，按住一个握持键并转动该手腕即可调节。仅对此视频保存。";
+  s.opacityHint = "视频覆盖周围环境的程度。观看 180° 或 360° 视频时，按住一个握持键并转动该手腕即可调节。仅对此视频保存。";
   s.opacityOverlay = "不透明度：%d%%";
   s.packedMask = "视频自带遮罩";
   s.packedMaskHint = "用于自带遮罩的视频（DeoVR alpha）。除非在此设置，否则按文件名中的“_ALPHA”判断。仅对此视频保存。";
@@ -870,11 +870,13 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.viewpoint.tip = "将任一摇杆向前或向后推住，即可靠近或远离画面。为此视频保存；“重置视角”或“重置”会将其移回中央。";
   s.autoPassthrough.setting = "自动透视";
   s.autoPassthrough.hint = "为透视制作的视频（带遮罩、绿幕或纯色背景）会自动开启透视。对某个视频关闭后，会保持关闭。";
-  s.autoPassthrough.hintDesktop = "用于为透视制作的视频（遮罩、绿幕或纯色背景）。仅适用于摄像头会在绿色处显示房间的头显，例如 Steam Frame。";
+  s.autoPassthrough.unavailable = "不可用。运行时或头显不允许应用显示周围环境。";
   s.autoPassthrough.mask = "已开启透视：带遮罩的视频";
   s.autoPassthrough.greenScreen = "已开启透视：绿幕视频";
   s.autoPassthrough.fill = "已开启透视：纯色背景视频";
   s.autoPassthrough.undo = "视频设置 → 透视 可关闭";
+  s.autoPassthrough.keyGreen = "用绿色绘制周围环境";
+  s.autoPassthrough.keyGreenHint = "适用于在头显端把某种颜色替换为周围环境的串流软件，例如 ALVR 的色键。开启透视后，周围环境以纯绿色绘制。";
   s.drives.card = "microSD 卡";
   s.drives.usbDrive = "U 盘";
   s.drives.drive = "驱动器";

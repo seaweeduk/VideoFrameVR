@@ -134,11 +134,29 @@ void Menu::layoutSettings() {
   x = columnX(1) + kGroupPad;
   addToggleRow(x, y, w, t.background, view_.background, command(MenuCommand::ToggleBackground));
   const AutoPassthroughStrings& pt = t.autoPassthrough;
-  const char* ptHint = kStandaloneHeadset ? pt.hint : pt.hintDesktop;
-  addToggleRow(x, y + kSettingStep, w, pt.setting, view_.autoPassthrough,
-               command(MenuCommand::ToggleAutoPassthrough)).tooltip = ptHint;
-  addLabel(x + 12, y + 2 * kSettingStep, w - 12, 0, ptHint, kHintSize, true, 3);
-  const double viewBottom = y + 2 * kSettingStep + hintHeight(3) + 6;
+  // Only where the room can show: the runtime blends the eye images over it,
+  // or on a PC whose runtime doesn't, the room is drawn in key green. That
+  // switch shows only there, with the reason under it while nothing shows
+  // the room (the column has no room for it and the hint's three lines).
+  const bool available = view_.passthroughAvailable;
+  const char* ptHint = available ? pt.hint : pt.unavailable;
+  addToggleRow(x, y + kSettingStep, w, pt.setting, view_.autoPassthrough && available,
+               command(MenuCommand::ToggleAutoPassthrough), !available)
+      .tooltip = ptHint;
+  double viewBottom = y + 2 * kSettingStep;
+  if (!kStandaloneHeadset && !view_.opacityApplies) {
+    addToggleRow(x, viewBottom, w, pt.keyGreen, view_.keyGreen,
+                 command(MenuCommand::ToggleKeyGreen))
+        .tooltip = pt.keyGreenHint;
+    viewBottom += kSettingStep;
+    if (!available) {
+      addLabel(x + 12, viewBottom, w - 12, 0, ptHint, kHintSize, true, 2);
+      viewBottom += hintHeight(2) + 6;
+    }
+  } else {
+    addLabel(x + 12, viewBottom, w - 12, 0, ptHint, kHintSize, true, 3);
+    viewBottom += hintHeight(3) + 6;
+  }
   addGroup(columnX(1), pageTop, kColumnW, viewBottom - pageTop, t.groupView);
 
   // Stash: on or off; while on, its server, switches and state.
@@ -390,8 +408,8 @@ void Menu::layoutVideoSettings() {
                !flat || view_.format.stereo == StereoLayout::Mono)
       .tooltip = t.halfPackedHint;
   addToggleRow(x, y + kSettingStep, w, t.passthrough, view_.passthrough,
-               command(MenuCommand::TogglePassthrough))
-      .tooltip = t.passthroughHint;
+               command(MenuCommand::TogglePassthrough), !view_.passthroughAvailable)
+      .tooltip = view_.passthroughAvailable ? t.passthroughHint : t.autoPassthrough.unavailable;
   const double formatBottom = y + 2 * kSettingStep + 10;
   addGroup(columnX(0), pageTop, kColumnW, formatBottom - pageTop, t.format);
   layoutScreenGroup(formatBottom + kGap, !flat);
@@ -654,8 +672,8 @@ void Menu::layoutVideoSettings() {
 
   if (!view_.passthrough && !view_.opacityApplies) return;
 
-  // Passthrough: the video's opacity (blended only by the headset itself,
-  // with its own camera, below 100 % with passthrough off too, so shown
+  // Passthrough: the video's opacity (blended over the room where the
+  // runtime does that, below 100 % with passthrough off too, so shown
   // wherever it applies), then with passthrough on removing its background
   // or its own mask, on or off, and while on their settings (the key's
   // sliders only while it removes something), then Reset with Match the

@@ -80,7 +80,7 @@ struct VideoSettings {
   ColourBalance balance;
   float zoom = 1.0f;  // 180°/360° video: magnification
   float originForward = 0;  // surround viewpoint, in sphere radii toward the picture
-  int opacity = 100;  // percent, over the room (blended by the headset itself)
+  int opacity = 100;  // percent, over the room (where the runtime blends)
   // Persisted control range. The combined origin and head motion are eased
   // inside the sphere by stereo_correction.cpp, not clamped at this value.
   static constexpr float kMaxOriginForward = 0.8f;

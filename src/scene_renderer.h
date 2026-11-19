@@ -35,7 +35,7 @@ class XrContext;
 // What the eye images are cleared to, and how passthrough is drawn.
 enum class ClearMode {
   Dark,         // the empty scene
-  KeyGreen,     // the room shows where the Frame's camera keyer sees key green (desktop, streaming)
+  KeyGreen,     // the room shows where a streamer keys green out (a PC set to it: Settings::keyGreen)
   Transparent,  // native passthrough: alpha blended over the camera (premultiplied)
 };
 

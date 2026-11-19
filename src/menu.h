@@ -83,7 +83,7 @@ struct MenuCommand {
               SetScreenHeight, SetScreenCurve, ResetScreen, SetOriginForward, SetOpacity,
               SetWarmth, SetTint, SetExposure, ToggleMatchRoom, ReadRoomAgain,
               SetMatchColour, SetMatchBrightness,
-              ToggleAutoPassthrough, ToggleVibration,
+              ToggleAutoPassthrough, ToggleKeyGreen, ToggleVibration,
               // Stash (docs/stash.md): on or off, its server, its switches,
               // Sync now, and the format the Scenes page shows.
               ToggleStash, SetStashServer, ToggleStashCovers, ToggleStashTitles,
@@ -175,7 +175,7 @@ struct MenuView {
   bool maskLayers = false;   // its mask has a second layer (VideoSettings::maskLayersFound)
   bool secondLayerHidden = false;  // ... hidden by hand
   int opacity = 100;            // of the running video, percent
-  bool opacityApplies = false;  // the headset blends the video over the room (its own camera)
+  bool opacityApplies = false;  // the runtime blends the video over the room
   std::string currentFile;
   bool playbackFailed = false;  // the current video couldn't be played
   bool discEncrypted = false;   // ... because it is an encrypted disc image
@@ -186,6 +186,8 @@ struct MenuView {
   int videoWidth = 0, videoHeight = 0;
   bool background = true;  // night sky around the flat screen
   bool autoPassthrough = false;  // passthrough switches itself on for videos made for it
+  bool keyGreen = false;         // a PC whose runtime doesn't blend: passthrough draws the room green
+  bool passthroughAvailable = false;  // the runtime blends, or keyGreen is on in its place
   int subtitleSize = 100, subtitleRaise = 0, subtitleDistance = 150;  // see Settings
   bool photo = false;        // the current file is a photo
   int slideshowSeconds = 0;  // 0 = no slideshow

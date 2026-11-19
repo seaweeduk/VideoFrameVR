@@ -120,7 +120,7 @@ Strings germanStrings(const Strings& english) {
   s.greenScreenOwnMask = "Dieses Video hat eine eigene Maske.";
   s.passthroughGroup = "Passthrough";
   s.opacity = "Deckkraft";
-  s.opacityHint = "Wie deckend das Video über dem Raum ist. Nur auf dem Headset selbst, nicht beim Streamen vom PC. Bei 180°- oder 360°-Video eine Grifftaste halten und das Handgelenk drehen, um sie zu ändern. Für dieses Video gespeichert.";
+  s.opacityHint = "Wie deckend das Video über dem Raum ist. Bei 180°- oder 360°-Video eine Grifftaste halten und das Handgelenk drehen, um sie zu ändern. Für dieses Video gespeichert.";
   s.opacityOverlay = "Deckkraft: %d %%";
   s.packedMask = "Maske im Video";
   s.packedMaskHint = "Für Videos mit eigener Maske (DeoVR-Alpha). Folgt „_ALPHA“ im Dateinamen, außer hier eingestellt. Für dieses Video gespeichert.";
@@ -870,11 +870,13 @@ Strings germanStrings(const Strings& english) {
   s.viewpoint.tip = "Einen Stick nach vorn oder hinten halten, um dem Bild näher zu kommen oder davon weg. Für dieses Video gespeichert; Zentrieren oder Zurücksetzen bringt ihn zurück in die Mitte.";
   s.autoPassthrough.setting = "Automatisches Passthrough";
   s.autoPassthrough.hint = "Passthrough schaltet sich bei Videos ein, die dafür gemacht sind: mit Maske, Green Screen oder einfarbigem Hintergrund. Für ein Video ausgeschaltet, bleibt es aus.";
-  s.autoPassthrough.hintDesktop = "Für Videos, die dafür gemacht sind (Maske, Green Screen oder einfarbiger Hintergrund). Nur für Headsets, deren Kamera den Raum im Grün zeigt, etwa die Steam Frame.";
+  s.autoPassthrough.unavailable = "Nicht verfügbar. Laufzeit oder Headset lassen Apps den Raum nicht zeigen.";
   s.autoPassthrough.mask = "Passthrough an: Video mit Maske";
   s.autoPassthrough.greenScreen = "Passthrough an: Green-Screen-Video";
   s.autoPassthrough.fill = "Passthrough an: einfarbiger Hintergrund";
   s.autoPassthrough.undo = "Videoeinstellungen → Passthrough schaltet es aus";
+  s.autoPassthrough.keyGreen = "Raum in Grün zeichnen";
+  s.autoPassthrough.keyGreenHint = "Für Streaming-Software, die im Headset eine Farbe durch den Raum ersetzt, etwa ALVRs Chroma Key. Bei aktivem Passthrough wird der Raum in reinem Grün gezeichnet.";
   s.drives.card = "microSD-Karte";
   s.drives.usbDrive = "USB-Laufwerk";
   s.drives.drive = "Laufwerk";

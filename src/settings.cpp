@@ -104,6 +104,7 @@ std::string allLines(const Settings& s) {
   out << "after_video=" << (s.afterVideo == AfterVideo::Stop ? "stop" : "next") << "\n";
   out << "seek_preview=" << (s.seekPreview ? 1 : 0) << "\n";
   out << "auto_passthrough=" << (s.autoPassthrough ? 1 : 0) << "\n";
+  out << "key_green=" << (s.keyGreen ? 1 : 0) << "\n";
   out << "passthrough_notice_seen=" << (s.passthroughNoticeSeen ? 1 : 0) << "\n";
   out << "setup_banner=" << (s.setupBanner ? 1 : 0) << "\n";
   out << "show_whats_new=" << (s.showWhatsNew ? 1 : 0) << "\n";
@@ -177,7 +178,6 @@ Settings defaultSettings() {
     s.videoMipmaps = false;  // at 2160 they cost 8K playback's headroom; 2592 drops frames
     s.seekPreview = false;   // not available there (main.cpp)
     s.background = false;    // the night sky: a non-essential cost behind flat videos
-    s.autoPassthrough = true;  // the Frame shows the room itself
   }
   return s;
 }
@@ -280,6 +280,7 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "after_video") s.afterVideo = value == "stop" ? AfterVideo::Stop : AfterVideo::Next;
     else if (key == "seek_preview") s.seekPreview = value != "0";
     else if (key == "auto_passthrough") s.autoPassthrough = value != "0";
+    else if (key == "key_green") s.keyGreen = value == "1";
     else if (key == "passthrough_notice_seen") s.passthroughNoticeSeen = value == "1";
     else if (key == "setup_banner") s.setupBanner = value == "1";
     else if (key == "show_whats_new") s.showWhatsNew = value != "0";
