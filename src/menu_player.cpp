@@ -456,12 +456,23 @@ double Menu::seekAtPointer() const {
   return fraction * view_.playback.duration;
 }
 
+// Popups (an open list's entries and the pane behind them, a dialog's
+// buttons, the keyboard's accents) are drawn over the bar and take the
+// pointer first.
+bool Menu::onSeekBand() const {
+  if (pointerPanel_ != kMain || std::abs(pointerY_ - seekLineY()) > kSeekBand ||
+      view_.playback.duration <= 0 || view_.photo)
+    return false;
+  const int index = buttonAt(kMain, pointerX_, pointerY_);
+  return (index < 0 || !buttons_[index].popup) && !onPopups(kMain, pointerX_, pointerY_);
+}
+
 bool Menu::seekHover(double& fraction) const {
   if (pointerPanel_ != kMain || dialog_ != Dialog::None || dropdown_ != Dropdown::None ||
       view_.playback.duration <= 0 || view_.photo)
     return false;
   // While dragging the knob, the preview stays even if the pointer drifts off the bar.
-  if (!draggingSeek_ && std::abs(pointerY_ - seekLineY()) > kSeekBand) return false;
+  if (!draggingSeek_ && !onSeekBand()) return false;
   fraction = std::clamp((pointerX_ - kMargin) / (kMainWidth - 2 * kMargin), 0.0, 1.0);
   return true;
 }

@@ -531,8 +531,7 @@ MenuCommand Menu::click() {
     const int index = buttonAt(pointerPanel_, pointerX_, pointerY_);
     if (index < 0 || !buttons_[index].popup || !buttons_[index].key) closeKeyPopup();
   }
-  if (pointerPanel_ == kMain && std::abs(pointerY_ - seekLineY()) <= kSeekBand &&
-      view_.playback.duration > 0 && !view_.photo) {
+  if (onSeekBand()) {
     // The seek bar: the knob follows the pointer while the trigger is held,
     // the video jumps there on letting go (drag()).
     draggingSeek_ = true;
