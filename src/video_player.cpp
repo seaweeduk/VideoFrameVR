@@ -345,6 +345,7 @@ void VideoPlayer::load(const std::string& path, double start) {
   ++loadRequest_;
   path_ = path;
   remoteFailed_ = false;
+  hardwareRefused_ = false;
   discChapters_ = false;
   sidecarSubtitles_ = {};
   if (remote::isRemote(path) || isStashScene(path)) {
@@ -391,6 +392,7 @@ void VideoPlayer::load(const std::string& path, double start) {
 
 void VideoPlayer::loadFile(const char** cmd) {
   countedEntry_ = -1;
+  hardwareRefused_ = logReachedLoad_ = false;
   loadReplyPending_ = true;
   loadStarted_ = closeTimedOut_ = false;
   loadSentAt_ = nowSeconds();
@@ -424,6 +426,7 @@ void VideoPlayer::stop() {
   deferredStop_ = false;
   cancelVideoSleep();
   remoteFailed_ = false;
+  hardwareRefused_ = false;
   sidecarSubtitles_ = {};
   ++sizeRequest_;
   ++loadRequest_;
@@ -882,6 +885,15 @@ void VideoPlayer::pollEvents() {
       case MPV_EVENT_LOG_MESSAGE: {
         auto* msg = static_cast<mpv_event_log_message*>(ev->data);
         std::fprintf(stderr, "[mpv/%s] %s", msg->prefix, redactPaths(msg->text, path_).c_str());
+        // The Frame's mpv refuses to decode a large video in software after
+        // its hardware decoder failed: only the sound would play. Log lines
+        // can come after the next file's events, but in order: a refusal
+        // counts once the log lists the loaded file's video track.
+        if (std::strcmp(msg->prefix, "cplayer") == 0 && std::strstr(msg->text, "--vid="))
+          logReachedLoad_ = true;
+        if (logReachedLoad_ && (loading_ || current_) && std::strcmp(msg->prefix, "vd") == 0 &&
+            std::strncmp(msg->text, "Software decoding fallback is disabled", 38) == 0)
+          hardwareRefused_ = true;
         break;
       }
       case MPV_EVENT_START_FILE:
@@ -1194,8 +1206,13 @@ void VideoPlayer::pollEvents() {
       std::fprintf(stderr, "Playback failed: previous decoder did not release\n");
     }
   }
-  // mpv can treat a custom-stream read error as EOF or keep retrying it.
-  if (remoteFailed_.load(std::memory_order_relaxed) && !failed_) {
+  // mpv can treat a custom-stream read error as EOF or keep retrying it, and
+  // plays a video the hardware decoder refused as sound alone.
+  // The refusal stops the sound even after another failure was reported.
+  if ((remoteFailed_.load(std::memory_order_relaxed) && !failed_) || hardwareRefused_) {
+    if (hardwareRefused_)
+      std::fprintf(stderr, "Playback failed: the hardware decoder can't start this video\n");
+    hardwareRefused_ = false;
     const char* cmd[] = {"stop", nullptr};
     mpv_command_async(mpv_, 0, cmd);
     failed_ = true;

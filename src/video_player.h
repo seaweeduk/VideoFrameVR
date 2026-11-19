@@ -254,6 +254,8 @@ class VideoPlayer {
   };
   std::future<std::vector<Sidecar>> sidecarSubtitles_;
   std::atomic<bool> remoteFailed_{false};  // a remote file's read, or Stash's stream
+  bool hardwareRefused_ = false;  // the headset's decoder can't start the video
+  bool logReachedLoad_ = false;   // mpv's log has listed the last loaded file's tracks
   bool discChapters_ = false;  // the chapters are a disc playlist's, not mpv's
   std::vector<Chapter> mpvChapters_;  // as mpv last told them (chapter-list, chapter)
   int mpvChapter_ = -1;
