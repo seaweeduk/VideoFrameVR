@@ -2,7 +2,7 @@
 # packaging/mpv/mpv-mvc.patch.
 --- a/video/decode/vd_lavc.c
 +++ b/video/decode/vd_lavc.c
-@@ -55,6 +55,10 @@
+@@ -55,6 +55,31 @@
  #include "video/out/vo.h"
  #include "vd_mvc.h"
  
@@ -10,10 +10,31 @@
 +// V4L2 session's buffers.
 +void frame_ubwc_decoder_closed(void);
 +
++// Frame: the smallest picture area, by codec and bit depth, whose capture
++// pool the upstream Iris driver refused. Later sessions at least that large
++// take the smallest pool at once, so a seek or the next file doesn't fail first.
++static _Atomic int64_t v4l2_refused_area[2][2] = {{INT64_MAX, INT64_MAX}, {INT64_MAX, INT64_MAX}};
++
++static _Atomic int64_t *v4l2_refused(const AVCodecParameters *par)
++{
++    const AVPixFmtDescriptor *source = av_pix_fmt_desc_get(par->format);
++    return &v4l2_refused_area[par->codec_id == AV_CODEC_ID_HEVC]
++                             [source && source->comp[0].depth > 8];
++}
++
++static void v4l2_note_refused(const AVCodecParameters *par)
++{
++    _Atomic int64_t *refused = v4l2_refused(par);
++    int64_t area = (int64_t)par->width * par->height;
++    int64_t old = atomic_load(refused);
++    while (area > 0 && area < old && !atomic_compare_exchange_weak(refused, &old, area)) {
++    }
++}
++
  #include "options/m_option.h"
  
  static void init_avctx(struct mp_filter *vd);
-@@ -147,6 +151,7 @@ struct hwdec_opts {
+@@ -147,6 +172,7 @@ struct hwdec_opts {
      int hwdec_image_format;
      int hwdec_extra_frames;
      int hwdec_threads;
@@ -21,7 +42,7 @@
  };
  
  const struct m_sub_options hwdec_conf = {
-@@ -165,6 +170,9 @@ const struct m_sub_options hwdec_conf =
+@@ -165,6 +191,9 @@ const struct m_sub_options hwdec_conf =
              .flags = UPDATE_HWDEC},
          {"hwdec-threads", OPT_INT(hwdec_threads), M_RANGE(0, DBL_MAX)},
          {"vd-lavc-software-fallback", OPT_REPLACED("hwdec-software-fallback")},
@@ -31,7 +52,7 @@
          {0}
      },
      .size = sizeof(struct hwdec_opts),
-@@ -219,6 +227,12 @@ typedef struct lavc_ctx {
+@@ -219,6 +248,13 @@ typedef struct lavc_ctx {
      bool hwdec_failed;
      bool hwdec_notified;
      bool force_eof;
@@ -39,12 +60,13 @@
 +    bool v4l2_fed;      // packets were sent since the session opened
 +    bool retry_v4l2_allocation;
 +    bool retried_v4l2_allocation;
++    bool v4l2_smallest_pool;  // this session asked for the driver's minimum and one more
 +    bool prefer_v4l2_ubwc;
 +    bool v4l2_eof;
  
      bool intra_only;
      int framedrop_flags;
-@@ -698,10 +712,23 @@ static void force_fallback(struct mp_fil
+@@ -698,10 +734,23 @@ static void force_fallback(struct mp_fil
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
  
@@ -71,7 +93,7 @@
      select_and_set_hwdec(vd);
      init_avctx(vd);
  }
-@@ -711,6 +738,8 @@ static void reinit(struct mp_filter *vd)
+@@ -711,6 +760,8 @@ static void reinit(struct mp_filter *vd)
      vd_ffmpeg_ctx *ctx = vd->priv;
  
      uninit_avctx(vd);
@@ -80,17 +102,18 @@
  
      /*
       * Reset attempted hwdecs so that if the hwdec list is reconfigured
-@@ -738,6 +767,9 @@ static void init_avctx(struct mp_filter
+@@ -738,6 +789,10 @@ static void init_avctx(struct mp_filter
      vd_ffmpeg_ctx *ctx = vd->priv;
      struct vd_lavc_params *lavc_param = ctx->opts;
      struct mp_codec_params *c = ctx->codec;
 +    ctx->reopen_v4l2 = false;
 +    ctx->v4l2_eof = false;
 +    ctx->v4l2_fed = false;
++    ctx->v4l2_smallest_pool = false;
  
      m_config_cache_update(ctx->opts_cache);
  
-@@ -753,6 +785,34 @@ static void init_avctx(struct mp_filter
+@@ -753,6 +808,34 @@ static void init_avctx(struct mp_filter
      if (!lavc_codec)
          return;
  
@@ -125,7 +148,7 @@
      const AVCodecDescriptor *desc = avcodec_descriptor_get(lavc_codec->id);
      ctx->intra_only = desc && (desc->props & AV_CODEC_PROP_INTRA_ONLY);
  
-@@ -768,6 +828,26 @@ static void init_avctx(struct mp_filter
+@@ -768,6 +851,37 @@ static void init_avctx(struct mp_filter
      avctx->codec_id = lavc_codec->id;
      avctx->pkt_timebase = ctx->codec_timebase;
  
@@ -146,13 +169,24 @@
 +            spare += 3;
 +        av_opt_set_int(avctx->priv_data, "capture_spare", spare, 0);
 +    }
++    // The upstream Iris driver (SteamOS 0.5.10) keeps its reference frames
++    // apart, and fits them, its working memory and the pool in one address
++    // range: 8K HEVC Main 10 starts with at most one frame beyond its minimum.
++    // Once it refused a pool, a stream that size takes that one.
++    if (wrapper && strcmp(wrapper, "v4l2m2m") == 0 && c->lav_codecpar &&
++        (avctx->codec_id == AV_CODEC_ID_HEVC || avctx->codec_id == AV_CODEC_ID_H264)) {
++        const AVCodecParameters *par = c->lav_codecpar;
++        ctx->v4l2_smallest_pool = (int64_t)par->width * par->height >= atomic_load(v4l2_refused(par));
++        if (ctx->v4l2_smallest_pool)
++            av_opt_set_int(avctx->priv_data, "capture_spare", 1, 0);
++    }
 +    if (wrapper && strcmp(wrapper, "v4l2m2m") == 0 && (ctx->prefer_v4l2_ubwc || q08c))
 +        av_opt_set_int(avctx->priv_data, "capture_ubwc", 1, 0);
 +
      ctx->pic = av_frame_alloc();
      if (!ctx->pic)
          goto error;
-@@ -917,8 +997,20 @@ static void reset_avctx(struct mp_filter
+@@ -917,8 +1031,20 @@ static void reset_avctx(struct mp_filter
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
  
@@ -175,7 +209,7 @@
      ctx->flushing = false;
      ctx->hwdec_request_reinit = false;
  }
-@@ -957,7 +1049,13 @@ static void uninit_avctx(struct mp_filte
+@@ -957,7 +1083,13 @@ static void uninit_avctx(struct mp_filte
      mp_free_av_packet(&ctx->avpkt);
      av_buffer_unref(&ctx->cached_hw_frames_ctx);
  
@@ -189,7 +223,7 @@
  
      av_buffer_unref(&ctx->hwdec_dev);
  
-@@ -1195,7 +1293,7 @@ static void prepare_decoding(struct mp_f
+@@ -1195,7 +1327,7 @@ static void prepare_decoding(struct mp_f
          reset_avctx(vd);
  }
  
@@ -198,7 +232,7 @@
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
      struct hwdec_opts *hwdec_opts = ctx->hwdec_opts;
-@@ -1204,6 +1302,15 @@ static void handle_err(struct mp_filter
+@@ -1204,6 +1336,27 @@ static void handle_err(struct mp_filter
              ctx->use_hwdec ? " (hardware decoding)" : "");
  
      if (ctx->use_hwdec) {
@@ -207,14 +241,26 @@
 +            // Both send_packet and receive_frame can start V4L2 capture.
 +            // Replay the saved startup packets once in a fresh session. Iris
 +            // can also refuse a compressed capture start once after a seek.
++            // A refused pool gets its own retry with the smallest pool, even
++            // after an earlier allocation failure took the first.
++            const AVCodecParameters *par = ctx->codec->lav_codecpar;
++            int64_t refused = 0;
++            bool smaller = false;
++            if (par && (par->codec_id == AV_CODEC_ID_HEVC || par->codec_id == AV_CODEC_ID_H264) &&
++                av_opt_get_int(ctx->avctx->priv_data, "capture_start_refused", 0, &refused) >= 0 &&
++                refused) {
++                v4l2_note_refused(par);
++                smaller = !ctx->v4l2_smallest_pool;
++                MP_WARN(vd, "V4L2 refused the capture pool; using the driver's minimum and one more.\n");
++            }
 +            ctx->retry_v4l2_allocation = ctx->hw_probing &&
-+                                         !ctx->retried_v4l2_allocation;
++                                         (!ctx->retried_v4l2_allocation || smaller);
 +            ctx->hwdec_failed = true;
 +        }
          ctx->hwdec_fail_count += 1;
          if (ctx->hwdec_fail_count >= hwdec_opts->software_fallback)
              ctx->hwdec_failed = true;
-@@ -1253,7 +1360,7 @@ static bool send_mvc_queue(struct mp_fil
+@@ -1253,7 +1406,7 @@ static bool send_mvc_queue(struct mp_fil
          if (ret == AVERROR(EAGAIN))
              return true;
          if (ret < 0 && ret != AVERROR_EOF)
@@ -223,7 +269,7 @@
          vd_mvc_pop(ctx->mvc);
      }
      return false;
-@@ -1262,6 +1369,29 @@ static bool send_mvc_queue(struct mp_fil
+@@ -1262,6 +1415,29 @@ static bool send_mvc_queue(struct mp_fil
  static int send_packet(struct mp_filter *vd, struct demux_packet *pkt)
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
@@ -253,7 +299,7 @@
  
      if (ctx->num_requeue_packets && ctx->requeue_packets[0] != pkt)
          return AVERROR(EAGAIN); // cannot consume the packet
-@@ -1291,6 +1421,7 @@ static int send_packet(struct mp_filter
+@@ -1291,6 +1467,7 @@ static int send_packet(struct mp_filter
          return 0;
  
      int ret;
@@ -261,7 +307,7 @@
      if (ctx->mvc) {
          if (!vd_mvc_send(ctx->mvc, pkt)) {
              // The rewrite can't take this stream: carry on in 2D, from a
-@@ -1328,7 +1459,7 @@ static int send_packet(struct mp_filter
+@@ -1328,7 +1505,7 @@ static int send_packet(struct mp_filter
      }
  
      if (ret < 0)
@@ -270,7 +316,7 @@
      return ret;
  }
  
-@@ -1352,6 +1483,8 @@ static int decode_frame(struct mp_filter
+@@ -1352,6 +1529,8 @@ static int decode_frame(struct mp_filter
  
      if (!avctx || ctx->force_eof)
          return AVERROR_EOF;
@@ -279,7 +325,7 @@
  
      prepare_decoding(vd);
  
-@@ -1362,9 +1495,20 @@ static int decode_frame(struct mp_filter
+@@ -1362,9 +1541,20 @@ static int decode_frame(struct mp_filter
      if (ctx->mvc)
          send_mvc_queue(vd);
  
@@ -300,7 +346,7 @@
              // If flushing was initialized earlier and has ended now, make it
              // start over in case we get new packets at some point in the future.
              // This must take the delay queue into account, so avctx returns EOF
-@@ -1374,11 +1518,23 @@ static int decode_frame(struct mp_filter
+@@ -1374,11 +1564,23 @@ static int decode_frame(struct mp_filter
          } else if (ret == AVERROR(EAGAIN)) {
              // just retry after caller writes a packet
          } else {
@@ -325,7 +371,7 @@
      mp_codec_info_from_av(avctx, ctx->codec);
  
      // If something was decoded successfully, it must return a frame with valid
-@@ -1394,7 +1550,7 @@ static int decode_frame(struct mp_filter
+@@ -1394,7 +1596,7 @@ static int decode_frame(struct mp_filter
      if (mpi->imgfmt == IMGFMT_CUDA && !mpi->planes[0]) {
          MP_ERR(vd, "CUDA frame without data. This is a FFmpeg bug.\n");
          talloc_free(mpi);
@@ -334,7 +380,7 @@
          return AVERROR_BUG;
      }
  
-@@ -1415,7 +1571,7 @@ static int decode_frame(struct mp_filter
+@@ -1415,7 +1617,7 @@ static int decode_frame(struct mp_filter
              if (!sw) {
                  MP_ERR(vd, "Could not copy back hardware decoded frame.\n");
                  ctx->hwdec_fail_count = INT_MAX - 1; // force fallback
@@ -343,7 +389,7 @@
                  return AVERROR_UNKNOWN;
              }
              mpi = sw;
-@@ -1426,6 +1582,21 @@ static int decode_frame(struct mp_filter
+@@ -1426,6 +1628,21 @@ static int decode_frame(struct mp_filter
              return ret;
      }
  
@@ -365,7 +411,7 @@
      MP_TARRAY_APPEND(ctx, ctx->delay_queue, ctx->num_delay_queue, mpi);
      return ret;
  }
-@@ -1490,7 +1661,7 @@ static int receive_frame(struct mp_filte
+@@ -1490,7 +1707,7 @@ static int receive_frame(struct mp_filte
          if (!res) {
              MP_ERR(vd, "Could not copy back hardware decoded frame.\n");
              ctx->hwdec_fail_count = INT_MAX - 1; // force fallback
@@ -374,7 +420,7 @@
              return AVERROR_UNKNOWN;
          }
      }
-@@ -1571,6 +1742,10 @@ static void vd_lavc_reset(struct mp_filt
+@@ -1571,6 +1788,10 @@ static void vd_lavc_reset(struct mp_filt
  
      flush_all(vd);
  

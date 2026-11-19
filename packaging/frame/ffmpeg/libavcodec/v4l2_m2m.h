@@ -130,6 +130,11 @@ typedef struct V4L2m2mContext {
     enum IrisStartup iris_startup;
     int64_t iris_startup_deadline;
     int64_t iris_seek_deadline;
+    // Iris that reports its capture minimum (V4L2_CID_MIN_BUFFERS_FOR_CAPTURE),
+    // as the upstream driver in SteamOS 0.5.10 does: it decodes into private
+    // reference buffers and follows the stateful decoder sequence, so large
+    // streams start from a provisional input size, never the staged start.
+    int iris_reports_minimum;
     // No usable SPS in the codec header: the first packet's decides.
     int iris_sps_in_band;
     // H.264's DPB size for the staged pool; its reorder_size stays the
@@ -201,6 +206,7 @@ typedef struct V4L2m2mPriv {
     int num_output_buffers;
     int num_capture_buffers;
     int capture_spare;
+    int capture_start_refused;
     int drain_seek_status;
     int capture_ubwc;
     int capture_10bit;

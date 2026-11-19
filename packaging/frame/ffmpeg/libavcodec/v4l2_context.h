@@ -94,9 +94,15 @@ typedef struct V4L2Context {
     AVBufferRef **bufrefs;
 
     /**
-     * Readonly after init.
+     * Readonly after init, except while late_target adds capture buffers.
      */
     int num_buffers;
+
+    /**
+     * Capture buffers made after STREAMON on the upstream Iris driver: the
+     * pool's total (bufrefs has room for it) and the driver's minimum.
+     */
+    int late_target, late_minimum;
 
     /**
      * Buffer memory type V4L2_MEMORY_MMAP or V4L2_MEMORY_DMABUF
