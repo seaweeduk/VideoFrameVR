@@ -691,6 +691,10 @@ class Menu {
   void layoutDiagnostics(double top, int column);  // Help: Save diagnostics
   double layoutAdvancedSwitch();  // atop a page with rows it hides; returns where groups start
   void layoutVideoSettings();
+  // The line under its Resolution slider. It is there only with something
+  // to say, so the rows under it move when it comes or goes.
+  enum class ResolutionStatus { None, Pending, Override, Limited, Changed };
+  static ResolutionStatus resolutionStatus(const MenuView& view, bool held);
   // The background key's Background row: its swatch and state, choosing
   // what it removes (menu_settings.cpp).
   void layoutKeyBackground(double x, double y, double w);

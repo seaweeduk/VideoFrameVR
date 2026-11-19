@@ -214,21 +214,24 @@ void Menu::update(const MenuView& view) {
   if (view.subtitleDistance != view_.subtitleDistance) sliderChanged(MenuCommand::SetSubtitleDistance);
   // The eye size can change while playing (a later Auto resolution, or
   // --resolution-cycle, or the Resolution slider, which redraws nothing
-  // itself): only the video settings page shows it.
-  if (page_ == Page::VideoSettings &&
-      (view.videoResolution != view_.videoResolution ||
-       view.videoResolutionEffective != view_.videoResolutionEffective ||
-       view.resolutionOverride != view_.resolutionOverride ||
-       view.resolutionNotice != view_.resolutionNotice))
-    sliderChanged(MenuCommand::SetVideoResolution, kSettingStep + hintHeight(2));
-  // Its hint tells that letting go of the slider switches.
+  // itself): only the video settings page shows it. Its status line tells
+  // that letting go of the slider switches.
   const bool resolutionHeld =
       view.resolutionPending && draggingSlider_ == MenuCommand::SetVideoResolution;
-  if (resolutionHeld != resolutionHeld_) {
-    resolutionHeld_ = resolutionHeld;
-    if (page_ == Page::VideoSettings)
+  if (page_ == Page::VideoSettings) {
+    const ResolutionStatus status = resolutionStatus(view, resolutionHeld);
+    const ResolutionStatus was = resolutionStatus(view_, resolutionHeld_);
+    // The status line coming or going moves the rows under it, so all of
+    // the page is drawn again; a new text in it only its own rows.
+    if ((status == ResolutionStatus::None) != (was == ResolutionStatus::None))
+      browserChanged();
+    else if (status != was || view.videoResolution != view_.videoResolution ||
+             view.videoResolutionEffective != view_.videoResolutionEffective ||
+             view.resolutionOverride != view_.resolutionOverride ||
+             view.resolutionNotice != view_.resolutionNotice)
       sliderChanged(MenuCommand::SetVideoResolution, kSettingStep + hintHeight(2));
   }
+  resolutionHeld_ = resolutionHeld;
   // The presets: only the video settings page shows them. Which one is lit
   // changes only its row at the top (unless the list is open); a new listing
   // also the list, or the name being typed's check.
@@ -598,7 +601,10 @@ MenuCommand Menu::drag(bool held) {
     }
     closeKeyPopup();
   }
-  if (held && pointerPanel_ == kBrowser && browserRow_ >= 0) return {};
+  // While a new page is drawn, held input waits, except a slider already held:
+  // its rows are laid out, and the last stop before letting go is the one kept.
+  if (held && pointerPanel_ == kBrowser && browserRow_ >= 0 && draggingSlider_ == MenuCommand::None)
+    return {};
   if (setup_ && setup_->folders && setup_->folders->drag.pressed)
     return SetupPages::drag(*this, held);
   if (ratingDrag_.active) return dragRating(held);
