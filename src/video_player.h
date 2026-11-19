@@ -163,6 +163,8 @@ class VideoPlayer {
   // texture still holds the previous video meanwhile.
   bool loading() const { return loading_; }
   bool failed() const { return failed_; }
+  // The headset's decoder takes AV1 (SteamOS 0.5.10 and later).
+  bool hardwareAv1() const { return hardwareAv1_; }
   // Whether width() and height() (and playback().views) are this file's,
   // not still the last one's while it opens.
   bool sized() const {
@@ -253,6 +255,7 @@ class VideoPlayer {
     std::string url, title, lang;
   };
   std::future<std::vector<Sidecar>> sidecarSubtitles_;
+  bool hardwareAv1_ = false;  // hwdec-codecs includes AV1
   std::atomic<bool> remoteFailed_{false};  // a remote file's read, or Stash's stream
   bool hardwareRefused_ = false;  // the headset's decoder can't start the video
   bool logReachedLoad_ = false;   // mpv's log has listed the last loaded file's tracks

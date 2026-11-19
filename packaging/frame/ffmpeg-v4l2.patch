@@ -1,8 +1,18 @@
 # Build the Frame's V4L2 decoder (packaging/frame/ffmpeg/, copied over FFmpeg's own)
 # and refuse to map Qualcomm compressed frames to the CPU. Apply to FFmpeg 9.0.2.
+--- a/configure
++++ b/configure
+@@ -3727,6 +3727,7 @@ vp9_vaapi_encoder_select="vaapi_encode"
+ vp9_qsv_encoder_deps="libmfx MFX_CODEC_VP9"
+ vp9_qsv_encoder_select="qsvenc"
+ vp9_v4l2m2m_decoder_deps="v4l2_m2m vp9_v4l2_m2m"
++av1_v4l2m2m_decoder_deps="v4l2_m2m"
+ amf_capture_filter_deps="amf"
+ vvc_qsv_decoder_select="vvc_mp4toannexb_bsf qsvdec"
+ 
 --- a/libavcodec/Makefile
 +++ b/libavcodec/Makefile
-@@ -184,7 +184,8 @@
+@@ -184,7 +184,8 @@ OBJS-$(CONFIG_VC1DSP)                  +
  OBJS-$(CONFIG_VIDEODSP)                += videodsp.o
  OBJS-$(CONFIG_VP3DSP)                  += vp3dsp.o
  OBJS-$(CONFIG_VP8DSP)                  += vp8dsp.o
@@ -12,6 +22,24 @@
  OBJS-$(CONFIG_WMA_FREQS)               += wma_freqs.o
  OBJS-$(CONFIG_WMV2DSP)                 += wmv2dsp.o
  
+@@ -829,6 +830,7 @@ OBJS-$(CONFIG_VP9_VAAPI_ENCODER)       +
+ OBJS-$(CONFIG_VP9_QSV_ENCODER)         += qsvenc_vp9.o
+ OBJS-$(CONFIG_VPLAYER_DECODER)         += textdec.o ass.o
+ OBJS-$(CONFIG_VP9_V4L2M2M_DECODER)     += v4l2_m2m_dec.o
++OBJS-$(CONFIG_AV1_V4L2M2M_DECODER)     += v4l2_m2m_dec.o
+ OBJS-$(CONFIG_VQA_DECODER)             += vqavideo.o
+ OBJS-$(CONFIG_VQC_DECODER)             += vqcdec.o
+ OBJS-$(CONFIG_VVC_DECODER)             += executor.o h2645data.o
+--- a/libavcodec/allcodecs.c
++++ b/libavcodec/allcodecs.c
+@@ -847,6 +847,7 @@ extern const FFCodec ff_h263_v4l2m2m_enc
+ extern const FFCodec ff_libaom_av1_decoder;
+ /* hwaccel hooks only, so prefer external decoders */
+ extern const FFCodec ff_av1_decoder;
++extern const FFCodec ff_av1_v4l2m2m_decoder;
+ extern const FFCodec ff_av1_cuvid_decoder;
+ extern const FFCodec ff_av1_d3d12va_encoder;
+ extern const FFCodec ff_av1_mediacodec_decoder;
 --- a/libavutil/hwcontext_drm.c
 +++ b/libavutil/hwcontext_drm.c
 @@ -31,6 +31,7 @@
@@ -22,7 +50,7 @@
  #include <xf86drm.h>
  
  #include "avassert.h"
-@@ -130,6 +131,13 @@
+@@ -130,6 +131,13 @@ static int drm_map_frame(AVHWFramesConte
      int mmap_prot;
      void *addr;
  

@@ -20,6 +20,11 @@ std::string upper(std::string s) {
   return s;
 }
 
+// The codecs the Frame decodes in hardware: AV1 too where its decoder takes it.
+bool hardwareCodec(const std::string& codec, bool av1) {
+  return codec == "h264" || codec == "hevc" || (av1 && codec == "av1");
+}
+
 }  // namespace
 
 void Menu::layoutMain() {
@@ -109,7 +114,7 @@ void Menu::layoutMain() {
     if (Button* b = label(t.softwareDecoding.label, [] { return MenuCommand{}; })) {
       b->danger = true;
       // The Frame decodes only H.264 and HEVC in hardware.
-      if (kStandaloneHeadset && p.videoCodec != "h264" && p.videoCodec != "hevc") {
+      if (kStandaloneHeadset && !hardwareCodec(p.videoCodec, view_.hardwareAv1)) {
         char reason[256];
         std::snprintf(reason, sizeof(reason), t.softwareDecoding.noHardware,
                       upper(p.videoCodec).c_str());
