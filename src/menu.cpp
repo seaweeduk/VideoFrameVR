@@ -170,7 +170,6 @@ void Menu::update(const MenuView& view) {
       view.maskFormat != view_.maskFormat || view.opacityApplies != view_.opacityApplies ||
       view.maskLayers != view_.maskLayers || view.secondLayerHidden != view_.secondLayerHidden ||
       view.roomMatch != view_.roomMatch || view.roomMatched != view_.roomMatched ||
-      view.roomRead != view_.roomRead ||
       view.greenScreen.on != view_.greenScreen.on ||
       view.greenScreen.source != view_.greenScreen.source ||
       view.colourKey != view_.colourKey || view.keyColour != view_.keyColour ||

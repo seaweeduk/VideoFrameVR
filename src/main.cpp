@@ -805,8 +805,11 @@ int run(Options opts) {
   const char* passthroughWhy = nullptr;  // the notice's first line
   double passthroughShownUntil = 0;
   // The colour balance: the video's own (app.video.balance, saved with it),
-  // or while Match the room is on the room's, for every video until it goes
-  // off, never saved: the room's light belongs to the room, not to a video.
+  // or while Match the room is on and the room is shown the room's, never
+  // saved: the room's light belongs to the room, not to a video. The switch
+  // stays as set for the run; with the room hidden (another video, passthrough
+  // off, Opacity at 100 %) the video's own is drawn, shown and edited until
+  // the room shows again.
   RoomLight roomLight;
   const bool roomReadable = kStandaloneHeadset && RoomLight::available();
   double roomFailedUntil = 0;  // glfwGetTime() Match the room stops saying it failed
@@ -1514,6 +1517,14 @@ int run(Options opts) {
     app.keyPickNote = KeyPickNote::None;
   };
 
+  // The eye images are blended over the room (the Frame's cameras): with
+  // passthrough on, or Opacity below 100, with or without passthrough (whose
+  // mask or key it doesn't bring). Match the room applies only then.
+  auto roomShown = [&] {
+    return kStandaloneHeadset && xr.alphaBlendSupported() &&
+           (app.video.passthrough || app.video.opacity < 100);
+  };
+
   auto execute = [&](const MenuCommand& c) {
     switch (c.type) {
       case MenuCommand::TogglePause: player.command("cycle pause"); break;
@@ -1572,14 +1583,15 @@ int run(Options opts) {
       case MenuCommand::SetWarmth:  // the colour balance: applied while drawing
       case MenuCommand::SetTint:
       case MenuCommand::SetExposure: {
-        // The video's, saved, or while Match the room is on the room's, not.
-        ColourBalance& balance = roomMatched ? roomBalance : app.video.balance;
+        // The video's, saved, or while the room's is matched the room's, not.
+        const bool matching = roomMatched && roomShown();
+        ColourBalance& balance = matching ? roomBalance : app.video.balance;
         const int value = std::clamp(static_cast<int>(c.value), -100, 100);
         // Each its own part, as brightness etc.: an edit before the video's
         // record is found leaves the other two as saved.
         const bool warmth = c.type == MenuCommand::SetWarmth, tint = c.type == MenuCommand::SetTint;
         (warmth ? balance.warmth : tint ? balance.tint : balance.exposure) = value;
-        if (roomMatched) ++balanceEdits;
+        if (matching) ++balanceEdits;
         else
           storeVideoSoon(warmth ? VideoSettings::kWarmth
                          : tint ? VideoSettings::kTint
@@ -1587,6 +1599,7 @@ int run(Options opts) {
         break;
       }
       case MenuCommand::ToggleMatchRoom:  // off: the video's own balance again
+        if (!roomShown()) break;  // the switch is disabled while the room is hidden
         roomFailedUntil = 0;
         roomMatched = !roomMatched;
         if (roomMatched) {
@@ -1598,7 +1611,7 @@ int run(Options opts) {
         break;
       case MenuCommand::ReadRoomAgain:
         roomFailedUntil = 0;
-        if (roomMatched) readRoom();
+        if (roomMatched && roomShown()) readRoom();
         break;
       case MenuCommand::SetMatchColour:
         settings.matchColour = std::clamp(static_cast<int>(c.value), 0, 100);
@@ -1967,7 +1980,7 @@ int run(Options opts) {
         // What the group shows: the key's sliders only while the green
         // screen is on (passthrough on, not the video's own mask) and removes
         // something, Match the room's strengths only while it is on.
-        if (roomReadable && roomMatched) {
+        if (roomReadable && roomMatched && roomShown()) {
           const Settings defaults;
           settings.matchColour = defaults.matchColour;
           settings.matchBrightness = defaults.matchBrightness;
@@ -2663,9 +2676,9 @@ int run(Options opts) {
     const bool canBlend = kStandaloneHeadset && xr.alphaBlendSupported();
     const bool alphaPassthrough = app.video.passthrough && canBlend;
     const bool keyPassthrough = app.video.passthrough && !kStandaloneHeadset;
-    // Opacity below 100 blends the video over the camera too, with or
-    // without passthrough (whose mask or key it doesn't bring).
-    const bool blended = canBlend && (app.video.passthrough || app.video.opacity < 100);
+    const bool blended = roomShown();
+    // The room's balance, while the switch is on and the room is shown.
+    const bool roomMatching = roomMatched && blended;
     // A room reading that ended: kept for the run and matched while the
     // switch is on (unless the sliders were moved or reset since it was asked
     // for), or a moment saying it failed. The switch stays as it was set:
@@ -3466,14 +3479,13 @@ int run(Options opts) {
       view.brightness = app.video.brightness;
       view.contrast = app.video.contrast;
       view.saturation = app.video.saturation;
-      view.balance = roomMatched ? roomBalance : app.video.balance;
+      view.balance = roomMatching ? roomBalance : app.video.balance;
       view.roomMatch = !roomReadable            ? RoomMatch::Hidden
                        : roomLight.reading()    ? RoomMatch::Reading
                        : !blended               ? RoomMatch::Off
                        : now < roomFailedUntil ? RoomMatch::Failed
                                                 : RoomMatch::Ready;
       view.roomMatched = roomMatched;
-      view.roomRead = roomReading.has_value();
       view.matchColour = settings.matchColour;
       view.matchBrightness = settings.matchBrightness;
       view.tvGamma = settings.tvGamma;
@@ -3673,7 +3685,7 @@ int run(Options opts) {
       video.photo = photo;
       video.seeThrough = focusIn.seeThrough;
       video.opacity = app.video.opacity;
-      const std::array<float, 3> gains = (roomMatched ? roomBalance : app.video.balance).gains();
+      const std::array<float, 3> gains = (roomMatching ? roomBalance : app.video.balance).gains();
       for (int i = 0; i < 3; ++i) video.balance[i] = gains[i] - 1.0f;
       // Brightness etc. are applied while drawing to photos, and to videos
       // while a mask or key reads the frame; else mpv (or YuvColor) does it.

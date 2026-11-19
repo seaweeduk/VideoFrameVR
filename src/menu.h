@@ -192,10 +192,9 @@ struct MenuView {
   AfterVideo afterVideo = AfterVideo::Next;  // what happens when a video ends
   // Picture settings of the running video.
   int brightness = 0, contrast = 0, saturation = 0;
-  ColourBalance balance;  // the video's, or Match the room's while it is on
+  ColourBalance balance;  // the video's, or Match the room's while it is on and applies
   RoomMatch roomMatch = RoomMatch::Hidden;
-  bool roomMatched = false;  // Match the room is on
-  bool roomRead = false;     // ... and has a reading of this run to use again
+  bool roomMatched = false;  // Match the room is on (applied only while the room is shown)
   int matchColour = 70, matchBrightness = 60;  // percent (Settings::matchColour)
   float zoom = 1.0f;
   int originForward = 0;  // surround viewpoint: percent of the sphere's radius toward the picture
