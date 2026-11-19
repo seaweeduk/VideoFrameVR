@@ -1640,8 +1640,10 @@ int run(Options opts) {
       case MenuCommand::ResetPicture:
         app.video.brightness = app.video.contrast = app.video.saturation = 0;
         app.video.balance = {};
-        roomMatched = false;
-        ++balanceEdits;
+        if (roomShown()) {  // a hidden room keeps its switch for when it shows again
+          roomMatched = false;
+          ++balanceEdits;
+        }
         app.video.zoom = 1.0f;
         app.video.originForward = 0;
         applyPicture(VideoSettings::kPicture | VideoSettings::kOrigin);
@@ -3481,8 +3483,8 @@ int run(Options opts) {
       view.saturation = app.video.saturation;
       view.balance = roomMatching ? roomBalance : app.video.balance;
       view.roomMatch = !roomReadable            ? RoomMatch::Hidden
-                       : roomLight.reading()    ? RoomMatch::Reading
                        : !blended               ? RoomMatch::Off
+                       : roomLight.reading()    ? RoomMatch::Reading
                        : now < roomFailedUntil ? RoomMatch::Failed
                                                 : RoomMatch::Ready;
       view.roomMatched = roomMatched;
