@@ -73,8 +73,13 @@ struct Result {
 };
 
 Entry entry(const std::string& name, const smb2_stat_64& st) {
-  return {name, st.smb2_type == SMB2_TYPE_DIRECTORY, st.smb2_size,
+  Entry e{name, st.smb2_type == SMB2_TYPE_DIRECTORY, st.smb2_size,
           static_cast<int64_t>(st.smb2_mtime)};
+  if (e.folder)
+    e.stamp = {static_cast<int64_t>(st.smb2_mtime), static_cast<int64_t>(st.smb2_mtime_nsec),
+               static_cast<int64_t>(st.smb2_ctime), static_cast<int64_t>(st.smb2_ctime_nsec),
+               st.smb2_ino};
+  return e;
 }
 
 // All libsmb2 calls for a server. A call may wait for its one request;
@@ -131,6 +136,38 @@ class Smb : public Backend {
     const int rc = wait(r, smb2_stat_async(ctx_, loc.path.c_str(), &st, Result::cb, &r));
     if (rc >= 0) out = entry(locator.substr(locator.rfind('/') + 1), st);
     return statusOf(rc);
+  }
+
+  void listAsync(const std::string& folder, Listed done) override {
+    const Location loc(folder);
+    if (loc.share.empty()) {
+      Backend::listAsync(folder, std::move(done));
+      return;
+    }
+    const Status status = connect(loc.share);
+    if (status != Status::Ok) {
+      done({status, {}});
+      return;
+    }
+    auto* d = new Directory{*this, std::move(done), serviceTree_};
+    smb2_create_request req{};
+    req.impersonation_level = SMB2_IMPERSONATION_IMPERSONATION;
+    req.desired_access = SMB2_FILE_LIST_DIRECTORY | SMB2_FILE_READ_ATTRIBUTES;
+    req.file_attributes = SMB2_FILE_ATTRIBUTE_DIRECTORY;
+    req.share_access = SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE | SMB2_FILE_SHARE_DELETE;
+    req.create_disposition = SMB2_FILE_OPEN;
+    req.create_options = SMB2_FILE_DIRECTORY_FILE;
+    req.name = loc.path.c_str();
+    auto* pdu = smb2_cmd_create_async(ctx_, &req, Directory::opened, d);
+    if (!pdu) {
+      auto callback = std::move(d->done);
+      delete d;
+      callback({Status::Offline, {}});
+      return;
+    }
+    ++awaited_;
+    lowWater(1);
+    smb2_queue_pdu(ctx_, pdu);
   }
 
   Status remove(const std::string& locator, uint64_t size, int64_t modified) override {
@@ -270,6 +307,7 @@ class Smb : public Backend {
   bool connected() const override { return ctx_; }
 
   void disconnect() override {
+    disconnecting_ = true;
     if (ctx_) {
       std::lock_guard lock(contextList);
       smb2_destroy_context(ctx_);  // completes outstanding callbacks before freeing their data
@@ -279,6 +317,8 @@ class Smb : public Backend {
     serviceTree_ = 0;
     awaited_ = 0;
     lowWater_ = 1;
+    disconnecting_ = false;
+    listsBroken_ = false;
   }
 
   int fd() const override { return ctx_ ? smb2_get_fd(ctx_) : -1; }
@@ -290,12 +330,134 @@ class Smb : public Backend {
     // What follows a block's first part is read as it arrives; so is a reply
     // that is late, or shorter than what was asked for (an error).
     if (lowWater_ > 1 && ((revents & POLLIN) || Clock::now() >= patientUntil_)) lowWater(1);
-    return !ctx_ || smb2_service(ctx_, revents) >= 0;
+    return !ctx_ || (smb2_service(ctx_, revents) >= 0 && !listsBroken_);
   }
 
   void jobDone() override { serviceTree_ = 0; }
 
  private:
+  // Raw directory requests select their own tree before each continuation.
+  // Other jobs and playback may select another share between replies.
+  struct Directory {
+    Smb& smb;
+    Listed done;
+    uint32_t tree;
+    smb2_file_id file{};
+    Listing result{Status::Ok, {}};
+
+    void finish(Status status) {
+      result.status = status;
+      if (status != Status::Ok) result.entries.clear();
+      --smb.awaited_;
+      auto callback = std::move(done);
+      auto value = std::move(result);
+      delete this;
+      callback(std::move(value));
+    }
+    bool aborted(uint32_t status) {
+      if (smb.disconnecting_) {
+        finish(Status::Offline);
+        return true;
+      }
+      if (connectionLost(-nterror_to_errno(status), status)) {
+        smb.listsBroken_ = true;
+        finish(Status::Offline);
+        return true;
+      }
+      return false;
+    }
+    void query() {
+      uint32_t previous = 0;
+      smb2_get_tree_id_for_pdu(smb.ctx_, nullptr, &previous);
+      smb2_select_tree_id(smb.ctx_, tree);
+      smb2_query_directory_request req{};
+      req.file_information_class = SMB2_FILE_ID_FULL_DIRECTORY_INFORMATION;
+      std::memcpy(req.file_id, file, SMB2_FD_SIZE);
+      req.output_buffer_length = 64 * 1024;
+      req.name = "*";
+      auto* pdu = smb2_cmd_query_directory_async(smb.ctx_, &req, queried, this);
+      smb2_select_tree_id(smb.ctx_, previous);
+      if (pdu) smb2_queue_pdu(smb.ctx_, pdu);
+      else close(Status::Offline);
+    }
+    void close(Status status) {
+      result.status = status;
+      uint32_t previous = 0;
+      smb2_get_tree_id_for_pdu(smb.ctx_, nullptr, &previous);
+      smb2_select_tree_id(smb.ctx_, tree);
+      smb2_close_request req{};
+      std::memcpy(req.file_id, file, SMB2_FD_SIZE);
+      auto* pdu = smb2_cmd_close_async(smb.ctx_, &req, closed, this);
+      smb2_select_tree_id(smb.ctx_, previous);
+      if (pdu) smb2_queue_pdu(smb.ctx_, pdu);
+      else {
+        smb.listsBroken_ = true;  // release the server handle on disconnect
+        finish(Status::Offline);
+      }
+    }
+    static void opened(smb2_context*, int status, void* data, void* opaque) {
+      auto* d = static_cast<Directory*>(opaque);
+      if (d->aborted(status)) return;
+      if (status != SMB2_STATUS_SUCCESS) {
+        d->finish(statusOf(-nterror_to_errno(status)));
+        return;
+      }
+      std::memcpy(d->file, static_cast<smb2_create_reply*>(data)->file_id, SMB2_FD_SIZE);
+      d->query();
+    }
+    static void queried(smb2_context* ctx, int status, void* data, void* opaque) {
+      auto* d = static_cast<Directory*>(opaque);
+      if (d->aborted(status)) return;
+      if (static_cast<uint32_t>(status) == SMB2_STATUS_NO_MORE_FILES) {
+        d->close(Status::Ok);
+        return;
+      }
+      if (status != SMB2_STATUS_SUCCESS) {
+        // Only opening a nonexistent directory authorizes deleting cached paths.
+        d->close(Status::Offline);
+        return;
+      }
+      const auto& reply = *static_cast<smb2_query_directory_reply*>(data);
+      uint32_t offset = 0;
+      while (offset < reply.output_buffer_length) {
+        if (reply.output_buffer_length - offset < 80) {
+          d->close(Status::Offline);
+          return;
+        }
+        smb2_iovec v{reply.output_buffer + offset, reply.output_buffer_length - offset, nullptr};
+        smb2_fileidfulldirectoryinformation f{};
+        if (smb2_decode_fileidfulldirectoryinformation(ctx, &f, &v) < 0 || !f.name) {
+          d->close(Status::Offline);
+          return;
+        }
+        const std::string name = f.name ? f.name : "";
+        free(const_cast<char*>(f.name));
+        if (name != "." && name != "..") {
+          Entry e{name, bool(f.file_attributes & SMB2_FILE_ATTRIBUTE_DIRECTORY),
+                  f.end_of_file, f.last_write_time.tv_sec};
+          e.link = f.file_attributes & SMB2_FILE_ATTRIBUTE_REPARSE_POINT;
+          if (e.folder)
+            e.stamp = {f.last_write_time.tv_sec, f.last_write_time.tv_usec * 1000,
+                       f.change_time.tv_sec, f.change_time.tv_usec * 1000, f.file_id};
+          d->result.entries.push_back(std::move(e));
+        }
+        if (!f.next_entry_offset) break;
+        if (f.next_entry_offset < 80 || f.next_entry_offset > reply.output_buffer_length - offset) {
+          d->close(Status::Offline);
+          return;
+        }
+        offset += f.next_entry_offset;
+      }
+      if (!reply.output_buffer_length) d->close(Status::Offline);
+      else d->query();
+    }
+    static void closed(smb2_context*, int status, void*, void* opaque) {
+      auto* d = static_cast<Directory*>(opaque);
+      if (d->aborted(status)) return;
+      d->finish(status == SMB2_STATUS_SUCCESS ? d->result.status : Status::Offline);
+    }
+  };
+
   static smb2fh* fh(const Handle& h) { return static_cast<smb2fh*>(h.file); }
 
   static void readDone(smb2_context* ctx, int status, void*, void* opaque) {
@@ -430,6 +592,7 @@ class Smb : public Backend {
   int awaited_ = 0;  // replies awaited: blocks' and a job's
   int lowWater_ = 1;  // the socket's (lowWater())
   bool wholeReplies_ = true;
+  bool disconnecting_ = false, listsBroken_ = false;
   Clock::time_point patientUntil_{};
 };
 

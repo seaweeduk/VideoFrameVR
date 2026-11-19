@@ -64,6 +64,12 @@ class Backend {
   // change to the login to keep (sftp.cpp).
   virtual Status signIn(Login& login) = 0;
   virtual Status list(const std::string& folder, std::vector<Entry>& entries) = 0;
+  using Listed = std::function<void(Listing)>;
+  virtual void listAsync(const std::string& folder, Listed done) {
+    Listing result;
+    result.status = list(folder, result.entries);
+    done(std::move(result));
+  }
   virtual Status stat(const std::string& locator, Entry& entry) = 0;
   virtual Status remove(const std::string& locator, uint64_t size, int64_t modified) = 0;
 
