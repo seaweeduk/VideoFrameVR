@@ -15,6 +15,28 @@ Sections, each only if it has lines, in this order: New, Improved, Fixed,
 Removed. Every line starts "- ", then optionally "[Frame] " or "[Desktop] ".
 -->
 
+## 0.6.0 · 2026-11-19
+### New
+- A new look for the whole menu, and fine values open a magnified scale for single steps
+- Browse and play an XBVR library as well as Stash, in Settings → Stash / XBVR
+- Play a video's funscript on a stroker through Intiface, in Settings → Funscripts
+- [Frame] 8-bit AV1 videos play with hardware decoding on SteamOS 0.5.10 and later
+- [Desktop] Draw the room in green, in Settings → View, for streaming apps that key out a colour
+### Improved
+- [Desktop] Passthrough shows the room through the headset's cameras where the runtime allows it
+- Finding new videos in large network folders is much faster
+- A server's folders are chosen in the file browser instead of typed
+- The stick steps the value you point at, instead of turning the view or seeking
+### Fixed
+- [Frame] Some 8K videos didn't start after the SteamOS 0.5.10 update
+- [Frame] A video the headset couldn't decode played its sound over an empty screen
+- Stash's preview clips showed up in the Library as videos
+- [Frame] Match the room changed the colours of videos without passthrough
+- Stash covers could keep a grey band across them, or not appear on the Offline page
+- Entries in the player's lists couldn't be picked where they covered the progress bar
+### Removed
+- The Transparent menu design: every panel is now matte
+
 ## 0.5.0 · 2026-11-14
 ### New
 - The next video plays when one ends; a new button by Next has Shuffle and Repeat this video
