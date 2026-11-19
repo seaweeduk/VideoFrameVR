@@ -499,12 +499,14 @@ struct ViewpointStrings {
 // Passthrough switching itself on (Settings → View, see_through.h).
 struct AutoPassthroughStrings {
   const char* setting;
-  const char* hint;         // Frame
-  const char* hintDesktop;  // a PC: only for headsets whose camera keys the green
+  const char* hint;
+  const char* unavailable;  // instead, and Passthrough's tooltip: the room can't show
   const char* mask;         // shown in front of the eyes as it switches on
   const char* greenScreen;
   const char* fill;         // a flat background (the fill check)
   const char* undo;         // the line below any
+  const char* keyGreen;     // a PC whose runtime can't blend: the room drawn in green instead
+  const char* keyGreenHint;
 };
 
 // microSD cards and USB drives (removable_drives.h): the navigation's name

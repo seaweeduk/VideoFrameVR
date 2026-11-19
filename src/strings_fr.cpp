@@ -120,7 +120,7 @@ Strings frenchStrings(const Strings& english) {
   s.greenScreenOwnMask = "Cette vidéo possède son propre masque.";
   s.passthroughGroup = "Passthrough";
   s.opacity = "Opacité";
-  s.opacityHint = "À quel point la vidéo couvre la pièce. Uniquement sur le casque lui-même, pas en streaming depuis un PC. Avec une vidéo 180° ou 360°, maintenez une poignée et tournez ce poignet pour la changer. Enregistré pour cette vidéo.";
+  s.opacityHint = "À quel point la vidéo couvre la pièce. Avec une vidéo 180° ou 360°, maintenez une poignée et tournez ce poignet pour la changer. Enregistré pour cette vidéo.";
   s.opacityOverlay = "Opacité : %d %%";
   s.packedMask = "Masque dans la vidéo";
   s.packedMaskHint = "Pour les vidéos qui ont leur propre masque (alpha DeoVR). Suit « _ALPHA » dans le nom du fichier, sauf réglage ici. Enregistré pour cette vidéo.";
@@ -870,11 +870,13 @@ Strings frenchStrings(const Strings& english) {
   s.viewpoint.tip = "Maintenez un stick vers l'avant ou l'arrière pour vous rapprocher ou vous éloigner de l'image. Enregistré pour cette vidéo ; Recentrer ou Réinitialiser le remet au centre.";
   s.autoPassthrough.setting = "Passthrough automatique";
   s.autoPassthrough.hint = "Le passthrough s'active tout seul pour les vidéos prévues pour : avec masque, fond vert ou fond uni. Désactivé pour une vidéo, il le reste.";
-  s.autoPassthrough.hintDesktop = "Pour les vidéos prévues pour (masque, fond vert ou fond uni). Seulement pour les casques dont la caméra montre la pièce dans le vert, comme le Steam Frame.";
+  s.autoPassthrough.unavailable = "Indisponible. Le runtime ou le casque ne permet pas aux applications d'afficher la pièce.";
   s.autoPassthrough.mask = "Passthrough activé : vidéo avec masque";
   s.autoPassthrough.greenScreen = "Passthrough activé : vidéo sur fond vert";
   s.autoPassthrough.fill = "Passthrough activé : vidéo sur fond uni";
   s.autoPassthrough.undo = "Réglages vidéo → Passthrough pour le désactiver";
+  s.autoPassthrough.keyGreen = "Dessiner la pièce en vert";
+  s.autoPassthrough.keyGreenHint = "Pour les logiciels de streaming qui remplacent une couleur par la pièce dans le casque, comme le chroma key d'ALVR. Avec le passthrough activé, la pièce est dessinée en vert pur.";
   s.drives.card = "Carte microSD";
   s.drives.usbDrive = "Clé USB";
   s.drives.drive = "Support";

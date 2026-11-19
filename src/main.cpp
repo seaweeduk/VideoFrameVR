@@ -254,7 +254,7 @@ void printControls() {
       "  Stick up/down  scroll lists; flat screen: distance (with a grip held: height);\n"
       "                 180°/360°: move toward or away from the picture (also while dragging)\n"
       "  Grip           hold to move the screen or the menu; on a screen corner: resize it;\n"
-      "                 180°/360° on the Frame: hold one and twist that wrist: opacity\n"
+      "                 180°/360° over the room: hold one and twist that wrist: opacity\n"
       "  Grip + trigger hold both and twist the wrist: volume\n"
       "\nKeyboard (the desktop window must have focus):\n"
       "  Tab          open or close menu\n"
@@ -267,7 +267,7 @@ void printControls() {
       "  P            projection: flat / 180 / 360 / fisheye 180 / 190 / 200 / 360 cubemap\n"
       "  L            stereo layout: mono / side-by-side / top-bottom\n"
       "  C            curved / flat screen (the curve itself: video settings)\n"
-      "  T            passthrough on / off (the room in green, for the Frame's camera)\n"
+      "  T            passthrough on / off (the headset's cameras; in green: Settings)\n"
       "  W/S          screen closer / farther\n"
       "  Q/E          screen lower / higher (its height; the width follows)\n"
       "  R            recenter in front of you\n"
@@ -1517,12 +1517,17 @@ int run(Options opts) {
     app.keyPickNote = KeyPickNote::None;
   };
 
-  // The eye images are blended over the room (the Frame's cameras): with
-  // passthrough on, or Opacity below 100, with or without passthrough (whose
-  // mask or key it doesn't bring). Match the room applies only then.
+  // The eye images are blended over the room (the headset's cameras, where
+  // the runtime blends): with passthrough on, or Opacity below 100, with or
+  // without passthrough (whose mask or key it doesn't bring). Match the room
+  // applies only then.
   auto roomShown = [&] {
-    return kStandaloneHeadset && xr.alphaBlendSupported() &&
-           (app.video.passthrough || app.video.opacity < 100);
+    return xr.alphaBlendSupported() && (app.video.passthrough || app.video.opacity < 100);
+  };
+  // A PC whose runtime doesn't blend, with the setting on: passthrough draws
+  // the room in key green, for a streamer that keys it out on the headset.
+  auto roomKeyed = [&] {
+    return !kStandaloneHeadset && settings.keyGreen && !xr.alphaBlendSupported();
   };
 
   auto execute = [&](const MenuCommand& c) {
@@ -1699,6 +1704,11 @@ int run(Options opts) {
         settings.autoPassthrough = !settings.autoPassthrough;
         saveSettings(settings);
         passthroughSettled = false;  // for the video playing too
+        break;
+      case MenuCommand::ToggleKeyGreen:
+        settings.keyGreen = !settings.keyGreen;
+        saveSettings(settings);
+        passthroughSettled = false;  // Automatic passthrough, for the video playing
         break;
       case MenuCommand::ToggleBackground:
         settings.background = !settings.background;
@@ -2543,10 +2553,9 @@ int run(Options opts) {
 
     // Passthrough for videos made for it, once their size (so their format)
     // and their settings are known. Never where it couldn't show the room:
-    // on the Frame the runtime must blend; on a PC the setting stands for
-    // a headset whose camera keys the green.
-    const bool autoPassthroughOn =
-        settings.autoPassthrough && (!kStandaloneHeadset || xr.alphaBlendSupported());
+    // the runtime must blend, or key green stand in for it.
+    const bool passthroughAvailable = xr.alphaBlendSupported() || roomKeyed();
+    const bool autoPassthroughOn = settings.autoPassthrough && passthroughAvailable;
     if (!passthroughSettled && knownWidth > 0 && !awaitingRecord && !app.currentFile.empty()) {
       passthroughSettled = true;
       const std::string& path = app.currentFile;
@@ -2653,6 +2662,12 @@ int run(Options opts) {
     // video, which would show cut apart in the new format; show nothing instead.
     bool photo = isPhotoFile(app.currentFile);
     bool loading = !photo && player.loading() && !app.currentFile.empty();
+    if (app.togglePassthrough && !passthroughAvailable) {
+      // The video keeps its choice for a runtime that shows the room.
+      app.togglePassthrough = false;
+      std::printf("Passthrough: the runtime offers no alpha blending, so the camera cannot "
+                  "show\n");
+    }
     if (app.togglePassthrough) {
       app.togglePassthrough = false;
       app.video.passthrough = !app.video.passthrough;
@@ -2669,15 +2684,14 @@ int run(Options opts) {
         videoCheckAt = glfwGetTime();
         videoCheckKind = VideoCheck::Kind::GreenScreen;
       }
-      if (app.video.passthrough && kStandaloneHeadset && !xr.alphaBlendSupported())
-        std::printf("Passthrough: the runtime offers no alpha blending, so the camera cannot "
-                    "show\n");
     }
-    // Passthrough on the Frame itself: the eye images are blended over the
-    // camera by their alpha; on a PC (streaming) the Frame keys out green.
-    const bool canBlend = kStandaloneHeadset && xr.alphaBlendSupported();
+    // Passthrough, where the runtime blends (the Frame itself, or a PC whose
+    // runtime shows the headset's camera): the eye images are blended over
+    // the camera by their alpha. Where it doesn't there is none, unless a PC
+    // is set to draw the room in key green.
+    const bool canBlend = xr.alphaBlendSupported();
     const bool alphaPassthrough = app.video.passthrough && canBlend;
-    const bool keyPassthrough = app.video.passthrough && !kStandaloneHeadset;
+    const bool keyPassthrough = app.video.passthrough && roomKeyed();
     const bool blended = roomShown();
     // The room's balance, while the switch is on and the room is shown.
     const bool roomMatching = roomMatched && blended;
@@ -3317,8 +3331,8 @@ int run(Options opts) {
         focusIn.motion = focusIn.motion +
                          transformDir(focusIn.picture, {0, 0, -app.video.originForward});
       focusIn.zoom = app.screen.zoom;
-      // Only passthrough the eye images show: without alpha blending the
-      // Frame draws the video whole.
+      // Only passthrough the eye images show: without alpha blending or
+      // key green the video is drawn whole.
       focusIn.seeThrough = seeThrough(alphaPassthrough || keyPassthrough,
                                       packedMask(app.currentFile, app.video), app.format,
                                       app.video, !photo && player.tvGammaImage(), keyPicking);
@@ -3451,7 +3465,9 @@ int run(Options opts) {
       if (photo) view.playback.title = std::filesystem::path(app.currentFile).filename().string();
       view.background = settings.background;
       view.autoPassthrough = settings.autoPassthrough;
-      view.passthrough = app.video.passthrough;
+      view.keyGreen = settings.keyGreen;
+      view.passthroughAvailable = passthroughAvailable;
+      view.passthrough = alphaPassthrough || keyPassthrough;
       view.greenScreen = app.video.greenScreen;
       view.colourKey = app.video.colourKeyed();
       view.keyColour = app.video.keyColour();

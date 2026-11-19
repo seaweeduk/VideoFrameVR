@@ -120,7 +120,7 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.greenScreenOwnMask = "Este vídeo tem sua própria máscara.";
   s.passthroughGroup = "Passthrough";
   s.opacity = "Opacidade";
-  s.opacityHint = "Quanto o vídeo cobre o ambiente. Só no próprio headset, não ao transmitir de um PC. Com vídeo 180° ou 360°, segure um grip e gire esse pulso para mudá-la. Salvo para este vídeo.";
+  s.opacityHint = "Quanto o vídeo cobre o ambiente. Com vídeo 180° ou 360°, segure um grip e gire esse pulso para mudá-la. Salvo para este vídeo.";
   s.opacityOverlay = "Opacidade: %d %%";
   s.packedMask = "Máscara no vídeo";
   s.packedMaskHint = "Para vídeos com máscara própria (alfa do DeoVR). Segue \"_ALPHA\" no nome do arquivo, a menos que seja definido aqui. Salvo para este vídeo.";
@@ -870,11 +870,13 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.viewpoint.tip = "Segure um analógico para frente ou para trás para se aproximar ou se afastar da imagem. Salvo para este vídeo; Centralizar ou Redefinir o traz de volta ao centro.";
   s.autoPassthrough.setting = "Passthrough automático";
   s.autoPassthrough.hint = "O passthrough liga sozinho em vídeos feitos para ele: com máscara, tela verde ou fundo liso. Desligado em um vídeo, continua desligado.";
-  s.autoPassthrough.hintDesktop = "Para vídeos feitos para ele (máscara, tela verde ou fundo liso). Só em headsets cuja câmera mostra o ambiente no verde, como o Steam Frame.";
+  s.autoPassthrough.unavailable = "Indisponível. O runtime ou o headset não permite que apps mostrem o ambiente.";
   s.autoPassthrough.mask = "Passthrough ligado: vídeo com máscara";
   s.autoPassthrough.greenScreen = "Passthrough ligado: vídeo com tela verde";
   s.autoPassthrough.fill = "Passthrough ligado: vídeo com fundo liso";
   s.autoPassthrough.undo = "Ajustes de vídeo → Passthrough desliga";
+  s.autoPassthrough.keyGreen = "Desenhar o ambiente em verde";
+  s.autoPassthrough.keyGreenHint = "Para software de streaming que troca uma cor pelo ambiente no headset, como o chroma key do ALVR. Com o passthrough ligado, o ambiente é desenhado em verde puro.";
   s.drives.card = "Cartão microSD";
   s.drives.usbDrive = "Unidade USB";
   s.drives.drive = "Unidade";

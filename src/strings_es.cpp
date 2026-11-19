@@ -120,7 +120,7 @@ Strings spanishStrings(const Strings& english) {
   s.greenScreenOwnMask = "Este vídeo tiene su propia máscara.";
   s.passthroughGroup = "Passthrough";
   s.opacity = "Opacidad";
-  s.opacityHint = "Cuánto tapa el vídeo la habitación. Solo en el propio visor, no al transmitir desde un PC. Con vídeo de 180° o 360°, mantén pulsado un agarre y gira esa muñeca para cambiarla. Se guarda para este vídeo.";
+  s.opacityHint = "Cuánto tapa el vídeo la habitación. Con vídeo de 180° o 360°, mantén pulsado un agarre y gira esa muñeca para cambiarla. Se guarda para este vídeo.";
   s.opacityOverlay = "Opacidad: %d %%";
   s.packedMask = "Máscara en el vídeo";
   s.packedMaskHint = "Para vídeos con su propia máscara (alfa de DeoVR). Sigue \"_ALPHA\" en el nombre del archivo salvo que se cambie aquí. Se guarda para este vídeo.";
@@ -870,11 +870,13 @@ Strings spanishStrings(const Strings& english) {
   s.viewpoint.tip = "Mantén un stick hacia delante o hacia atrás para acercarte o alejarte de la imagen. Se guarda para este vídeo; Centrar o Restablecer lo devuelve al centro.";
   s.autoPassthrough.setting = "Passthrough automático";
   s.autoPassthrough.hint = "El passthrough se activa solo en los vídeos hechos para ello: con máscara, pantalla verde o fondo liso. Si lo desactivas en un vídeo, sigue desactivado.";
-  s.autoPassthrough.hintDesktop = "Para vídeos hechos para ello (máscara, pantalla verde o fondo liso). Solo en visores cuya cámara muestra la sala en el verde, como el Steam Frame.";
+  s.autoPassthrough.unavailable = "No disponible. El runtime o el visor no permite que las apps muestren la habitación.";
   s.autoPassthrough.mask = "Passthrough activado: vídeo con máscara";
   s.autoPassthrough.greenScreen = "Passthrough activado: pantalla verde";
   s.autoPassthrough.fill = "Passthrough activado: fondo liso";
   s.autoPassthrough.undo = "Ajustes de vídeo → Passthrough lo desactiva";
+  s.autoPassthrough.keyGreen = "Dibujar la habitación en verde";
+  s.autoPassthrough.keyGreenHint = "Para software de streaming que sustituye un color por la habitación en el visor, como el chroma key de ALVR. Con el passthrough activado, la habitación se dibuja en verde puro.";
   s.drives.card = "Tarjeta microSD";
   s.drives.usbDrive = "Unidad USB";
   s.drives.drive = "Unidad";

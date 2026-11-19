@@ -101,9 +101,8 @@ const Strings kEnglish = {
     "This video has its own mask.",
     "Passthrough",
     "Opacity",
-    "How solid the video is over the room. Only on the headset itself, not when streaming from a "
-    "PC. With 180° or 360° video, hold a grip and twist that wrist to change it. Saved for this "
-    "video.",
+    "How solid the video is over the room. With 180° or 360° video, hold a grip and twist that "
+    "wrist to change it. Saved for this video.",
     "Opacity: %d %%",
     "Mask in the video",
     "For videos that carry their own mask (DeoVR alpha). Follows “_ALPHA” in the file name unless "
@@ -742,12 +741,14 @@ const Strings kEnglish = {
         "Automatic passthrough",
         "Passthrough switches itself on for videos made for it: with a mask, a green screen or a "
         "solid background. Turned off for a video, it stays off.",
-        "For videos made for it (a mask, a green screen or a solid background). Only for headsets "
-        "whose camera shows the room in the green, such as the Steam Frame.",
+        "Unavailable. This runtime or headset doesn't let apps show the room.",
         "Passthrough on: this video has a mask",
         "Passthrough on: green screen video",
         "Passthrough on: solid background",
         "Video settings → Passthrough turns it off",
+        "Draw the room in green",
+        "For streaming software that replaces a colour with the room on the headset, such as "
+        "ALVR's chroma key. With passthrough on, the room is drawn in pure green.",
     },
     {
         "microSD card",

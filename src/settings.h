@@ -91,9 +91,12 @@ struct Settings {
   bool showPerformance = false;   // frame rates and drops shown over the video (performance_readout.h)
   bool vibration = true;          // controllers buzz on clicks, seeks, turns and grabs (main.cpp)
   int volume = 100;               // mpv's 0..130 for all videos: the last one set
-  // Passthrough switches itself on for videos made for it (see_through.h):
-  // on the Frame; on a PC only for headsets whose camera keys the green.
-  bool autoPassthrough = false;
+  // Passthrough switches itself on for videos made for it (see_through.h),
+  // where the runtime shows the room or keyGreen stands in for it.
+  bool autoPassthrough = true;
+  // A PC whose runtime doesn't show the room: passthrough draws the room in
+  // key green, for a streamer that keys it out on the headset.
+  bool keyGreen = false;
   bool passthroughNoticeSeen = false;  // its notice is shown the first time only
   bool setupBanner = false;  // the Library's "You're all set" after setup, until dismissed or a video starts
   // What's new (whats_new.h): it opens after an update, and the highest

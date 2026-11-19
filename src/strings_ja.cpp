@@ -120,7 +120,7 @@ Strings japaneseStrings(const Strings& english) {
   s.greenScreenOwnMask = "この動画には専用マスクがあります。";
   s.passthroughGroup = "パススルー";
   s.opacity = "不透明度";
-  s.opacityHint = "周囲に重なる動画の不透明さ。ヘッドセット本体のみで、PC からのストリーミングでは使えません。180° や 360° の動画では、グリップを押さえたままその手首をひねっても変えられます。この動画に保存されます。";
+  s.opacityHint = "周囲に重なる動画の不透明さ。180° や 360° の動画では、グリップを押さえたままその手首をひねっても変えられます。この動画に保存されます。";
   s.opacityOverlay = "不透明度：%d%%";
   s.packedMask = "動画内のマスク";
   s.packedMaskHint = "独自のマスクを持つ動画用（DeoVR アルファ）。ここで設定しない限り、ファイル名の「_ALPHA」に従います。この動画に保存されます。";
@@ -870,11 +870,13 @@ Strings japaneseStrings(const Strings& english) {
   s.viewpoint.tip = "どちらかのスティックを前後に倒したままにすると、映像に近づいたり離れたりします。この動画に保存されます。「正面を合わせる」か「リセット」で中央に戻ります。";
   s.autoPassthrough.setting = "自動パススルー";
   s.autoPassthrough.hint = "パススルー対応の動画（マスク付き・グリーンバック・単色背景）では自動でオンになります。動画ごとにオフにすると、オフのままになります。";
-  s.autoPassthrough.hintDesktop = "パススルー対応の動画（マスク付き・グリーンバック・単色背景）向け。Steam Frame のように、カメラが緑の部分に部屋を映すヘッドセット専用です。";
+  s.autoPassthrough.unavailable = "利用できません。ランタイムかヘッドセットが、アプリによる周囲の表示に対応していません。";
   s.autoPassthrough.mask = "パススルー オン：マスク付きの動画";
   s.autoPassthrough.greenScreen = "パススルー オン：グリーンバックの動画";
   s.autoPassthrough.fill = "パススルー オン：単色背景の動画";
   s.autoPassthrough.undo = "動画設定 → パススルーでオフにできます";
+  s.autoPassthrough.keyGreen = "周囲を緑で描画";
+  s.autoPassthrough.keyGreenHint = "ALVR のクロマキーのように、ヘッドセット側で特定の色を周囲の映像に置き換える配信ソフト向け。パススルーがオンのとき、周囲を純粋な緑で描画します。";
   s.drives.card = "microSDカード";
   s.drives.usbDrive = "USBドライブ";
   s.drives.drive = "ドライブ";
