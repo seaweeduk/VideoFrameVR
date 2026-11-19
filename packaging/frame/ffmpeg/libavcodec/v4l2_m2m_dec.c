@@ -250,6 +250,28 @@ doxps:
     return d - abdata;
 }
 
+// The decoder takes AV1 a temporal unit per buffer, which opens with a
+// temporal delimiter. MP4 and Matroska samples leave it out.
+static const uint8_t av1_temporal_delimiter[2] = {0x12, 0x00};
+
+// The size of the temporal delimiter OBU a packet opens with, or 0.
+static int av1_leading_delimiter(const uint8_t *p, const int size)
+{
+    int n;
+    if (size < 2 || ((p[0] >> 3) & 15) != 2 || !(p[0] & 2))
+        return 0;
+    n = 1 + !!(p[0] & 4);
+    // Its size field: zero, in up to eight LEB128 bytes.
+    for (int i = 0; i < 8 && n < size; i++) {
+        const uint8_t b = p[n++];
+        if (b & 0x7f)
+            return 0;
+        if (!(b & 0x80))
+            return n;
+    }
+    return 0;
+}
+
 static int
 copy_extradata(AVCodecContext * const avctx,
                const void * const src_data, const int src_len,
@@ -259,6 +281,30 @@ copy_extradata(AVCodecContext * const avctx,
 
     *pdst_len = 0;
     av_freep(pdst_data);
+
+    // AV1's comes as an av1C record, four bytes of its own before the
+    // sequence header OBUs, or as the OBUs alone. Send them after a
+    // delimiter, so they open the first temporal unit.
+    if (avctx->codec_id == AV_CODEC_ID_AV1) {
+        const uint8_t *obus = src_data;
+        len = src_len;
+        if (len > 0 && (obus[0] & 0x80)) {
+            if (len < 4 || obus[0] != 0x81)
+                return AVERROR_INVALIDDATA;
+            obus += 4;
+            len -= 4;
+        }
+        if (len < 0)
+            return AVERROR(EINVAL);
+        if ((*pdst_data = av_malloc(len + sizeof(av1_temporal_delimiter) +
+                                    AV_INPUT_BUFFER_PADDING_SIZE)) == NULL)
+            return AVERROR(ENOMEM);
+        memcpy(*pdst_data, av1_temporal_delimiter, sizeof(av1_temporal_delimiter));
+        if (len)
+            memcpy((uint8_t *)*pdst_data + sizeof(av1_temporal_delimiter), obus, len);
+        *pdst_len = len + sizeof(av1_temporal_delimiter);
+        return 0;
+    }
 
     if (avctx->codec_id == AV_CODEC_ID_H264)
         len = h264_xd_copy(src_data, src_len, NULL);
@@ -627,6 +673,7 @@ static int try_enqueue_src(AVCodecContext * const avctx, V4L2m2mContext * const 
             }
 
             // Retry a side-data only pkt
+            av_packet_unref(&s->buf_pkt);
         }
         // If i >= 256 something has gone wrong
         if (i >= 256) {
@@ -708,10 +755,24 @@ static int try_enqueue_src(AVCodecContext * const avctx, V4L2m2mContext * const 
                 return ret;
         }
     }
-    if (s->extdata_sent)
-        ret = ff_v4l2_context_enqueue_packet(&s->output, &s->buf_pkt, NULL, 0);
-    else
-        ret = ff_v4l2_context_enqueue_packet(&s->output, &s->buf_pkt, s->extdata_data, s->extdata_size);
+    {
+        const void *prefix = s->extdata_sent ? NULL : s->extdata_data;
+        size_t prefix_size = s->extdata_sent ? 0 : s->extdata_size;
+        if (avctx->codec_id == AV_CODEC_ID_AV1) {
+            // An empty packet would ask the decoder to drain: a lone
+            // delimiter goes as it is, after the sequence header if that's due.
+            const int delimiter = av1_leading_delimiter(s->buf_pkt.data, s->buf_pkt.size);
+            if (delimiter && delimiter < s->buf_pkt.size) {
+                s->buf_pkt.data += delimiter;
+                s->buf_pkt.size -= delimiter;
+            }
+            if (!prefix_size && delimiter != s->buf_pkt.size) {
+                prefix = av1_temporal_delimiter;
+                prefix_size = sizeof(av1_temporal_delimiter);
+            }
+        }
+        ret = ff_v4l2_context_enqueue_packet(&s->output, &s->buf_pkt, prefix, prefix_size);
+    }
 
     if (ret == AVERROR(EAGAIN)) {
         // Out of input buffers - keep packet
@@ -1609,11 +1670,16 @@ static av_cold int v4l2_decode_init(AVCodecContext *avctx)
     const AVPixFmtDescriptor *source = av_pix_fmt_desc_get(priv->source_pix_fmt);
     priv->capture_10bit = source && source->comp[0].depth == 10 &&
                          avctx->codec_id == AV_CODEC_ID_HEVC;
+    // AV1 of unknown format needs its av1C to say Main, 8-bit 4:2:0.
+    const uint8_t *av1c = avctx->extradata;
+    const int av1_8bit = avctx->extradata_size >= 4 && av1c[0] == 0x81 &&
+                         (av1c[1] >> 5) == 0 && (av1c[2] & 0x7c) == 0x0c;
     if ((source && (source->nb_components != 3 || source->log2_chroma_w != 1 ||
                     source->log2_chroma_h != 1 ||
                     (source->comp[0].depth != 8 && !priv->capture_10bit))) ||
         (!source && avctx->codec_id == AV_CODEC_ID_HEVC &&
-         avctx->profile == AV_PROFILE_HEVC_MAIN_10)) {
+         avctx->profile == AV_PROFILE_HEVC_MAIN_10) ||
+        (!source && avctx->codec_id == AV_CODEC_ID_AV1 && !av1_8bit)) {
         av_log(avctx, AV_LOG_ERROR, "Unsupported Iris source bit depth or chroma\n");
         return AVERROR(ENOSYS);
     }
@@ -1936,3 +2002,4 @@ M2MDEC(h263,  "H.263", AV_CODEC_ID_H263,       NULL);
 M2MDEC(vc1 ,  "VC1",   AV_CODEC_ID_VC1,        NULL);
 M2MDEC(vp8,   "VP8",   AV_CODEC_ID_VP8,        NULL);
 M2MDEC(vp9,   "VP9",   AV_CODEC_ID_VP9,        NULL);
+M2MDEC(av1,   "AV1",   AV_CODEC_ID_AV1,        NULL);

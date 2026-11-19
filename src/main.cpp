@@ -3423,6 +3423,7 @@ int run(Options opts) {
       view.crashedLastRun =
           previousRunCrashed() && diagnostics.state() != DiagnosticsExport::State::Saved;
       view.playback = player.playback();
+      view.hardwareAv1 = player.hardwareAv1();
       if (heldSeek.holding() || heldSeekLanding) {
         view.playback.position = heldSeekTarget;
         if (heldSeekPaused) view.playback.paused = false;  // only waiting for the stick

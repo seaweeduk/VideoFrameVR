@@ -28,7 +28,8 @@
 PC hardware decoding supports NVIDIA, with experimental AMD support on Mesa 26.1+.
 
 - **Hardware decoding** on the Steam Frame: 8K 60 fps HEVC (8-bit and 10-bit)
-  and H.264 without dropped frames, tested up to 150 Mbit/s over SMB.
+  and H.264 without dropped frames, tested up to 150 Mbit/s over SMB. AV1
+  (8-bit) needs SteamOS 0.5.10+.
 - **Tuned for the Steam Frame**: video goes straight from the hardware decoder
   to the GPU without being copied through the CPU, leaving the GPU headroom to
   spare and keeping power, heat and fan noise down.

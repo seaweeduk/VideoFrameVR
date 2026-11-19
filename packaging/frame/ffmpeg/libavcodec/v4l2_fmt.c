@@ -118,6 +118,8 @@ static const struct fmt_conversion {
 #ifdef V4L2_PIX_FMT_VP9
     { AV_FMT(NONE),        AV_CODEC(VP9),         V4L2_FMT(VP9) },
 #endif
+    // V4L2_PIX_FMT_AV1, an AV1 temporal unit per buffer (Iris since SteamOS 0.5.10).
+    { AV_FMT(NONE),        AV_CODEC(AV1),         v4l2_fourcc('A','V','0','1') },
 #ifdef V4L2_PIX_FMT_HEVC
     { AV_FMT(NONE),        AV_CODEC(HEVC),        V4L2_FMT(HEVC) },
 #endif

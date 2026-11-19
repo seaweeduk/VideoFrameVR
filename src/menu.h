@@ -182,6 +182,7 @@ struct MenuView {
   Theme theme = Theme::Glass;
   Accent accent;
   bool floatingSubtitles = false;
+  bool hardwareAv1 = false;  // the headset's decoder takes AV1 (SteamOS 0.5.10)
   bool streaming = false;  // the current video is a link, not a file
   int videoWidth = 0, videoHeight = 0;
   bool background = true;  // night sky around the flat screen

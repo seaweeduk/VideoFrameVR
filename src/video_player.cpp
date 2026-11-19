@@ -21,9 +21,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <utility>
 #include <vector>
+
+#include <fcntl.h>
+#include <linux/videodev2.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 namespace {
 
@@ -39,6 +45,33 @@ constexpr uint64_t kPixelPathReply = 2;
 constexpr uint64_t kCommandReply = 3;
 // How long the last file may take to close before a switch counts as failed.
 constexpr double kCloseTimeout = 10.0;
+
+// Whether the headset's decoder takes AV1: the upstream Iris driver in
+// SteamOS 0.5.10 does, the vendor driver before it didn't. Only the
+// decoder's node is opened; most others are the cameras'.
+bool decoderTakesAv1() {
+  std::error_code error;
+  for (const auto& node : std::filesystem::directory_iterator("/sys/class/video4linux", error)) {
+    std::ifstream nameFile(node.path() / "name");
+    std::string name;
+    if (!std::getline(nameFile, name) || name.find("iris-decoder") == std::string::npos) continue;
+    const std::string path = "/dev/" + node.path().filename().string();
+    const int fd = ::open(path.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) continue;
+    bool av1 = false;
+    v4l2_capability cap{};
+    if (::ioctl(fd, VIDIOC_QUERYCAP, &cap) == 0 &&
+        std::strcmp(reinterpret_cast<const char*>(cap.driver), "iris_driver") == 0) {
+      v4l2_fmtdesc format{};
+      format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+      for (; !av1 && ::ioctl(fd, VIDIOC_ENUM_FMT, &format) == 0; ++format.index)
+        av1 = format.pixelformat == v4l2_fourcc('A', 'V', '0', '1');
+    }
+    ::close(fd);
+    if (av1) return true;
+  }
+  return false;
+}
 
 void setProperty(mpv_handle* mpv, const char* name, const std::string& value) {
   const char* text = value.c_str();
@@ -185,8 +218,10 @@ bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, const MpvGl
     mpv_set_option_string(mpv_, "hwdec-software-fallback", "8");
     // Iris stalled on a 4K VP9 file without reporting an error, so mpv never
     // fell back and the picture froze. Software decodes 4K60 VP9 at about
-    // 170 fps on the Frame's cores; H.264 and HEVC stay on the hardware.
-    mpv_set_option_string(mpv_, "hwdec-codecs", "h264,hevc");
+    // 170 fps on the Frame's cores; H.264 and HEVC stay on the hardware, and
+    // AV1 where the decoder takes it (8K AV1 plays at about 28 fps in software).
+    hardwareAv1_ = kStandaloneHeadset && decoderTakesAv1();
+    mpv_set_option_string(mpv_, "hwdec-codecs", hardwareAv1_ ? "h264,hevc,av1" : "h264,hevc");
   }
   if (hwdec.rfind("nvdec", 0) == 0) {
     // Spare decoder frames beyond the video's reference frames, each a full
