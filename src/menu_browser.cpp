@@ -923,6 +923,14 @@ std::vector<std::string> Menu::locationParts(const std::string& dir) const {
   return parts;
 }
 
+std::string Menu::shownPlace(const std::string& dir) const {
+  if (remote::isRemote(dir)) return shownLocation(dir);
+  std::string joined;
+  for (const std::string& part : locationParts(dir)) joined += (joined.empty() ? "" : "/") + part;
+  // In no place of the navigation: its path as it is.
+  return joined.empty() || dir.rfind("/" + joined, 0) == 0 ? dir : joined;
+}
+
 // Where the folder is: its path's parts from the nearest place, dim and
 // apart, the folder's own name large (as a page's title); leading parts
 // give way to "…" when they don't fit.

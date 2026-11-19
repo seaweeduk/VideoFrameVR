@@ -19,6 +19,15 @@ const StashCatalog* StashPages::catalog(const Menu& m) {
 // Menu::setStash() (menu_stash_covers.cpp): Stash on, or anew.
 void StashPages::attach(Menu& m) {
   if (!m.stashMenu_) m.stashMenu_ = std::make_unique<StashMenu>();
+  // Another kind of server than the last: its ids are its own, so nothing
+  // chosen on the last one is kept (lists, positions, its pinned lists).
+  if (const ServerKind kind = m.stash_ ? m.stash_->settings().kind : m.stashMenu_->kind;
+      kind != m.stashMenu_->kind) {
+    std::string foundOther = std::move(m.stashMenu_->foundOther);  // Settings still says so
+    *m.stashMenu_ = StashMenu();
+    m.stashMenu_->kind = kind;
+    m.stashMenu_->foundOther = std::move(foundOther);
+  }
   StashMenu& st = state(m);
   // A new Stash: its catalogs are counted anew, so whatever a page made from
   // the last one's is made again (the choices and positions stay).
@@ -39,7 +48,7 @@ void StashPages::attach(Menu& m) {
   if (!st.pinsLoaded && !st.pendingPins.valid()) {
     auto done = std::make_shared<std::promise<std::vector<StashPin>>>();
     st.pendingPins = done->get_future();
-    queueConfigWork([done] { done->set_value(loadStashPins()); });
+    queueConfigWork([done, kind = st.kind] { done->set_value(loadStashPins(kind)); });
   }
 }
 
@@ -58,6 +67,15 @@ void StashPages::leavePage(Menu& m) {
     leaveSceneDetails(m);
   else if (m.page_ == Menu::Page::StashHome)
     leaveHome(m);
+  else if (m.page_ == Menu::Page::Settings)
+    leaveSettings(m);
+}
+
+void StashPages::leaveSettings(Menu& m) {
+  if (!m.stashMenu_) return;
+  StashMenu& st = state(m);
+  st.foundOther.clear();
+  st.signingIn = {};
 }
 
 bool StashPages::showAgain(Menu& m, Menu::Page page) {
@@ -268,28 +286,16 @@ void StashPages::setText(Menu& m, const std::string& text) {
   m.dirty_ = true;
 }
 
-// The server's fields as SetStashServer takes them: the URL, the API key and
-// the folders, one per line (not the user name and password); the editor
-// closes.
-MenuCommand StashPages::serverCommand(Menu& m) {
+// The server's fields as SetStashServer takes them: the URL and the API key,
+// one per line (not the user name and password), with the kind of server it
+// was found to be; the editor closes.
+MenuCommand StashPages::serverCommand(Menu& m, bool other) {
   StashMenu& st = state(m);
   MenuCommand c;
   c.type = MenuCommand::SetStashServer;
-  // The mapping edited in place, removed when its Stash folder is emptied,
-  // or added.
-  std::vector<StashFolderMap> folders = m.view_.stash.folders;
-  const StashFolderMap edited{st.draft[2], st.draft[3]};
-  if (st.draftFolder >= 0 && st.draftFolder < static_cast<int>(folders.size())) {
-    if (edited.from.empty())
-      folders.erase(folders.begin() + st.draftFolder);
-    else
-      folders[st.draftFolder] = edited;
-  } else if (!edited.from.empty()) {
-    folders.push_back(edited);
-  }
   c.path = st.draft[0] + "\n" + st.draft[1];
-  for (const StashFolderMap& f : folders) c.path += "\n" + f.from + "\n" + f.to;
-  c.option = draftUnverified(m) ? 1 : 0;
+  c.option = (draftUnverified(m) ? 1 : 0) | (other ? 2 : 0);
+  c.value = static_cast<int>(st.draftKind);
   st.draft[kStashPassword].clear();
   st.signInError.clear();
   m.editing_ = false;
@@ -320,38 +326,47 @@ MenuCommand StashPages::submitText(Menu& m) {
 }
 
 // Save and sync: a new address is looked for as setup's Connect does
-// (https, http, Stash's port) and saved as it answered, else as typed; with
-// a password typed, Stash is signed in to there and its key saved with the
-// rest (updateSignIn()). A certificate that isn't trusted saves nothing: a
-// dialog says so, and offers to connect without verifying it. Verifying it
-// again is looked for the same way.
+// (https, http, the server's port), as the kind its fields are for and then
+// as each other (findServer()), and saved as it answered, else as typed; so
+// is one that answered the last sync as another kind might. With a password
+// typed, a server with a login is signed in to there and its key saved with
+// the rest (updateSignIn()). A certificate that isn't trusted saves
+// nothing: a dialog says so, and offers to connect without verifying it.
+// Verifying it again is looked for the same way.
 MenuCommand StashPages::saveServer(Menu& m) {
   StashMenu& st = state(m);
   if (st.signingIn.valid()) return {};
+  const StashSettings& now = m.view_.stash;
+  const bool inUse = now.kind == st.draftKind;
   const bool unverified = draftUnverified(m);
-  const bool moved = st.draft[0] != m.view_.stash.url || unverified != m.view_.stash.unverified();
+  const bool other = m.stash_ && !m.stash_->status().syncing && m.stash_->status().otherAnswered;
+  const bool moved = !inUse || st.draft[0] != now.url || unverified != now.unverified() || other;
   if (st.draft[kStashPassword].empty() && !moved) return serverCommand(m);
   auto done = std::make_shared<std::promise<StashMenu::SignIn>>();
   st.signingIn = done->get_future();
   st.signInError.clear();
   // Its own thread, as the SMB sign-in: a server that doesn't answer
-  // mustn't hold up anything else, and Cancel just drops the result.
-  std::thread([done, moved, unverified, url = st.draft[0], user = st.draft[kStashUser],
-               password = st.draft[kStashPassword]] {
+  // mustn't hold up anything else, and Cancel just drops the result. What
+  // it says names the kind asked, which may not be the one in use.
+  std::thread([done, moved, unverified, kind = st.draftKind, url = st.draft[0],
+               user = st.draft[kStashUser], password = st.draft[kStashPassword]] {
     StashMenu::SignIn r;
     r.host = stashHost(url);
+    r.kind = kind;
     if (moved) {
-      StashClient found(url, std::string(), unverified);
-      const StashClient::Answer a = found.check();
-      if (a == StashClient::Answer::Open || a == StashClient::Answer::NeedsSignIn) r.url = found.server();
-      r.untrusted = a == StashClient::Answer::Failed && found.problem() == StashProblem::Certificate;
+      const FoundServer found = findServer(url, unverified, kind, true);
+      r.kind = found.kind;
+      r.url = found.url;
+      r.untrusted = found.untrusted;
     }
     r.ok = !r.untrusted;
-    if (r.ok && !password.empty()) {
-      StashClient client(r.url.empty() ? url : r.url, std::string(), unverified);
-      r.ok = client.signIn(user, password, r.apiKey, r.refused);
-      r.error = client.error();
-      r.untrusted = !r.ok && client.problem() == StashProblem::Certificate;
+    if (r.ok && !password.empty() && mediaServer(r.kind).abilities().signIn) {
+      const std::unique_ptr<MediaClient> client =
+          mediaServer(r.kind).client(r.url.empty() ? url : r.url, std::string(), unverified);
+      client->nameOwnKind();
+      r.ok = client->signIn(user, password, r.apiKey, r.refused);
+      r.error = client->error();
+      r.untrusted = !r.ok && client->problem() == StashProblem::Certificate;
     }
     done->set_value(std::move(r));
   }).detach();
@@ -374,12 +389,19 @@ void StashPages::updateSignIn(Menu& m) {
     return;
   }
   if (!r.ok) {
-    st.signInError = r.refused ? strings().stashSetup.wrongLogin : r.error;
+    st.signInError = r.refused ? stashOwnStrings().stashSetup.wrongLogin : r.error;
     return;
   }
-  // Signed in: empty, Stash has no login and a key would be refused.
-  if (!st.draft[kStashPassword].empty()) st.draft[1] = r.apiKey;
-  m.command_ = serverCommand(m);
+  // Another kind answered than the fields were for: that one is set up,
+  // and Settings says so.
+  const bool other = r.kind != st.draftKind;
+  st.draftKind = r.kind;
+  // Signed in: empty, Stash has no login and a key would be refused. A
+  // server without logins has no key.
+  if (!st.draft[kStashPassword].empty() || !mediaServer(r.kind).abilities().signIn)
+    st.draft[1] = r.apiKey;
+  m.command_ = serverCommand(m, other);
+  if (other) st.foundOther = mediaServer(r.kind).name();
 }
 
 // Escape (or Hide): the same, but the server's fields are left as they were.
@@ -393,7 +415,7 @@ void StashPages::stopEditing(Menu& m) {
   if (st.typing == StashMenu::Typing::PinName && st.renaming >= 0) {
     if (st.renaming < static_cast<int>(st.pins.size()) && st.pins[st.renaming].name.empty())
       st.pins[st.renaming].name = stashListName(st.pins[st.renaming].list, catalog(m));
-    saveStashPins(st.pins);
+    saveStashPins(st.pins, st.kind);
     st.renaming = -1;
   }
   m.editing_ = false;

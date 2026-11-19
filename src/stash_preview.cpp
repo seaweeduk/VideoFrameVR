@@ -1,6 +1,6 @@
 #include "stash_preview.h"
 
-#include "stash_http.h"
+#include "media_server.h"
 #include "thumbnailer.h"  // frameScaler
 
 #include <cairo.h>
@@ -41,8 +41,8 @@ struct Cancellation {
 // even when the server is connected but has stopped sending anything.
 class Download {
  public:
-  explicit Download(const std::string& apiKey) {
-    if (!apiKey.empty()) headers_ = curl_slist_append(nullptr, ("ApiKey: " + apiKey).c_str());
+  Download(const MediaServer& kind, const std::string& apiKey)
+      : headers_(kind.authorized(nullptr, apiKey)) {
     if (!curl_) return;
     curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers_);
     curl_easy_setopt(curl_, CURLOPT_CONNECTTIMEOUT_MS, 3000L);
@@ -57,7 +57,7 @@ class Download {
     curl_slist_free_all(headers_);
   }
 
-  // `path` on Stash's server (stashPerform()).
+  // `path` on the server (stashPerform()).
   bool get(const StashAddress& address, const std::string& path, std::vector<uint8_t>& bytes,
            const Cancellation& cancel) {
     if (!curl_ || !multi_ || cancel.stopped()) return false;
@@ -255,9 +255,11 @@ class Decoder {
 }  // namespace
 
 struct StashPreview::State {
+  const MediaServer* kind = nullptr;
   StashAddress address;
   std::string apiKey;
   int64_t scene = 0;
+  std::string code;  // ... and its code, for the server's path
   VideoFormat format;
   int width = 0;
   std::atomic<uint64_t> generation{0};
@@ -269,10 +271,11 @@ struct StashPreview::State {
   Surface pending{nullptr, cairo_surface_destroy}, shown{nullptr, cairo_surface_destroy};
 
   void work() {
-    Download download(apiKey);
+    Download download(*kind, apiKey);
     uint64_t seen = 0;
     for (;;) {
       int64_t id;
+      std::string code;
       VideoFormat videoFormat;
       int width;
       {
@@ -281,14 +284,14 @@ struct StashPreview::State {
         if (quit) return;
         seen = generation.load();
         id = scene;
+        code = this->code;
         videoFormat = format;
         width = this->width;
       }
       if (!id) continue;
       const Cancellation cancel{generation, seen};
       std::vector<uint8_t> bytes;
-      // Stash's generated MP4 endpoint, not its full-video stream route.
-      if (!download.get(address, "/scene/" + std::to_string(id) + "/preview", bytes, cancel))
+      if (!download.get(address, kind->previewPath(id, code), bytes, cancel))
         continue;
       Decoder decoder(bytes);
       if (cancel.stopped() || !decoder.open()) continue;
@@ -326,8 +329,10 @@ struct StashPreview::State {
   }
 };
 
-StashPreview::StashPreview(const std::string& url, std::string apiKey, bool unverified)
+StashPreview::StashPreview(ServerKind kind, const std::string& url, std::string apiKey,
+                           bool unverified)
     : state_(std::make_unique<State>()) {
+  state_->kind = &mediaServer(kind);
   state_->address = StashAddress(url, unverified);
   state_->apiKey = std::move(apiKey);
 }
@@ -337,7 +342,8 @@ StashPreview::~StashPreview() {
   if (state_->worker.joinable()) state_->worker.join();
 }
 
-void StashPreview::request(int64_t scene, const VideoFormat& format, int width) {
+void StashPreview::request(int64_t scene, const std::string& code, const VideoFormat& format,
+                           int width) {
   State& s = *state_;
   {
     std::lock_guard<std::mutex> lock(s.mutex);
@@ -345,6 +351,7 @@ void StashPreview::request(int64_t scene, const VideoFormat& format, int width) 
         s.format.stereo == format.stereo && s.format.packing == format.packing && s.width == width)
       return;
     s.scene = scene;
+    s.code = code;
     s.format = format;
     s.width = width;
     ++s.generation;
@@ -356,7 +363,7 @@ void StashPreview::request(int64_t scene, const VideoFormat& format, int width) 
   s.wake.notify_one();
 }
 
-void StashPreview::cancel() { request(0, {}); }
+void StashPreview::cancel() { request(0, {}, {}); }
 
 bool StashPreview::update() {
   State& s = *state_;

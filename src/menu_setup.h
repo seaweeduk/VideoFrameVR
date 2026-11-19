@@ -14,7 +14,8 @@
 #include <map>
 #include <set>
 
-class StashClient;
+class MediaClient;
+class ServerSearch;
 
 // SteamVR's glyphs on setup's pages, in layout pixels.
 constexpr int kSetupGlyph = 56;
@@ -102,7 +103,8 @@ struct SetupFolders {
   } drag;
 };
 
-// Do you use Stash?, its address and its sign-in (menu_setup_stash.cpp).
+// Do you use Stash?, the server's address and its sign-in
+// (menu_setup_stash.cpp).
 struct SetupStash {
   enum class Page { Ask, Address, SignIn };
   Page page = Page::Ask;
@@ -114,13 +116,18 @@ struct SetupStash {
   // Connect's request, then Sign in's, on a thread of their own; Back drops
   // it (and stops Connect's).
   struct Reply {
-    int answer = 0;  // a StashClient::Answer
-    std::string url;  // Connect's: where Stash answered
+    int answer = 0;  // a MediaClient::Answer
+    ServerKind kind = ServerKind::Stash;  // Connect's: the kind that answered
+    std::string url;                      // ... and where
     std::string apiKey, error;
     bool untrusted = false;  // failed on a certificate that isn't trusted
   };
   setup_places::Async<Reply> asking;
-  std::shared_ptr<StashClient> client;
+  // The kind of server Connect found at the address: the one signed in to,
+  // and set up.
+  ServerKind kind = ServerKind::Stash;
+  std::shared_ptr<MediaClient> client;  // Sign in's, to stop it
+  std::shared_ptr<ServerSearch> search;  // Connect's
   std::string error;  // under the fields
   // The host whose certificate wasn't trusted, while the fields say so and
   // Connect offers to connect without verification; the host the user

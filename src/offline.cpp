@@ -602,7 +602,7 @@ void Offline::Shared::copy(Download& d) {
   }
   if (stash)
     for (const StashCaption& c : stashCaptions(d.source))
-      keep(copyStem + (c.language.empty() ? "" : "." + c.language) + ".vtt", c.text);
+      keep(copyStem + (c.language.empty() ? "" : "." + c.language) + "." + c.format, c.text);
   // Its funscript, kept (and removed) as a subtitle is.
   if (scripts && validUtf8(copyStem))
     if (const std::string script = stash ? stashFunscript(d.source) : readFunscript(d.source);

@@ -11,6 +11,9 @@
 // empty; image URLs are empty where Stash has no image.
 struct StashData {
   struct File {
+    // The server's id of it, where its stream is asked for by one
+    // (MediaServer::streamPath()); 0 where a scene's is its first file's.
+    int64_t id = 0;
     std::string path;      // Stash's path (stash_settings.h maps it)
     uint64_t size = 0;
     int64_t modified = 0;  // Unix seconds
@@ -30,6 +33,7 @@ struct StashData {
     std::vector<std::pair<int64_t, int>> groups;  // group, scene number in it (0 = none)
     std::vector<std::string> urls;
     std::string cover;
+    bool vr = false;  // the server says it is VR, where it says (else its VR tag does)
     std::vector<File> files;  // the primary file first
   };
   struct Performer {
@@ -58,6 +62,7 @@ struct StashData {
     int64_t studio = 0;
   };
 
+  std::string kind = "stash";  // MediaServer::id() of the server synced from
   std::string server;   // the URL synced from
   std::string version;  // Stash's, e.g. "v0.31.1"
   std::string vrTag;    // the name of the tag Stash marks VR scenes with

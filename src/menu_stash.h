@@ -8,6 +8,7 @@
 // there; its state is a StashMenu, kept for the session.
 
 #include "menu.h"
+#include "media_server.h"
 #include "stash_catalog.h"
 #include "stash_sync.h"
 
@@ -76,8 +77,10 @@ struct StashPin {
 };
 
 // configDir()/stash_lists.conf: the pinned lists (user data, kept as made).
-std::vector<StashPin> loadStashPins();
-void saveStashPins(const std::vector<StashPin>& pins);
+// Each kind of server has its own (their ids are the server's): Stash's in
+// stash_lists.conf as ever, another's in <its id>_lists.conf.
+std::vector<StashPin> loadStashPins(ServerKind kind);
+void saveStashPins(const std::vector<StashPin>& pins, ServerKind kind);
 
 // The catalog's filter and order for a list (its ids that the catalog has
 // no longer are left out); `now` for the added-since span.
@@ -256,8 +259,8 @@ struct StashStudiosPage;
 // Performers page's cards.
 enum class StashFull { None, Performers, Tags, Studios, Years, Pins, Look };
 
-// The server editor's sign-in fields, after the four StashSettings has.
-constexpr int kStashUser = 4, kStashPassword = 5;
+// The server editor's sign-in fields, after the address and the API key.
+constexpr int kStashUser = 2, kStashPassword = 3;
 
 // The Stash pages' state for the session.
 struct StashMenu {
@@ -279,13 +282,15 @@ struct StashMenu {
   // What the keyboard types into.
   enum class Typing { Search, FullSearch, PinName, Server, Performers, Studios, Tags } typing =
       Typing::Search;
-  // Server: which of the fields, and their text: the URL, the API key,
-  // Stash's folder and this computer's (as SetStashServer sends them), then
-  // the user name and password to sign in with (never kept).
+  // Server: which of the fields, and their text: the URL and the API key
+  // (as SetStashServer sends them), then the user name and password to
+  // sign in with (never kept).
   int field = 0;
-  std::array<std::string, 6> draft;
+  std::array<std::string, 4> draft;
   bool notHere = false;  // the results say Stash's videos aren't here (layoutNotHere())
-  int draftFolder = -1;  // the mapping (StashSettings::folders) drafts 2 and 3 are; -1: a new one
+  // The kind of server the fields are for: the one in use, or one chosen
+  // that has none yet.
+  ServerKind draftKind = ServerKind::Stash;
   bool showPassword = false;
   // Signing in (StashClient::signIn()) on Save: the result once it's done,
   // and why the last one failed.
@@ -294,10 +299,15 @@ struct StashMenu {
     bool untrusted = false;  // failed on a certificate that isn't trusted
     std::string host;        // ... the server's, as Save sent it
     std::string url;  // where Stash answered, if it did
+    ServerKind kind = ServerKind::Stash;  // ... and as which kind (findServer())
     std::string apiKey, error;
   };
   std::future<SignIn> signingIn;
   std::string signInError;
+  // The last Save found another kind at the address than its fields were
+  // for, and that one was set up: its name, said in Settings until the
+  // section is left or changed.
+  std::string foundOther;
   // The host whose certificate the fields accept without verifying it (as
   // StashSettings::unverifiedHost).
   std::string draftUnverified;
@@ -308,6 +318,9 @@ struct StashMenu {
   int pin = -1;
   bool pinsLoaded = false;
   std::future<std::vector<StashPin>> pendingPins;
+  // The kind of server all of this was chosen on (attach()): the pins are
+  // its own, as are the ids in every list.
+  ServerKind kind = ServerKind::Stash;
   uint64_t seed = 1;  // Random's order
 
   // The query and its rail, remade only when the list, the catalog or the
@@ -362,7 +375,10 @@ struct StashMenu {
 // apart from its layout so that the debug fit check can show every row.
 struct StashSettingsShown {
   bool enabled = false;
-  bool connected = false;  // Stash runs (Menu::stash_); else only its server and folders
+  int chosen = 0;  // the choice of server: 0 none, else 1 + the kind's place in mediaServers()
+  std::string foundOther;  // the last Save set up another kind than was chosen
+  bool connected = false;  // Stash runs (Menu::stash_); else only its server
+  ServerAbilities abilities;  // what the server set up can do: rows it can't use aren't shown
   std::string url, apiKey;
   // A row of Stash's library folders: its field, what was found about it,
   // and the other places its videos are in, each with Use.
@@ -372,10 +388,15 @@ struct StashSettingsShown {
     bool first = false;  // where they are, not where they are too: the one to take
   };
   struct Folder {
-    std::string folder, label, tooltip;
+    std::string folder;  // as Stash has it
+    std::string name;    // ... as said above its field; empty: nothing is
+    std::string here;    // where its videos play from here; empty: from Stash
+    std::string fromServer;  // what its field says then
+    std::string tooltip;
     std::vector<std::string> lines;
     std::vector<Use> uses;
   };
+  // None before the first sync has listed them.
   std::vector<Folder> folders;
   std::string looking;  // the search for them under way
   // The connection: its lamp (Lamp, menu_parts.h), what it says, and what
@@ -401,8 +422,9 @@ struct StashPages {
   static void update(Menu& m);  // each frame
   static void layoutNavigation(Menu& m, double y, double bottom);
   static void layoutCard(Menu& m, double x, double w, double bottom);  // "Use Stash?"
-  // Settings' Stash section (menu_stash_settings.cpp): the switch, then
-  // while it is on the server and its state, its folders, and sending to it.
+  // Settings' section (menu_stash_settings.cpp): which kind of server is
+  // used, then with one its server and its state, its folders, and sending
+  // to it.
   static StashSettingsShown settingsShown(Menu& m);
   static void layoutSettings(Menu& m, Menu::PageLayout& page, const StashSettingsShown& shown);
 #ifndef NDEBUG
@@ -412,14 +434,20 @@ struct StashPages {
   // Its certificate isn't trusted: Don't connect, or Connect without
   // verification (Dialog::StashCertificate, the host in dialogPath_).
   static void layoutCertificateDialog(Menu& m, std::vector<Menu::Button>& row);
-  // The server's fields, with the keyboard; the folders' are those of the
-  // mapping Stash's `folder` goes by (the first for "").
-  static void editServer(Menu& m, int field, const std::string& folder = std::string());
+  // A kind's server fields, with the keyboard: the one in use, or `kind`.
+  static void editServer(Menu& m, int field);
+  static void editServer(Menu& m, int field, ServerKind kind);
+  // The section's choice of server: none (-1), or a kind by its place in
+  // mediaServers().
+  static MenuCommand chooseServer(Menu& m, int index);
   // The server's editor or the one-off send in place of the Settings page;
   // false if neither is open.
   static bool layoutSettingsPanel(Menu& m);
   static void layoutSendPanel(Menu& m);
   static void leavePage(Menu& m);  // showPage(): before another page shows
+  // Settings' section left, or another server chosen in it: a Save under
+  // way saves nothing, and what the last one found is no longer said.
+  static void leaveSettings(Menu& m);
   // Menu::showListPage(): a Stash list page shown again as it was left;
   // false for none of Stash's.
   static bool showAgain(Menu& m, Menu::Page page);
@@ -429,7 +457,9 @@ struct StashPages {
   static void setText(Menu& m, const std::string& text);
   static MenuCommand submitText(Menu& m);
   static MenuCommand saveServer(Menu& m);     // Save and sync
-  static MenuCommand serverCommand(Menu& m);  // ... the fields as SetStashServer takes them
+  // ... the fields as SetStashServer takes them; `other`: found to be
+  // another kind than they were for.
+  static MenuCommand serverCommand(Menu& m, bool other = false);
   // Whether the server typed has its certificate accepted unverified.
   static bool draftUnverified(Menu& m);
   static void updateSignIn(Menu& m);  // each frame, while Stash is on (set up or not)

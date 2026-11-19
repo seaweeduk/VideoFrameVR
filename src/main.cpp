@@ -50,6 +50,7 @@
 #include "remote.h"
 #include "stash.h"
 #include "stash_delete.h"
+#include "media_server.h"
 #include "stash_http.h"
 #include "stash_stream.h"
 #include "strings.h"
@@ -633,6 +634,16 @@ int run(Options opts) {
   Settings settings = loadSettings();
   setLanguage(showSetup && !setupChoices.language.empty() ? setupChoices.language
                                                           : settings.language);
+  // The media server's name in the strings: the kind's in use; every
+  // kind's ("Stash or XBVR") while none is, and in first-run setup, which
+  // connects to any.
+  auto serverNameNow = [&settings](bool inSetup) {
+    return inSetup || !settings.stash.enabled
+               ? mediaServerNames(stashOwnStrings().stashSetup.orKind)
+               : std::string(mediaServer(settings.stash.kind).name());
+  };
+  std::string serverNamed = serverNameNow(showSetup);
+  setServerName(serverNamed);
   // SteamVR's refresh rate for this app (refresh_rate.h), read before the
   // session starts; if it has none, the preset's is written first, so the
   // session starts at it (settle() below gives the same rate without the
@@ -1249,7 +1260,7 @@ int run(Options opts) {
     // server it was listed on.
     if (isStashScene(requested)) {
       if (!stashSceneId(requested) || oshash.empty()) {
-        std::printf("Stash scene not available\n");
+        std::printf("Server scene not available\n");
         return false;
       }
       library.locate(requested, oshash);
@@ -1490,6 +1501,7 @@ int run(Options opts) {
       Settings saved = loadSettings();
       if (!keepStash) {  // the profile's own, held back while setup ran
         settings.stash = saved.stash;
+        settings.otherServers = saved.otherServers;
         restartStash();
       }
       bool changed = false;
@@ -1502,6 +1514,7 @@ int run(Options opts) {
       }
       if (finished && keepStash) {
         saved.stash = settings.stash;
+        saved.otherServers = settings.otherServers;
         changed = true;
       } else if (finished && !stash) {
         saved.stash.card = settings.stash.card = true;
@@ -1830,15 +1843,22 @@ int run(Options opts) {
         break;
       }
       case MenuCommand::SetupStash: {
-        // Connected in setup, as Settings → Stash sets it, and setup ends
-        // there: its first sync starts at once, and its folders are looked
-        // for once it is done, in the places ticked too.
+        // Connected in setup, as Settings sets it (the kind that answered
+        // in its value), and setup ends there: its first sync starts at
+        // once, and its folders are looked for once it is done, in the
+        // places ticked too.
+        const ServerKind kind = static_cast<ServerKind>(static_cast<int>(c.value));
         const size_t line = c.path.find('\n');
         const std::string url = c.path.substr(0, line);
         const std::string key = line == std::string::npos ? "" : c.path.substr(line + 1);
         const std::string unverifiedHost = c.option ? stashHost(url) : std::string();
-        const bool same = stash && settings.stash.url == url && settings.stash.apiKey == key &&
+        const bool same = stash && settings.stash.kind == kind && settings.stash.url == url &&
+                          settings.stash.apiKey == key &&
                           settings.stash.unverifiedHost == unverifiedHost;
+        useServer(settings.stash, settings.otherServers, kind);
+        // Another server than this kind had: nothing is sent to it unasked.
+        if (StashAddress(url).server != StashAddress(settings.stash.url).server)
+          settings.stash.writeBack = false;
         settings.stash.enabled = true;
         settings.stash.url = url;
         settings.stash.apiKey = key;
@@ -1847,7 +1867,7 @@ int run(Options opts) {
         stashInSetup = true;
         saveSettings(settings);
         if (!same) restartStash();
-        std::printf("Setup: Stash connected\n");
+        std::printf("Setup: %s connected\n", mediaServer(kind).name());
         finishSetup(true);
         break;
       }
@@ -1856,12 +1876,8 @@ int run(Options opts) {
         break;
       case MenuCommand::StashCard:
         // The menu's "Use Stash?" card, gone for good: dismissed, or used
-        // (Stash on, Settings → Stash open at its address).
+        // (Settings open where a server is chosen).
         settings.stash.card = false;
-        if (c.value == 1 && !settings.stash.enabled) {
-          settings.stash.enabled = true;
-          restartStash();
-        }
         saveSettings(settings);
         break;
       case MenuCommand::SetKeyboardLayout: {
@@ -2153,7 +2169,8 @@ int run(Options opts) {
         app.slideshowSeconds = 0;
         deletion.lookup = detached([file = deletion.target, stream, check = stream || !source.empty(),
                                     expected = deletion.expected,
-                                    ask = settings.stash.writeBack && deletion.scene != 0,
+                                    ask = settings.stash.writeBack && deletion.scene != 0 &&
+                                          mediaServer(settings.stash.kind).abilities().deleteFiles,
                                     scene = deletion.scene, stashPath = deletion.stashPath,
                                     url = settings.stash.url, key = settings.stash.apiKey,
                                     unverified = settings.stash.unverified()] {
@@ -2232,43 +2249,93 @@ int run(Options opts) {
         });
         break;
       }
-      case MenuCommand::ToggleStash:
-        settings.stash.enabled = !settings.stash.enabled;
+      case MenuCommand::UseServer:
+        // None (-1), or a kind's own setup in use and on: the one it
+        // replaces is kept as it was left.
+        if (c.value < 0) {
+          settings.stash.enabled = false;
+        } else {
+          useServer(settings.stash, settings.otherServers,
+                    static_cast<ServerKind>(static_cast<int>(c.value)));
+          settings.stash.enabled = true;
+        }
+        menu.findStashFolders(false);  // its folders are as they were left
         saveSettings(settings);
         restartStash();
         break;
       case MenuCommand::SetStashServer: {
-        // The URL, the API key, then each mapping's Stash folder and folder
-        // here, one per line.
+        // The URL, then the API key; its value, the kind of server it is,
+        // whose setup becomes the one in use.
         StashSettings changed = settings.stash;
-        std::vector<std::string> lines;
-        for (size_t start = 0; start <= c.path.size();) {
-          const size_t end = std::min(c.path.find('\n', start), c.path.size());
-          lines.push_back(c.path.substr(start, end - start));
-          start = end + 1;
-        }
-        lines.resize(std::max<size_t>(lines.size(), 2));
-        changed.url = lines[0];
-        changed.apiKey = lines[1];
-        changed.folders.clear();
-        for (size_t i = 2; i + 1 < lines.size(); i += 2)
-          if (!lines[i].empty()) changed.folders.push_back({lines[i], lines[i + 1]});
-        const size_t first = changed.url.find_first_not_of(" \t");
-        changed.url = first == std::string::npos
-                          ? std::string()
-                          : changed.url.substr(first, changed.url.find_last_not_of(" \t") - first + 1);
-        while (changed.url.size() > 1 && changed.url.back() == '/') changed.url.pop_back();
-        changed.card = changed.card && changed.url.empty();  // set up: no "Use Stash?" card
+        std::vector<StashSettings> others = settings.otherServers;
+        useServer(changed, others, static_cast<ServerKind>(static_cast<int>(c.value)));
+        const size_t line = c.path.find('\n');
+        std::string url = c.path.substr(0, line);
+        std::string key = line == std::string::npos ? std::string() : c.path.substr(line + 1);
+        const size_t first = url.find_first_not_of(" \t");
+        url = first == std::string::npos
+                  ? std::string()
+                  : url.substr(first, url.find_last_not_of(" \t") - first + 1);
+        while (url.size() > 1 && url.back() == '/') url.pop_back();
+        // A kind not set up yet, saved without an address: the setup in use
+        // stays.
+        if (url.empty() && changed.kind != settings.stash.kind) break;
+        // The server this kind had, however its address was typed.
+        const bool sameServer =
+            !url.empty() && StashAddress(url).server == StashAddress(changed.url).server;
         // Its certificate accepted unverified (option 1) for its host alone.
-        changed.unverifiedHost = c.option && !changed.url.empty() ? stashHost(changed.url) : std::string();
+        std::string unverifiedHost = (c.option & 1) && !url.empty() ? stashHost(url) : std::string();
+        // Found to be another kind than its fields were for (option 2):
+        // nothing was typed for it. At the server it had it keeps its own
+        // key and whether its certificate is verified; at another, nothing
+        // is sent to it unasked.
+        if (c.option & 2) {
+          if (sameServer) {
+            key = changed.apiKey;
+            unverifiedHost = changed.unverifiedHost;
+          } else {
+            changed.writeBack = false;
+          }
+        }
+        changed.url = url;
+        changed.apiKey = key;
+        if (!url.empty()) changed.enabled = true;
+        changed.card = changed.card && url.empty();  // set up: no "Use Stash?" card
+        changed.unverifiedHost = std::move(unverifiedHost);
         if (changed.url != settings.stash.url || changed.apiKey != settings.stash.apiKey ||
-            changed.folders != settings.stash.folders ||
+            changed.kind != settings.stash.kind || changed.enabled != settings.stash.enabled ||
             changed.unverifiedHost != settings.stash.unverifiedHost) {
-          settings.stash = changed;
+          // Another server than this kind had: where its folders are here
+          // is looked for after its first sync, and one found in a single
+          // place is used without asking. A setup gone back to keeps its
+          // folders as they were left.
+          if (!changed.url.empty() && !sameServer) menu.findStashFolders(true);
+          else if (c.option & 2) menu.findStashFolders(false);
+          settings.stash = std::move(changed);
+          settings.otherServers = std::move(others);
           saveSettings(settings);
           restartStash();
         } else if (stash) {
           stash->syncNow();
+        }
+        break;
+      }
+      case MenuCommand::SetStashFolders: {
+        // Each mapping's folder on the server and the folder here, one per
+        // line.
+        std::vector<std::string> lines;
+        for (size_t start = 0; start < c.path.size();) {
+          const size_t end = std::min(c.path.find('\n', start), c.path.size());
+          lines.push_back(c.path.substr(start, end - start));
+          start = end + 1;
+        }
+        std::vector<StashFolderMap> folders;
+        for (size_t i = 0; i + 1 < lines.size(); i += 2)
+          if (!lines[i].empty()) folders.push_back({lines[i], lines[i + 1]});
+        if (folders != settings.stash.folders) {
+          settings.stash.folders = std::move(folders);
+          saveSettings(settings);
+          restartStash();
         }
         break;
       }
@@ -2296,7 +2363,7 @@ int run(Options opts) {
         if (stash) stash->setWriteBack(settings.stash.writeBack);
         break;
       case MenuCommand::SetStashSections:
-        readStashSetting("stash_filters", c.path, settings.stash);
+        readServerSetting("filters", c.path, settings.stash);
         saveSettings(settings);
         break;
       case MenuCommand::SetStashFormat:
@@ -2304,17 +2371,17 @@ int run(Options opts) {
         saveSettings(settings);
         break;
       case MenuCommand::SetStashScenesSort:
-        readStashSetting("stash_scenes_sort", c.path, settings.stash);
+        readServerSetting("scenes_sort", c.path, settings.stash);
         settings.stash.scenesDescending = c.value != 0;
         saveSettings(settings);
         break;
       case MenuCommand::SetStashPerformersSort:
-        readStashSetting("stash_performers_sort", c.path, settings.stash);
+        readServerSetting("performers_sort", c.path, settings.stash);
         settings.stash.performersDescending = c.value != 0;
         saveSettings(settings);
         break;
       case MenuCommand::SetStashStudiosSort:
-        readStashSetting("stash_studios_sort", c.path, settings.stash);
+        readServerSetting("studios_sort", c.path, settings.stash);
         settings.stash.studiosDescending = c.value != 0;
         saveSettings(settings);
         break;
@@ -2377,7 +2444,7 @@ int run(Options opts) {
       if (const int i = stash->catalog()->sceneByPath(app.currentFile); i >= 0) {
         const StashScene& scene = stash->catalog()->scenes()[i];
         if (!scene.oshashes.empty() && scene.oshashes.front() == scene.oshash) {
-          std::printf("Server failed: the scene plays from Stash\n");
+          std::printf("Server failed: the scene plays from its media server's stream\n");
           const std::string listed = openedAs;
           openVideo(stashStream(scene));
           openedAs = listed;
@@ -3510,6 +3577,11 @@ int run(Options opts) {
         releaseUpdate.restartAtExit();
         app.quit = true;
       }
+      if (std::string name = serverNameNow(menu.setupRunning()); name != serverNamed) {
+        serverNamed = std::move(name);
+        setServerName(serverNamed);
+        menu.languageChanged();
+      }
       MenuView view;
       view.releaseUpdate = releaseUpdate.state();
       view.releaseVersion = releaseUpdate.version();
@@ -3569,8 +3641,11 @@ int run(Options opts) {
       view.subtitleDistance = settings.subtitleDistance;
       view.photo = !app.currentFile.empty() && isPhotoFile(app.currentFile);
       // A scene from Stash's stream only through Stash (docs/alpha/delete-file.md).
+      // A scene played from its server: only through a server that deletes.
       view.deletable = app.currentFile.empty() || view.streaming ? MenuView::Deletable::No
                        : !isStashScene(app.currentFile)         ? MenuView::Deletable::Yes
+                       : !mediaServer(settings.stash.kind).abilities().deleteFiles
+                           ? MenuView::Deletable::No
                        : !settings.stash.writeBack              ? MenuView::Deletable::NeedsSendToStash
                        : offline.stashDown()                    ? MenuView::Deletable::StashDown
                                                                 : MenuView::Deletable::Yes;
@@ -3648,6 +3723,9 @@ int run(Options opts) {
       view.vibration = settings.vibration;
       view.showWhatsNew = settings.showWhatsNew;
       view.stash = settings.stash;
+      for (const MediaServer* server : mediaServers())
+        if (serverSetUp(settings.stash, settings.otherServers, server->kind()))
+          view.serversSetUp |= 1u << static_cast<int>(server->kind());
       view.setupBanner = setupBanner;
       view.appFps = appFps;
       view.focus.headsetIpdTenthMm =
@@ -4333,7 +4411,15 @@ int main(int argc, char** argv) {
   std::atexit(restartIfRequested);  // before the run log starts, so it runs after the log ends
   startRunLog();
   printRunHeader();
-  if (stashSync) return runStashSyncDiagnostic(loadSettings().stash);
+  if (stashSync) {
+    // The setup in use; with none on, the one that has a server.
+    const Settings saved = loadSettings();
+    StashSettings stash = saved.stash;
+    for (const StashSettings& other : saved.otherServers)
+      if (stash.url.empty() && !other.url.empty()) stash = other;
+    setServerName(mediaServer(stash.kind).name());
+    return runStashSyncDiagnostic(stash);
+  }
   // The file browser starts next to the video, which needs an absolute path.
   if (!opts.file.empty() && opts.file.find("://") == std::string::npos) {
     std::error_code ec;

@@ -201,8 +201,7 @@ StashReply stashPerform(CURL* curl, const StashAddress& address, const std::stri
   return other;
 }
 
-std::string stashUnreachable(CURLcode code) {
-  const StashSetupStrings& t = strings().stashSetup;
+std::string stashUnreachable(CURLcode code, const StashSetupStrings& t) {
   switch (code) {
     case CURLE_COULDNT_CONNECT: return t.refused;
     case CURLE_COULDNT_RESOLVE_HOST: return t.noHost;

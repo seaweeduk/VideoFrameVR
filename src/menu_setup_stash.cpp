@@ -3,19 +3,19 @@
 #include "menu_stash.h"
 #include "menu_style.h"
 #include "platform.h"
-#include "stash_client.h"
+#include "media_client.h"
 
-// Do you use Stash? (docs/alpha/first-run.md, step 4): what Stash adds,
-// then its address (one small request says whether it answers and has a
-// login), and its sign-in. Once Stash accepts, setup ends: main.cpp sets
-// Stash up as Settings → Stash would, and its first sync runs in the
-// background while the Library opens.
+// Do you use Stash? (docs/alpha/first-run.md, step 4): what a media server
+// adds, then its address (a small request to each kind says which answers
+// there and whether it has a login), and its sign-in. Once the server
+// accepts, setup ends: main.cpp sets it up as Settings would, and its first
+// sync runs in the background while the Library opens.
 
 namespace {
 
 using Step = SetupMenu::Step;
 using Page = SetupStash::Page;
-using Answer = StashClient::Answer;
+using Answer = MediaClient::Answer;
 
 using setup::kH;
 using setup::kW;
@@ -26,7 +26,7 @@ constexpr double kFormW = 940;  // the address's or the sign-in's group
 constexpr double kRowsY = setup::kTop + kit::kSpaceEdge, kRowStep = 128, kEndY = kRowsY + 3 * kRowStep + 36;
 
 // The address as typed, spaces and a trailing slash dropped (Connect tries
-// it with https, http and Stash's port: StashClient::check()).
+// it with https, http and each kind's port: findServer()).
 std::string trimmedAddress(const std::string& typed) {
   const size_t first = typed.find_first_not_of(" \t\r\n");
   if (first == std::string::npos) return "";
@@ -113,55 +113,72 @@ void SetupPages::stopAsking(Menu& m) {
   SetupStash& st = m.setup_->stash;
   if (st.client) st.client->cancel();
   st.client.reset();
+  if (st.search) st.search->cancel();
+  st.search.reset();
   st.asking = {};
   m.dirty_ = true;
 }
 
-// Connect's one request, or Sign in; a server that doesn't answer holds up
-// nothing, and Back drops it.
+// Connect's requests (which kind of server answers at the address), or Sign
+// in to the one found; a server that doesn't answer holds up nothing, and
+// Back drops it.
 void SetupPages::askStash(Menu& m) {
   SetupStash& st = m.setup_->stash;
   const std::string url = trimmedAddress(st.text[SetupStash::Address]);
   if (url.empty() || st.asking.running()) return;
   st.error.clear();
   st.untrusted.clear();
-  auto client = std::make_shared<StashClient>(url, std::string(), unverified(st));
-  st.client = client;
   if (st.page == Page::SignIn) {
-    st.asking.start([client, user = st.text[SetupStash::User], password = st.text[SetupStash::Password]] {
+    // What it says names the kind signed in to, not every kind.
+    const MediaServer& server = mediaServer(st.kind);
+    std::shared_ptr<MediaClient> client = server.client(url, std::string(), unverified(st));
+    client->nameOwnKind();
+    st.client = client;
+    const std::string wrongLogin = stringsNamed(server.name()).stashSetup.wrongLogin;
+    st.asking.start([client, kind = st.kind, wrongLogin, user = st.text[SetupStash::User],
+                     password = st.text[SetupStash::Password]] {
       SetupStash::Reply r;
+      r.kind = kind;
       bool refused = false;
       const bool ok = client->signIn(user, password, r.apiKey, refused);
       r.answer = static_cast<int>(ok ? Answer::Open : Answer::Failed);
-      r.error = refused ? strings().stashSetup.wrongLogin : client->error();
+      r.error = refused ? wrongLogin : client->error();
       r.untrusted = !ok && client->problem() == StashProblem::Certificate;
       return r;
     });
   } else {
-    st.asking.start([client] {
+    const auto search = std::make_shared<ServerSearch>();
+    st.search = search;
+    st.asking.start([url, search, unverified = unverified(st)] {
+      const FoundServer found =
+          findServer(url, unverified, mediaServers().front()->kind(), false, search.get());
       SetupStash::Reply r;
-      r.answer = static_cast<int>(client->check());
-      r.url = client->server();
-      r.error = client->error();
-      r.untrusted = client->problem() == StashProblem::Certificate;
+      r.answer = static_cast<int>(found.answer);
+      r.kind = found.kind;
+      r.url = found.url;
+      r.error = found.error;
+      r.untrusted = found.untrusted;
       return r;
     });
   }
   m.dirty_ = true;
 }
 
-// Each frame while the step shows: Stash's answer. Found, the field shows
-// the address it answered at.
+// Each frame while the step shows: the server's answer. Found, the field
+// shows the address it answered at, and its kind is the one set up.
 void SetupPages::updateStash(Menu& m) {
   SetupStash& st = m.setup_->stash;
   SetupStash::Reply r;
   if (!st.asking.take(r)) return;
   st.client.reset();
+  st.search.reset();
   m.dirty_ = true;
   const SetupStrings& t = m.text().setup;
   const Answer answer = static_cast<Answer>(r.answer);
-  if (st.page == Page::Address && (answer == Answer::Open || answer == Answer::NeedsSignIn))
+  if (st.page == Page::Address && (answer == Answer::Open || answer == Answer::NeedsSignIn)) {
     st.text[SetupStash::Address] = r.url;
+    st.kind = r.kind;
+  }
   switch (answer) {
     case Answer::Open: m.command_ = stashAccepted(m, r.apiKey); break;
     case Answer::NeedsSignIn: openStashPage(m, Page::SignIn); break;
@@ -175,14 +192,15 @@ void SetupPages::updateStash(Menu& m) {
   }
 }
 
-// Stash is set up (MenuCommand::SetupStash) and setup ends; its first sync
-// runs meanwhile.
+// The server is set up as the kind it answered as (MenuCommand::SetupStash)
+// and setup ends; its first sync runs meanwhile.
 MenuCommand SetupPages::stashAccepted(Menu& m, const std::string& apiKey) {
   SetupStash& st = m.setup_->stash;
   MenuCommand c;
   c.type = MenuCommand::SetupStash;
   c.path = trimmedAddress(st.text[SetupStash::Address]) + "\n" + apiKey;
   c.option = unverified(st) ? 1 : 0;
+  c.value = static_cast<int>(st.kind);
   st.text[SetupStash::Password].clear();
   m.editing_ = false;
   return c;
@@ -342,8 +360,11 @@ void SetupPages::drawStash(Menu& m, cairo_t* cr) {
   } else {
     if (st.page == Page::Address)
       drawHead(m, cr, t.connectStash, t.addressText);
-    else
-      drawHead(m, cr, t.stashSignInTitle, t.stashSignInText);
+    else {
+      // The server found, by its own name.
+      const SetupStrings& own = stringsNamed(mediaServer(st.kind).name()).setup;
+      drawHead(m, cr, own.stashSignInTitle, own.stashSignInText);
+    }
     if (!st.untrusted.empty()) {
       const Rgba warn = hexColour(0xff8a85);
       const double red[4] = {warn.r, warn.g, warn.b, 1};

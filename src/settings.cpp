@@ -118,7 +118,7 @@ std::string allLines(const Settings& s) {
   out << "screen_distance_cm=" << s.screen.distance * 100 << "\n";
   out << "screen_height_cm=" << s.screen.height * 100 << "\n";
   out << "screen_curve=" << s.screen.curve << "\n";
-  out << stashSettingLines(s.stash);
+  out << stashSettingLines(s.stash, s.otherServers);
   out << "script_enabled=" << (s.scripts.enabled ? 1 : 0) << "\n";
   out << "script_address=" << s.scripts.address << "\n";
   out << "script_offset_ms=" << s.scripts.offsetMs << "\n";
@@ -227,6 +227,7 @@ Settings loadSettings() {
 // before foveation_version=2.
 static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) {
   FocusSettingsReader focus;
+  StashSettingsReader servers(s.stash, s.otherServers);
   bool focusRead = false;  // else the focus stays as in `s`
   for (const auto& [key, value] : file) {
     if (key == "accent") s.accent.preset = accentPreset(value);
@@ -303,13 +304,9 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
       s.scripts.offsetMs = std::clamp(std::atoi(value.c_str()), -kScriptOffsetLimit, kScriptOffsetLimit);
     else if (key == "script_range_low") s.scripts.rangeLow = std::atoi(value.c_str());
     else if (key == "script_range_high") s.scripts.rangeHigh = std::atoi(value.c_str());
-    else if (!readStashSetting(key, value, s.stash)) focusRead |= focus.read(key, value);
+    else if (!servers.read(key, value)) focusRead |= focus.read(key, value);
   }
-  // stash_path_from left empty: none (the same paths on both).
-  auto& folders = s.stash.folders;
-  folders.erase(std::remove_if(folders.begin(), folders.end(),
-                               [](const StashFolderMap& m) { return m.from.empty(); }),
-                folders.end());
+  servers.finish();
   if (oldFoveation)
     s.foveationOutside = s.foveation == FoveationLevel::Medium ? 2 : 4;
   s.foveation = foveationLevel(s.foveation != FoveationLevel::Off, s.sharpBins,
@@ -334,7 +331,12 @@ static void writeSettings(const Settings& s) {
     return;
   }
   std::ostringstream out;
-  const auto defaults = lineMap(defaultSettings());
+  auto defaults = lineMap(defaultSettings());
+  {
+    // ... and those of a media server's setup that isn't the first kind's.
+    std::istringstream servers(stashDefaultLines());
+    for (auto& [key, value] : entries(servers)) defaults.emplace(key, value);
+  }
   std::istringstream lines(allLines(s));
   out << kFormatLine << "\nfoveation_version=2\n";
   for (const auto& [key, value] : entries(lines)) {

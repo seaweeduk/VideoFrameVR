@@ -1238,7 +1238,7 @@ void StashPages::layoutHeader(Menu& m, double x0) {
           StashMenu& s = state(m);
           const bool shown = shownPin(m) == pin;
           s.pins.erase(s.pins.begin() + pin);
-          saveStashPins(s.pins);
+          saveStashPins(s.pins, s.kind);
           if (shown || s.pin == pin)  // stays shown, unpinned: Pin takes it back
             s.pin = -1;
           else if (s.pin > pin)
@@ -1263,7 +1263,7 @@ void StashPages::layoutHeader(Menu& m, double x0) {
           StashMenu& s = state(m);
           const StashList list = scopedList(m);
           s.pins.push_back({stashListName(list, catalog(m)), list});
-          saveStashPins(s.pins);
+          saveStashPins(s.pins, s.kind);
           // A pinned list changed and pinned anew shows as the new pin; the
           // Scenes page's own list pinned stays the Scenes page.
           if (s.ownScenes && m.page_ == Menu::Page::StashScenes)

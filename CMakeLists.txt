@@ -30,6 +30,8 @@ find_package(Vulkan REQUIRED)
 add_executable(videoframevr
   src/main.cpp
   src/xr_context.cpp
+  src/xbvr_client.cpp
+  src/xbvr_server.cpp
   src/video_player.cpp
   src/gl_util.cpp
   src/autofocus.cpp
@@ -71,6 +73,8 @@ add_executable(videoframevr
   src/library_index.cpp
   src/accent.cpp
   src/mask_probe.cpp
+  src/media_client.cpp
+  src/media_server.cpp
   src/menu.cpp
   src/menu_adjust.cpp
   src/menu_browser.cpp
@@ -148,6 +152,7 @@ add_executable(videoframevr
   src/stash_catalog.cpp
   src/stash_similarity.cpp
   src/stash_client.cpp
+  src/stash_server.cpp
   src/stash_delete.cpp
   src/stash_folders.cpp
   src/stash_http.cpp

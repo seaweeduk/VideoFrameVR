@@ -1,5 +1,7 @@
 #pragma once
 
+#include "server_kind.h"
+
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -38,12 +40,12 @@ class StashImages {
   };
   static DiskUsage diskUsage(const std::filesystem::path& root);
 
-  // `root` is the cache folder (e.g. cacheDir() / "stash"), `url` Stash's
-  // address as typed: every image is fetched from it, whatever host its
-  // URL names (StashAddress::pathOn()). `apiKey` is sent when set;
-  // `unverified`: the server's certificate is accepted unverified.
-  StashImages(std::filesystem::path root, const std::string& url, std::string apiKey,
-              bool unverified);
+  // `root` is the cache folder (e.g. cacheDir() / "stash"), `url` the
+  // server's address as typed: every image is fetched from it, whatever
+  // host its URL names (MediaServer::imagePath()). `apiKey` is sent when
+  // set; `unverified`: the server's certificate is accepted unverified.
+  StashImages(std::filesystem::path root, ServerKind kind, const std::string& url,
+              std::string apiKey, bool unverified);
   StashImages(const StashImages&) = delete;
   StashImages& operator=(const StashImages&) = delete;
   // Waits for the workers, so from any thread once nothing else uses this;

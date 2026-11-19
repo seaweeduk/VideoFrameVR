@@ -103,8 +103,9 @@ struct MenuCommand {
               SetMatchColour, SetMatchBrightness,
               ToggleAutoPassthrough, ToggleKeyGreen, ToggleVibration,
               // Stash (docs/stash.md): on or off, its server, its switches,
-              // Sync now, and the format the Scenes page shows.
-              ToggleStash, SetStashServer, ToggleStashCovers, ToggleStashTitles,
+              // its folders here, Sync now, and the format the Scenes page
+              // shows. UseServer: which kind of media server is used, or none.
+              UseServer, SetStashServer, SetStashFolders, ToggleStashCovers, ToggleStashTitles,
               ToggleStashMalePerformers, SyncStash, SetStashFormat,
               ToggleStashWriteBack, SetStashSections, SetStashScenesSort, SetStashPerformersSort,
               SetStashStudiosSort, SetLanguage, DownloadReleaseUpdate,
@@ -119,9 +120,10 @@ struct MenuCommand {
               SetKeyboardLayout,
               EndSetup,  // first-run setup ended: value 1 finished, 0 Set up later
               SetupPlaces,  // ... the places ticked so far, one per line in path
-              SetupStash,   // ... Stash connected: its address, then its API key, in path;
-                            // option 1: its certificate accepted unverified
-              StashCard,  // the menu's "Use Stash?" card: value 1 used, 0 dismissed
+              SetupStash,   // ... a server connected: its address, then its API key, in
+                            // path; its kind in value; option 1: its certificate
+                            // accepted unverified
+              StashCard,  // the menu's "Use Stash?" card, used or dismissed
               DismissSetupBanner,  // the Library's "You're all set" after setup
               ToggleShowWhatsNew,  // What's new opens by itself after updates
               // Funscripts (script_player.h): on or off, Intiface's address
@@ -136,15 +138,18 @@ struct MenuCommand {
   // AfterVideo (SetAfterVideo), green
   // screen setting 0..100, Packing (SetPacking), the flat screen's distance
   // and height in centimeters, its curve in percent, StashFormat
-  // (SetStashFormat), PerformancePreset (ApplyPreset)
+  // (SetStashFormat), PerformancePreset (ApplyPreset), ServerKind
+  // (SetStashServer, SetupStash; UseServer, -1 for none)
   double value = 0;
   // OpenFile, LoadSubtitle, RequestDelete and DeleteFile.
   // RequestDelete: the strip's delete button, the dialog open (the app
   // looks the file up and calls askDelete()); DeleteFile: confirmed;
-  // CancelDelete: not. SetStashServer: the URL, the API
-  // key, Stash's folder and this computer's, one per line (option 1: the
-  // server's certificate accepted unverified). SetStashSections:
-  // the Scenes rail's sections and subgroups as stash_filters= keeps them.
+  // CancelDelete: not. SetStashServer: the URL and the API key, one per
+  // line (option 1: the server's certificate accepted unverified; 2: the
+  // key isn't one typed for this kind, which keeps its own at the address
+  // it had). SetStashFolders: each mapping's folder on the server and the
+  // folder here, one per line. SetStashSections:
+  // the Scenes rail's sections and subgroups as <id>_filters= keeps them.
   // SetStash*Sort: the stable sort name, with its direction in value
   // (1 = descending).
   // SaveUserPreset: its name; ApplyUserPreset and DeleteUserPreset: its file;
@@ -267,7 +272,8 @@ struct MenuView {
   bool showPerformance = false;  // the performance readout, this run's (--show-performance)
   bool vibration = true;        // controllers buzz on clicks, seeks and grabs
   bool thumbnails = true;       // file browser and library: thumbnails, else a video icon
-  StashSettings stash;          // Stash's settings (its pages show only while it is on)
+  StashSettings stash;          // the media server's setup in use (its pages show only while it is on)
+  unsigned serversSetUp = 0;    // a bit per ServerKind with a server set up, in use or not
   bool setupBanner = false;     // the Library's "You're all set" after setup (DismissSetupBanner)
   bool showWhatsNew = true;     // What's new opens after updates (Settings::showWhatsNew)
   int appFps = 0;               // frames the app drew in the last second (0 = not known yet)
@@ -1955,6 +1961,9 @@ class Menu {
                   const double rgba[4]) const;
   std::string serverName(const std::string& root) const;
   std::string shownLocation(const std::string& dir) const;
+  // A folder on one line as the browser's heading names it, from the
+  // nearest place in the navigation: "Home/media/vr".
+  std::string shownPlace(const std::string& dir) const;
 
   // Where Stash's videos are here (menu_stash_folders.cpp): looked for once
   // per sync, or in the folder chosen in the browser.
@@ -1964,16 +1973,16 @@ class Menu {
     bool checking = false;   // ... and looks in the one chosen
     bool notThere = false;   // ... which hasn't its videos
     uint64_t searches = 0;   // Stash::folderSearches() last seen
-    // Stash connected in first-run setup (findStashFolders()): looked for
-    // in these places too, and saved as found.
+    // A server newly connected, in first-run setup or Settings
+    // (findStashFolders()): looked for in these places too, and what is
+    // found in one place only saved as found.
     bool automatic = false;
     std::vector<std::string> places;
-    uint64_t saved = 0;  // ... the search last saved
   };
   StashFolders stashFolders_;
   MenuCommand command_;
   void updateStashFolders();
-  // SetStashServer with these mappings, the server and key as they are.
+  // SetStashFolders with these mappings.
   MenuCommand stashFolders(const std::vector<StashFolderMap>& folders) const;
   void chooseStashFolder(const std::string& folder);
   double layoutStashFolderChoice();

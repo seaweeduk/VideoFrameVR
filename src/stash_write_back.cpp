@@ -1,6 +1,6 @@
 #include "stash_write_back.h"
 
-#include "stash_client.h"
+#include "media_client.h"
 #include "stash_store.h"
 
 #include <algorithm>
@@ -36,13 +36,17 @@ bool counted(StashOutbox& outbox, StashWriteBackStatus& status) {
 }
 
 // Sends what waits in the outbox: each rating as it is, each scene's plays
-// but those its play_history has already (beyond the ones kept as sent).
+// but those its play_history has already (beyond the ones kept as sent);
+// to a server without play times, one play of a scene it doesn't have as
+// watched, the others being there with it.
 // Stops at the first request that gets no answer, keeping the rest; a
 // change Stash refuses waits too, the others go on; and between scenes once
 // `paused` (write-back switched off). False with `error` if anything is
 // left that could not be sent.
-bool deliverWaiting(StashClient& client, StashOutbox& outbox, int& sentRatings, int& sentPlays,
+bool deliverWaiting(MediaClient& client, StashOutbox& outbox, int& sentRatings, int& sentPlays,
                     std::string& error, const std::function<bool()>& paused) {
+  const char* name = client.kind().name();
+  const bool playTimes = client.kind().abilities().playTimes;
   std::vector<StashOutbox::Rating> ratings;
   std::vector<StashOutbox::Play> plays;
   if (!outbox.waiting(ratings, plays)) {
@@ -50,10 +54,10 @@ bool deliverWaiting(StashClient& client, StashOutbox& outbox, int& sentRatings, 
     return false;
   }
   if (ratings.empty() && plays.empty()) return true;
-  StashStore store;
+  StashStore store(client.kind());
   std::unordered_map<std::string, int64_t> scenes;
   std::unordered_map<int64_t, std::string> names;
-  if (!store.scenes(client.server(), scenes, names)) {
+  if (!store.scenes(client.server(), client.kind().id(), scenes, names)) {
     error = "Waiting to send: " + store.error();
     return false;
   }
@@ -96,7 +100,7 @@ bool deliverWaiting(StashClient& client, StashOutbox& outbox, int& sentRatings, 
       notStashPlays.insert(notStashPlays.end(), list.begin(), list.end());
       continue;
     }
-    StashClient::Activity activity;
+    MediaClient::Activity activity;
     bool exists = false;
     if (!client.fetchActivity(scene->second, activity, exists)) {
       error = client.error();
@@ -115,7 +119,9 @@ bool deliverWaiting(StashClient& client, StashOutbox& outbox, int& sentRatings, 
     std::vector<bool> found;
     std::vector<int64_t> times;
     for (const StashOutbox::Play& p : list) {
-      const int there = countOf(activity.plays, p.at) - countOf(sentTimes, p.at) - taken[p.at];
+      const int there =
+          playTimes ? countOf(activity.plays, p.at) - countOf(sentTimes, p.at) - taken[p.at]
+                    : activity.watched || !times.empty();
       found.push_back(there > 0);
       if (there > 0)
         ++taken[p.at];
@@ -139,10 +145,10 @@ bool deliverWaiting(StashClient& client, StashOutbox& outbox, int& sentRatings, 
     return false;
   }
   if (!notStash.empty() || !notStashPlays.empty())
-    std::printf("Stash: %zu ratings and %zu plays of videos Stash doesn't have were not sent\n",
-                notStash.size(), notStashPlays.size());
+    std::printf("%s: %zu ratings and %zu plays of videos %s doesn't have were not sent\n", name,
+                notStash.size(), notStashPlays.size(), name);
   if (sentRatings > ratingsBefore || sentPlays > playsBefore)
-    std::printf("Stash: sent %d ratings and %d plays\n", sentRatings - ratingsBefore,
+    std::printf("%s: sent %d ratings and %d plays\n", name, sentRatings - ratingsBefore,
                 sentPlays - playsBefore);
   return ok;
 }
@@ -151,14 +157,15 @@ bool deliverWaiting(StashClient& client, StashOutbox& outbox, int& sentRatings, 
 // oshash), its rating if Stash's differs (never a clearing one), and the
 // plays neither sent before nor waiting. The app keeps the time of its last
 // play only, so those go at that time; plays Stash already has at it (more
-// than were sent at it) are left out, as delivery would.
-bool makePlan(StashClient& client, StashOutbox& outbox,
+// than were sent at it) are left out, as delivery would. A server without
+// play times: one play of a scene it doesn't have as watched.
+bool makePlan(MediaClient& client, StashOutbox& outbox,
               const std::vector<StashLibraryEntry>& library, StashSendPlan& plan) {
   plan = StashSendPlan{};
-  StashStore store;
+  StashStore store(client.kind());
   std::unordered_map<std::string, int64_t> scenes;
   std::unordered_map<int64_t, std::string> names;
-  if (!store.scenes(client.server(), scenes, names)) {
+  if (!store.scenes(client.server(), client.kind().id(), scenes, names)) {
     plan.error = store.error() + ": sync first";
     return false;
   }
@@ -174,7 +181,8 @@ bool makePlan(StashClient& client, StashOutbox& outbox,
   for (const auto& r : waitingRatings) ratingWaits.insert(r.oshash);
   std::unordered_map<std::string, int> playsWait;
   for (const auto& p : waitingPlays) ++playsWait[p.oshash];
-  std::unordered_map<int64_t, StashClient::Activity> activity;
+  const bool playTimes = client.kind().abilities().playTimes;
+  std::unordered_map<int64_t, MediaClient::Activity> activity;
   if (!client.fetchActivity(activity)) {
     plan.error = client.error();
     return false;
@@ -198,7 +206,9 @@ bool makePlan(StashClient& client, StashOutbox& outbox,
         e.plays - static_cast<int>(sentTimes.size()) - playsWait[e.oshash];
     if (missing > 0 && e.lastPlayedAt > 0) {
       const int there =
-          std::max(0, countOf(now->second.plays, e.lastPlayedAt) - countOf(sentTimes, e.lastPlayedAt));
+          playTimes ? std::max(0, countOf(now->second.plays, e.lastPlayedAt) -
+                                      countOf(sentTimes, e.lastPlayedAt))
+                    : missing - !now->second.watched;
       item.found = std::min(missing, there);
       item.plays = missing - item.found;
       item.playedAt = e.lastPlayedAt;
@@ -239,7 +249,7 @@ struct StashWriteBack::Shared {
     int64_t scene = 0;
     std::vector<int64_t> add, remove;
   } tags;
-  StashClient* client = nullptr;  // the request under way, to stop it
+  MediaClient* client = nullptr;  // the request under way, to stop it
   // What the worker finished, for poll().
   bool changed = false;
   StashWriteBackStatus status;
@@ -367,7 +377,10 @@ bool StashWriteBack::poll() {
 }
 
 void StashWriteBack::work(std::shared_ptr<Shared> shared) {
-  StashOutbox outbox(StashClient(shared->settings.url, shared->settings.apiKey).server());
+  const MediaServer& kind = mediaServer(shared->settings.kind);
+  const char* name = kind.name();
+  StashOutbox outbox(serverIdentity(kind.kind(), StashAddress(shared->settings.url).server),
+                     originalKind(kind.kind()));
   StashWriteBackStatus status;  // the worker's; published as shared->status
   std::unique_lock<std::mutex> lock(shared->mutex);
   auto publish = [&] {
@@ -391,7 +404,7 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
                                    : outbox.addPlays(e.oshash, e.at, e.count);
         if (!kept) {
           status.error = outbox.error();
-          std::fprintf(stderr, "Stash: %s\n", status.error.c_str());
+          std::fprintf(stderr, "%s: %s\n", name, status.error.c_str());
         }
       }
       counted(outbox, status);
@@ -403,7 +416,9 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
     if (shared->stop) return;
     if (shared->paused) continue;
 
-    StashClient client(shared->settings.url, shared->settings.apiKey, shared->settings.unverified());
+    const std::unique_ptr<MediaClient> made = kind.client(
+        shared->settings.url, shared->settings.apiKey, shared->settings.unverified());
+    MediaClient& client = *made;
     shared->client = &client;
     const std::function<bool()> paused = [&shared] {
       std::lock_guard<std::mutex> hold(shared->mutex);
@@ -415,10 +430,10 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
       lock.unlock();
       const bool ok = client.editTags(tags.scene, tags.add, tags.remove);
       if (ok)
-        std::printf("Stash: tags saved, %zu added and %zu removed\n", tags.add.size(),
+        std::printf("%s: tags saved, %zu added and %zu removed\n", name, tags.add.size(),
                     tags.remove.size());
       else
-        std::fprintf(stderr, "Stash: tags not saved: %s\n", client.error().c_str());
+        std::fprintf(stderr, "%s: tags not saved: %s\n", name, client.error().c_str());
       lock.lock();
       shared->client = nullptr;
       if (!shared->tags.pending) {  // else a newer save says how it went
@@ -478,7 +493,7 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
     status.sentRatings += ratings;
     status.sentPlays += plays;
     status.error = ok || halted ? std::string() : error;
-    if (!ok && !halted) std::fprintf(stderr, "Stash: write-back: %s\n", error.c_str());
+    if (!ok && !halted) std::fprintf(stderr, "%s: write-back: %s\n", name, error.c_str());
     counted(outbox, status);
     lock.lock();
     shared->client = nullptr;

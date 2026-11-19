@@ -276,14 +276,14 @@ Strings frenchStrings(const Strings& english) {
   s.screenResetHint = "Défaut : hauteur 300 cm, distance 300 cm, courbure 1";
 
   s.stash.group = "Stash";
-  s.stash.use = "Utiliser Stash";
   s.stash.offHint = "Parcourir Stash par artiste, tag ou studio. Non : aucun envoi ni stockage.";
   s.stash.setupHint = "Définir un serveur pour synchroniser.";
   s.stash.server = "Serveur";
   s.stash.apiKey = "Clé API";
   s.stash.apiKeyNone = "Aucune";
   s.stash.apiKeySet = "Définie";
-  s.stash.folders = "Dossiers";
+  s.stash.folders = "Lire depuis un dossier";
+  s.stash.foldersHint = "Facultatif. Les vidéos que vous avez aussi ici se parcourent plus vite.";
   s.stash.covers = "Jaquettes Stash en miniatures";
   s.stash.titles = "Titres Stash au lieu des fichiers";
   s.stash.malePerformers = "Afficher les artistes masculins";
@@ -302,9 +302,6 @@ Strings frenchStrings(const Strings& english) {
   s.stash.editTitle = "Serveur Stash";
   s.stash.fieldNames[0] = "Serveur";
   s.stash.fieldNames[1] = "Clé API (si nécessaire)";
-  s.stash.fieldNames[2] = "Dossier dans Stash";
-  s.stash.fieldNames[3] = "Même dossier ici";
-  s.stash.editHint = "Facultatif : associer le dossier Stash au chemin local pour lire les fichiers depuis là. Enregistrer relance la synchronisation.";
   s.stash.save = "Enregistrer et synchroniser";
   s.stash.navHome = "Accueil";
   s.stash.navScenes = "Scènes";
@@ -544,10 +541,8 @@ Strings frenchStrings(const Strings& english) {
   s.stash.noPins = "Les listes épinglées depuis Scènes apparaissent ici.";
   s.stash.searchStash = "Recherche Stash";
   s.stash.tipUse = "Parcourir les scènes du serveur Stash.";
-  s.stash.tipFields[0] = "Adresse de Stash, comme stash.example.com ou 192.168.1.20:9999.";
+  s.stash.tipFields[0] = "Adresse de Stash, comme server.example.com ou 192.168.1.20:9999.";
   s.stash.tipFields[1] = "Clé API, seulement si le serveur Stash en exige une.";
-  s.stash.tipFields[2] = "Préfixe de dossier utilisé par Stash.";
-  s.stash.tipFields[3] = "Dossier correspondant sur cet ordinateur.";
   s.stash.tipSync = "Actualiser le catalogue local depuis Stash.";
   s.stash.tipPin = "Enregistrer ces filtres en liste épinglée.";
   s.stash.tipShuffle = "Lire ces scènes dans un ordre aléatoire.";
@@ -655,6 +650,10 @@ Strings frenchStrings(const Strings& english) {
   s.stashWriteBack.tipToggle = "Envoyer les nouvelles notes, lectures et modifications de tags à Stash, et y supprimer les fichiers supprimés ici. Sauvegarder Stash d'abord.";
   s.stashWriteBack.tipSendAll = "Vérifier les notes et lectures existantes avant l'envoi à Stash.";
   s.stashWriteBack.tipDryRun = "Prévisualiser les données à envoyer, sans rien transmettre.";
+  s.stashWriteBack.toggleBasic = "Envoyer notes et lectures à Stash";
+  s.stashWriteBack.hintBasic = "Une lecture marque la scène comme vue. Sauvegarder Stash d'abord.";
+  s.stashWriteBack.rulesBasic = "Les notes Stash existantes restent intactes. Les scènes lues sont marquées comme vues dans Stash, qui ne garde pas la date des lectures. La bibliothèque locale reste intacte.";
+  s.stashWriteBack.tipToggleBasic = "Envoyer les nouvelles notes à Stash et y marquer comme vues les scènes lues ici. Sauvegarder Stash d'abord.";
 
   s.focus.allTitle = "Focus (toutes les vidéos)";
   s.focus.videoTitle = "Focus (cette vidéo)";
@@ -848,7 +847,8 @@ Strings frenchStrings(const Strings& english) {
   s.network.forgetOffline = "Impossible de joindre %s : la clé ne peut pas être retirée maintenant.";
   s.network.forgetAnyway = "Oublier quand même";
   s.stashFolders.choose = "Choisir…";
-  s.stashFolders.tipChoose = "Trouver le dossier des vidéos Stash dans l'explorateur de fichiers.";
+  s.stashFolders.change = "Modifier…";
+  s.stashFolders.tipChoose = "Trouver le dossier des vidéos Stash dans l'explorateur de fichiers. Pour un partage, ajoutez d'abord son ordinateur dans Réseau.";
   s.stashFolders.looking = "Recherche des vidéos Stash …";
   s.stashFolders.foundIn = "Les vidéos Stash sont sur cet appareil dans %s.";
   s.stashFolders.alsoIn = "Vidéos Stash aussi sur cet appareil dans %s. « Utiliser » les lit depuis là.";
@@ -859,11 +859,11 @@ Strings frenchStrings(const Strings& english) {
   s.stashFolders.notInFolder = "Les vidéos Stash ne sont pas dans ce dossier :";
   s.stashFolders.useFolder = "Utiliser ce dossier";
   s.stashFolders.checking = "Vérification …";
-  s.stashFolders.folderHere = "Ici : %s";
+  s.stashFolders.fromServer = "Lu depuis Stash";
+  s.stashFolders.playFromServer = "Lire depuis Stash";
+  s.stashFolders.notIn = "Ses vidéos sont introuvables dans %s.";
   s.stashFolders.folderNotHere = "Introuvable sur cet appareil. Choisissez son dossier.";
   s.stashFolders.folderRest = "Ses autres scènes sont lues depuis Stash.";
-  s.stashFolders.folderStreamed = "Introuvable sur cet appareil. Ses scènes sont lues depuis Stash.";
-  s.stashFolders.streamed = "Les scènes introuvables ici sont lues depuis Stash.";
   s.stashFolders.lookingFolders = "Recherche des vidéos Stash … (dossier %d sur %d)";
   s.stashFolders.otherFiles = "Vidéos hors des dossiers de bibliothèque de Stash";
   s.viewpoint.label = "Point de vue";
@@ -1012,7 +1012,7 @@ Strings frenchStrings(const Strings& english) {
   s.stashSetup.saving = "Enregistrement d'une copie sur cet appareil …";
   s.stashSetup.building = "Recherche des vidéos de Stash sur cet appareil …";
   s.stashSetup.firstSync = "Cette première synchronisation continue en arrière-plan : vous pouvez quitter cette page ou lancer une lecture. Les pages de Stash se rempliront une fois terminée.";
-  s.stashSetup.serverHint = "Comme stash.example.com ou 192.168.1.20:9999";
+  s.stashSetup.serverHint = "Comme server.example.com ou 192.168.1.20:9999";
   s.stashSetup.tooOld = "Ce Stash est trop ancien pour VideoFrameVR. Mettez-le à jour vers la version 0.31 ou plus récente.";
   s.stashSetup.needsSignIn = "Ce Stash nécessite une connexion.";
   s.stashSetup.keyRefused = "Stash a refusé la clé API. Reconnectez-vous pour obtenir la clé actuelle.";
@@ -1038,6 +1038,8 @@ Strings frenchStrings(const Strings& english) {
   s.stashSetup.verify = "Vérifier le certificat";
   s.stashSetup.untrustedStatus = "Certificat non approuvé";
   s.stashSetup.untrustedTip = "Le certificat de Stash n'est pas approuvé. Choisissez de vous connecter quand même ou non.";
+  s.stashSetup.foundOther = "C'est %s qui répond à cette adresse : c'est donc lui qui a été configuré.";
+  s.stashSetup.orKind = " ou ";
   s.setup.putOnHeadset = "Mettez votre casque";
   s.setup.startsWhenWorn = "La configuration commence dès que vous le portez.";
   s.setup.setUpLater = "Configurer plus tard";
@@ -1063,11 +1065,11 @@ Strings frenchStrings(const Strings& english) {
   s.setup.stashFeatures[7] = "Tags, durée, VR ou 2D";
   s.setup.stashFeatures[8] = "Notes et lectures";
   s.setup.stashFeatures[9] = "Renvoyées à Stash, si vous voulez";
-  s.setup.stashFeatures[10] = "Marche même avec Stash éteint";
+  s.setup.stashFeatures[10] = "Marche même sans le serveur";
   s.setup.stashFeatures[11] = "Ses données sont gardées sur ce casque";
   s.setup.keptOnComputer = "Ses données sont gardées sur cet ordinateur";
   s.setup.forDownloads = "Pour les scènes téléchargées";
-  s.setup.stashFree = "Pas de Stash ? Tout est prêt avec vos dossiers. Stash est gratuit sur stashapp.cc.";
+  s.setup.stashFree = "Pas de Stash ? Tout est prêt avec vos dossiers.";
   s.setup.stashFreeNoFolders = "Pas de Stash ? Ajoutez des dossiers à tout moment dans Réglages.";
   s.setup.notNow = "Pas maintenant";
   s.setup.connectStash = "Connecter Stash";

@@ -6,8 +6,8 @@
 
 // Settings: a page in three sections, built from the menu's parts.
 //   General: the menu and its colour, the view, playback, subtitles, Help.
-//   Stash: its server and folders, how it syncs, and sending to it
-//   (menu_stash_settings.cpp).
+//   Stash / XBVR: which media server is used, its server and folders, how
+//   it syncs, and sending to it (menu_stash_settings.cpp).
 //   Funscripts: played on a device through Intiface (menu_scripts.cpp).
 // Video settings (menu_video_settings.cpp) and stereo focus (menu_focus.cpp)
 // are tabs of the playback strip and show without the sources column. The
@@ -48,8 +48,10 @@ void Menu::showStashSettings() {
 void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsShown* stash) {
   const Strings& t = text();
   PageLayout page(*this, t.settings);
-  page.sections({t.general, t.stash.group, t.scripts.group}, static_cast<int>(section),
+  // The servers' section is named for every kind, whichever is in use.
+  page.sections({t.general, mediaServerNames(), t.scripts.group}, static_cast<int>(section),
                 [this](int i) {
+                  StashPages::leaveSettings(*this);
                   settingsSection_ = static_cast<SettingsSection>(i);
                   dropdown_ = Dropdown::None;
                   dirty_ = true;
@@ -261,10 +263,14 @@ void Menu::checkSettingsFit() {
   dropdown_ = Dropdown::None;
   fitCase_ = " (General, every row)";
   layoutSettingsSection(SettingsSection::General);
-  // Stash: on and connected, every state and folder line at its longest.
+  // Stash: on and connected, every state and folder line at its longest,
+  // named as one in use is (not every kind's name, as while none is).
+  const std::string named = serverNameShown();
+  setServerName(mediaServers().front()->name());
   const StashSettingsShown fullest = StashPages::fullestSettings();
   fitCase_ = " (Stash, every row)";
   layoutSettingsSection(SettingsSection::Stash, &fullest);
+  setServerName(named);
   // Funscripts: on, an address, the longest state.
   v.scripts.enabled = true;
   v.scripts.address = "192.168.100.200:12345";

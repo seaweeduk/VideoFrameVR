@@ -2,7 +2,7 @@
 
 #include "menu_style.h"
 #include "platform.h"
-#include "stash_client.h"
+#include "media_client.h"
 
 #include <cassert>
 #include <pango/pangocairo.h>

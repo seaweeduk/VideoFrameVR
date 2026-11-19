@@ -276,14 +276,14 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.screenResetHint = "默认：高 300 厘米，距离 300 厘米，曲率 1";
 
   s.stash.group = "Stash";
-  s.stash.use = "使用 Stash";
   s.stash.offHint = "按演员、标签或片商浏览 Stash。关闭后不发送或保存数据。";
   s.stash.setupHint = "设置服务器以开始同步。";
   s.stash.server = "服务器";
   s.stash.apiKey = "API 密钥";
   s.stash.apiKeyNone = "无";
   s.stash.apiKeySet = "已设置";
-  s.stash.folders = "文件夹";
+  s.stash.folders = "从文件夹播放";
+  s.stash.foldersHint = "可选。本机也有的视频跳转更快。";
   s.stash.covers = "用 Stash 封面作缩略图";
   s.stash.titles = "用 Stash 标题代替文件名";
   s.stash.malePerformers = "显示男演员";
@@ -302,9 +302,6 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.stash.editTitle = "Stash 服务器";
   s.stash.fieldNames[0] = "服务器";
   s.stash.fieldNames[1] = "API 密钥（如需）";
-  s.stash.fieldNames[2] = "Stash 中的文件夹";
-  s.stash.fieldNames[3] = "本机对应文件夹";
-  s.stash.editHint = "可选：将 Stash 文件夹映射到本机路径，从那里直接播放文件。保存后重新同步。";
   s.stash.save = "保存并同步";
   s.stash.navHome = "首页";
   s.stash.navScenes = "场景";
@@ -544,10 +541,8 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.stash.noPins = "在场景页固定的列表会显示在这里。";
   s.stash.searchStash = "搜索 Stash";
   s.stash.tipUse = "浏览 Stash 服务器上的场景。";
-  s.stash.tipFields[0] = "Stash 地址，例如 stash.example.com 或 192.168.1.20:9999。";
+  s.stash.tipFields[0] = "Stash 地址，例如 server.example.com 或 192.168.1.20:9999。";
   s.stash.tipFields[1] = "API 密钥，仅在 Stash 服务器要求时填写。";
-  s.stash.tipFields[2] = "Stash 使用的文件夹前缀。";
-  s.stash.tipFields[3] = "本机对应的文件夹。";
   s.stash.tipSync = "从 Stash 更新本地目录。";
   s.stash.tipPin = "将这些筛选条件保存为固定列表。";
   s.stash.tipShuffle = "随机播放这些场景。";
@@ -655,6 +650,10 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.stashWriteBack.tipToggle = "向 Stash 发送新增评分、播放记录和标签修改，并在 Stash 中删除此处删除的文件。请先备份 Stash。";
   s.stashWriteBack.tipSendAll = "发送前检查已有评分和播放记录。";
   s.stashWriteBack.tipDryRun = "预览待发送内容，不实际发送。";
+  s.stashWriteBack.toggleBasic = "向 Stash 发送评分和播放记录";
+  s.stashWriteBack.hintBasic = "播放过的场景会标记为已观看。请先备份 Stash。";
+  s.stashWriteBack.rulesBasic = "保留 Stash 已有评分。播放过的场景会在 Stash 中标记为已观看，Stash 不保存播放时间。本地媒体库不变。";
+  s.stashWriteBack.tipToggleBasic = "向 Stash 发送新增评分，并在 Stash 中将播放过的场景标记为已观看。请先备份 Stash。";
 
   s.focus.allTitle = "对焦（所有视频）";
   s.focus.videoTitle = "对焦（此视频）";
@@ -848,7 +847,8 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.network.forgetOffline = "无法连接 %s，现在无法移除密钥。";
   s.network.forgetAnyway = "仍然忘记";
   s.stashFolders.choose = "选择…";
-  s.stashFolders.tipChoose = "在文件浏览器中查找存放 Stash 视频的文件夹。";
+  s.stashFolders.change = "更改…";
+  s.stashFolders.tipChoose = "在文件浏览器中查找存放 Stash 视频的文件夹。如在共享盘上，请先在“网络”中添加那台电脑。";
   s.stashFolders.looking = "正在查找 Stash 视频…";
   s.stashFolders.foundIn = "Stash 视频位于本设备的 %s。";
   s.stashFolders.alsoIn = "Stash 视频也位于本设备的 %s。选择“使用”可从此处播放。";
@@ -859,11 +859,11 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.stashFolders.notInFolder = "此文件夹中没有 Stash 视频：";
   s.stashFolders.useFolder = "使用此文件夹";
   s.stashFolders.checking = "正在检查…";
-  s.stashFolders.folderHere = "本机位置：%s";
+  s.stashFolders.fromServer = "从 Stash 播放";
+  s.stashFolders.playFromServer = "改从 Stash 播放";
+  s.stashFolders.notIn = "未在 %s 找到其视频。";
   s.stashFolders.folderNotHere = "未在本设备找到。请选择其文件夹。";
   s.stashFolders.folderRest = "其余场景从 Stash 播放。";
-  s.stashFolders.folderStreamed = "未在本设备找到。其场景从 Stash 播放。";
-  s.stashFolders.streamed = "本机找不到的场景从 Stash 播放。";
   s.stashFolders.lookingFolders = "正在查找 Stash 视频…（第 %d / %d 个文件夹）";
   s.stashFolders.otherFiles = "Stash 媒体库文件夹之外的视频";
   s.viewpoint.label = "视点";
@@ -1012,7 +1012,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.stashSetup.saving = "正在保存本地副本…";
   s.stashSetup.building = "正在本设备上查找 Stash 视频…";
   s.stashSetup.firstSync = "首次同步在后台进行，你可以离开此页面或先播放视频。完成后会自动填充 Stash 页面。";
-  s.stashSetup.serverHint = "例如 stash.example.com 或 192.168.1.20:9999";
+  s.stashSetup.serverHint = "例如 server.example.com 或 192.168.1.20:9999";
   s.stashSetup.tooOld = "此 Stash 版本过旧，不支持 VideoFrameVR。请更新至 0.31 或更高版本。";
   s.stashSetup.needsSignIn = "此 Stash 需要登录。";
   s.stashSetup.keyRefused = "Stash 拒绝了 API 密钥。请重新登录以获取当前密钥。";
@@ -1038,6 +1038,8 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.stashSetup.verify = "验证证书";
   s.stashSetup.untrustedStatus = "证书不受信任";
   s.stashSetup.untrustedTip = "Stash 的证书不受信任。选择是否仍要连接。";
+  s.stashSetup.foundOther = "该地址响应的是 %s，已按它设置。";
+  s.stashSetup.orKind = " 或 ";
   s.setup.putOnHeadset = "请戴上头显";
   s.setup.startsWhenWorn = "戴上后即开始设置。";
   s.setup.setUpLater = "稍后设置";
@@ -1067,7 +1069,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.setup.stashFeatures[11] = "目录数据保存在头显上";
   s.setup.keptOnComputer = "目录数据保存在这台电脑上";
   s.setup.forDownloads = "适用于已下载的场景";
-  s.setup.stashFree = "不用 Stash？直接用已添加的文件夹即可。Stash 可在 stashapp.cc 免费获取。";
+  s.setup.stashFree = "不用 Stash？直接用已添加的文件夹即可。";
   s.setup.stashFreeNoFolders = "不用 Stash？随时可在“设置”中添加文件夹。";
   s.setup.notNow = "暂不";
   s.setup.connectStash = "连接 Stash";
