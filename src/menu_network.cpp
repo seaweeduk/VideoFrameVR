@@ -90,16 +90,16 @@ int Menu::serverType(const std::string& text) {
 }
 
 void Menu::showNetwork() {
-  smbForm_ = {};
+  network_.form = {};
   showPage(Page::Network);
-  discovery_.scan();
+  network_.discovery.scan();
 }
 
 // The servers to list: those signed in to, then those found that aren't,
 // by name.
 std::vector<remote::Server> Menu::networkServers() const {
   std::vector<remote::Server> list = remote::servers();
-  for (const SmbDiscovery::Server& found : discovery_.servers()) {
+  for (const SmbDiscovery::Server& found : network_.discovery.servers()) {
     const std::string root = remote::root("smb://" + found.address);
     if (std::none_of(list.begin(), list.end(), [&](const remote::Server& s) { return s.root == root; }))
       list.push_back({root, found.name});
@@ -111,7 +111,7 @@ std::vector<remote::Server> Menu::networkServers() const {
 }
 
 void Menu::openServer(const remote::Server& server) {
-  fileKind_ = FileKind::Video;
+  files_.kind = FileKind::Video;
   openDirectory(server.root);
   showPage(Page::Files);
 }
@@ -130,12 +130,12 @@ void Menu::layoutNetworkPage() {
     return MenuCommand{};
   }, true);
   headerButton(right, t.lookAgain, [this] {
-    discovery_.scan();
+    network_.discovery.scan();
     dirty_ = true;
     return MenuCommand{};
-  }).disabled = discovery_.scanning();
+  }).disabled = network_.discovery.scanning();
   contentTitle(t.nav, "", right);
-  if (smbForm_.kind != SmbForm::Kind::None) {
+  if (network_.form.kind != SmbForm::Kind::None) {
     layoutSmbForm();
     return;
   }
@@ -162,34 +162,34 @@ void Menu::layoutNetworkPage() {
     }
     items.push_back(std::move(item));
   }
-  listTop_ = kBrowserToolsY;
-  listBottom_ = kListBottom;
+  list_.top = kBrowserToolsY;
+  list_.bottom = kListBottom;
   const size_t from = buttons_.size();
-  addList(items, listLeft_, kFileRowH, static_cast<int>((listBottom_ - listTop_) / kFileRowH));
+  addList(items, list_.left, kFileRowH, static_cast<int>((list_.bottom - list_.top) / kFileRowH));
   for (size_t i = from; i < buttons_.size(); ++i)  // a server's icon
     if (buttons_[i].listRow) buttons_[i].icon = Icon::Computer;
 }
 
 // Over the page: what an empty Network page means.
 const char* Menu::networkState() const {
-  if (page_ != Page::Network || smbForm_.kind != SmbForm::Kind::None || listCount_ > 0) return nullptr;
-  return discovery_.scanning() ? text().network.looking : text().network.none;
+  if (page_ != Page::Network || network_.form.kind != SmbForm::Kind::None || list_.count > 0) return nullptr;
+  return network_.discovery.scanning() ? text().network.looking : text().network.none;
 }
 
 // Opens the form; on the Files page it belongs to the server being browsed.
 void Menu::openSmbForm(SmbForm::Kind kind, const std::string& root) {
   const NetworkStrings& t = text().network;
-  smbForm_ = {};
-  smbForm_.kind = kind;
-  smbForm_.root = root;
+  network_.form = {};
+  network_.form.kind = kind;
+  network_.form.root = root;
   remote::Login login;
   bool remembered = true;
   const bool known = kind == SmbForm::Kind::SignIn && remote::knownLogin(root, login, remembered);
-  smbForm_.text[1] = login.user;
-  smbForm_.remember = remembered;
+  network_.form.text[1] = login.user;
+  network_.form.remember = remembered;
   // A login known but refused: the password has changed.
-  if (known) smbForm_.error = t.wrongLogin;
-  smbForm_.field = kind == SmbForm::Kind::AddServer ? 0
+  if (known) network_.form.error = t.wrongLogin;
+  network_.form.field = kind == SmbForm::Kind::AddServer ? 0
                    : kind == SmbForm::Kind::Share   ? 0
                    : login.user.empty()            ? 1
                                                    : 2;
@@ -204,7 +204,7 @@ void Menu::openSmbForm(SmbForm::Kind kind, const std::string& root) {
 void Menu::layoutSmbForm() {
   static_assert(kBrowserToolsY == PageLayout::kTop, "the form's group is under a content page's header");
   const NetworkStrings& t = text().network;
-  const SmbForm& f = smbForm_;
+  const SmbForm& f = network_.form;
   const bool share = f.kind == SmbForm::Kind::Share;
   const bool signing = f.signing != nullptr;
   pageScrollMax_ = 0;  // drawGroups() mustn't cut it off as a scrolled settings page
@@ -219,10 +219,10 @@ void Menu::layoutSmbForm() {
   if (share) form.note(t.sharesRefused, true, 2);
   if (f.kind == SmbForm::Kind::AddServer) {
     form.choice(t.type, {t.types[0], t.types[1]}, f.sftp, [this](int i) {
-      smbForm_.sftp = i == 1;
-      smbForm_.field = 0;
-      smbForm_.error.clear();
-      smbForm_.hint.clear();
+      network_.form.sftp = i == 1;
+      network_.form.field = 0;
+      network_.form.error.clear();
+      network_.form.hint.clear();
       editing_ = true;
       return MenuCommand{};
     });
@@ -239,14 +239,14 @@ void Menu::layoutSmbForm() {
                                      : "";
     field.typing = active;
     field.action = [this, i] {
-      smbForm_.field = i;
+      network_.form.field = i;
       editing_ = true;
       return MenuCommand{};
     };
     if (i == 2) {
       field.inner = f.showPassword ? text().hide : t.show;
       field.innerAction = [this] {
-        smbForm_.showPassword = !smbForm_.showPassword;
+        network_.form.showPassword = !network_.form.showPassword;
         return MenuCommand{};
       };
     }
@@ -256,7 +256,7 @@ void Menu::layoutSmbForm() {
   const bool remember = !share && (!f.sftp || (f.kind == SmbForm::Kind::SignIn && !f.byKey));
   if (remember) {
     form.toggle(t.remember, f.remember, [this] {
-      smbForm_.remember = !smbForm_.remember;
+      network_.form.remember = !network_.form.remember;
       return MenuCommand{};
     });
     form.note(t.rememberHint);
@@ -277,14 +277,14 @@ void Menu::layoutSmbForm() {
   }
   // An SFTP server's button signs in (connects) from any field, as setup's.
   Action submit{go, "", [this] {
-                  if (smbForm_.sftp && !smbFields().empty()) smbForm_.field = smbFields().back();
+                  if (network_.form.sftp && !smbFields().empty()) network_.form.field = smbFields().back();
                   return submitSmbForm();
                 }};
   submit.disabled = signing || !ready;
   submit.primary = true;
   form.buttons({submit, {strings().cancel, "", [this] {
-                           const bool adding = smbForm_.kind == SmbForm::Kind::AddServer;
-                           smbForm_ = {};
+                           const bool adding = network_.form.kind == SmbForm::Kind::AddServer;
+                           network_.form = {};
                            editing_ = false;
                            if (!adding) showNetwork();
                            dirty_ = true;
@@ -300,11 +300,11 @@ void Menu::layoutSmbForm() {
 // field's (drawSmbForm()).
 void Menu::layoutSftpForm(GroupLayout& form) {
   const NetworkStrings& t = text().network;
-  SmbForm& f = smbForm_;
+  SmbForm& f = network_.form;
   const std::string name = serverName(f.root), user = f.text[1];
   if (f.kind == SmbForm::Kind::SignIn && f.keyChoice) {
     form.choice(t.signInWith, {t.methods[0], t.methods[1]}, f.byKey ? 0 : 1, [this](int i) {
-      smbForm_.byKey = i == 0;
+      network_.form.byKey = i == 0;
       return MenuCommand{};
     });
     form.note(f.byKey ? stashPrinted(t.keyHint, user) : std::string(t.passwordHint));
@@ -340,7 +340,7 @@ void Menu::layoutSftpForm(GroupLayout& form) {
 // What the buttons don't draw: the key (and the command), in a box as a
 // field's.
 void Menu::drawSmbForm(cairo_t* cr) {
-  const SmbForm& f = smbForm_;
+  const SmbForm& f = network_.form;
   if (f.kind != SmbForm::Kind::KeyOnly) return;
   const Palette& pal = palette();
   const double ink[4] = {pal.text.r, pal.text.g, pal.text.b, pal.text.a};
@@ -352,8 +352,8 @@ void Menu::drawSmbForm(cairo_t* cr) {
 }
 
 std::vector<int> Menu::smbFields() const {
-  switch (smbForm_.kind) {
-    case SmbForm::Kind::AddServer: return smbForm_.sftp ? std::vector<int>{0, 3, 1} : std::vector<int>{0, 1, 2};
+  switch (network_.form.kind) {
+    case SmbForm::Kind::AddServer: return network_.form.sftp ? std::vector<int>{0, 3, 1} : std::vector<int>{0, 1, 2};
     case SmbForm::Kind::SignIn: return {1, 2};
     case SmbForm::Kind::Share: return {0};
     default: return {};
@@ -363,7 +363,7 @@ std::vector<int> Menu::smbFields() const {
 // Typing into the form. An address shows which kind of server it is, and
 // the form turns into that kind's; a port is digits.
 void Menu::typedIntoSmbForm(const std::string& text) {
-  SmbForm& f = smbForm_;
+  SmbForm& f = network_.form;
   std::string typed = text;
   if (f.field == 3) {
     typed.erase(std::remove_if(typed.begin(), typed.end(), [](char c) { return !std::isdigit(static_cast<unsigned char>(c)); }),
@@ -392,7 +392,7 @@ void Menu::typedIntoSmbForm(const std::string& text) {
 // Connect). Leaving an SFTP server's address, "alex@nas:2222" fills in
 // the user name and the port.
 MenuCommand Menu::submitSmbForm() {
-  SmbForm& f = smbForm_;
+  SmbForm& f = network_.form;
   auto spread = [&f] {
     const TypedServer typed = splitServer(f.text[0]);
     if (!typed.user.empty()) f.text[1] = typed.user;
@@ -465,7 +465,7 @@ MenuCommand Menu::submitSmbForm() {
 // what's left to sign in with otherwise, and for a server taking keys only,
 // this device's key to show.
 void Menu::connectSftp(const std::string& trust) {
-  SmbForm& f = smbForm_;
+  SmbForm& f = network_.form;
   if (f.signing) return;  // never in place of a job under way
   auto job = std::make_shared<RemoteJob>();
   job->task = RemoteJob::Task::Connect;
@@ -473,7 +473,7 @@ void Menu::connectSftp(const std::string& trust) {
   f.signing = job;
   f.error.clear();
   f.hint.clear();
-  sftpUsers_[f.root] = f.text[1];
+  network_.sftpUsers[f.root] = f.text[1];
   // A key login keeps no secret; --first-run's setup saves it when it ends
   // (SetupPages::signedIn()).
   const bool remember = !(setup_ && setup_->holdWrites);
@@ -506,12 +506,12 @@ void Menu::connectSftp(const std::string& trust) {
 // A sign-in from the SFTP form. A key never trusted (gone meanwhile) is
 // trusted as on connecting; a changed one, both keys for the warning.
 void Menu::signInSftp(const remote::Login& login, bool remember) {
-  SmbForm& f = smbForm_;
+  SmbForm& f = network_.form;
   auto job = std::make_shared<RemoteJob>();
   f.signing = job;
   f.error.clear();
   f.hint.clear();
-  sftpUsers_[f.root] = login.user;
+  network_.sftpUsers[f.root] = login.user;
   remember = remember && !(setup_ && setup_->holdWrites);
   // With a password and the key, the key is added to the account on the
   // server at once, under --first-run too: it changes the server's
@@ -537,18 +537,18 @@ void Menu::signInSftp(const remote::Login& login, bool remember) {
   dirty_ = true;
 }
 
-// Signed in (smbForm_'s server): its root, or the folder typed after it, on
+// Signed in (network_.form's server): its root, or the folder typed after it, on
 // the Files page; in setup, its tree.
 void Menu::openSignedIn() {
-  const std::string where = smbForm_.root + (smbForm_.then.empty() ? "" : "/" + smbForm_.then);
-  remote::setName(smbForm_.root, serverName(smbForm_.root));
+  const std::string where = network_.form.root + (network_.form.then.empty() ? "" : "/" + network_.form.then);
+  remote::setName(network_.form.root, serverName(network_.form.root));
   if (setup_) {
     SetupPages::signedIn(*this);
     return;
   }
-  smbForm_ = {};
+  network_.form = {};
   editing_ = false;
-  fileKind_ = FileKind::Video;
+  files_.kind = FileKind::Video;
   if (where == directory())
     refreshDirectory();
   else
@@ -564,9 +564,9 @@ void Menu::updateNetwork() {
   // Only what shows the search or the servers: setup's Folders step, the
   // Network page's list; over a form, its title (a server's name) and Look
   // again in the header.
-  const bool searching = discovery_.scanning();
-  const bool found = discovery_.poll();
-  if (found || (searching && !discovery_.scanning())) {
+  const bool searching = network_.discovery.scanning();
+  const bool found = network_.discovery.poll();
+  if (found || (searching && !network_.discovery.scanning())) {
     if (setup_ ? setup_->step == SetupMenu::Step::Folders : networkList() || (page_ == Page::Network && found)) {
       dirty_ = true;
     } else if (page_ == Page::Network) {
@@ -575,9 +575,9 @@ void Menu::updateNetwork() {
     }
   }
   updateKeyShare();
-  if (!smbForm_.signing || !smbForm_.signing->done) return;
-  const std::shared_ptr<RemoteJob> job = std::move(smbForm_.signing);
-  smbForm_.signing.reset();
+  if (!network_.form.signing || !network_.form.signing->done) return;
+  const std::shared_ptr<RemoteJob> job = std::move(network_.form.signing);
+  network_.form.signing.reset();
   dirty_ = true;
   if (job->task == RemoteJob::Task::RemoveKey) {  // Forget's
     if (job->status == remote::Status::Ok) {
@@ -587,7 +587,7 @@ void Menu::updateNetwork() {
     }
     return;
   }
-  if (smbForm_.sftp) {
+  if (network_.form.sftp) {
     sftpDone(*job);
     return;
   }
@@ -597,7 +597,7 @@ void Menu::updateNetwork() {
     openSignedIn();
     return;
   }
-  smbForm_.error = status == remote::Status::Offline ? t.offline
+  network_.form.error = status == remote::Status::Offline ? t.offline
                    : status == remote::Status::Denied ? t.denied
                                                     : t.wrongLogin;
   if (setup_) SetupPages::signInFailed(*this);
@@ -605,7 +605,7 @@ void Menu::updateNetwork() {
 
 // Since the key was fetched, signing in by itself (or with Try again).
 bool Menu::keyFetched() const {
-  const SmbForm& f = smbForm_;
+  const SmbForm& f = network_.form;
   return f.fetches > 0 && (f.retryUntil != std::chrono::steady_clock::time_point{} || f.signing);
 }
 
@@ -615,7 +615,7 @@ bool Menu::keyFetched() const {
 // seconds for a minute; then the error, as for Try again.
 void Menu::updateKeyShare() {
   using namespace std::chrono_literals;
-  SmbForm& f = smbForm_;
+  SmbForm& f = network_.form;
   if (!f.share) return;
   if (f.kind != SmbForm::Kind::KeyOnly) {
     f.share.reset();
@@ -662,7 +662,7 @@ void Menu::sftpDone(const RemoteJob& job) {
   const NetworkStrings& t = text().network;
   const SetupStrings& s = text().setup;
   const int device = kStandaloneHeadset ? 0 : 1;
-  SmbForm& f = smbForm_;
+  SmbForm& f = network_.form;
   const std::string root = f.root, name = serverName(root), user = f.text[1];
   switch (job.status) {
     case Status::Ok:
@@ -745,30 +745,30 @@ void Menu::sftpDone(const RemoteJob& job) {
 // one, or whose key isn't trusted as it is, is connected to again (with the
 // user known, else from Add server).
 void Menu::smbFolderRead() {
-  if (page_ != Page::Files || !remote::isRemote(directory()) || smbForm_.kind != SmbForm::Kind::None ||
-      smbForm_.signing)
+  if (page_ != Page::Files || !remote::isRemote(directory()) || network_.form.kind != SmbForm::Kind::None ||
+      network_.form.signing)
     return;
   const std::string root = remote::root(directory());
-  const remote::Status status = listing_.status();
+  const remote::Status status = files_.listing.status();
   if (isSftp(root)) {
     if (status != remote::Status::NeedsLogin && status != remote::Status::HostKeyUnknown &&
         status != remote::Status::HostKeyChanged)
       return;
     remote::Login login;
     bool remembered = false;
-    const auto tried = sftpUsers_.find(root);
-    smbForm_ = {};
-    smbForm_.sftp = true;
-    smbForm_.root = root;
-    smbForm_.then = directory().size() > root.size() ? directory().substr(root.size() + 1) : "";
-    smbForm_.text[1] = remote::knownLogin(root, login, remembered) ? login.user
-                       : tried != sftpUsers_.end()                ? tried->second
+    const auto tried = network_.sftpUsers.find(root);
+    network_.form = {};
+    network_.form.sftp = true;
+    network_.form.root = root;
+    network_.form.then = directory().size() > root.size() ? directory().substr(root.size() + 1) : "";
+    network_.form.text[1] = remote::knownLogin(root, login, remembered) ? login.user
+                       : tried != network_.sftpUsers.end()                ? tried->second
                                                                    : "";
-    if (smbForm_.text[1].empty()) {
-      smbForm_.kind = SmbForm::Kind::AddServer;
-      smbForm_.text[0] = remote::host(root) + (smbForm_.then.empty() ? "" : "/" + smbForm_.then);
-      smbForm_.text[3] = std::to_string(remote::port(root));
-      smbForm_.field = 1;
+    if (network_.form.text[1].empty()) {
+      network_.form.kind = SmbForm::Kind::AddServer;
+      network_.form.text[0] = remote::host(root) + (network_.form.then.empty() ? "" : "/" + network_.form.then);
+      network_.form.text[3] = std::to_string(remote::port(root));
+      network_.form.field = 1;
       editing_ = true;
       dirty_ = true;
       return;
@@ -815,15 +815,15 @@ void Menu::layoutNetworkDialog(DialogLayout& dialog) {
     const double labelW =
         std::max(textWidth(t.trustedKey, DialogLayout::kLineSize, false),
                  textWidth(t.nowKey, DialogLayout::kLineSize, false)) + kit::kSpaceEdge;
-    dialog.key(t.trustedKey, labelW, smbForm_.trusted);
-    dialog.key(t.nowKey, labelW, smbForm_.fingerprint);
+    dialog.key(t.trustedKey, labelW, network_.form.trusted);
+    dialog.key(t.nowKey, labelW, network_.form.fingerprint);
     Button trust = textButton(t.trustNewKey, Icon::None, [this] {
       dialog_ = Dialog::None;
-      connectSftp(smbForm_.fingerprint);
+      connectSftp(network_.form.fingerprint);
       return MenuCommand{};
     });
     trust.dangerHover = true;
-    trust.disabled = smbForm_.signing != nullptr;
+    trust.disabled = network_.form.signing != nullptr;
     dialog.button(trust);
     dialog.button(textButton(t.dontConnect, Icon::None, [this] {
       dialog_ = Dialog::None;
@@ -838,14 +838,14 @@ void Menu::layoutNetworkDialog(DialogLayout& dialog) {
     dialog.line(stashPrinted(t.forgetKeyText, login.user));
     if (dialog_ == Dialog::ForgetOffline) dialog.line(stashPrinted(t.forgetOffline, name), Ink::Warn, 2);
     if (dialog_ == Dialog::ForgetServer) {
-      const bool removing = smbForm_.signing != nullptr;
+      const bool removing = network_.form.signing != nullptr;
       Button cancel = textButton(strings().cancel, Icon::None, close);
       Button only = textButton(t.forgetOnly, Icon::None, forget);
       Button remove = textButton(removing ? t.removingKey : t.removeKeyForget, Icon::Trash, [this, root] {
-        smbForm_ = {};
+        network_.form = {};
         auto job = std::make_shared<RemoteJob>();
         job->task = RemoteJob::Task::RemoveKey;
-        smbForm_.signing = job;
+        network_.form.signing = job;
         // Forgotten here, not when the menu takes the result: closing the
         // menu meanwhile drops the form, and with it the job.
         std::thread([job, root] {
@@ -868,7 +868,7 @@ void Menu::layoutNetworkDialog(DialogLayout& dialog) {
 
 // Its name as found on the network, else as signed in to (or typed).
 std::string Menu::serverName(const std::string& root) const {
-  for (const SmbDiscovery::Server& found : discovery_.servers())
+  for (const SmbDiscovery::Server& found : network_.discovery.servers())
     if (remote::root("smb://" + found.address) == root) return found.name;
   for (const remote::Server& s : remote::servers())
     if (s.root == root) return s.name;

@@ -844,7 +844,7 @@ int gestureColumn(const Gesture& g) { return g.hands == 3 ? 1 : g.hands == 1 ? 0
 
 int gestureColumnRoom(ControllerType type, int column) {
   if (column != 1) return kGestureRows;
-  // The fixed ones (menu_controls.cpp's fixedGestures()): Horizon and
+  // The fixed ones (fixedGestures() in control_rules.h): Horizon and
   // Resize; with a grip, Move the menu; with a grip and sticks, Height and
   // Clear rating. Then Add gesture.
   const bool grip = layoutControlOf(type, 0, Control::Grip) != nullptr;

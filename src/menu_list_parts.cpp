@@ -155,8 +155,8 @@ void Menu::drawListPart(cairo_t* cr, const Button& b, const double ink[4]) const
 }
 
 void Menu::contentEdges() {
-  listLeft_ = kContentLeft;
-  listRight_ = kContentRight + kListRightPad;
+  list_.left = kContentLeft;
+  list_.right = kContentRight + kListRightPad;
 }
 
 Menu::Button& Menu::headerRound(double& right, Icon icon, const std::string& tooltip,
@@ -344,8 +344,8 @@ double Menu::toolsSort(double x, double y, const std::vector<SortField>& fields,
 double Menu::toolsJumps(double y, std::function<MenuCommand()> top, std::function<MenuCommand()> end) {
   const Strings& t = text();
   constexpr double h = kBrowserToolsH;
-  const double position = scrollOffset_ + scrollFraction_;
-  const bool atTop = position <= 0, atEnd = position >= std::max(0, listCount_ - visibleRows_);
+  const double position = list_.offset + list_.fraction;
+  const bool atTop = position <= 0, atEnd = position >= std::max(0, list_.count - list_.rows);
   double right = kContentRight - h;
   Button& last = addRound(Icon::JumpBottom, t.tipBottom, std::move(end), right, y, h);
   last.panel = kBrowser;
@@ -474,7 +474,7 @@ void Menu::drawEmptyPage(cairo_t* cr, Icon icon, const std::string& heading,
   constexpr double kIcon = 72, kIconGap = 20, kHintGap = 8, kHintMaxW = 880;
   constexpr int kHeadingSize = 30, kHintSize = 24, kHeadingLines = 2, kHintLines = 3;
   const Palette& pal = palette();
-  const double x0 = listLeft_ + kit::kSpace, x1 = listRight_ - kScrollbarRoom - kit::kSpace;
+  const double x0 = list_.left + kit::kSpace, x1 = list_.right - kScrollbarRoom - kit::kSpace;
   const double cx = (x0 + x1) / 2, w = x1 - x0;
   double hintW = std::min(w, kHintMaxW);
   if (!hint.empty()) {
@@ -489,7 +489,7 @@ void Menu::drawEmptyPage(cairo_t* cr, Icon icon, const std::string& heading,
     pango_layout_get_pixel_size(textLayout(measure, hint, kHintSize, false, hintW, kHintLines, true), &lw,
                                 &hintH);
   const double h = kIcon + kIconGap + headingH + (hint.empty() ? 0 : kHintGap + hintH);
-  const double top = std::round(listTop_ + std::max(0.0, (listBottom_ - listTop_ - h) / 2));
+  const double top = std::round(list_.top + std::max(0.0, (list_.bottom - list_.top - h) / 2));
   drawIcon(cr, icon, cx, top + kIcon / 2, kIcon, pal.faint.r, pal.faint.g, pal.faint.b);
   const double ink[4] = {pal.text.r, pal.text.g, pal.text.b, pal.text.a};
   const double y = top + kIcon + kIconGap;
@@ -540,19 +540,19 @@ bool Menu::listFade(int edge, const CurvedPanel& on, CurvedPanel& part, const Te
   if (page_ != Page::Files && page_ != Page::Library && page_ != Page::Offline && !networkList() &&
       !stashListPage())
     return false;
-  if (!panelShown(kBrowser) || listCount_ <= visibleRows_ || smbForm_.kind != SmbForm::Kind::None ||
+  if (!panelShown(kBrowser) || list_.count <= list_.rows || network_.form.kind != SmbForm::Kind::None ||
       dialog_ != Dialog::None || heldFade() > 0)
     return false;
-  const double position = scrollOffset_ + scrollFraction_;
-  if (edge == 0 ? position <= 1e-6 : position >= listCount_ - visibleRows_ - 1e-6) return false;
+  const double position = list_.offset + list_.fraction;
+  if (edge == 0 ? position <= 1e-6 : position >= list_.count - list_.rows - 1e-6) return false;
   // Its rows: clear kListFadeH inside the list, opaque where the list's rows
-  // are cut (listTop_ - 2 and listBottom_, as shiftList() moves them) and
+  // are cut (list_.top - 2 and list_.bottom, as shiftList() moves them) and
   // kListFadePast past it.
   auto rows = [this](int e, double& from, double& to) {
-    from = e == 0 ? listTop_ - 2 - kListFadePast : listBottom_ - kListFadeH;
-    to = e == 0 ? listTop_ + kListFadeH : listBottom_ + kListFadePast;
+    from = e == 0 ? list_.top - 2 - kListFadePast : list_.bottom - kListFadeH;
+    to = e == 0 ? list_.top + kListFadeH : list_.bottom + kListFadePast;
   };
-  const double x0 = listLeft_ - kListShadowX, x1 = listRight_ - kListRightCut;
+  const double x0 = list_.left - kListShadowX, x1 = list_.right - kListRightCut;
   double from, y0, y1;
   rows(edge, from, y1);
   y0 = from;
@@ -562,8 +562,8 @@ bool Menu::listFade(int edge, const CurvedPanel& on, CurvedPanel& part, const Te
   if (edge == 0 && hovered_ >= 0 && hovered_ < static_cast<int>(buttons_.size())) {
     const Button& b = buttons_[hovered_];
     if (b.panel == kBrowser && !b.scrolls && b.x < x1 && b.x + b.w > x0 && b.y + b.h > y0 &&
-        b.y < listTop_ - 2)
-      y0 = std::min(b.y + b.h, listTop_ - 2);
+        b.y < list_.top - 2)
+      y0 = std::min(b.y + b.h, list_.top - 2);
   }
   auto meets = [&](const double box[4]) {
     return box[0] < x1 && box[0] + box[2] > x0 && box[1] < y1 && box[1] + box[3] > y0;
@@ -581,16 +581,16 @@ bool Menu::listFade(int edge, const CurvedPanel& on, CurvedPanel& part, const Te
   static_assert(2 + kListFadeH + kListFadePast < kFadeRows, "the list's fades fit their rows");
   if (!listFade_.cr() && !initCanvas(listFade_, kFadeW, 2 * kFadeRows, menu_geometry::kRasterScale))
     return false;
-  if (listFadeAt_[0] != listTop_ || listFadeAt_[1] != listBottom_) {
-    listFadeAt_[0] = listTop_;
-    listFadeAt_[1] = listBottom_;
+  if (listFadeAt_[0] != list_.top || listFadeAt_[1] != list_.bottom) {
+    listFadeAt_[0] = list_.top;
+    listFadeAt_[1] = list_.bottom;
     cairo_t* cr = listFade_.cr();
     listFade_.clear();
     for (int e = 0; e < 2; ++e) {
       double start, end;
       rows(e, start, end);
-      const double a = e == 0 ? listTop_ - 2 : start;
-      const double b = e == 0 ? end : listBottom_;
+      const double a = e == 0 ? list_.top - 2 : start;
+      const double b = e == 0 ? end : list_.bottom;
       cairo_save(cr);
       cairo_translate(cr, 0, e * kFadeRows - start);
       cairo_rectangle(cr, 0, start, kFadeW, kFadeRows);

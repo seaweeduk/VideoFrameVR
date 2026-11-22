@@ -209,7 +209,42 @@ void Passthrough::pollRoom() {
   }
 }
 
+bool Passthrough::handle(const MenuCommand& c) {
+  switch (c.type) {
+    case MenuCommand::ToggleMatchRoom:  // off: the video's own balance again
+      toggle();
+      break;
+    case MenuCommand::ReadRoomAgain:
+      readAgain();
+      break;
+    case MenuCommand::SetMatchColour:
+      settings.matchColour = std::clamp(static_cast<int>(c.value), 0, 100);
+      saveSettings(settings);
+      applyRoomMatch();
+      break;
+    case MenuCommand::SetMatchBrightness:
+      settings.matchBrightness = std::clamp(static_cast<int>(c.value), 0, 100);
+      saveSettings(settings);
+      applyRoomMatch();
+      break;
+    case MenuCommand::ToggleAutoPassthrough:
+      settings.autoPassthrough = !settings.autoPassthrough;
+      saveSettings(settings);
+      resettle();  // for the video playing too
+      break;
+    case MenuCommand::ToggleKeyGreen:
+      settings.keyGreen = !settings.keyGreen;
+      saveSettings(settings);
+      resettle();  // Automatic passthrough, for the video playing
+      break;
+    default: return false;
+  }
+  return true;
+}
+
 void Passthrough::fill(MenuView& view, bool blended, bool roomMatching, double now) const {
+  view.autoPassthrough = settings.autoPassthrough;
+  view.keyGreen = settings.keyGreen;
   view.fillChecking = fillCheckPending;
   view.balance = roomMatching ? roomBalance : video.balance;
   view.roomMatch = !roomReadable            ? RoomMatch::Hidden
@@ -218,4 +253,6 @@ void Passthrough::fill(MenuView& view, bool blended, bool roomMatching, double n
                    : now < roomFailedUntil ? RoomMatch::Failed
                                             : RoomMatch::Ready;
   view.roomMatched = roomMatched;
+  view.matchColour = settings.matchColour;
+  view.matchBrightness = settings.matchBrightness;
 }

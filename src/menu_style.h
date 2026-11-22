@@ -154,7 +154,7 @@ constexpr double kListTop = kListHeaderY + kListHeaderH + kit::kSpacePiece, kGri
 constexpr double kListBottom = Menu::kBrowserHeight - kContentInset;
 // The scroll bar's track: kScrollTrackW wide along the panel's inside edge;
 // the rows end kit::kSpace left of it, kScrollbarRoom left of
-// Menu::listRight_. Its target is kScrollbarW wide, its thumb at least
+// Menu::list_.right. Its target is kScrollbarW wide, its thumb at least
 // kScrollThumbMin long.
 constexpr double kScrollTrackW = 10, kScrollbarW = 40, kScrollThumbMin = 48, kScrollbarRoom = 30;
 constexpr double kListRightPad = kScrollbarRoom - kit::kSpace - kScrollTrackW;
@@ -166,7 +166,7 @@ constexpr double kListRightPad = kScrollbarRoom - kit::kSpace - kScrollTrackW;
 constexpr double kListFadeH = 28, kListFadePast = 8;
 // What moves with a list across: its rows and cards with the playing one's
 // shadow (kListShadowX out at the left), up to kListRightCut left of
-// Menu::listRight_ (clear of the scroll bar's track).
+// Menu::list_.right (clear of the scroll bar's track).
 constexpr double kListShadowX = 8, kListRightCut = 22;
 // List rows 52 high, a small picture in each; kRowGap of each is the gap to
 // the next.

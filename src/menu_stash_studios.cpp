@@ -167,8 +167,8 @@ MenuCommand StashPages::setFormat(Menu& m, StashFormat format) {
   StashMenu& st = state(m);
   st.list.format = format;
   st.stale = true;
-  m.scrollOffset_ = 0;
-  m.scrollFraction_ = 0;
+  m.list_.offset = 0;
+  m.list_.fraction = 0;
   MenuCommand c;
   c.type = MenuCommand::SetStashFormat;
   c.value = static_cast<int>(format);
@@ -200,12 +200,12 @@ void StashPages::staleStudios(Menu& m) {
 void StashPages::showStudios(Menu& m) {
   const double scroll = pageOf(state(m)).scroll;
   m.showPage(Menu::Page::StashStudios);
-  m.scrollOffset_ = static_cast<int>(std::floor(scroll));
-  m.scrollFraction_ = scroll - m.scrollOffset_;
+  m.list_.offset = static_cast<int>(std::floor(scroll));
+  m.list_.fraction = scroll - m.list_.offset;
 }
 
 void StashPages::leaveStudios(Menu& m) {
-  pageOf(state(m)).scroll = m.scrollOffset_ + m.scrollFraction_;
+  pageOf(state(m)).scroll = m.list_.offset + m.list_.fraction;
 }
 
 void StashPages::showStudio(Menu& m, int64_t id) {
@@ -287,7 +287,7 @@ void StashPages::layoutStudios(Menu& m) {
   StashMenu& st = state(m);
   StashStudiosPage& p = pageOf(st);
   const StashStrings& t = strings().stash;
-  takeChanges(m);  // a new catalog, the library's history
+  st.takeChanges(sources(m));  // a new catalog, the library's history
   const StashCatalog* c = catalog(m);
   if (c) rebuild(st, p, *c, m.stash_->generation(), shownFormat(m), st.studioSearch);
 
@@ -297,12 +297,12 @@ void StashPages::layoutStudios(Menu& m) {
 
   // The cards, five a row.
   const double bottomY = editing ? kKeyboardY - 16 : kListBottom;
-  m.listLeft_ = x0;
-  m.listRight_ = right + kListRightPad;
+  m.list_.left = x0;
+  m.list_.right = right + kListRightPad;
   m.listShowsFolder_ = false;
   m.listColumns_ = false;
-  m.listTop_ = kGridTop;
-  m.listBottom_ = bottomY;
+  m.list_.top = kGridTop;
+  m.list_.bottom = bottomY;
   if (c) {
     const double cardW = m.gridCellWidth(x0, kColumns, kCardGap);
     const double rowH = cardHeight(cardW) + kCardGap;
@@ -316,7 +316,7 @@ void StashPages::layoutStudios(Menu& m) {
       Button b;
       b.panel = Menu::kBrowser;
       b.x = x0 + (cell % kColumns) * (cardW + kCardGap);
-      b.y = kGridTop + (cell / kColumns - m.scrollFraction_) * rowH;
+      b.y = kGridTop + (cell / kColumns - m.list_.fraction) * rowH;
       b.w = cardW;
       b.h = rowH - kCardGap;
       b.card = true;
@@ -339,7 +339,7 @@ void StashPages::layoutStudios(Menu& m) {
     // Their logos, then those of the rows around them.
     const int logoW = stashPixels((cardW - 2 * kCardIn) * kLogoFitW);
     std::vector<StashImages::Request> requests;
-    const int page = m.visibleRows_ * kColumns;
+    const int page = m.list_.rows * kColumns;
     auto add = [&](int from, int to) {
       for (int i = std::max(0, from); i < std::min(count, to); ++i)
         if (!c->studios()[p.cards[i]].image.empty())
@@ -422,7 +422,7 @@ void StashPages::layoutStudio(Menu& m) {
   StashMenu& st = state(m);
   const StashStrings& t = strings().stash;
   enterStudio(m);
-  refresh(m);
+  st.refresh(sources(m), listPage(m));
   const StashCatalog* c = catalog(m);
   StashStudiosPage& p = pageOf(st);
   if (c) rebuild(st, p, *c, m.stash_->generation(), st.list.format, st.studioSearch);

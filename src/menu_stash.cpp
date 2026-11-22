@@ -29,6 +29,7 @@ void StashPages::attach(Menu& m) {
     m.stashMenu_->foundOther = std::move(foundOther);
   }
   StashMenu& st = state(m);
+  st.host = browseHost(m);
   // A new Stash: its catalogs are counted anew, so whatever a page made from
   // the last one's is made again (the choices and positions stay).
   st.catalogGeneration = ~0ull;
@@ -133,9 +134,9 @@ void StashPages::update(Menu& m) {
         m.page_ == Menu::Page::StashStudio)
       m.dirty_ = true;  // plays and ratings: the cards, their order, a studio's band and the rail
     else if (performer)  // ... and her history beside her scenes
-      m.browserChanged(std::min(m.listTop_, st.performers.profileTop) - 4, m.listBottom_ + 4);
+      m.browserChanged(std::min(m.list_.top, st.performers.profileTop) - 4, m.list_.bottom + 4);
     else if (scenes)
-      m.browserChanged(m.listTop_ - 4, m.listBottom_ + 4);  // ratings and plays
+      m.browserChanged(m.list_.top - 4, m.list_.bottom + 4);  // ratings and plays
   }
   // Write-back's state, shown in the Settings group and the send panel.
   if (st.sendOpen && !settings) {
@@ -161,7 +162,7 @@ void StashPages::update(Menu& m) {
   // A studio's logo above its scenes, once it is there.
   if (m.page_ == Menu::Page::StashStudio && st.bandPending && m.stash_->imagesArrived()) {
     st.bandPending = false;
-    m.browserChanged(0, m.listTop_);
+    m.browserChanged(0, m.list_.top);
   }
 }
 
@@ -198,15 +199,15 @@ void StashPages::setText(Menu& m, const std::string& text) {
       st.list.text = text;
       st.stale = true;
       if (st.full == StashFull::None) {
-        m.scrollOffset_ = 0;
-        m.scrollFraction_ = 0;
+        m.list_.offset = 0;
+        m.list_.fraction = 0;
       }
       break;
     case StashMenu::Typing::FullSearch:
       st.fullSearch = text;
       st.fullStale = true;
-      m.scrollOffset_ = 0;
-      m.scrollFraction_ = 0;
+      m.list_.offset = 0;
+      m.list_.fraction = 0;
       break;
     case StashMenu::Typing::PinName:
       if (st.renaming >= 0 && st.renaming < static_cast<int>(st.pins.size()))
@@ -223,14 +224,14 @@ void StashPages::setText(Menu& m, const std::string& text) {
       if (text == st.performers.text) return;
       st.performers.text = text;
       st.performers.stale = true;
-      m.scrollOffset_ = 0;
-      m.scrollFraction_ = 0;
+      m.list_.offset = 0;
+      m.list_.fraction = 0;
       break;
     case StashMenu::Typing::Studios:
       if (text == st.studioSearch) return;
       st.studioSearch = text;
-      m.scrollOffset_ = 0;
-      m.scrollFraction_ = 0;
+      m.list_.offset = 0;
+      m.list_.fraction = 0;
       break;
     case StashMenu::Typing::Tags:
       if (text == st.sceneTab.search) return;

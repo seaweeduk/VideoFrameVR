@@ -21,139 +21,26 @@
 
 namespace {
 
-constexpr int kSceneColumns = 5, kPerformerColumns = 8;
+constexpr int kSceneColumns = 5, kPerformerColumns = StashHomePage::kPerformerColumns;
 constexpr double kTileGap = kGalleryGap;
 constexpr double kStep = 100;     // what the list counts as a row
 constexpr double kHeadingH = 48;  // a shelf's heading row
 constexpr double kPinH = kBrowserRowH;
 constexpr double kShelfGap = kit::kSpaceWide;
-constexpr int kNewDays = 30;
 
 int64_t unixNow() { return static_cast<int64_t>(std::time(nullptr)); }
 
-enum Shelf { kNew, kTopRated, kTopPerformers, kRandom, kShelves };
+constexpr int kNew = StashHomePage::kNew, kTopRated = StashHomePage::kTopRated,
+              kTopPerformers = StashHomePage::kTopPerformers, kRandom = StashHomePage::kRandom,
+              kShelves = StashHomePage::kShelves;
 
 }  // namespace
-
-struct StashHomePage {
-  struct SceneShelf {
-    StashList list;          // what See all opens
-    std::vector<int> all;    // its scenes, for Previous / Next
-    int recent = 0;          // new in Stash: added in the last kNewDays
-  };
-  struct Performer {
-    int index = 0, plays = 0, played = 0, rated = 0;  // played: her scenes played
-    double stars = 0;
-    double score() const { return plays + stars; }
-  };
-  // What the shelves were made from.
-  uint64_t catalog = ~0ull, seed = 0, visits = 0, away = ~0ull;
-  StashFormat format = StashFormat::VR;
-  bool male = false, history = false;
-  std::vector<StashPin> pins;
-  bool stale = true;
-  double scroll = 0;  // where it was left
-
-  std::array<SceneShelf, kShelves> shelves;
-  std::vector<Performer> performers;
-  std::vector<long> pinCounts;
-  std::array<int, 3> formats{};  // scenes per StashFormat
-};
 
 namespace {
 
 StashHomePage& pageOf(StashMenu& st) {
   if (!st.home) st.home = std::make_shared<StashHomePage>();
   return *st.home;
-}
-
-bool samePins(const std::vector<StashPin>& a, const std::vector<StashPin>& b) {
-  if (a.size() != b.size()) return false;
-  for (size_t i = 0; i < a.size(); ++i)
-    if (a[i].name != b[i].name || a[i].list != b[i].list) return false;
-  return true;
-}
-
-// `generation`: the catalog's (Stash::generation()); `male`: the male
-// performers setting.
-void rebuild(StashMenu& st, StashHomePage& p, const StashCatalog& c, uint64_t generation,
-             StashFormat format, bool male) {
-  const bool history = st.history.size() == c.scenes().size();
-  if (!p.stale && p.catalog == generation && p.format == format && p.male == male &&
-      p.history == history && p.away == st.awayGeneration && samePins(p.pins, st.pins))
-    return;
-  p.stale = false;
-  p.catalog = generation;
-  p.away = st.awayGeneration;
-  p.format = format;
-  p.male = male;
-  p.history = history;
-  p.pins = st.pins;
-  const int64_t now = unixNow();
-  const std::vector<StashHistory>* h = history ? &st.history : nullptr;
-  auto run = [&](StashHomePage::SceneShelf& shelf, bool facets) {
-    const StashResult r = c.query(stashFilterOf(shelf.list, c, male, now),
-                                  stashOrderOf(shelf.list, p.seed), h, facets);
-    shelf.all = r.scenes;
-    return r;
-  };
-  for (StashHomePage::SceneShelf& shelf : p.shelves) shelf = {};
-
-  StashHomePage::SceneShelf& fresh = p.shelves[kNew];
-  fresh.list.format = format;
-  fresh.list.sort = StashSort::Added;
-  const StashResult all = run(fresh, true);
-  p.formats = all.formats;
-  for (const int i : fresh.all) {
-    if (c.scenes()[i].createdAt < now - kNewDays * 86400) break;
-    ++fresh.recent;
-  }
-
-  StashHomePage::SceneShelf& rated = p.shelves[kTopRated];
-  rated.list.format = format;
-  rated.list.history = stashBit(StashHistoryOption::Rated4);
-  rated.list.sort = StashSort::Rating;
-  if (history) run(rated, false);
-
-  StashHomePage::SceneShelf& picks = p.shelves[kRandom];
-  picks.list.format = format;
-  picks.list.sort = StashSort::Random;
-  run(picks, false);
-
-  // Your top performers: the plays of their scenes and the stars you gave
-  // them, over the scenes in the format.
-  p.performers.clear();
-  if (history) {
-    std::vector<StashHomePage::Performer> by(c.performers().size());
-    for (const int i : picks.all) {
-      const StashHistory& s = st.history[i];
-      if (s.plays <= 0 && s.rating <= 0) continue;
-      for (const int k : c.scenes()[i].performers) {
-        if (!stashShown(c.performers()[k].gender, male)) continue;
-        by[k].plays += s.plays;
-        by[k].played += s.plays > 0;
-        if (s.rating > 0) {
-          ++by[k].rated;
-          by[k].stars += s.rating;
-        }
-      }
-    }
-    for (size_t k = 0; k < by.size(); ++k) {
-      by[k].index = static_cast<int>(k);
-      if (by[k].score() > 0) p.performers.push_back(by[k]);
-    }
-    std::stable_sort(p.performers.begin(), p.performers.end(),
-                     [](const StashHomePage::Performer& a, const StashHomePage::Performer& b) {
-                       return a.score() > b.score();
-                     });
-    if (p.performers.size() > static_cast<size_t>(kPerformerColumns))
-      p.performers.resize(kPerformerColumns);
-  }
-
-  p.pinCounts.clear();
-  for (const StashPin& pin : st.pins)
-    p.pinCounts.push_back(static_cast<long>(
-        c.query(stashFilterOf(pin.list, c, male, now), {}, h, false).scenes.size()));
 }
 
 }  // namespace
@@ -168,29 +55,20 @@ void StashPages::showHome(Menu& m) {
   StashHomePage& p = pageOf(st);
   p.stale = true;
   p.seed = static_cast<uint64_t>(unixNow()) * 1000 + ++p.visits;  // new random picks
-  m.scrollOffset_ = static_cast<int>(std::floor(p.scroll));
-  m.scrollFraction_ = p.scroll - m.scrollOffset_;
+  m.list_.offset = static_cast<int>(std::floor(p.scroll));
+  m.list_.fraction = p.scroll - m.list_.offset;
 }
 
 void StashPages::leaveHome(Menu& m) {
-  pageOf(state(m)).scroll = m.scrollOffset_ + m.scrollFraction_;
+  pageOf(state(m)).scroll = m.list_.offset + m.list_.fraction;
 }
 
-// The heading row (its title, Search Stash and All / VR / 2D), then the
-// shelves, scrolling under it.
-void StashPages::layoutHome(Menu& m) {
-  StashMenu& st = state(m);
-  StashHomePage& p = pageOf(st);
+// The header row: its title (drawHomeHeading()), then at the right All /
+// VR / 2D with their counts, and Search Stash: the Scenes page, all of
+// the format, typing into its search.
+void StashPages::layoutHomeHeader(Menu& m, const StashHomePage& p, const StashCatalog* c) {
   const StashStrings& t = strings().stash;
-  takeChanges(m);  // a new catalog, the library's history
-  const StashCatalog* c = catalog(m);
-  if (c)
-    rebuild(st, p, *c, m.stash_->generation(), shownFormat(m), m.view_.stash.malePerformers);
-  const double x0 = kContentLeft, right = kContentRight;
-
-  // The header row: its title (drawHomeHeading()), then at the right All /
-  // VR / 2D with their counts, and Search Stash: the Scenes page, all of
-  // the format, typing into its search.
+  const double right = kContentRight;
   const double y = kBrowserRowY;
   const StashFormat shown = shownFormat(m);
   std::vector<Menu::ToolPiece> formats;
@@ -215,21 +93,36 @@ void StashPages::layoutHome(Menu& m) {
     m.editing_ = true;
     return MenuCommand{};
   }, nullptr);
+}
 
-  m.listLeft_ = x0;
-  m.listRight_ = right + kListRightPad;
+// The heading row (its title, Search Stash and All / VR / 2D), then the
+// shelves, scrolling under it.
+void StashPages::layoutHome(Menu& m) {
+  StashMenu& st = state(m);
+  StashHomePage& p = pageOf(st);
+  const StashStrings& t = strings().stash;
+  st.takeChanges(sources(m));  // a new catalog, the library's history
+  const StashCatalog* c = catalog(m);
+  if (c)
+    p.rebuild(st, *c, m.stash_->generation(), shownFormat(m), m.view_.stash.malePerformers);
+  const double x0 = kContentLeft, right = kContentRight;
+
+  layoutHomeHeader(m, p, c);
+
+  m.list_.left = x0;
+  m.list_.right = right + kListRightPad;
   m.listShowsFolder_ = false;
   m.listColumns_ = false;
-  m.listTop_ = kBrowserToolsY;
-  m.listBottom_ = kListBottom;
+  m.list_.top = kBrowserToolsY;
+  m.list_.bottom = kListBottom;
   double notHereY = kBrowserToolsY + 20;
   if (!c || layoutNotHere(m, x0 + 24, notHereY, right - x0 - 48)) {
-    m.listCount_ = 0;
+    m.list_.count = 0;
     return;
   }
 
   // Where each part goes, from the top of the shelves down.
-  const double w = m.listRight_ - kScrollbarRoom - x0;
+  const double w = m.list_.right - kScrollbarRoom - x0;
   const double tileW = (w - (kSceneColumns - 1) * kTileGap) / kSceneColumns;
   const double tileH = cardHeight(tileW);
   const double cardW = (w - (kPerformerColumns - 1) * kTileGap) / kPerformerColumns;
@@ -270,15 +163,15 @@ void StashPages::layoutHome(Menu& m) {
   }
 
   // The list: steps of kStep pixels, enough of them to reach the end.
-  const double view = m.listBottom_ - m.listTop_;
-  m.rowHeight_ = kStep;
-  m.visibleRows_ = std::max(1, static_cast<int>(view / kStep));
-  m.listCount_ = m.visibleRows_ + static_cast<int>(std::ceil(std::max(0.0, height - view) / kStep));
+  const double view = m.list_.bottom - m.list_.top;
+  m.list_.rowHeight = kStep;
+  m.list_.rows = std::max(1, static_cast<int>(view / kStep));
+  m.list_.count = m.list_.rows + static_cast<int>(std::ceil(std::max(0.0, height - view) / kStep));
   int first, end;
-  m.clampScroll(m.listCount_, m.visibleRows_, first, end);
-  const double top = m.listTop_ - (m.scrollOffset_ + m.scrollFraction_) * kStep;
+  m.clampScroll(m.list_.count, m.list_.rows, first, end);
+  const double top = m.list_.top - (m.list_.offset + m.list_.fraction) * kStep;
   auto shows = [&](double y0, double y1) {
-    return top + y1 > m.listTop_ && top + y0 < m.listBottom_;
+    return top + y1 > m.list_.top && top + y0 < m.list_.bottom;
   };
   auto add = [&](Button b) {
     b.scrolls = true;
@@ -375,8 +268,8 @@ void StashPages::layoutHome(Menu& m) {
         StashMenu& now = state(m);
         StashHomePage& home = pageOf(now);
         if (const StashCatalog* latest = catalog(m))
-          rebuild(now, home, *latest, m.stash_->generation(), shownFormat(m),
-                  m.view_.stash.malePerformers);
+          home.rebuild(now, *latest, m.stash_->generation(), shownFormat(m),
+                       m.view_.stash.malePerformers);
         return play(m, home.shelves[s].all, path, false);
       };
       addSceneCard(m, b, scene);

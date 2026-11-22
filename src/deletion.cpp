@@ -4,6 +4,7 @@
 #include "library.h"
 #include "library_index.h"
 #include "media_server.h"
+#include "menu.h"
 #include "offline.h"
 #include "oshash.h"
 #include "remote.h"

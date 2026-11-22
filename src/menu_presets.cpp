@@ -41,7 +41,7 @@ void Menu::layoutPresetGroup(PageLayout& page, int column) {
   std::snprintf(key, sizeof(key), "%p %p %d %d %d %d", static_cast<const void*>(view_.presets),
                 static_cast<const void*>(&text()), base, stops, view_.refreshRate > 0,
                 view_.foveationAvailable);
-  PresetTileText& said = presetTiles_;
+  PresetTileText& said = settingsPages_.presetTiles;
   if (said.key != key) {
     said.key = key;
     for (int i = 0; i < kPerformancePresetCount; ++i) {
@@ -92,8 +92,8 @@ void Menu::layoutPresetGroup(PageLayout& page, int column) {
       row.endButton(name, [this] {
         const bool opening = dropdown_ != Dropdown::Presets;
         dropdown_ = opening ? Dropdown::Presets : Dropdown::None;
-        presetDeleting_.clear();
-        presetListPage_ = -1;
+        settingsPages_.presetDeleting.clear();
+        settingsPages_.presetListPage = -1;
         MenuCommand c;
         if (opening) c.type = MenuCommand::ListUserPresets;  // as the folder has them now
         return c;
@@ -116,16 +116,16 @@ void Menu::layoutPresetGroup(PageLayout& page, int column) {
     }
   }
   const Group& g = groups_[box];
-  presetBox_[0] = g.x;
-  presetBox_[1] = g.y;
-  presetBox_[2] = g.w;
-  presetBox_[3] = g.h;
+  settingsPages_.presetBox[0] = g.x;
+  settingsPages_.presetBox[1] = g.y;
+  settingsPages_.presetBox[2] = g.w;
+  settingsPages_.presetBox[3] = g.h;
 }
 
 double Menu::presetColumnBottom() const {
-  double bottom = presetBox_[1] + presetBox_[3];
+  double bottom = settingsPages_.presetBox[1] + settingsPages_.presetBox[3];
   for (const Group& g : groups_)
-    if (g.x == presetBox_[0]) bottom = std::max(bottom, g.y + g.h);
+    if (g.x == settingsPages_.presetBox[0]) bottom = std::max(bottom, g.y + g.h);
   return bottom;
 }
 
@@ -163,10 +163,10 @@ void Menu::layoutPresetList(const Button& opener) {
   const bool paged = count > perColumn * most;
   const int pageSize = perColumn * most;
   const int pages = paged ? (count + pageSize - 1) / pageSize : 1;
-  if (presetListPage_ < 0)  // opened: on the one shown
-    presetListPage_ = paged && view_.userPresetShown >= 0 ? view_.userPresetShown / pageSize : 0;
-  presetListPage_ = std::clamp(presetListPage_, 0, pages - 1);
-  const int firstShown = paged ? presetListPage_ * pageSize : 0;
+  if (settingsPages_.presetListPage < 0)  // opened: on the one shown
+    settingsPages_.presetListPage = paged && view_.userPresetShown >= 0 ? view_.userPresetShown / pageSize : 0;
+  settingsPages_.presetListPage = std::clamp(settingsPages_.presetListPage, 0, pages - 1);
+  const int firstShown = paged ? settingsPages_.presetListPage * pageSize : 0;
   const int endShown = paged ? std::min(count, firstShown + pageSize) : count;
   const int columns = paged ? most : std::max(1, (count + perColumn - 1) / perColumn);
   const double total = columns * kListW + (columns - 1) * 2 * pad;
@@ -204,7 +204,7 @@ void Menu::layoutPresetList(const Button& opener) {
     const UserPreset& preset = own[i];
     const double x = x0 + ((i - firstShown) / perColumn) * (kListW + 2 * pad);
     const double y = rowsTop + ((i - firstShown) % perColumn) * step;
-    if (preset.file == presetDeleting_) {
+    if (preset.file == settingsPages_.presetDeleting) {
       char ask[256];
       std::snprintf(ask, sizeof(ask), t.deleteAsk, preset.name.c_str());
       const double deleteW = textWidth(t.deleteButton, kit::kRowSize, false) + 2 * 20;
@@ -213,7 +213,7 @@ void Menu::layoutPresetList(const Button& opener) {
       label(ask, x + kit::kSpace, y, cancelX - kit::kSpace - x - kit::kSpace, rowH, false);
       item(textButton(text().cancel, Icon::None,
                       [this] {
-                        presetDeleting_.clear();
+                        settingsPages_.presetDeleting.clear();
                         dirty_ = true;
                         return MenuCommand{};
                       }),
@@ -221,7 +221,7 @@ void Menu::layoutPresetList(const Button& opener) {
           ->raised = true;
       item(textButton(t.deleteButton, Icon::None,
                       [this, file = preset.file] {
-                        presetDeleting_.clear();
+                        settingsPages_.presetDeleting.clear();
                         return userPresetCommand(MenuCommand::DeleteUserPreset, file);
                       }),
            deleteX, y, deleteW)
@@ -241,13 +241,13 @@ void Menu::layoutPresetList(const Button& opener) {
     // Moved off the page shown, the page goes with it.
     if (i > 0)
       round(Icon::MoveUp, t.tipMoveUp, [this, file = preset.file, off = i == firstShown && paged] {
-        if (off) --presetListPage_;
+        if (off) --settingsPages_.presetListPage;
         return userPresetCommand(MenuCommand::MoveUserPreset, file, -1);
       }, bx, y);
     bx += rowH + gap;
     if (i + 1 < count)
       round(Icon::MoveDown, t.tipMoveDown, [this, file = preset.file, off = i + 1 == endShown && paged] {
-        if (off) ++presetListPage_;
+        if (off) ++settingsPages_.presetListPage;
         return userPresetCommand(MenuCommand::MoveUserPreset, file, 1);
       }, bx, y);
     bx += rowH + gap;
@@ -257,7 +257,7 @@ void Menu::layoutPresetList(const Button& opener) {
     }, bx, y);
     bx += rowH + gap;
     round(Icon::Trash, t.tipDelete, [this, file = preset.file] {
-      presetDeleting_ = file;
+      settingsPages_.presetDeleting = file;
       dirty_ = true;
       return MenuCommand{};
     }, bx, y);
@@ -275,7 +275,7 @@ void Menu::layoutPresetList(const Button& opener) {
   const double px = x0 + (columns - 1) * (kListW + 2 * pad), py = rowsTop + rows * step;
   auto turn = [&](Icon icon, int by, double x, bool disabled) {
     Button& b = addRound(icon, {}, [this, by] {
-      presetListPage_ += by;
+      settingsPages_.presetListPage += by;
       return MenuCommand{};
     }, x, py, rowH);
     b.panel = kBrowser;
@@ -284,8 +284,8 @@ void Menu::layoutPresetList(const Button& opener) {
     b.iconSize = 26;
     b.disabled = disabled;
   };
-  turn(Icon::ChevronLeft, -1, px, presetListPage_ == 0);
-  turn(Icon::Chevron, 1, px + kListW - rowH, presetListPage_ + 1 >= pages);
+  turn(Icon::ChevronLeft, -1, px, settingsPages_.presetListPage == 0);
+  turn(Icon::Chevron, 1, px + kListW - rowH, settingsPages_.presetListPage + 1 >= pages);
   Button dots;
   dots.panel = kBrowser;
   dots.popup = true;
@@ -294,14 +294,14 @@ void Menu::layoutPresetList(const Button& opener) {
   dots.y = py;
   dots.w = kListW - 2 * rowH;
   dots.h = rowH;
-  dots.sliderValue = presetListPage_;
+  dots.sliderValue = settingsPages_.presetListPage;
   dots.sliderMax = pages;
   buttons_.push_back(dots);
 }
 
 void Menu::openPresetName(const std::string& file, const std::string& name) {
-  presetName_ = {true, file, name, name};
-  presetDeleting_.clear();
+  settingsPages_.presetName = {true, file, name, name};
+  settingsPages_.presetDeleting.clear();
   dropdown_ = Dropdown::None;
   editing_ = true;
   dirty_ = true;
@@ -309,7 +309,7 @@ void Menu::openPresetName(const std::string& file, const std::string& name) {
 
 Menu::PresetNameCheck Menu::checkPresetName() const {
   PresetNameCheck check;
-  const std::string name = presetName(presetName_.text);
+  const std::string name = presetName(settingsPages_.presetName.text);
   if (name.empty()) return check;
   const PresetStrings& t = text().presets;
   // Built-in names in English (what other languages' presets are saved
@@ -324,7 +324,7 @@ Menu::PresetNameCheck Menu::checkPresetName() const {
   if (!view_.userPresets) return check;
   for (size_t i = 0; i < view_.userPresets->size(); ++i) {
     const UserPreset& p = (*view_.userPresets)[i];
-    if (p.file != presetName_.file && samePresetName(p.name, name)) {
+    if (p.file != settingsPages_.presetName.file && samePresetName(p.name, name)) {
       check.kind = PresetNameCheck::Other;
       check.preset = static_cast<int>(i);
       break;
@@ -337,14 +337,14 @@ Menu::PresetNameCheck Menu::checkPresetName() const {
 // list.
 MenuCommand Menu::submitPresetName() {
   const PresetNameCheck check = checkPresetName();
-  const bool renaming = !presetName_.file.empty();
+  const bool renaming = !settingsPages_.presetName.file.empty();
   if (check.kind == PresetNameCheck::Empty || check.kind == PresetNameCheck::BuiltIn ||
       (renaming && check.kind == PresetNameCheck::Other))
     return {};
   MenuCommand c = renaming ? userPresetCommand(MenuCommand::RenameUserPreset,
-                                               presetName_.file + "\n" + presetName_.text)
-                           : userPresetCommand(MenuCommand::SaveUserPreset, presetName_.text);
-  presetName_ = {};
+                                               settingsPages_.presetName.file + "\n" + settingsPages_.presetName.text)
+                           : userPresetCommand(MenuCommand::SaveUserPreset, settingsPages_.presetName.text);
+  settingsPages_.presetName = {};
   editing_ = false;
   dropdown_ = Dropdown::Presets;
   dirty_ = true;
@@ -355,17 +355,17 @@ MenuCommand Menu::submitPresetName() {
 // the preset holds, why a name can't be used, and Save, Replace or Rename.
 void Menu::layoutPresetName() {
   const PresetStrings& t = text().presets;
-  const bool renaming = !presetName_.file.empty();
+  const bool renaming = !settingsPages_.presetName.file.empty();
   char line[1024];
   if (renaming)
-    std::snprintf(line, sizeof(line), t.renameTitle, presetName_.name.c_str());
+    std::snprintf(line, sizeof(line), t.renameTitle, settingsPages_.presetName.name.c_str());
   else
     std::snprintf(line, sizeof(line), "%s", t.saveTitle);
   PageLayout page(*this, text().videoSettings);
   GroupLayout group = page.group(0, line);
   group.labelsFor({t.name});
   Field field;
-  field.text = presetName_.text;
+  field.text = settingsPages_.presetName.text;
   field.typing = editing_;
   field.action = [this] {
     editing_ = true;
@@ -388,7 +388,7 @@ void Menu::layoutPresetName() {
     values.refreshRate = view_.refreshRate;
   } else if (view_.userPresets && view_.presets) {
     for (const UserPreset& p : *view_.userPresets)
-      if (p.file == presetName_.file) {
+      if (p.file == settingsPages_.presetName.file) {
         values = view_.presets->with(p, defaultSettings());
         known = true;
       }
@@ -399,7 +399,7 @@ void Menu::layoutPresetName() {
     group.note(line, true, 5);
   }
   const PresetNameCheck check = checkPresetName();
-  const std::string typed = presetName(presetName_.text);
+  const std::string typed = presetName(settingsPages_.presetName.text);
   const char* note = renaming ? t.renameHint : t.saveHint;
   bool warning = true;
   switch (check.kind) {
@@ -428,7 +428,7 @@ void Menu::layoutPresetName() {
   ok.disabled = !fine;
   ok.primary = true;
   group.buttons({ok, {text().cancel, "", [this] {
-                        presetName_ = {};
+                        settingsPages_.presetName = {};
                         editing_ = false;
                         dropdown_ = Dropdown::Presets;
                         dirty_ = true;

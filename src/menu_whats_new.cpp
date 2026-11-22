@@ -262,7 +262,7 @@ void Menu::scrollWhatsNew(double pixels) {
   d.scroll = position;
   hoverQuiet_ = true;
   scrolledAt_ = steadySeconds();
-  listMoved_ = true;
+  list_.moved = true;
 }
 
 // Like shiftList(), but the bottom fade stays fixed. Never copy faded text

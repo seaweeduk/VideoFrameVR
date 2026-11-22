@@ -33,13 +33,34 @@ void Menu::layoutMain() {
     layoutKeyPick();
     return;
   }
-  const Strings& t = text();
   const PlaybackState& p = view_.playback;
   StripLayout strip(*this);
   using namespace strip;
+  layoutStripTop(strip);
 
-  // The top row: the clock; the tabs, each opening its panel above the strip
-  // or closing it if it is open; labels; what is playing; Quit at the end.
+  // The band: the timeline, pointed as a whole (click() and drag() seek).
+  if (!view_.photo && p.duration > 0) {
+    Button band;
+    band.band = true;
+    band.x = kLeft;
+    band.y = kBandY;
+    band.w = kRight - kLeft;
+    band.h = kBandH;
+    band.radius = kit::kCorner;
+    band.action = [] { return MenuCommand{}; };
+    buttons_.push_back(band);
+  }
+
+  layoutTools(strip);
+  layoutTransport(strip);
+}
+
+// The top row: the clock; the tabs, each opening its panel above the strip
+// or closing it if it is open; labels; what is playing; Quit at the end.
+void Menu::layoutStripTop(StripLayout& strip) {
+  const Strings& t = text();
+  const PlaybackState& p = view_.playback;
+  using namespace strip;
   strip.beginTabs(kLeft + kInset + textWidth("00:00", kClockSize, false) + kit::kSpace);
   auto tab = [&](Icon icon, const char* label, bool open, std::function<void()> show) {
     return strip.tab(label, icon, open, [this, open, show] {
@@ -60,15 +81,15 @@ void Menu::layoutMain() {
       [this] { showPage(Page::VideoSettings); });
   tab(Icon::Focus, t.stereoFocus, page_ == Page::Focus, [this] { showPage(Page::Focus); });
   if (stash_) StashPages::layoutSceneTab(*this, strip);  // Stash's Scene tab, while it is on
-  infoX_ = strip.endTabs() + kit::kSpace;
+  strip_.infoX = strip.endTabs() + kit::kSpace;
   const Button& quit = strip.quit(kRight, t.quitApp, [this] {
     openDialog(Dialog::ConfirmQuit, "");
     return MenuCommand{};
   });
   // The frames the app draws per second just before Quit (drawMainPage()).
-  infoRight_ = quit.x - kit::kSpace;
+  strip_.infoRight = quit.x - kit::kSpace;
   if (view_.appFps > 0)
-    infoRight_ -= textWidth(std::to_string(view_.appFps) + " FPS", kInfoSize, false) + kit::kSpace;
+    strip_.infoRight -= textWidth(std::to_string(view_.appFps) + " FPS", kInfoSize, false) + kit::kSpace;
 
   // What is playing: "5760 × 2880 · HEVC 10-bit · 59.9 fps" (the format is on
   // the video settings).
@@ -88,9 +109,9 @@ void Menu::layoutMain() {
   // as the way to its button in Settings, in the summary's place.
   auto chip = [&](const char* text, bool bad, std::function<MenuCommand()> action) -> Button* {
     const double width = strip.chipWidth(text);
-    if (infoX_ + width > infoRight_) return nullptr;
-    Button& b = strip.chip(infoX_, text, bad, std::move(action));
-    infoX_ += width + kit::kSpace;
+    if (strip_.infoX + width > strip_.infoRight) return nullptr;
+    Button& b = strip.chip(strip_.infoX, text, bad, std::move(action));
+    strip_.infoX += width + kit::kSpace;
     return &b;
   };
   if (view_.softwareDecoding) {
@@ -134,38 +155,28 @@ void Menu::layoutMain() {
                            });
   // What is playing in the room left, without the codec, then the size, if
   // it doesn't fit.
-  infoText_.clear();
+  strip_.infoText.clear();
   if (!notice) {
     for (const auto& parts : {std::vector<std::string>{size, codec, rate},
                               std::vector<std::string>{size, rate}, std::vector<std::string>{rate}}) {
       std::string text;
       for (const std::string& s : parts)
         if (!s.empty()) text += (text.empty() ? "" : " · ") + s;
-      if (textWidth(text, kInfoSize, false) <= infoRight_ - infoX_) {
-        infoText_ = text;
+      if (textWidth(text, kInfoSize, false) <= strip_.infoRight - strip_.infoX) {
+        strip_.infoText = text;
         break;
       }
     }
   }
+}
 
-  // The band: the timeline, pointed as a whole (click() and drag() seek).
-  if (!view_.photo && p.duration > 0) {
-    Button band;
-    band.band = true;
-    band.x = kLeft;
-    band.y = kBandY;
-    band.w = kRight - kLeft;
-    band.h = kBandH;
-    band.radius = kit::kCorner;
-    band.action = [] { return MenuCommand{}; };
-    buttons_.push_back(band);
-  }
-
-  layoutTools(strip);
-
-  // Transport in the middle: previous, back, play/pause, stop, forward, next;
-  // photos: previous, slideshow, stop and next. Stop closes what is open and
-  // leaves the scene empty.
+// Transport in the middle: previous, back, play/pause, stop, forward, next;
+// photos: previous, slideshow, stop and next. Stop closes what is open and
+// leaves the scene empty.
+void Menu::layoutTransport(StripLayout& strip) {
+  const Strings& t = text();
+  const PlaybackState& p = view_.playback;
+  using namespace strip;
   const int count = view_.photo ? 4 : 6;
   double x = (kMainWidth - (count - 1) * (kButton + kButtonGap) - StripLayout::kPlayW) / 2;
   auto round = [&](Icon i, const char* tip, std::function<MenuCommand()> action) -> Button& {
@@ -403,14 +414,14 @@ void Menu::showBrowser() {
 }
 
 void Menu::showPlayedFrom() {
-  if (!showListPage(playedFrom_)) showBrowser();
+  if (!showListPage(played_.from)) showBrowser();
 }
 
 MenuCommand Menu::openVideo(const std::string& path, bool shuffle) {
-  playedFrom_ = page_;
-  opening_ = path;
+  played_.from = page_;
+  played_.opening = path;
   showPage(Page::Main);
-  opening_.clear();
+  played_.opening.clear();
   MenuCommand c;
   c.type = MenuCommand::OpenFile;
   c.path = path;
@@ -464,7 +475,7 @@ bool Menu::seekHover(double& fraction) const {
       view_.playback.duration <= 0 || view_.photo || view_.keyPicking)
     return false;
   // While dragging the knob, the preview stays even if the pointer drifts off the bar.
-  if (!draggingSeek_ && !onSeekBand()) return false;
+  if (!strip_.draggingSeek && !onSeekBand()) return false;
   fraction = std::clamp((pointerX_ - strip::kLeft) / (strip::kRight - strip::kLeft), 0.0, 1.0);
   return true;
 }
@@ -481,9 +492,9 @@ Menu::BandMarks Menu::bandMarks() const {
   const double x = kLeft, w = kRight - kLeft;
   BandMarks m;
   m.timeline = !view_.photo && p.duration > 0;  // photos have no time to show or seek in
-  m.dragging = draggingSeek_;
+  m.dragging = strip_.draggingSeek;
   // While it is dragged, the band shows where it is being dragged to.
-  const double shown = draggingSeek_ && lastScrub_ >= 0 ? lastScrub_ : p.position;
+  const double shown = strip_.draggingSeek && strip_.lastScrub >= 0 ? strip_.lastScrub : p.position;
   m.fraction = m.timeline ? std::clamp(shown / p.duration, 0.0, 1.0) : 0;
   m.covered = std::floor((x + w * m.fraction) * menu_geometry::kRasterScale) / menu_geometry::kRasterScale;
   m.titleRight = x + w - kInset;
@@ -517,11 +528,11 @@ void Menu::drawMainPage(cairo_t* cr) {
   std::strftime(clock, sizeof(clock), "%H:%M", &local);
   drawText(cr, clock, kLeft + kInset, kTabsY, textWidth("00:00", kClockSize, false) + 4, kTabsH,
            kClockSize, false, false, pal.text.r, pal.text.g, pal.text.b);
-  drawText(cr, infoText_, infoX_, kTabsY, infoRight_ - infoX_, kTabsH, kInfoSize, false, false,
+  drawText(cr, strip_.infoText, strip_.infoX, kTabsY, strip_.infoRight - strip_.infoX, kTabsH, kInfoSize, false, false,
            pal.textDim.r, pal.textDim.g, pal.textDim.b);
   if (view_.appFps > 0) {  // the frames the app draws per second, before Quit
     const std::string fps = std::to_string(view_.appFps) + " FPS";
-    drawText(cr, fps, infoRight_ + kit::kSpace, kTabsY, textWidth(fps, kInfoSize, false) + 4, kTabsH,
+    drawText(cr, fps, strip_.infoRight + kit::kSpace, kTabsY, textWidth(fps, kInfoSize, false) + 4, kTabsH,
              kInfoSize, false, false, pal.faint.r, pal.faint.g, pal.faint.b);
   }
 
@@ -561,8 +572,8 @@ void Menu::drawMainPage(cairo_t* cr) {
     }
     // Held, the head grows.
     if (fraction > 0) {
-      const double in = draggingSeek_ ? 2 : 6;
-      drawHead(cr, x + w * fraction, kBandY + in, kBandH - 2 * in, draggingSeek_ ? 6 : 4);
+      const double in = strip_.draggingSeek ? 2 : 6;
+      drawHead(cr, x + w * fraction, kBandY + in, kBandH - 2 * in, strip_.draggingSeek ? 6 : 4);
     }
   }
   cairo_new_path(cr);

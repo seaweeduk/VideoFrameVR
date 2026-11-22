@@ -305,7 +305,7 @@ bool Menu::pointingAtLongList(int& page) const {
   if (dialog_ == Dialog::WhatsNew) return true;
   if (groupedPage()) return pageScrollMax_ > 0;
   if (overSide()) return side_.max > 0;
-  return listCount_ > visibleRows_;
+  return list_.count > list_.rows;
 }
 
 bool Menu::pointingAtVolume() const {

@@ -162,19 +162,19 @@ const std::string& Menu::filterText() const {
     case TextTarget::Setup:
       return *setupText();
     case TextTarget::SmbForm:
-      return smbForm_.text[smbForm_.field];
+      return network_.form.text[network_.form.field];
     case TextTarget::PlaceName:
-      return placeRename_.text;
+      return navigation_.placeRename.text;
     case TextTarget::PresetName:
-      return presetName_.text;
+      return settingsPages_.presetName.text;
     case TextTarget::ScriptAddress:
-      return scriptAddress_.text;
+      return settingsPages_.scriptAddress.text;
     case TextTarget::Stash:
       return stashText();
     case TextTarget::Search:
       break;
   }
-  return page_ == Page::Library ? libraryFilter_ : fileFilter_;
+  return page_ == Page::Library ? libraryPage_.filter : files_.filter;
 }
 
 void Menu::setFilter(const std::string& text) {
@@ -186,11 +186,11 @@ void Menu::setFilter(const std::string& text) {
       typedIntoSmbForm(text);
       return;
     case TextTarget::PlaceName:
-      placeRename_.text = text;
+      navigation_.placeRename.text = text;
       typedChanged();
       return;
     case TextTarget::ScriptAddress:
-      scriptAddress_.text = text.substr(0, 200);
+      settingsPages_.scriptAddress.text = text.substr(0, 200);
       typedChanged();
       return;
     case TextTarget::PresetName: {
@@ -199,7 +199,7 @@ void Menu::setFilter(const std::string& text) {
       if (!g_utf8_validate(text.data(), static_cast<gssize>(text.size()), nullptr)) return;
       const glong chars = std::min<glong>(40, g_utf8_strlen(text.c_str(), -1));
       const PresetNameCheck before = checkPresetName();
-      presetName_.text = text.substr(0, g_utf8_offset_to_pointer(text.c_str(), chars) - text.c_str());
+      settingsPages_.presetName.text = text.substr(0, g_utf8_offset_to_pointer(text.c_str(), chars) - text.c_str());
       if (checkPresetName() == before)
         typedChanged();
       else
@@ -214,12 +214,12 @@ void Menu::setFilter(const std::string& text) {
   }
   // The folder's (or the library's) search words. Its results start over at
   // the very top.
-  std::string& filter = page_ == Page::Library ? libraryFilter_ : fileFilter_;
+  std::string& filter = page_ == Page::Library ? libraryPage_.filter : files_.filter;
   if (text == filter) return;
   filter = text;
-  libraryListStale_ = true;
-  scrollOffset_ = 0;
-  scrollFraction_ = 0;
+  libraryPage_.listStale = true;
+  list_.offset = 0;
+  list_.fraction = 0;
   dirty_ = true;
 }
 
@@ -230,7 +230,7 @@ MenuCommand Menu::submitText() {
     case TextTarget::SmbForm:
       return submitSmbForm();
     case TextTarget::PlaceName:
-      if (placeRename_.path.empty()) break;
+      if (navigation_.placeRename.path.empty()) break;
       savePlaceName();
       return {};
     case TextTarget::PresetName:
@@ -260,8 +260,8 @@ void Menu::stopEditing() {
 }
 
 void Menu::keysChanged() {
-  browserChanged(keyboardRect_[1] - 4, keyboardRect_[1] + keyboardRect_[3] + 4, keyboardRect_[0] - 4,
-                 keyboardRect_[0] + keyboardRect_[2] + 4);
+  browserChanged(keyboard_.rect[1] - 4, keyboard_.rect[1] + keyboard_.rect[3] + 4, keyboard_.rect[0] - 4,
+                 keyboard_.rect[0] + keyboard_.rect[2] + 4);
 }
 
 void Menu::typedChanged() {
@@ -274,13 +274,13 @@ void Menu::typedChanged() {
 // repeats, as fast as what it changes is drawn. A letter held shows its
 // accents; the layout key switches layouts when let go, held it lists them.
 void Menu::keyHeld(bool held) {
-  KeyDown& k = keyDown_;
+  KeyDown& k = keyboard_.keyDown;
   const double now = steadySeconds();
   const bool over = pointerPanel_ == (setup_ ? kSetup : kBrowser) && pointerX_ >= k.x && pointerX_ <= k.x + k.w &&
                     pointerY_ >= k.y && pointerY_ <= k.y + kKeyH;
   const bool on = held && over;
   if (on && k.repeat && now >= k.next && browserRow_ < 0) {
-    keyDown_.next = now + 0.07;
+    keyboard_.keyDown.next = now + 0.07;
     k.repeat();
   }
   if (k.hold != KeyDown::Hold::None && !k.done) {
@@ -301,35 +301,35 @@ void Menu::keyHeld(bool held) {
   }
   if (on || now - k.at < 0.12) return;
   keyChanged(k.x, k.y, k.w);
-  keyDown_ = {};
+  keyboard_.keyDown = {};
 }
 
 int Menu::activeLayout() const {
-  const int i = layoutIndex(keyboardLayout_);
+  const int i = layoutIndex(keyboard_.layout);
   return i < 0 ? languageLayout() : i;
 }
 
 int Menu::otherLayout() const {
-  const int i = layoutIndex(keyboardOther_);
+  const int i = layoutIndex(keyboard_.other);
   return i < 0 ? languageLayout() : i;
 }
 
 // Both are kept from now on, whatever the menu's language.
 MenuCommand Menu::useLayouts(int active, int other) {
-  keyboardLayout_ = kLayouts[active].code;
-  keyboardOther_ = kLayouts[other].code;
+  keyboard_.layout = kLayouts[active].code;
+  keyboard_.other = kLayouts[other].code;
   keysChanged();
   MenuCommand c;
   c.type = MenuCommand::SetKeyboardLayout;
-  c.path = keyboardLayout_ + "\n" + keyboardOther_;
+  c.path = keyboard_.layout + "\n" + keyboard_.other;
   return c;
 }
 
-// Over the key pressed (keyDown_): the letter's accents, in its case, or
+// Over the key pressed (keyboard_.keyDown): the letter's accents, in its case, or
 // every layout. Opened by holding, it lasts until let go, over one of its
 // keys to type it (drag()); opened by a tap, until a click.
 void Menu::openKeyPopup(bool accents, bool dragging) {
-  const KeyDown& k = keyDown_;
+  const KeyDown& k = keyboard_.keyDown;
   KeyPopup p;
   p.open = true;
   p.accents = accents;
@@ -346,20 +346,20 @@ void Menu::openKeyPopup(bool accents, bool dragging) {
   } else {
     for (const KeyLayout& l : kLayouts) p.keys.push_back(l.code);
   }
-  keyPopup_ = p;
+  keyboard_.popup = p;
   keysChanged();
 }
 
 void Menu::closeKeyPopup() {
-  if (!keyPopup_.open) return;
-  keyPopup_ = {};
+  if (!keyboard_.popup.open) return;
+  keyboard_.popup = {};
   keysChanged();
 }
 
 // An accent replaces the letter it came from (unless the text has changed
 // since, as from the desktop keyboard), the cursor after it; a layout is used.
 MenuCommand Menu::pickFromKeyPopup(size_t index) {
-  const KeyPopup p = keyPopup_;
+  const KeyPopup p = keyboard_.popup;
   closeKeyPopup();
   if (index >= p.keys.size()) return {};
   if (p.accents) {
@@ -381,7 +381,7 @@ MenuCommand Menu::pickFromKeyPopup(size_t index) {
 // the layout key, Space, ← and → (the text cursor) and Paste. Letters are
 // large; the other keys say what they do, dim; Done is filled in the accent
 // and Shift latched while it is on. A key pressed is drawn pushed in
-// (keyDown_, drawnPressed()).
+// (keyboard_.keyDown, drawnPressed()).
 void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
   const Strings& t = text();
   static const std::vector<std::string> kNumbers = {"1", "2", "3", "4", "5", "6",
@@ -394,7 +394,7 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
   constexpr int kLetterSize = 30, kKeySize = 23, kDoneSize = 24;
   const KeyLayout& layout = kLayouts[activeLayout()];
   const std::vector<std::string>* kRows[4] = {&kNumbers, &layout.rows[0], &layout.rows[1], &layout.rows[2]};
-  if (symbols_)
+  if (keyboard_.symbols)
     for (int r = 0; r < 3; ++r) kRows[r + 1] = &kSymbols[r];
   if (top < 0) top = kKeyboardY + kKeyboardPadY;
   constexpr double gap = kit::kSpaceTight;
@@ -404,10 +404,10 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
   // On the page, a well kKeyboardPadY around the keys; on a panel of its
   // own (setup's), that panel, kit::kSpace around them.
   const double padX = panel == kBrowser ? kKeyboardPadY : kit::kSpace;
-  keyboardRect_[0] = x0 - padX;
-  keyboardRect_[1] = top - padX;
-  keyboardRect_[2] = width + 2 * padX;
-  keyboardRect_[3] = 4 * kKeyStep + kKeyH + 2 * padX;
+  keyboard_.rect[0] = x0 - padX;
+  keyboard_.rect[1] = top - padX;
+  keyboard_.rect[2] = width + 2 * padX;
+  keyboard_.rect[3] = 4 * kKeyStep + kKeyH + 2 * padX;
   // Its action redraws what it changes (keyChanged()); `fn`: a key that
   // isn't a letter, its label dim.
   auto key = [&](const std::string& label, double x, int row, double w,
@@ -416,10 +416,10 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
     const double y = top + row * kKeyStep;
     Button b = textButton(label, Icon::None, nullptr);
     b.action = [this, x, y, w, repeat, action = std::move(action)] {
-      const KeyDown& k = keyDown_;  // the key before comes back up
+      const KeyDown& k = keyboard_.keyDown;  // the key before comes back up
       if (k.at >= 0) keyChanged(k.x, k.y, k.w);
       const double now = steadySeconds();
-      keyDown_ = {x, y, w, now, now + 0.5, repeat};
+      keyboard_.keyDown = {x, y, w, now, now + 0.5, repeat};
       keyChanged(x, y, w);
       return action();
     };
@@ -435,19 +435,19 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
     buttons_.push_back(b);
   };
   auto letter = [&](const std::string& k, double x, int row, double w) {
-    const std::string label = shift_ ? upperKey(k) : k;
+    const std::string label = keyboard_.shift ? upperKey(k) : k;
     key(label, x, row, w, [this, label] {
       const std::string before = filterText();
       const size_t at = cursorAt();
       typeText(label);
       if (!accentsOf(lowerKey(label)).empty()) {
-        keyDown_.hold = KeyDown::Hold::Accents;
-        keyDown_.letter = label;
-        keyDown_.before = before;
-        keyDown_.cursor = at;
+        keyboard_.keyDown.hold = KeyDown::Hold::Accents;
+        keyboard_.keyDown.letter = label;
+        keyboard_.keyDown.before = before;
+        keyboard_.keyDown.cursor = at;
       }
-      if (shift_ && !capsLock_) {  // one capital, like a phone keyboard
-        shift_ = false;
+      if (keyboard_.shift && !keyboard_.capsLock) {  // one capital, like a phone keyboard
+        keyboard_.shift = false;
         keysChanged();
       }
       return MenuCommand{};
@@ -473,26 +473,26 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
   buttons_.back().primary = true;
   buttons_.back().fontSize = kDoneSize;
   // Shift: one capital; tapped twice, caps lock until tapped again.
-  key(capsLock_ ? t.keyboard.capsLock : t.shift, x0, 3, indent[3] - gap, [this] {
+  key(keyboard_.capsLock ? t.keyboard.capsLock : t.shift, x0, 3, indent[3] - gap, [this] {
     const double now = steadySeconds();
-    if (capsLock_) {
-      shift_ = capsLock_ = false;
-    } else if (shift_ && now - shiftAt_ < 0.5) {
-      capsLock_ = true;
+    if (keyboard_.capsLock) {
+      keyboard_.shift = keyboard_.capsLock = false;
+    } else if (keyboard_.shift && now - keyboard_.shiftAt < 0.5) {
+      keyboard_.capsLock = true;
     } else {
-      shift_ = !shift_;
+      keyboard_.shift = !keyboard_.shift;
     }
-    shiftAt_ = now;
+    keyboard_.shiftAt = now;
     keysChanged();
     return MenuCommand{};
   }, true);
-  buttons_.back().latched = shift_ || capsLock_;
-  buttons_.back().disabled = symbols_;
+  buttons_.back().latched = keyboard_.shift || keyboard_.capsLock;
+  buttons_.back().disabled = keyboard_.symbols;
   buttons_.back().tooltip = t.keyboard.tipShift;
-  key(symbols_ ? t.letterKeys : t.symbolKeys, x0 + indent[3] + 10 * unit, 3,
+  key(keyboard_.symbols ? t.letterKeys : t.symbolKeys, x0 + indent[3] + 10 * unit, 3,
       width - indent[3] - 10 * unit, [this] {
-        symbols_ = !symbols_;
-        shift_ = capsLock_ = false;
+        keyboard_.symbols = !keyboard_.symbols;
+        keyboard_.shift = keyboard_.capsLock = false;
         keysChanged();
         return MenuCommand{};
       }, true);
@@ -512,7 +512,7 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
   }, true);
   // The layout key: what it does is decided when let go or held (keyHeld()).
   key(layout.key, x0 + 4 * unit, 4, keyW, [this] {
-    keyDown_.hold = KeyDown::Hold::Layouts;
+    keyboard_.keyDown.hold = KeyDown::Hold::Layouts;
     return MenuCommand{};
   }, true);
   if (otherLayout() == 0) {
@@ -539,8 +539,8 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
   key(t.paste, x0 + 11 * unit, 4, sideW, command(MenuCommand::Paste), true);
   // The popup's row covers the one above the key it came from, within the
   // keyboard; drawPopups() puts its pane behind it.
-  if (keyPopup_.open) {
-    const KeyPopup& p = keyPopup_;
+  if (keyboard_.popup.open) {
+    const KeyPopup& p = keyboard_.popup;
     const double w = p.accents ? keyW : 2 * unit - gap;
     const double total = static_cast<double>(p.keys.size()) * (w + gap) - gap;
     const double left = std::clamp(p.x - total / 2, x0, x0 + width - total);
@@ -561,13 +561,13 @@ void Menu::layoutKeyboard(int panel, double cx, double top, double keyW) {
       buttons_.push_back(b);
     }
   }
-  keyboardShown_ = true;
+  keyboard_.shown = true;
 }
 
 void Menu::drawKeyboard(cairo_t* cr) const {
-  if (!keyboardShown_) return;
-  drawFinish(cr, Finish::Sunk, keyboardRect_[0], keyboardRect_[1], keyboardRect_[2],
-             keyboardRect_[3], kit::kGroupCorner);
+  if (!keyboard_.shown) return;
+  drawFinish(cr, Finish::Sunk, keyboard_.rect[0], keyboard_.rect[1], keyboard_.rect[2],
+             keyboard_.rect[3], kit::kGroupCorner);
 }
 
 // Its box and the shadow its finish at rest casts (Done's is the widest),

@@ -22,10 +22,19 @@ struct Settings;
 // Main thread only.
 class Passthrough {
  public:
-  Passthrough(Settings& settings, Library& library, const XrContext& xr, VideoSettings& video,
-              const std::string& currentFile, const VideoFormat& format)
-      : settings(settings), library(library), xr(xr), video(video), currentFile(currentFile),
-        format(format) {}
+  // Its two workers, and whether the room can be read: built before the
+  // library, so the workers stop after its last writes.
+  struct Workers {
+    VideoCheck videoCheck;
+    RoomLight roomLight;
+    const bool roomReadable = kStandaloneHeadset && RoomLight::available();
+  };
+
+  Passthrough(Settings& settings, Library& library, const XrContext& xr, Workers& workers,
+              VideoSettings& video, const std::string& currentFile, const VideoFormat& format)
+      : roomReadable(workers.roomReadable), settings(settings), library(library), xr(xr),
+        video(video), currentFile(currentFile), format(format), videoCheck(workers.videoCheck),
+        roomLight(workers.roomLight) {}
 
   // The eye images are blended over the room (the headset's cameras, where
   // the runtime blends): with passthrough on, or Opacity below 100, with or
@@ -52,8 +61,11 @@ class Passthrough {
   // so; else null.
   const char* notice(double now) const;
 
-  const bool roomReadable = kStandaloneHeadset && RoomLight::available();
+  const bool roomReadable;
   bool matched() const { return roomMatched; }
+  // The command, if it is one of Match the room's or the automatic
+  // passthrough's settings; false for any other.
+  bool handle(const MenuCommand& c);
   // The menu's ToggleMatchRoom and ReadRoomAgain.
   void toggle();
   void readAgain();
@@ -93,7 +105,7 @@ class Passthrough {
   // once per video, when its size and settings are known.
   // The green screen check, or the mask layer check for a video with a
   // packed mask (video_check.h).
-  VideoCheck videoCheck;
+  VideoCheck& videoCheck;
   bool passthroughSettled = false;
   bool stream = false;  // the video is a link
   bool greenCheckAsked = false;  // the green screen check was asked for, for this video
@@ -109,7 +121,7 @@ class Passthrough {
   // stays as set for the run; with the room hidden (another video, passthrough
   // off, Opacity at 100 %) the video's own is drawn, shown and edited until
   // the room shows again.
-  RoomLight roomLight;
+  RoomLight& roomLight;
   double roomFailedUntil = 0;  // glfwGetTime() Match the room stops saying it failed
   // Match the room, a switch: on, the room's reading (the run's first, or
   // Read again's) times the strengths, from the video's own balance (grey

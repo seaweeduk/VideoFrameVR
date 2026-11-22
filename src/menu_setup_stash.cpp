@@ -14,7 +14,6 @@
 namespace {
 
 using Step = SetupMenu::Step;
-using Page = SetupStash::Page;
 using Answer = MediaClient::Answer;
 
 using setup::kH;
@@ -96,16 +95,16 @@ void SetupPages::setText(Menu& m, const std::string& text) {
   m.typedChanged();
 }
 
-void SetupPages::openStashPage(Menu& m, Page page) {
+void SetupPages::openStashPage(Menu& m, SetupStash::Page page) {
   SetupStash& st = m.setup_->stash;
   stopAsking(m);
   st.page = page;
   st.error.clear();
   st.untrusted.clear();
-  st.field = page == Page::SignIn ? SetupStash::User : SetupStash::Address;
+  st.field = page == SetupStash::Page::SignIn ? SetupStash::User : SetupStash::Address;
   st.showPassword = false;
   st.text[SetupStash::Password].clear();
-  m.editing_ = page != Page::Ask;  // the keyboard up at once
+  m.editing_ = page != SetupStash::Page::Ask;  // the keyboard up at once
   m.dirty_ = true;
 }
 
@@ -128,7 +127,7 @@ void SetupPages::askStash(Menu& m) {
   if (url.empty() || st.asking.running()) return;
   st.error.clear();
   st.untrusted.clear();
-  if (st.page == Page::SignIn) {
+  if (st.page == SetupStash::Page::SignIn) {
     // What it says names the kind signed in to, not every kind.
     const MediaServer& server = mediaServer(st.kind);
     std::shared_ptr<MediaClient> client = server.client(url, std::string(), unverified(st));
@@ -175,13 +174,13 @@ void SetupPages::updateStash(Menu& m) {
   m.dirty_ = true;
   const SetupStrings& t = m.text().setup;
   const Answer answer = static_cast<Answer>(r.answer);
-  if (st.page == Page::Address && (answer == Answer::Open || answer == Answer::NeedsSignIn)) {
+  if (st.page == SetupStash::Page::Address && (answer == Answer::Open || answer == Answer::NeedsSignIn)) {
     st.text[SetupStash::Address] = r.url;
     st.kind = r.kind;
   }
   switch (answer) {
     case Answer::Open: m.command_ = stashAccepted(m, r.apiKey); break;
-    case Answer::NeedsSignIn: openStashPage(m, Page::SignIn); break;
+    case Answer::NeedsSignIn: openStashPage(m, SetupStash::Page::SignIn); break;
     case Answer::Unreached: st.error = kStandaloneHeadset ? t.unreachableHeadset : t.unreachableComputer; break;
     case Answer::Failed:
       st.error = r.error;
@@ -212,14 +211,14 @@ void SetupPages::layoutStash(Menu& m) {
   const SetupStrings& t = m.text().setup;
   const NetworkStrings& n = m.text().network;
   const bool asking = st.asking.running();
-  if (st.page == Page::Ask) {
+  if (st.page == SetupStash::Page::Ask) {
     // Not now and Connect Stash; with Stash connected already (by setup
     // left and started again before it asked for folders first), Change
     // and Continue. Either way on to the Library.
     const bool connected = m.stash_ != nullptr;
     auto open = [&m, connected] {
       if (connected) m.setup_->stash.text[SetupStash::Address] = m.view_.stash.url;
-      openStashPage(m, Page::Address);
+      openStashPage(m, SetupStash::Page::Address);
       return MenuCommand{};
     };
     auto on = command(MenuCommand::EndSetup, 1);
@@ -239,7 +238,7 @@ void SetupPages::layoutStash(Menu& m) {
 
   // The address, or the sign-in's fields, in a group (the kit's form): the
   // sign-in's titled with the address; why it failed under them.
-  const bool signIn = st.page == Page::SignIn;
+  const bool signIn = st.page == SetupStash::Page::SignIn;
   Menu::PageLayout page(m, Menu::PageLayout::UnderHeader{}, t.stashTitle);
   Menu::GroupLayout g = page.groupAt(0, setup::kLeft, setup::kTop, kFormW,
                                      signIn ? trimmedAddress(st.text[SetupStash::Address]) : std::string(t.address));
@@ -303,7 +302,7 @@ void SetupPages::layoutStash(Menu& m) {
               if (st.asking.running() && !signIn)
                 stopAsking(m);
               else
-                openStashPage(m, signIn ? Page::Address : Page::Ask);
+                openStashPage(m, signIn ? SetupStash::Page::Address : SetupStash::Page::Ask);
               return MenuCommand{};
             }),
             Icon::Arrow, {connect});
@@ -314,7 +313,7 @@ void SetupPages::drawStash(Menu& m, cairo_t* cr) {
   SetupStash& st = m.setup_->stash;
   const SetupStrings& t = m.text().setup;
   const Palette pal = m.palette();
-  if (st.page == Page::Ask) {
+  if (st.page == SetupStash::Page::Ask) {
     drawHead(m, cr, t.stashTitle, t.stashText, kInner);
     // With no folders added, every scene plays from Stash: with Stash off,
     // only those downloaded.
@@ -358,7 +357,7 @@ void SetupPages::drawStash(Menu& m, cairo_t* cr) {
                  pal.textDim.r, pal.textDim.g, pal.textDim.b);
     }
   } else {
-    if (st.page == Page::Address)
+    if (st.page == SetupStash::Page::Address)
       drawHead(m, cr, t.connectStash, t.addressText);
     else {
       // The server found, by its own name.

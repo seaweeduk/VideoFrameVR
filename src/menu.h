@@ -12,6 +12,7 @@
 #include "panel_hover.h"
 #include "places.h"
 #include "presets.h"
+#include "delete_info.h"
 #include "diagnostics.h"
 #include "file_util.h"
 #include "release_update.h"
@@ -77,31 +78,6 @@ struct Palette;
 // An audio or subtitle track as the menu names it: "English (eng)", "eng" or "Track 2".
 std::string trackName(const Track& track, const Strings& t);
 
-// The delete dialog's (docs/alpha/delete-file.md): the file playing, and
-// what the app found out about it in the background. Until `ready`, only
-// Cancel can be pressed.
-struct DeleteInfo {
-  std::string file;  // the file playing: a path or a remote locator (remote.h)
-  std::string name;  // its file name
-  bool photo = false;
-  bool ready = false;
-  uint64_t size = 0;
-  // A downloaded copy (`file`) of `source`, on the drive at `copyRoot`:
-  // Remove download deletes the copy; Delete everywhere, once the source
-  // was found, the source too.
-  std::string source, copyRoot;
-  bool sourceFound = false;
-  bool sourceChanged = false;  // not the video downloaded any more
-  // A Stash scene's file (with Send to Stash on): Stash deletes it, the
-  // scene too if it has no other files (`otherFiles`), into its trash
-  // folder if it has one (`stashTrash`); or it is deleted here and Stash
-  // lists it until its Clean runs, also when Stash's files didn't show
-  // which one it is (Unsure).
-  enum class Stash : uint8_t { None, Deletes, Lists, Unsure } stash = Stash::None;
-  int otherFiles = 0;
-  bool stashTrash = false;
-};
-
 // Where a list of paths was left (the Library, Stash's scenes): the row
 // kept in its place on the screen when it comes back, maybe changed
 // meanwhile; if that row is gone, the one then at its index.
@@ -165,18 +141,18 @@ class Menu {
   // list's ends). False: Previous and Next go through its folder.
   bool listNeighbor(const std::string& path, int step, std::string& next, const PlayOrder& order);
   // Where the file browser opens the first time (the last session's folder).
-  void setStartDirectory(const std::string& dir) { startDirectory_ = dir; }
+  void setStartDirectory(const std::string& dir) { files_.startDirectory = dir; }
   // The folder the file browser shows (empty until it is first opened).
-  const std::string& directory() const { return listing_.directory(); }
+  const std::string& directory() const { return files_.listing.directory(); }
   // Videos as a grid of large thumbnails instead of a list (all folders).
   void setGallery(bool gallery) { gallery_ = gallery; }
   bool gallery() const { return gallery_; }
   // Video settings opens on This video (else Display) while a video is open:
   // the section picked last.
   void setVideoSettingsThisVideo(bool thisVideo) {
-    videoSectionPicked_ = thisVideo ? VideoSection::ThisVideo : VideoSection::Display;
+    settingsPages_.videoSectionPicked = thisVideo ? VideoSection::ThisVideo : VideoSection::Display;
   }
-  bool videoSettingsThisVideo() const { return videoSectionPicked_ == VideoSection::ThisVideo; }
+  bool videoSettingsThisVideo() const { return settingsPages_.videoSectionPicked == VideoSection::ThisVideo; }
 
   void update(const MenuView& view);
   // Pointer on a panel in 0..1 of its texture (v = 0 at the top); panel
@@ -389,8 +365,8 @@ class Menu {
   // The on-screen keyboard's layout and the other one its layout key
   // switches to, as settings.conf keeps them ("" follows the menu language).
   void setKeyboardLayout(const std::string& active, const std::string& other) {
-    keyboardLayout_ = active;
-    keyboardOther_ = other;
+    keyboard_.layout = active;
+    keyboard_.other = other;
   }
 
   // Whether a panel is shown: the strip always, the browser while a page is
@@ -617,7 +593,7 @@ class Menu {
     // A field (`field`): its faint example, shown while it is empty, typed
     // into or not. Its own button inside its right end takes `inner` of it.
     std::string example;
-    bool keyCap = false;  // a key of the on-screen keyboard: pushed in while keyDown_ is on it
+    bool keyCap = false;  // a key of the on-screen keyboard: pushed in while keyboard_.keyDown is on it
     bool dialog = false;  // a dialog's button (DialogLayout): its icon and label centred
     int controlPart = -1;  // drawn by drawControlPart() instead (menu_controls.cpp): its part
   };
@@ -677,7 +653,6 @@ class Menu {
   // Funscripts (menu_scripts.cpp). Never stored; the well picks them by
   // their index.
   enum class SettingsSection { General, Controls, Stash, Scripts };
-  SettingsSection settingsSection_ = SettingsSection::General;
   // `stash`: what the Stash section shows, if not what it shows now (the fit check).
   void layoutSettingsSection(SettingsSection section, const StashSettingsShown* stash = nullptr);
   void layoutHelpGroup(PageLayout& page, int column);  // What's new, Save diagnostics
@@ -695,7 +670,6 @@ class Menu {
     bool open = false;
     std::string text;  // typed
   };
-  ScriptAddress scriptAddress_;
   // A page's header as laid out: its title and what it is about (drawn by
   // drawGroups()); no title: none.
   struct PageHead {
@@ -714,8 +688,6 @@ class Menu {
   // open. The one picked last (kept in the settings) is where the page opens
   // while one is.
   enum class VideoSection { Display, ThisVideo };
-  VideoSection videoSection_ = VideoSection::Display;
-  VideoSection videoSectionPicked_ = VideoSection::Display;
   void layoutVideoSection(VideoSection section);
   void layoutPassthroughGroup(PageLayout& page, int column);
   void layoutFoveationGroup(PageLayout& page, int column);
@@ -723,15 +695,12 @@ class Menu {
   // Lays Video settings out with every row that can show, in both sections,
   // and says loudly where it doesn't fit (debug builds only).
   void checkVideoSettingsFit();
-  const Strings* fitChecked_ = nullptr;  // the language it was checked in
   // ... and Settings (both sections) and Stereo focus.
   void checkSettingsFit();
   // A type's gestures as many as there can be, with the longest names, the
   // left column's or Either's first.
   GestureMap fullestGestures(ControllerType type, bool eitherFirst = false) const;
   void checkFocusFit();
-  const Strings* settingsFitChecked_ = nullptr;
-  const Strings* focusFitChecked_ = nullptr;
 #endif
   // The note under its Resolution slider. It is there only with something
   // to say, so the rows under it move when it comes or goes, or takes a
@@ -748,7 +717,6 @@ class Menu {
   // the user's own in a list under its button, and a name typed over the
   // keyboard to save the settings as, or rename one to.
   void layoutPresetGroup(PageLayout& page, int column);
-  double presetBox_[4] = {0, 0, 0, 0};  // the Preset group as laid out (x, y, w, h), w 0: none
   double presetColumnBottom() const;  // where its column's groups end
   // Its performance presets' tiles: offered, their second lines and tooltips,
   // for what `key` says the page showed of them.
@@ -756,7 +724,7 @@ class Menu {
     std::string key;
     bool offered[kPerformancePresetCount] = {};
     std::string sub[kPerformancePresetCount], tip[kPerformancePresetCount];
-  } presetTiles_;
+  };
   void layoutPresetList(const Button& opener);
   void layoutPresetName();
   void openPresetName(const std::string& file, const std::string& name);
@@ -768,7 +736,6 @@ class Menu {
     std::string name;  // ... its name now
     std::string text;  // typed
   };
-  PresetName presetName_;
   // What the name typed is: nothing, fine, a built-in's, or another of the
   // user's (`preset`: which), which saving replaces and renaming refuses.
   struct PresetNameCheck {
@@ -777,8 +744,26 @@ class Menu {
     bool operator==(const PresetNameCheck& o) const { return kind == o.kind && preset == o.preset; }
   };
   PresetNameCheck checkPresetName() const;
-  std::string presetDeleting_;  // the preset whose delete is asked in its row (its file)
-  int presetListPage_ = -1;  // the list's page shown when it has more than one; -1: the shown preset's
+  // The settings pages' (Settings, Video settings, Stereo focus): the
+  // sections shown and picked, the Preset group as laid out, and what is
+  // typed or asked on them.
+  struct SettingsPages {
+    SettingsSection section = SettingsSection::General;
+    ScriptAddress scriptAddress;
+    VideoSection videoSection = VideoSection::Display;
+    VideoSection videoSectionPicked = VideoSection::Display;
+    double presetBox[4] = {0, 0, 0, 0};  // the Preset group as laid out (x, y, w, h), w 0: none
+    PresetTileText presetTiles;
+    PresetName presetName;
+    std::string presetDeleting;  // the preset whose delete is asked in its row (its file)
+    int presetListPage = -1;  // the list's page shown when it has more than one; -1: the shown preset's
+#ifndef NDEBUG
+    // The language each page's fit was checked in: Video settings', Settings', Stereo focus's.
+    const Strings* fitChecked = nullptr;
+    const Strings* settingsFitChecked = nullptr;
+    const Strings* focusFitChecked = nullptr;
+#endif
+  } settingsPages_;
   void layoutFocus();
   // The browser: the sources column, the page's frame and its content.
   void layoutBrowser();
@@ -814,13 +799,9 @@ class Menu {
   double focusBottom(bool advanced, bool check);
   bool groupedPage() const { return pageIs(PageKind::kGrouped); }
   void layoutNavigation();
-  Places places_;
   LibraryIndex* index_ = nullptr;
   std::vector<std::string> indexPins_;  // the pins the index was last given
   void pinsChanged();
-  int placeOffset_ = 0;
-  double navLineY_ = 0;  // the line under the places
-  double stashCardY_ = -1;  // the "Use Stash?" card's top, -1 none (StashPages::layoutCard())
   int placeOf(const std::string& path) const;
   // Edit places (menu_places.cpp): each place with its name, a switch and
   // its moves; or one being renamed, over the keyboard.
@@ -830,7 +811,16 @@ class Menu {
   struct PlaceRename {
     std::string path;  // empty: none is being renamed
     std::string ownName, text;
-  } placeRename_;
+  };
+  // The navigation column's: its places (Edit places changes them, a place
+  // renamed there), how far they are scrolled and where its parts were laid out.
+  struct Navigation {
+    Places places;
+    int placeOffset = 0;
+    double lineY = 0;  // the line under the places
+    double stashCardY = -1;  // the "Use Stash?" card's top, -1 none (StashPages::layoutCard())
+    PlaceRename placeRename;
+  } navigation_;
   void openPlace(const std::string& path);
   void refreshPlaces();
   // Panel backgrounds (MenuFinishes::panel()s at x, y, w, h), their edges
@@ -881,18 +871,28 @@ class Menu {
   // The hovered button's tooltip, if it is on this panel.
   void drawTooltip(cairo_t* cr, int panel, double panelWidth);
   void drawPopups(cairo_t* cr, int panel);
+  // The strip's rows (menu_player.cpp): the top one, the tools and the transport.
+  void layoutStripTop(StripLayout& strip);
   void layoutTools(StripLayout& strip);
+  void layoutTransport(StripLayout& strip);
   // Offline downloads (menu_offline.cpp).
   Offline* offline_ = nullptr;
-  uint64_t offlineGeneration_ = 0;
-  std::string offlineShape_;  // what the downloads were, but for their progress
-  uint64_t offlineShapeGeneration_ = 0;  // ... counted as it changes
   // The download a dialog asks about: the video, and the drives.
   struct OfflineAsk {
     std::string path, oshash, root, other;
     uint64_t size = 0;
     int64_t id = 0;
-  } offlineAsk_;
+  };
+  // What the menu last saw of the downloads, the dialog's, and the Offline
+  // place's own.
+  struct Downloads {
+    uint64_t generation = 0;
+    std::string shape;  // what the downloads were, but for their progress
+    uint64_t shapeGeneration = 0;  // ... counted as it changes
+    OfflineAsk ask;
+    double scroll = 0;        // the Offline place's rows, where it was left
+    double driveColumnW = 0;  // its rows' drive column (layoutOfflinePage())
+  } downloads_;
   void offlineChanged();
   void layoutOfflinePage();
   void drawOfflineHeading(cairo_t* cr);
@@ -988,14 +988,16 @@ class Menu {
   // from (Previous and Next keep it), and left with it in its place.
   // `shuffle`: the player then shuffles that list (MenuCommand::option).
   MenuCommand openVideo(const std::string& path, bool shuffle = false);
-  Page playedFrom_ = Page::Files;
-  std::string opening_;
-  const std::string& playingFile() const { return opening_.empty() ? view_.currentFile : opening_; }
-  double offlineScroll_ = 0;  // the Offline place's rows, where it was left
-  double driveColumnW_ = 0;   // its rows' drive column (layoutOfflinePage())
-  std::string infoText_;  // what is playing, along the strip's top
-  double infoX_ = 0, infoRight_ = 0;  // ... from, to (the frame rate's after it)
-  long clockMinute_ = -1;  // the minute the strip's clock shows
+  // Where the playing video was opened from: the page, the file while it
+  // opens, and for Previous / next the locations of the list it came from
+  // (the Library, Stash's scenes) and the one it is at.
+  struct Played {
+    Page from = Page::Files;
+    std::string opening;
+    std::vector<std::string> list;
+    std::string at;
+  } played_;
+  const std::string& playingFile() const { return played_.opening.empty() ? view_.currentFile : played_.opening; }
   // Height of the strip's seek bar line.
   double seekLineY() const;
   // The pointer on the seek bar, with nothing drawn in front of it there.
@@ -1027,16 +1029,16 @@ class Menu {
   enum class TextTarget { Setup, SmbForm, PlaceName, PresetName, ScriptAddress, Stash, Search };
   TextTarget textTarget() const {
     if (setup_ && setupText()) return TextTarget::Setup;
-    if (smbForm_.kind != SmbForm::Kind::None) return TextTarget::SmbForm;
+    if (network_.form.kind != SmbForm::Kind::None) return TextTarget::SmbForm;
     if (page_ == Page::Places) return TextTarget::PlaceName;
-    if (page_ == Page::VideoSettings && presetName_.open) return TextTarget::PresetName;
-    if (page_ == Page::Settings && scriptAddress_.open) return TextTarget::ScriptAddress;
+    if (page_ == Page::VideoSettings && settingsPages_.presetName.open) return TextTarget::PresetName;
+    if (page_ == Page::Settings && settingsPages_.scriptAddress.open) return TextTarget::ScriptAddress;
     return stashTextPage() ? TextTarget::Stash : TextTarget::Search;
   }
   // Typing into it: the keyboard shows (under the search's results). In
   // setup, only into its own fields.
   bool editingFilter() const {
-    if (setup_) return (smbForm_.kind != SmbForm::Kind::None || setupText()) && editing_;
+    if (setup_) return (network_.form.kind != SmbForm::Kind::None || setupText()) && editing_;
     return editing_ && (textTarget() != TextTarget::Search || page_ == Page::Files ||
                         page_ == Page::Library || page_ == Page::Network);
   }
@@ -1084,8 +1086,6 @@ class Menu {
   // A field pressed: the one typed into puts its cursor where the pointer
   // is; another opens, its cursor there too if it shows the text typed.
   MenuCommand clickField(const Button& b);
-  bool keyboardShown_ = false;
-  double keyboardRect_[4] = {0, 0, 0, 0};  // its panel: x, y, w, h
   // Grouped settings, on the browser's page (menu_widgets.cpp): a titled box,
   // and rows of kSettingRowH in it, a label on the left and the control on
   // the right from x + labelW.
@@ -1165,12 +1165,12 @@ class Menu {
   struct SideColumn {
     double x = 0, y = 0, w = 0, h = 0;  // where it shows
     double position = 0, max = 0;       // how far it is scrolled down, and can be
+    double remainder = 0;  // as the list's, in layout pixels
+    bool moved = false;    // only its position changed since the last redraw
+    double drawn = -1;     // where the texture shows it, -1 = not known
   } side_;
   bool overSide() const;
   void scrollSide(double pixels);
-  double sideRemainder_ = 0;  // as scrollRemainder_, in layout pixels
-  bool sideMoved_ = false;  // only its position changed since the last redraw
-  double drawnSide_ = -1;   // where the texture shows it, -1 = not known
   bool shiftSide();
   bool listDragging() const { return listDrag_.moving || listDrag_.gliding; }
   // Whether the button pressed (-1: none) is on a list's content, not its
@@ -1182,7 +1182,6 @@ class Menu {
   // Scrolls by (fractions of) rows as scroll(), or by layout pixels.
   void scrollRows(double rows);
   void scrollPixels(double pixels);
-  double listBottom_ = 0;  // the list's viewport ends here (rows below are cut off)
   bool listColumns_ = false;  // the list shows the folder's Size and Date modified columns
   void layoutListHeader(double x0, double rowW);
   // A list row's parts: the thumbnail (or icon) box, then the name, then the
@@ -1291,22 +1290,11 @@ class Menu {
     std::string title;   // Stash's, while shown instead of the file's name
     const std::string& name() const { return title.empty() ? entry.name : title; }
   };
-  std::vector<LibraryItem> libraryItems_;  // sorted
-  std::string libraryFilter_;
-  SortMode librarySort_ = SortMode::AddedNewest;  // newest additions first
-  bool libraryDescending_ = true;
-  int libraryShow_ = 0;  // Strings::libraryShows: all, not played, played, rated
-  int libraryCounts_[4] = {};  // ... how many of each the search finds
-  ListPlace libraryPlace_;  // where it was left
   std::vector<std::string> libraryPaths();  // the rows' paths, as listed
-  uint64_t libraryGeneration_ = 0;
-  std::string libraryStatus_;  // the heading's status as drawn
-  // The catalog the scenes are from (none: Stash off or not synced yet).
-  std::weak_ptr<const StashCatalog> libraryCatalog_;
   bool noPins() const;
   // Nothing to list, not even Stash's scenes: the page says how to pin a
   // folder, or how Stash's first sync is getting on.
-  bool libraryPinHelp() const { return noPins() && libraryItems_.empty(); }
+  bool libraryPinHelp() const { return noPins() && libraryPage_.items.empty(); }
   // Stash's first sync, while there is no catalog yet: under way, or failed
   // (a later one failing keeps the catalog there was, and says so in Settings).
   enum class FirstSync { None, Running, Failed };
@@ -1326,8 +1314,6 @@ class Menu {
   void drawLibraryCentre(cairo_t* cr);
   void updateLibraryFirstSync();
   std::string allSetText() const;  // the banner's, before "Change it any time in"
-  FirstSync libraryFirstSync_ = FirstSync::None;  // as drawn
-  std::string libraryFirstSyncText_;
   void loadLibrary();
   LibraryItem libraryItem(const std::string& path, const LibraryIndex::File& file) const;
   const std::shared_ptr<const StashCatalog>& stashCatalog() const;
@@ -1345,20 +1331,32 @@ class Menu {
   // What the list shows, kept between redraws (a redraw while scrolling would
   // otherwise make all of them again); remade when stale.
   const std::vector<ListItem>& libraryListItems();
-  std::vector<ListItem> libraryList_;
-  bool libraryListStale_ = true;
-  std::string libraryListPlaying_;  // the playing file it marks
   int libraryMatchCount() const;
+  // The Library page's: its videos and how they are listed, where it was
+  // left, and what it last showed.
+  struct LibraryPage {
+    std::vector<LibraryItem> items;  // sorted
+    std::string filter;
+    SortMode sort = SortMode::AddedNewest;  // newest additions first
+    bool descending = true;
+    int show = 0;  // Strings::libraryShows: all, not played, played, rated
+    int counts[4] = {};  // ... how many of each the search finds
+    ListPlace place;  // where it was left
+    uint64_t generation = 0;
+    std::string status;  // the heading's status as drawn
+    // The catalog the scenes are from (none: Stash off or not synced yet).
+    std::weak_ptr<const StashCatalog> catalog;
+    FirstSync firstSync = FirstSync::None;  // as drawn
+    std::string firstSyncText;
+    std::vector<ListItem> list;  // libraryListItems()
+    bool listStale = true;
+    std::string listPlaying;  // the playing file it marks
+  } libraryPage_;
   void layoutLibraryPage();
   void drawLibraryHeading(cairo_t* cr);
-  // Previous / next: the locations of the list a video was opened from (the
-  // Library, Stash's scenes), and the one it is at.
-  std::vector<std::string> playList_;
-  std::string playAt_;
   // Sorts by a field of Strings::sortFields: the one sorted by turns around,
   // another keeps the direction.
   void sortByField(int field);
-  bool sortDescending_ = false;  // the direction last chosen
   // Library orders: the files by their records (the listing has them by name).
   void arrangeByRecords();
   // Where the browser was in a folder, to return there (this session only).
@@ -1368,17 +1366,13 @@ class Menu {
     double rowsFromTop = 0;
     int index = -1;  // ... its index: the item there then takes its place if it is gone
   };
-  std::map<std::string, Browsing> browsing_;  // by folder
   bool listShowsFolder_ = false;  // the last layout listed the folder
   void saveBrowsing();
-  Browsing returnTo_;        // where openDirectory() returns to, once the folder is read
-  std::string revealPath_;   // ... and what it then scrolls into view
   void folderRead();
   int folderColumns() const;  // of the folder's list now: 1, or the thumbnails' columns
   int folderRows() const;     // ... and its rows shown at once
   std::vector<std::string> listedPaths() const;
   bool listAnchor(std::string& path, double& rowsFromTop, int* index = nullptr) const;
-  std::string lastAnchor_;  // the item scrollToItem() last brought into view
   void scrollToItem(const std::string& path, double rowsFromTop, int index = -1);
   void scrollIntoView(const std::string& path);
   void showPage(Page page);
@@ -1539,9 +1533,6 @@ class Menu {
   void drawBrowserPart(int y0, int y1, int x0, int x1);
   // Scrolling: the list's new position, in rows, and whether only that changed.
   void setListPosition(double position);
-  bool listMoved_ = false;
-  double drawnScroll_ = -1;     // where the browser's texture shows the list, -1 = not known
-  double scrollRemainder_ = 0;  // scrolling of less than a texture pixel, kept for the next
   bool shiftList();
 
   MenuView view_;
@@ -1599,9 +1590,6 @@ class Menu {
   static constexpr int kStripParts = 4;
   int stripParts_ = 0;
   double stripPart_[kStripParts][4] = {};  // x0, y0, x1, y1
-  // The second ticking over while playing, and the clock's minute: only
-  // what shows them is redrawn (tickBoxes()).
-  bool bandTicked_ = false, clockTicked_ = false;
   // What of the band moves as a video plays (drawMainPage()): computed, and
   // as last drawn.
   struct BandMarks {
@@ -1614,8 +1602,21 @@ class Menu {
     double titleRight = 0;  // the title's room ends here
   };
   BandMarks bandMarks() const;
-  BandMarks bandDrawn_;
-  bool bandDrawnKnown_ = false;
+  // The strip's: what its top row shows of what is playing, and where; the
+  // clock's minute and the band, as drawn; its volume or seek bar dragged.
+  struct Strip {
+    std::string infoText;  // what is playing, along the strip's top
+    double infoX = 0, infoRight = 0;  // ... from, to (the frame rate's after it)
+    long clockMinute = -1;  // the minute the strip's clock shows
+    // The second ticking over while playing, and the clock's minute: only
+    // what shows them is redrawn (tickBoxes()).
+    bool bandTicked = false, clockTicked = false;
+    BandMarks bandDrawn;
+    bool bandDrawnKnown = false;
+    bool draggingVolume = false;
+    bool draggingSeek = false;  // the seek bar follows the pointer while the trigger is held
+    double lastScrub = -1;      // seconds last sent while dragging it
+  } strip_;
   void tickBoxes(bool band, bool clock);
   // What the strip's laid-out controls show (redraw() checks that the
   // second ticking over changed none of them).
@@ -1644,9 +1645,6 @@ class Menu {
   void feelTrack(double value, double lo, double hi, bool detented, double detent,
                  const std::function<double(double)>& fraction);
   static double sliderFraction(const Button& slider, double value);
-  bool draggingVolume_ = false;
-  bool draggingSeek_ = false;  // the seek bar follows the pointer while the trigger is held
-  double lastScrub_ = -1;      // seconds last sent while dragging it
   double seekAtPointer() const;  // seconds under the pointer on the seek bar
   Dropdown dropdown_ = Dropdown::None;
   bool thumbnailsPending_ = false;  // new thumbnails wait for the next redraw
@@ -1655,10 +1653,6 @@ class Menu {
   FolderMemory* folders_ = nullptr;
   void rememberFolderView();
   Library* library_ = nullptr;
-  // The library's records of listing_'s entries, one each, and the
-  // library's generation they are from.
-  std::vector<VideoRecord> records_;
-  uint64_t recordsGeneration_ = 0;
   void lookUpRecords();
   void recordsChanged(const std::vector<VideoRecord>& before);
   VideoRecord current_;  // the playing file's record, for the strip's stars ...
@@ -1712,35 +1706,57 @@ class Menu {
   DeleteInfo deleteInfo_;  // the delete dialog's
 
   Page page_ = Page::Main;
-  FileKind fileKind_ = FileKind::Video;
-  std::string startDirectory_;
-  FolderListing listing_;
-  // The folder search: only entries whose names hold all its words are listed
-  // (empty = all). Opening another folder clears it.
-  std::string fileFilter_;
-  SortMode sortMode_ = SortMode::NameUp;
+  // The Files page's: the folder listed and how, where it was in each
+  // folder, and what it last showed.
+  struct FilesPage {
+    FileKind kind = FileKind::Video;
+    std::string startDirectory;
+    FolderListing listing;
+    // The folder search: only entries whose names hold all its words are listed
+    // (empty = all). Opening another folder clears it.
+    std::string filter;
+    SortMode sort = SortMode::NameUp;
+    bool descending = false;  // the direction last chosen (sortByField())
+    std::map<std::string, Browsing> browsing;  // by folder
+    Browsing returnTo;        // where openDirectory() returns to, once the folder is read
+    std::string revealPath;   // ... and what it then scrolls into view
+    std::string lastAnchor;  // the item scrollToItem() last brought into view
+    // The library's records of listing's entries, one each, and the
+    // library's generation they are from.
+    std::vector<VideoRecord> records;
+    uint64_t recordsGeneration = 0;
+    double headingRight = 0;  // where the location ends
+  } files_;
   bool gallery_ = false;  // file browser as a grid of large thumbnails
-  int scrollOffset_ = 0;
-  double scrollFraction_ = 0;  // smooth scrolling: part of a row scrolled past scrollOffset_
-  double listTop_ = 0;         // y of the list's first visible row
+  // The list page's list as laid out and scrolled. One list shows at a
+  // time; each page keeps where its own was left.
+  struct ListViewport {
+    int offset = 0;
+    double fraction = 0;  // smooth scrolling: part of a row scrolled past offset
+    double top = 0;       // y of the list's first visible row
+    double bottom = 0;    // the list's viewport ends here (rows below are cut off)
+    int count = 0;        // items (gallery: grid rows) on the current list page, for scrolling
+    int rows = 9;         // rows the current list page shows at once
+    double rowHeight = 58;
+    double right = 1560;  // right edge of the list (left of the scroll bar)
+    double left = 0;      // ... and its left edge on the browser
+    bool moved = false;   // only its position changed since the last redraw
+    double drawn = -1;    // where the browser's texture shows the list, -1 = not known
+    double remainder = 0; // scrolling of less than a texture pixel, kept for the next
+  } list_;
   // Clamps the scroll position to `count` rows of which `rows` fit, and
   // returns the first and last (exclusive) row to lay out.
   void clampScroll(int count, int rows, int& first, int& end);
   // A grid's cells, `columns` across from x0 to the scroll bar, `gap` apart:
   // their width.
   double gridCellWidth(double x0, int columns, double gap) const;
-  // Its `count` cells in rows rowH apart from listTop_, `rows` on screen (0:
-  // as many as fit above listBottom_, at least one), scrolling by rows: the
+  // Its `count` cells in rows rowH apart from list_.top, `rows` on screen (0:
+  // as many as fit above list_.bottom, at least one), scrolling by rows: the
   // first and last (exclusive) cell to lay out.
   void gridRows(int count, int columns, double rowH, int& first, int& end, int rows = 0);
   // A list of rows (not cards) with the keyboard up under it ends on its
-  // last whole row (visibleRows_ of rowHeight_ from listTop_).
+  // last whole row (list_.rows of list_.rowHeight from list_.top).
   void endOnWholeRow();
-  int listCount_ = 0;     // items (gallery: grid rows) on the current list page, for scrolling
-  int visibleRows_ = 9;   // rows the current list page shows at once
-  double rowHeight_ = 58;
-  double listRight_ = 1560;  // right edge of the list (left of the scroll bar)
-  double listLeft_ = 0;      // ... and its left edge on the browser
 
   // The Network page and the SMB and SFTP forms (menu_network.cpp).
   // A sign-in on a thread of its own, or for SFTP the connect job (probe,
@@ -1779,16 +1795,21 @@ class Menu {
     std::string error, hint;  // hint: dim, under the error
     std::shared_ptr<RemoteJob> signing;  // under way
   };
-  SmbForm smbForm_;
-  SmbDiscovery discovery_;
-  std::map<std::string, std::string> sftpUsers_;  // the user name last tried on each SFTP server
+  // The Network page's: the form shown in its place (setup's forms too),
+  // the servers found on the network, and the user name last tried on each
+  // SFTP server.
+  struct NetworkPage {
+    SmbForm form;
+    SmbDiscovery discovery;
+    std::map<std::string, std::string> sftpUsers;
+  } network_;
   void showNetwork();
   std::vector<remote::Server> networkServers() const;
   void openServer(const remote::Server& server);
   void layoutNetworkPage();
   const char* networkState() const;
   // The Network page's list of servers (not a form in its place).
-  bool networkList() const { return page_ == Page::Network && smbForm_.kind == SmbForm::Kind::None; }
+  bool networkList() const { return page_ == Page::Network && network_.form.kind == SmbForm::Kind::None; }
   void openSmbForm(SmbForm::Kind kind, const std::string& root);
   void layoutSmbForm();
   void layoutSftpForm(GroupLayout& form);
@@ -1796,7 +1817,7 @@ class Menu {
   std::vector<int> smbFields() const;
   MenuCommand submitSmbForm();
   void typedIntoSmbForm(const std::string& text);
-  // smbForm_'s SFTP server, its user (text[1]): the connect job; after a
+  // network_.form's SFTP server, its user (text[1]): the connect job; after a
   // key changed, trusting `trust` first. A sign-in with its fields.
   void connectSftp(const std::string& trust = "");
   void signInSftp(const remote::Login& login, bool remember);
@@ -1849,13 +1870,7 @@ class Menu {
   MenuCommand stashFolders(const std::vector<StashFolderMap>& folders) const;
   void chooseStashFolder(const std::string& folder);
   double layoutStashFolderChoice();
-  double headingRight_ = 0;  // where the Files page's location ends
 
-  bool shift_ = false;  // the on-screen keyboard's Shift
-  bool capsLock_ = false;  // ... tapped twice: it stays on
-  double shiftAt_ = 0;     // when Shift was last tapped
-  bool symbols_ = false;  // ... and its symbols instead of the letters
-  std::string keyboardLayout_, keyboardOther_;  // see setKeyboardLayout()
   // The key pressed, lit while the trigger is held on it (Backspace repeats).
   // Held on, a letter shows its accents and the layout key all layouts.
   struct KeyDown {
@@ -1866,7 +1881,7 @@ class Menu {
     std::string before;  // ... and the text before it
     size_t cursor = 0;   // ... and where in it
     bool done = false;   // its hold (or the layout key's tap) acted on
-  } keyDown_;
+  };
   // A row of keys over the one held: its accents, or the layouts.
   struct KeyPopup {
     bool open = false;
@@ -1876,7 +1891,20 @@ class Menu {
     std::string before, after;      // Accents: the text before and after the letter
     size_t at = 0;                  // ... and where it went in
     bool dragging = false;          // opened by holding: closes when let go
-  } keyPopup_;
+  };
+  // The on-screen keyboard's: shown, and where; its modes and layouts; the
+  // key held, and the keys over it.
+  struct Keyboard {
+    bool shown = false;
+    double rect[4] = {0, 0, 0, 0};  // its panel: x, y, w, h
+    bool shift = false;
+    bool capsLock = false;  // ... tapped twice: it stays on
+    double shiftAt = 0;     // when Shift was last tapped
+    bool symbols = false;  // ... and its symbols instead of the letters
+    std::string layout, other;  // see setKeyboardLayout()
+    KeyDown keyDown;
+    KeyPopup popup;
+  } keyboard_;
   void keyHeld(bool held);
   void openKeyPopup(bool accents, bool dragging);
   void closeKeyPopup();
@@ -1987,11 +2015,6 @@ class Menu {
                        bool rightSorts = true) const;
   // The list's columns (listColumns()) in this language, measured once.
   const ListFit& listFit() const;
-  struct Apart {
-    const Strings* strings = nullptr;
-    std::array<double, 3> apart{};
-  };
-  mutable Apart sceneApart_;
   struct {
     const Strings* strings = nullptr;
     ListFit fit;
@@ -2015,7 +2038,13 @@ class Menu {
   // Stash (docs/stash.md): its section in the navigation, its pages and the
   // Settings group are laid out and drawn by StashPages (menu_stash.h), only
   // while stash_ is set; stashMenu_ keeps their state for the session.
-  friend struct StashPages;
+  // StashPages and SetupPages are nested, as the menu's parts (menu_parts.h)
+  // are: the menu's own code, in files of their own.
+ public:
+  struct StashPages;
+  struct SetupPages;
+
+ private:
   Stash* stash_ = nullptr;
   std::unique_ptr<StashMenu> stashMenu_;
   // Stash's text fields: the scenes' and its lists' searches, a pinned
@@ -2030,7 +2059,6 @@ class Menu {
 
   // First-run setup's pages, laid out and drawn by SetupPages (menu_setup.h)
   // while setup_ is set; the Stash step's field typed into, if any.
-  friend struct SetupPages;
   std::unique_ptr<SetupMenu> setup_;
   std::string* setupText() const;
   std::unique_ptr<MenuHints> hints_;  // once setHintBindings() or drawHint() is called
@@ -2038,9 +2066,14 @@ class Menu {
   // controllers shown, its parts as laid out, the chooser and the notice.
   std::unique_ptr<ControlsPage> controls_;
   bool controlsShown() const {
-    return page_ == Page::Settings && settingsSection_ == SettingsSection::Controls;
+    return page_ == Page::Settings && settingsPages_.section == SettingsSection::Controls;
   }
   void layoutControls(PageLayout& page);
+  // Its parts: the controls' labels from `top` to `bottom`, the notice
+  // after a change, and the well that switches what the labels show.
+  void layoutControlLabels(double top, double bottom);
+  void layoutControlsNotice(bool laid, double top, double bottom, size_t firstButton);
+  void layoutControlsWell(bool combos, bool gestures, double bottom);
   void layoutControlsDialog();
   void drawControls(cairo_t* cr);
   void drawControlsDialog(cairo_t* cr);
@@ -2050,6 +2083,8 @@ class Menu {
   // (both steps), and while it waits for buttons, what the hands hold.
   void layoutGestureList(double top);
   void layoutGestureEditor();
+  void layoutGestureRecording(DialogLayout& dialog);  // its first step
+  void layoutGestureValues(DialogLayout& dialog);     // its second
   void drawGestureEditor(cairo_t* cr);
   // A gesture's row (the part's index) drawn.
   void gestureRow(cairo_t* cr, int part, const double ink[4]) const;

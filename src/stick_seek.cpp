@@ -64,7 +64,7 @@ bool StickSeek::update(const ControllerState& input, const Frame& frame) {
     heldSeekPaused = !p.paused;
     if (heldSeekPaused) player.command("set pause yes");
     heldSeekBar = !panel.open && frame.headValid;
-    if (heldSeekBar) panel.placeInFrontOf(frame.headPos, frame.menuAt);
+    if (heldSeekBar) panel.placeInFrontOf(*frame.headPos, *frame.menuAt);
     heldSeekPicture = heldSeekFrom;
     heldSeekPictureAt = now;
     heldSeekTens = std::floor(std::abs(heldSeek.distance()) / 10);

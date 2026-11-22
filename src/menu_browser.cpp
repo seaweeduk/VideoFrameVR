@@ -22,13 +22,13 @@ void Menu::showFileBrowser() { openFiles(FileKind::Video); }
 void Menu::openFiles(FileKind kind) {
   refreshPlaces();
   const bool returning = page_ != Page::Main && !directory().empty();
-  fileKind_ = kind;
+  files_.kind = kind;
   // Start where the last session left off, else next to the current video;
   // later reopen where we left off.
   std::string dir = directory();
   std::vector<std::string> fallbacks;
   if (dir.empty()) {
-    if (!startDirectory_.empty()) fallbacks.push_back(startDirectory_);
+    if (!files_.startDirectory.empty()) fallbacks.push_back(files_.startDirectory);
     if (remote::isRemote(view_.currentFile))
       fallbacks.push_back(remote::parent(view_.currentFile));
     else if (!view_.currentFile.empty() && view_.currentFile.find("://") == std::string::npos)
@@ -42,15 +42,15 @@ void Menu::openFiles(FileKind kind) {
   if (returning) return;
   // Back from playing: the browser is where it was, with the playing file
   // (maybe a later one, by next) in view.
-  if (listing_.reading())
-    revealPath_ = view_.currentFile;
+  if (files_.listing.reading())
+    files_.revealPath = view_.currentFile;
   else
     scrollIntoView(view_.currentFile);
 }
 
 void Menu::rememberFolderView() {
   if (folders_ && !directory().empty())
-    folders_->set(directory(), {static_cast<int>(sortMode_), gallery_});
+    folders_->set(directory(), {static_cast<int>(files_.sort), gallery_});
 }
 
 // Reads the folder and returns to where the browser was in it this session
@@ -59,7 +59,7 @@ void Menu::openDirectory(const std::string& dir, const std::vector<std::string>&
   if (page_ == Page::Files) saveBrowsing();
   if (dir != directory()) {
     editing_ = false;
-    smbForm_ = {};
+    network_.form = {};
     stashFolders_.notThere = false;
   }
   // The folder's own order, if remembered (else as before). List or gallery
@@ -67,22 +67,22 @@ void Menu::openDirectory(const std::string& dir, const std::vector<std::string>&
   FolderView view;
   if (folders_ && folders_->get(dir, view) && view.sort >= 0 &&
       view.sort < static_cast<int>(SortMode::kCount)) {
-    sortMode_ = static_cast<SortMode>(view.sort);
-    sortDescending_ = sortMode_ == kFieldOrders[fieldOf(sortMode_)].down;
+    files_.sort = static_cast<SortMode>(view.sort);
+    files_.descending = files_.sort == kFieldOrders[fieldOf(files_.sort)].down;
   }
   const bool sameFolder = dir == directory();
-  listing_.read(dir, fileKind_ == FileKind::Subtitle, sortMode_, fallbacks);
+  files_.listing.read(dir, files_.kind == FileKind::Subtitle, files_.sort, fallbacks);
   lookUpRecords();
   arrangeByRecords();
-  const auto found = browsing_.find(dir);
-  returnTo_ = found != browsing_.end() && fileKind_ == FileKind::Video ? found->second : Browsing{};
-  fileFilter_ = returnTo_.filter;
-  revealPath_.clear();
-  if (!listing_.reading()) {
-    scrollToItem(returnTo_.anchor, returnTo_.rowsFromTop, returnTo_.index);
+  const auto found = files_.browsing.find(dir);
+  files_.returnTo = found != files_.browsing.end() && files_.kind == FileKind::Video ? found->second : Browsing{};
+  files_.filter = files_.returnTo.filter;
+  files_.revealPath.clear();
+  if (!files_.listing.reading()) {
+    scrollToItem(files_.returnTo.anchor, files_.returnTo.rowsFromTop, files_.returnTo.index);
   } else if (!sameFolder) {
-    scrollOffset_ = 0;  // the place is restored when the folder has been read
-    scrollFraction_ = 0;
+    list_.offset = 0;  // the place is restored when the folder has been read
+    list_.fraction = 0;
   }
   dirty_ = true;
 }
@@ -90,17 +90,17 @@ void Menu::openDirectory(const std::string& dir, const std::vector<std::string>&
 // A folder read in the background has arrived: back to the place in it.
 void Menu::folderRead() {
   if (page_ != Page::Files) return;
-  scrollToItem(returnTo_.anchor, returnTo_.rowsFromTop, returnTo_.index);
-  if (!revealPath_.empty()) scrollIntoView(revealPath_);
-  revealPath_.clear();
+  scrollToItem(files_.returnTo.anchor, files_.returnTo.rowsFromTop, files_.returnTo.index);
+  if (!files_.revealPath.empty()) scrollIntoView(files_.revealPath);
+  files_.revealPath.clear();
   dirty_ = true;
 }
 
 // Also what makes the library notice moved and changed files in the folder.
 void Menu::lookUpRecords() {
   if (!library_) return;
-  records_ = library_->lookup(listing_.entries());
-  recordsGeneration_ = library_->generation();
+  files_.records = library_->lookup(files_.listing.entries());
+  files_.recordsGeneration = library_->generation();
 }
 
 // Only the rows or cards shown whose record changed (what they show of it:
@@ -108,13 +108,13 @@ void Menu::lookUpRecords() {
 // hides the highlight and ignores clicks until it's done, and a folder's
 // videos found at a new place change one after another.
 void Menu::recordsChanged(const std::vector<VideoRecord>& before) {
-  const std::vector<FolderListing::Entry>& entries = listing_.entries();
-  if (before.size() != records_.size() || records_.size() != entries.size()) {
-    browserChanged(listTop_ - 4, listBottom_ + 4);
+  const std::vector<FolderListing::Entry>& entries = files_.listing.entries();
+  if (before.size() != files_.records.size() || files_.records.size() != entries.size()) {
+    browserChanged(list_.top - 4, list_.bottom + 4);
     return;
   }
-  for (size_t i = 0; i < records_.size(); ++i) {
-    const VideoRecord &a = before[i], &b = records_[i];
+  for (size_t i = 0; i < files_.records.size(); ++i) {
+    const VideoRecord &a = before[i], &b = files_.records[i];
     if (a.rating == b.rating && a.playCount == b.playCount && a.lastPlayedAt == b.lastPlayedAt &&
         a.durationSeconds == b.durationSeconds)
       continue;
@@ -137,17 +137,17 @@ void Menu::recordsChanged(const std::vector<VideoRecord>& before) {
 // ties by name. Only when the folder is read or the order chosen: a rating
 // changed meanwhile doesn't move its row away from the pointer.
 void Menu::arrangeByRecords() {
-  if (stashCovers_ && fieldOf(sortMode_) == kByName) {  // by what is shown: Stash's titles
+  if (stashCovers_ && fieldOf(files_.sort) == kByName) {  // by what is shown: Stash's titles
     arrangeByTitles();
     return;
   }
-  const std::vector<FolderListing::Entry>& entries = listing_.entries();
-  if (!FolderListing::byLibrary(sortMode_) || fileKind_ != FileKind::Video ||
-      records_.size() != entries.size())
+  const std::vector<FolderListing::Entry>& entries = files_.listing.entries();
+  if (!FolderListing::byLibrary(files_.sort) || files_.kind != FileKind::Video ||
+      files_.records.size() != entries.size())
     return;
-  const int field = fieldOf(sortMode_);
-  const bool down = sortMode_ == kFieldOrders[field].down;
-  auto key = [&](size_t i) { return recordKey(field, records_[i], 0); };
+  const int field = fieldOf(files_.sort);
+  const bool down = files_.sort == kFieldOrders[field].down;
+  auto key = [&](size_t i) { return recordKey(field, files_.records[i], 0); };
   std::vector<size_t> order(entries.size());
   std::iota(order.begin(), order.end(), 0);
   // The listing comes by name, folders first: a stable sort keeps that for ties.
@@ -158,11 +158,11 @@ void Menu::arrangeByRecords() {
     if ((ka > 0) != (kb > 0)) return ka > 0;
     return down ? ka > kb : ka < kb;
   });
-  listing_.arrange(order);
+  files_.listing.arrange(order);
   std::vector<VideoRecord> records;
   records.reserve(order.size());
-  for (const size_t i : order) records.push_back(records_[i]);
-  records_ = std::move(records);
+  for (const size_t i : order) records.push_back(files_.records[i]);
+  files_.records = std::move(records);
 }
 
 void Menu::refreshDirectory() {
@@ -171,16 +171,16 @@ void Menu::refreshDirectory() {
 
 // Remembers the folder's search and the item in view, if it is listed.
 void Menu::saveBrowsing() {
-  if (!listShowsFolder_ || directory().empty() || fileKind_ != FileKind::Video ||
-      listing_.reading())
+  if (!listShowsFolder_ || directory().empty() || files_.kind != FileKind::Video ||
+      files_.listing.reading())
     return;
-  Browsing& b = browsing_[directory()];
-  b.filter = fileFilter_;
+  Browsing& b = files_.browsing[directory()];
+  b.filter = files_.filter;
   if (!listAnchor(b.anchor, b.rowsFromTop, &b.index)) b.anchor.clear();
 }
 
 int Menu::folderColumns() const {
-  return gallery_ && fileKind_ == FileKind::Video ? kGalleryColumns : 1;
+  return gallery_ && files_.kind == FileKind::Video ? kGalleryColumns : 1;
 }
 
 int Menu::folderRows() const {
@@ -191,8 +191,8 @@ int Menu::folderRows() const {
 // The paths the folder's list shows, in order.
 std::vector<std::string> Menu::listedPaths() const {
   std::vector<std::string> paths;
-  for (const FolderListing::Entry& entry : listing_.entries())
-    if (matchesFilter(entry, fileFilter_)) paths.push_back(entry.path);
+  for (const FolderListing::Entry& entry : files_.listing.entries())
+    if (matchesFilter(entry, files_.filter)) paths.push_back(entry.path);
   return paths;
 }
 
@@ -202,7 +202,7 @@ bool Menu::matchesFilter(const FolderListing::Entry& entry, const std::string& f
 
 int Menu::folderMatchCount() const {
   int n = 0;
-  for (const FolderListing::Entry& entry : listing_.entries()) n += matchesFilter(entry, fileFilter_);
+  for (const FolderListing::Entry& entry : files_.listing.entries()) n += matchesFilter(entry, files_.filter);
   return n;
 }
 
@@ -214,13 +214,13 @@ bool Menu::listAnchor(std::string& path, double& rowsFromTop, int* index) const 
   if (!listShowsFolder_) return false;
   const std::vector<std::string> paths = listedPaths();
   const int columns = folderColumns();
-  const double top = scrollOffset_ + scrollFraction_;
+  const double top = list_.offset + list_.fraction;
   int first = -1, last = -1;
   for (int i = 0; i < static_cast<int>(paths.size()); ++i) {
     const double row = i / columns;
     if (row < top - 1e-6 || row > top + folderRows() - 1 + 1e-6) continue;
     if (first < 0) first = i;
-    if (paths[i] == lastAnchor_) last = i;
+    if (paths[i] == files_.lastAnchor) last = i;
     if (paths[i] == playingFile()) {
       last = i;
       break;
@@ -238,7 +238,7 @@ bool Menu::listAnchor(std::string& path, double& rowsFromTop, int* index) const 
 // list allows); if it is not listed, the one now at `index` (none: to the
 // top).
 void Menu::scrollToItem(const std::string& path, double rowsFromTop, int index) {
-  lastAnchor_ = path;
+  files_.lastAnchor = path;
   const std::vector<std::string> paths = listedPaths();
   const auto found = std::find(paths.begin(), paths.end(), path);
   const int i = found != paths.end() ? static_cast<int>(found - paths.begin())
@@ -250,8 +250,8 @@ void Menu::scrollToItem(const std::string& path, double rowsFromTop, int index) 
     const double row = i / columns;
     position = std::clamp(row - rowsFromTop, 0.0, std::max(0.0, rows - folderRows() + 0.0));
   }
-  scrollOffset_ = static_cast<int>(std::floor(position));
-  scrollFraction_ = position - scrollOffset_;
+  list_.offset = static_cast<int>(std::floor(position));
+  list_.fraction = position - list_.offset;
 }
 
 // Scrolls as little as needed to show the item whole, if it is listed.
@@ -260,7 +260,7 @@ void Menu::scrollIntoView(const std::string& path) {
   const auto found = std::find(paths.begin(), paths.end(), path);
   if (found == paths.end()) return;
   const double row = (found - paths.begin()) / folderColumns();
-  const double top = scrollOffset_ + scrollFraction_;
+  const double top = list_.offset + list_.fraction;
   if (row < top)
     scrollToItem(path, 0);
   else if (row > top + folderRows() - 1)
@@ -269,10 +269,10 @@ void Menu::scrollIntoView(const std::string& path) {
 
 ListPlace Menu::listPlace(const std::vector<std::string>& paths, int columns) const {
   ListPlace place;
-  const double top = scrollOffset_ + scrollFraction_;
+  const double top = list_.offset + list_.fraction;
   for (int i = 0; i < static_cast<int>(paths.size()); ++i) {
     const double row = i / columns;
-    if (row < top - 1e-6 || row > top + visibleRows_ - 1 + 1e-6) continue;
+    if (row < top - 1e-6 || row > top + list_.rows - 1 + 1e-6) continue;
     const bool playing = paths[i] == playingFile();
     if (place.path.empty() || playing) place = {paths[i], i, row - top};
     if (playing) break;
@@ -286,8 +286,8 @@ void Menu::scrollToPlace(const ListPlace& place, const std::vector<std::string>&
   const auto found = std::find(paths.begin(), paths.end(), place.path);
   const int i = found != paths.end() ? static_cast<int>(found - paths.begin()) : place.index;
   const double position = std::max(0.0, i / columns - place.rowsFromTop);
-  scrollOffset_ = static_cast<int>(std::floor(position));
-  scrollFraction_ = position - scrollOffset_;
+  list_.offset = static_cast<int>(std::floor(position));
+  list_.fraction = position - list_.offset;
 }
 
 // A folder row: opens the folder.
@@ -305,37 +305,37 @@ Menu::ListItem Menu::folderItem(const std::string& label, const std::string& pat
 Menu::ListItem Menu::fileItem(const std::string& label, const std::string& path) {
   ListItem item{label, path == view_.currentFile, nullptr};
   item.action = [this, path] {
-    if (fileKind_ == FileKind::Video) return openVideo(path);
+    if (files_.kind == FileKind::Video) return openVideo(path);
     MenuCommand c;
     c.path = path;
     c.type = MenuCommand::LoadSubtitle;
     showPage(Page::Main);
     return c;
   };
-  if (fileKind_ == FileKind::Video) item.thumbPath = path;
+  if (files_.kind == FileKind::Video) item.thumbPath = path;
   return item;
 }
 
 std::vector<Menu::ListItem> Menu::fileItems() {
-  const std::vector<FolderListing::Entry>& entries = listing_.entries();
+  const std::vector<FolderListing::Entry>& entries = files_.listing.entries();
   std::vector<size_t> matches;
   for (size_t i = 0; i < entries.size(); ++i)
-    if (matchesFilter(entries[i], fileFilter_)) matches.push_back(i);
+    if (matchesFilter(entries[i], files_.filter)) matches.push_back(i);
   const int columns = folderColumns(), rows = folderRows();
-  rowHeight_ = columns > 1 ? kGalleryRowH : kFileRowH;
+  list_.rowHeight = columns > 1 ? kGalleryRowH : kFileRowH;
   int first, end;
   clampScroll((static_cast<int>(matches.size()) + columns - 1) / columns, rows, first, end);
   first *= columns;
   end *= columns;
   std::vector<ListItem> items(matches.size());
-  const bool rated = fileKind_ == FileKind::Video && library_ && library_->available() &&
-                     records_.size() == entries.size();
+  const bool rated = files_.kind == FileKind::Video && library_ && library_->available() &&
+                     files_.records.size() == entries.size();
   for (size_t n = 0; n < matches.size(); ++n) {
     const size_t i = matches[n];
     const FolderListing::Entry& entry = entries[i];
     // Offscreen entries need only their thumbnail path for prefetching.
     if (static_cast<int>(n) < first || static_cast<int>(n) >= end) {
-      if (!entry.directory && fileKind_ == FileKind::Video) items[n].thumbPath = entry.path;
+      if (!entry.directory && files_.kind == FileKind::Video) items[n].thumbPath = entry.path;
       continue;
     }
     if (entry.directory) {
@@ -346,14 +346,14 @@ std::vector<Menu::ListItem> Menu::fileItems() {
     item.size = sizeText(entry.size);
     item.date = dayText(entry.modified);
     if (rated && isVideoFile(entry.path)) {
-      // What the library knows of it (records_, in memory): no file is read.
-      const VideoRecord& r = records_[i];
+      // What the library knows of it (files_.records, in memory): no file is read.
+      const VideoRecord& r = files_.records[i];
       item.ratingPath = entry.path;
       item.rating = r.rating;
       if (r.playCount > 0) item.plays = stashNumber(r.playCount);
       if (r.durationSeconds > 0) item.length = static_cast<int>(r.durationSeconds);
       // Sorted by when they were played, the date shown is that.
-      if (fieldOf(sortMode_) == kByPlayed) item.date = dayText(r.lastPlayedAt);
+      if (fieldOf(files_.sort) == kByPlayed) item.date = dayText(r.lastPlayedAt);
     }
     items[n] = std::move(item);
   }
@@ -362,47 +362,47 @@ std::vector<Menu::ListItem> Menu::fileItems() {
 
 void Menu::clampScroll(int count, int rows, int& first, int& end) {
   const int maxOffset = std::max(0, count - rows);
-  scrollOffset_ = std::clamp(scrollOffset_, 0, maxOffset);
-  if (scrollOffset_ >= maxOffset) scrollFraction_ = 0;
-  first = scrollOffset_;
-  // And those peeking in at the bottom (cut off at listBottom_), at least one.
-  const double shown = rowHeight_ > 0 ? std::ceil((listBottom_ - listTop_) / rowHeight_) : 0;
-  end = std::min(count, scrollOffset_ + std::max(rows, static_cast<int>(shown)) + 1);
+  list_.offset = std::clamp(list_.offset, 0, maxOffset);
+  if (list_.offset >= maxOffset) list_.fraction = 0;
+  first = list_.offset;
+  // And those peeking in at the bottom (cut off at list_.bottom), at least one.
+  const double shown = list_.rowHeight > 0 ? std::ceil((list_.bottom - list_.top) / list_.rowHeight) : 0;
+  end = std::min(count, list_.offset + std::max(rows, static_cast<int>(shown)) + 1);
 }
 
 double Menu::gridCellWidth(double x0, int columns, double gap) const {
-  return (listRight_ - kScrollbarRoom - x0 - (columns - 1) * gap) / columns;
+  return (list_.right - kScrollbarRoom - x0 - (columns - 1) * gap) / columns;
 }
 
 void Menu::gridRows(int count, int columns, double rowH, int& first, int& end, int rows) {
-  rowHeight_ = rowH;
-  visibleRows_ = rows > 0 ? rows : std::max(1, static_cast<int>((listBottom_ - listTop_) / rowH));
-  listCount_ = (count + columns - 1) / columns;
+  list_.rowHeight = rowH;
+  list_.rows = rows > 0 ? rows : std::max(1, static_cast<int>((list_.bottom - list_.top) / rowH));
+  list_.count = (count + columns - 1) / columns;
   int firstRow, endRow;
-  clampScroll(listCount_, visibleRows_, firstRow, endRow);
+  clampScroll(list_.count, list_.rows, firstRow, endRow);
   first = firstRow * columns;
   end = std::min(count, endRow * columns);
 }
 
 void Menu::endOnWholeRow() {
   if (editingFilter())
-    listBottom_ = std::min(listBottom_, listTop_ + visibleRows_ * rowHeight_ - kRowGap);
+    list_.bottom = std::min(list_.bottom, list_.top + list_.rows * list_.rowHeight - kRowGap);
 }
 
-// Rows from listTop_ down; the caller sets listTop_, listBottom_ and listRight_.
+// Rows from list_.top down; the caller sets list_.top, list_.bottom and list_.right.
 void Menu::addList(const std::vector<ListItem>& items, double x0, double rowH, int rows) {
-  visibleRows_ = rows;
-  rowHeight_ = rowH;
+  list_.rows = rows;
+  list_.rowHeight = rowH;
   endOnWholeRow();
-  listCount_ = static_cast<int>(items.size());
+  list_.count = static_cast<int>(items.size());
   int first, end;
-  clampScroll(listCount_, rows, first, end);
+  clampScroll(list_.count, rows, first, end);
   for (int i = first; i < end; ++i) {
     Button b;
     b.panel = kBrowser;
     b.x = x0;
-    b.y = listTop_ + (i - scrollOffset_ - scrollFraction_) * rowH;
-    b.w = listRight_ - x0 - kScrollbarRoom;
+    b.y = list_.top + (i - list_.offset - list_.fraction) * rowH;
+    b.w = list_.right - x0 - kScrollbarRoom;
     b.h = rowH - kRowGap;
     b.radius = kit::kCorner;
     b.label = items[i].label;
@@ -466,7 +466,7 @@ void Menu::addList(const std::vector<ListItem>& items, double x0, double rowH, i
   addScrollbar();
 }
 
-// Cards from listTop_ down, `rows` of them on screen; scrolling counts grid rows.
+// Cards from list_.top down, `rows` of them on screen; scrolling counts grid rows.
 void Menu::addGallery(const std::vector<ListItem>& items, double x0, int rows) {
   constexpr int columns = kGalleryColumns;
   constexpr double gap = kGalleryGap, rowH = kGalleryRowH;
@@ -479,7 +479,7 @@ void Menu::addGallery(const std::vector<ListItem>& items, double x0, int rows) {
     Button b;
     b.panel = kBrowser;
     b.x = x0 + (cell % columns) * (cardW + gap);
-    b.y = listTop_ + (cell / columns - scrollFraction_) * rowH;
+    b.y = list_.top + (cell / columns - list_.fraction) * rowH;
     b.w = cardW;
     b.h = rowH - gap;
     b.radius = kCardCorner;
@@ -525,20 +525,20 @@ void Menu::addGallery(const std::vector<ListItem>& items, double x0, int rows) {
       buttons_.push_back(stars);
     }
   }
-  wantThumbnails(items, first, end, visibleRows_ * columns, cardW - 2 * kCardIn);
+  wantThumbnails(items, first, end, list_.rows * columns, cardW - 2 * kCardIn);
   addScrollbar();
 }
 
 // The list's scroll bar, if it scrolls: clicking or dragging along it
 // scrolls there. A target wider than its track, centred on it.
 void Menu::addScrollbar() {
-  if (listCount_ <= visibleRows_) return;
+  if (list_.count <= list_.rows) return;
   Button bar;
   bar.panel = kBrowser;
-  bar.x = listRight_ - kScrollbarW / 2 - (kScrollbarRoom - kit::kSpace - kScrollTrackW / 2);
-  bar.y = listTop_;
+  bar.x = list_.right - kScrollbarW / 2 - (kScrollbarRoom - kit::kSpace - kScrollTrackW / 2);
+  bar.y = list_.top;
   bar.w = kScrollbarW;
-  bar.h = listBottom_ - listTop_;
+  bar.h = list_.bottom - list_.top;
   bar.radius = kScrollTrackW / 2;
   bar.bare = true;
   bar.scrollbar = true;
@@ -552,11 +552,11 @@ Menu::ScrollExtent Menu::scrollExtent(const Button* bar) const {
     return {whatsNew_.scroll, shown, whatsNew_.height};
   }
   if (groupedPage()) {
-    const double shown = listBottom_ - listTop_;
+    const double shown = list_.bottom - list_.top;
     return {pageScroll_, shown, shown + pageScrollMax_};
   }
-  return {scrollOffset_ + scrollFraction_, static_cast<double>(visibleRows_),
-          static_cast<double>(listCount_)};
+  return {list_.offset + list_.fraction, static_cast<double>(list_.rows),
+          static_cast<double>(list_.count)};
 }
 
 void Menu::scrollToPointer(const Button& bar) {
@@ -573,13 +573,13 @@ void Menu::scrollToPointer(const Button& bar) {
     if (std::abs(position - pageScroll_) > 0.01) {
       pageScroll_ = position;
       scrolledAt_ = steadySeconds();
-      browserChanged(listTop_ - 4, listBottom_ + 4);
+      browserChanged(list_.top - 4, list_.bottom + 4);
     }
     return;
   }
   // By whole texture pixels, as scroll().
-  const double perRow = rowHeight_ * menu_geometry::kRasterScale;
-  const double now = scrollOffset_ + scrollFraction_;
+  const double perRow = list_.rowHeight * menu_geometry::kRasterScale;
+  const double now = list_.offset + list_.fraction;
   setListPosition(std::clamp(now + std::round((position - now) * perRow) / perRow, 0.0,
                              std::max(0.0, e.total - e.shown)));
 }
@@ -670,8 +670,8 @@ bool Menu::wantedAlready(const std::vector<std::string>& wanted, size_t shown, d
 void Menu::layoutFileTools() {
   const Strings& t = text();
   const double y = kBrowserToolsY + toolsShift();
-  const bool library = page_ == Page::Library, videos = library || fileKind_ == FileKind::Video;
-  const SortMode mode = library ? librarySort_ : sortMode_;
+  const bool library = page_ == Page::Library, videos = library || files_.kind == FileKind::Video;
+  const SortMode mode = library ? libraryPage_.sort : files_.sort;
   double x = kContentLeft;
   if (videos) {
     // List or thumbnails: pieces in a well, the chosen one raised. The item
@@ -724,12 +724,12 @@ void Menu::layoutFileTools() {
   const double right = toolsJumps(
       y,
       [this] {
-        scrollOffset_ = 0;
-        scrollFraction_ = 0;
+        list_.offset = 0;
+        list_.fraction = 0;
         return MenuCommand{};
       },
       [this] {
-        scrollOffset_ = 1 << 30;  // clamped to the last page by the layout
+        list_.offset = 1 << 30;  // clamped to the last page by the layout
         return MenuCommand{};
       });
 
@@ -738,7 +738,7 @@ void Menu::layoutFileTools() {
   std::string count;
   if (page_ == Page::Files && !filterText().empty()) {  // how many it finds, before Clear
     count = stashPrinted(t.matches, stashNumber(folderMatchCount()),
-                         stashNumber(static_cast<long>(listing_.entries().size())));
+                         stashNumber(static_cast<long>(files_.listing.entries().size())));
   }
   toolsSearch(
       x, y, right, filterText(), library ? t.tipSearchLibrary : t.tipSearchFolder, editingFilter(),
@@ -763,7 +763,7 @@ void Menu::layoutListHeader(double x0, double rowW) {
   const ListFit& fit = listFit();
   const ListColumns c = listColumns(x0 + rowW, fit);
   const bool library = page_ == Page::Library;
-  const SortMode mode = library ? librarySort_ : sortMode_;
+  const SortMode mode = library ? libraryPage_.sort : files_.sort;
   const int sorted = fieldOf(mode);
   const double y = kListHeaderY + toolsShift();
   auto heading = [&](int field, double x, double w, bool rightAligned) {
@@ -800,28 +800,28 @@ void Menu::layoutListHeader(double x0, double rowW) {
 // library view, from its top.
 void Menu::sortBy(SortMode mode) {
   const bool library = page_ == Page::Library;
-  (library ? libraryDescending_ : sortDescending_) = mode == kFieldOrders[fieldOf(mode)].down;
+  (library ? libraryPage_.descending : files_.descending) = mode == kFieldOrders[fieldOf(mode)].down;
   if (library) {
-    librarySort_ = mode;
+    libraryPage_.sort = mode;
     sortLibrary();
-    scrollOffset_ = 0;
-    scrollFraction_ = 0;
+    list_.offset = 0;
+    list_.fraction = 0;
     dirty_ = true;
     return;
   }
-  sortMode_ = mode;
+  files_.sort = mode;
   rememberFolderView();
   openDirectory(directory());  // reads dates or sizes if needed
 }
 
 void Menu::sortByField(int field) {
   const bool library = page_ == Page::Library;
-  const SortMode mode = library ? librarySort_ : sortMode_;
+  const SortMode mode = library ? libraryPage_.sort : files_.sort;
   const FieldOrders& orders = kFieldOrders[field];
   if (field == fieldOf(mode))
     sortBy(mode == orders.up ? orders.down : orders.up);
   else
-    sortBy((library ? libraryDescending_ : sortDescending_) ? orders.down : orders.up);
+    sortBy((library ? libraryPage_.descending : files_.descending) ? orders.down : orders.up);
 }
 
 // The browser's page for the folder (the kit's content page): up, where
@@ -830,8 +830,8 @@ void Menu::sortByField(int field) {
 void Menu::layoutFilesPage() {
   const Strings& t = text();
   const double listX = kContentLeft;
-  listLeft_ = kContentLeft;
-  listRight_ = kContentRight + kListRightPad;
+  list_.left = kContentLeft;
+  list_.right = kContentRight + kListRightPad;
   listShowsFolder_ = true;
   listColumns_ = false;
 
@@ -859,7 +859,7 @@ void Menu::layoutFilesPage() {
   where.x = kContentLeft + kBrowserRowH + kit::kSpaceTight;
   where.y = kBrowserRowY;
   where.w = whereRight - where.x;
-  headingRight_ = whereRight;
+  files_.headingRight = whereRight;
   where.h = kBrowserRowH;
   where.bare = true;
   where.label = " ";  // drawn by drawFilesHeading()
@@ -867,11 +867,11 @@ void Menu::layoutFilesPage() {
   where.action = [] { return MenuCommand{}; };
   buttons_.push_back(where);
 
-  const bool pinned = places_.pinned(directory());
+  const bool pinned = navigation_.places.pinned(directory());
   if (!stashFolders_.picking) {
     Button& pin = addRound(Icon::Pin, pinned ? t.unpinFolder : t.pinFolder,
                            [this] {
-                             places_.togglePin(directory());
+                             navigation_.places.togglePin(directory());
                              refreshPlaces();
                              return MenuCommand{};
                            },
@@ -880,25 +880,25 @@ void Menu::layoutFilesPage() {
     pin.bare = !pinned;
     pin.latched = pinned;
     pin.iconSize = 28;
-    pin.disabled = !places_.ready() || directory().find('\n') != std::string::npos;
+    pin.disabled = !navigation_.places.ready() || directory().find('\n') != std::string::npos;
   }
 
-  if (smbForm_.kind != SmbForm::Kind::None) {
-    listCount_ = 0;
+  if (network_.form.kind != SmbForm::Kind::None) {
+    list_.count = 0;
     layoutSmbForm();
     return;
   }
   // While typing, the keyboard takes the bottom of the page.
   const bool editing = editingFilter();
-  listBottom_ = editing ? kKeyboardY - 16 : kListBottom;
-  if (gallery_ && fileKind_ == FileKind::Video) {
-    listTop_ = kGridTop;
+  list_.bottom = editing ? kKeyboardY - 16 : kListBottom;
+  if (gallery_ && files_.kind == FileKind::Video) {
+    list_.top = kGridTop;
     addGallery(fileItems(), listX, editing ? kEditingGalleryRows : kGalleryRows);
   } else {
-    listTop_ = kListTop;
+    list_.top = kListTop;
     listColumns_ = true;
     addList(fileItems(), listX, kFileRowH, editing ? kEditingFileRows : kFileRows);
-    if (listCount_ > 0) layoutListHeader(listX, listRight_ - listX - kScrollbarRoom);
+    if (list_.count > 0) layoutListHeader(listX, list_.right - listX - kScrollbarRoom);
   }
   if (editing) layoutKeyboard();
   layoutFileTools();
@@ -909,7 +909,7 @@ void Menu::layoutFilesPage() {
 std::vector<std::string> Menu::locationParts(const std::string& dir) const {
   std::vector<std::string> parts;
   const Places::Place* nearest = nullptr;
-  for (const Places::Place& p : places_.places()) {
+  for (const Places::Place& p : navigation_.places.places()) {
     if (p.hidden || !p.available || p.path.empty()) continue;
     const bool within = dir == p.path || (dir.size() > p.path.size() && dir.rfind(p.path, 0) == 0 &&
                                           (p.path.back() == '/' || dir[p.path.size()] == '/'));
@@ -947,9 +947,9 @@ void Menu::drawFilesHeading(cairo_t* cr) {
   const Strings& t = text();
   const Palette& pal = palette();
   double x = kContentLeft + kBrowserRowH + kit::kSpaceTight + kit::kSpace;
-  const double right = headingRight_ - kit::kSpace;
+  const double right = files_.headingRight - kit::kSpace;
   std::string before;
-  if (fileKind_ == FileKind::Subtitle) before = std::string(t.chooseSubtitleFile) + ":";
+  if (files_.kind == FileKind::Subtitle) before = std::string(t.chooseSubtitleFile) + ":";
   if (stashFolders_.picking) {
     const StashFoldersStrings& s = t.stashFolders;
     before = stashFolders_.notThere ? s.notInFolder : s.pickTitle;
@@ -995,7 +995,7 @@ void Menu::drawFilesHeading(cairo_t* cr) {
 
 // Over everything: what an empty list means (drawEmptyPage()).
 void Menu::drawListStates(cairo_t* cr) {
-  if (smbForm_.kind != SmbForm::Kind::None) {
+  if (network_.form.kind != SmbForm::Kind::None) {
     drawSmbForm(cr);
     return;
   }
@@ -1010,24 +1010,24 @@ void Menu::listState(Icon& icon, std::string& heading, std::string& hint) const 
   if (const char* network = networkState()) {
     icon = Icon::Globe;
     heading = network;
-    if (!discovery_.scanning()) hint = t.network.noneHint;
-  } else if (page_ == Page::Files && listing_.reading() && listing_.entries().empty()) {
+    if (!network_.discovery.scanning()) hint = t.network.noneHint;
+  } else if (page_ == Page::Files && files_.listing.reading() && files_.listing.entries().empty()) {
     heading = t.readingFolder;
-  } else if (page_ == Page::Files && listing_.status() == remote::Status::Offline) {
+  } else if (page_ == Page::Files && files_.listing.status() == remote::Status::Offline) {
     heading = t.network.offline;
-  } else if (page_ == Page::Files && listing_.unavailable()) {
+  } else if (page_ == Page::Files && files_.listing.unavailable()) {
     heading = t.folderUnavailable;
-  } else if (page_ == Page::Files && listing_.entries().empty()) {
-    heading = fileKind_ == FileKind::Video ? t.noVideos : t.noSubtitleFiles;
+  } else if (page_ == Page::Files && files_.listing.entries().empty()) {
+    heading = files_.kind == FileKind::Video ? t.noVideos : t.noSubtitleFiles;
   } else if (page_ == Page::Files && folderMatchCount() == 0) {
     icon = Icon::Search;
-    heading = stashPrinted(t.noMatches, fileFilter_);
+    heading = stashPrinted(t.noMatches, files_.filter);
   } else if (page_ == Page::Library && !libraryPinHelp() && libraryMatchCount() == 0) {
     icon = Icon::Library;
-    if (!libraryFilter_.empty()) {
+    if (!libraryPage_.filter.empty()) {
       icon = Icon::Search;
-      heading = stashPrinted(t.libraryNoMatches, libraryFilter_);
-    } else if (libraryShow_ != 0 && libraryCounts_[0] > 0) {  // Show leaves none of them
+      heading = stashPrinted(t.libraryNoMatches, libraryPage_.filter);
+    } else if (libraryPage_.show != 0 && libraryPage_.counts[0] > 0) {  // Show leaves none of them
       heading = t.libraryShowsNone;
     } else {
       heading = t.libraryEmpty;

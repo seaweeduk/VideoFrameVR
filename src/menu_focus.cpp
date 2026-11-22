@@ -81,7 +81,7 @@ void Menu::focusChanged(const FocusView& view) {
 
 void Menu::layoutFocus() {
 #ifndef NDEBUG
-  if (focusFitChecked_ != &text()) checkFocusFit();
+  if (settingsPages_.focusFitChecked != &text()) checkFocusFit();
 #endif
   const Strings& strings = text();
   const FocusStrings& t = strings.focus;
@@ -288,7 +288,7 @@ double Menu::focusBottom(bool advanced, bool check) {
 // Says loudly where Stereo focus with every row doesn't fit (Advanced
 // settings on).
 void Menu::checkFocusFit() {
-  focusFitChecked_ = &text();
+  settingsPages_.focusFitChecked = &text();
   focusBottom(true, true);
 }
 #endif

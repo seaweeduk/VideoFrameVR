@@ -486,7 +486,7 @@ void Menu::drawButtons(cairo_t* cr, int panel, bool popups) {
     } clip{cr, b.scrolls || b.side};
     if (b.scrolls) {
       cairo_save(cr);
-      cairo_rectangle(cr, 0, listTop_ - 2, kBrowserWidth, listBottom_ - listTop_ + 2);
+      cairo_rectangle(cr, 0, list_.top - 2, kBrowserWidth, list_.bottom - list_.top + 2);
       cairo_clip(cr);
     } else if (b.side) {
       cairo_save(cr);
@@ -593,9 +593,9 @@ bool Menu::pressDrawn(const Button& b) const {
 }
 
 bool Menu::drawnPressed(const Button& b) const {
-  // A key: while it is down (keyDown_: held on it, and a moment after a
+  // A key: while it is down (keyboard_.keyDown: held on it, and a moment after a
   // quick click, long enough to be seen).
-  if (b.keyCap) return pressDrawn(b) && keyDown_.at >= 0 && keyDown_.x == b.x && keyDown_.y == b.y;
+  if (b.keyCap) return pressDrawn(b) && keyboard_.keyDown.at >= 0 && keyboard_.keyDown.x == b.x && keyboard_.keyDown.y == b.y;
   return pressSpot_.panel == b.panel && pressSpot_ == HoverSpot{b.panel, b.x, b.y, b.w, b.h} &&
          pressDrawn(b);
 }
@@ -1326,7 +1326,7 @@ void Menu::drawGroups(cairo_t* cr) {
   const Palette& pal = palette();
   cairo_save(cr);
   if (pageScrollMax_ > 0) {  // cut off at the edges, as the rows in them
-    cairo_rectangle(cr, 0, listTop_ - 2, kBrowserWidth, listBottom_ - listTop_ + 2);
+    cairo_rectangle(cr, 0, list_.top - 2, kBrowserWidth, list_.bottom - list_.top + 2);
     cairo_clip(cr);
   }
   // Only what is being redrawn (a row's change redraws only that row).
@@ -1389,8 +1389,8 @@ void Menu::scrollGroups(size_t first) {
       bottom = std::max(bottom, buttons_[i].y + buttons_[i].h);
   const double contentTop = pageTop_ + kit::kPanelInset + kit::kSpace + kit::kPageHeaderH + kit::kSpace;
   const bool headed = !pageHead_.title.empty();
-  listTop_ = headed ? contentTop - kit::kSpace / 2 : pageTop_ + kPagePad / 2;
-  listBottom_ = kBrowserHeight - kPagePad / 2;
+  list_.top = headed ? contentTop - kit::kSpace / 2 : pageTop_ + kPagePad / 2;
+  list_.bottom = kBrowserHeight - kPagePad / 2;
   // A page alone may end at its page's bottom (PageLayout::kBottom), as tall
   // as it is measured.
   const double pad = pageAlone() ? kit::kPanelInset + kit::kSpace : kPagePad;
@@ -1401,7 +1401,7 @@ void Menu::scrollGroups(size_t first) {
   for (size_t i = first; i < buttons_.size(); ++i) {
     Button& b = buttons_[i];
     if (b.panel != kBrowser) continue;
-    if (!b.popup && b.y + b.h <= listTop_) continue;  // the header's sections and switches
+    if (!b.popup && b.y + b.h <= list_.top) continue;  // the header's sections and switches
     b.y -= pageScroll_;
     b.scrolls = true;
   }
@@ -1519,7 +1519,7 @@ Menu::Painted Menu::paintedPart(cairo_t* cr, double x, double y, double w, doubl
   double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
   cairo_clip_extents(cr, &x0, &y0, &x1, &y1);
   // Pictures are in a list's rows, cut off at its edges (drawButtons()).
-  const double top = std::max(y, listTop_ - 2), bottom = std::min(y + h, listBottom_);
+  const double top = std::max(y, list_.top - 2), bottom = std::min(y + h, list_.bottom);
   if (top >= bottom) return Painted::All;  // none of it shows
   if (x0 >= x + w || x1 <= x || y0 >= bottom || y1 <= top) return Painted::None;
   return x0 <= x && x1 >= x + w && y0 <= top && y1 >= bottom ? Painted::All : Painted::Part;

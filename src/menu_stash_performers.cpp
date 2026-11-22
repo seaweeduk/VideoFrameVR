@@ -74,52 +74,6 @@ std::vector<std::string> factsOf(const StashPerformer& p) {
 
 // ---- both pages ----
 
-const std::vector<std::array<StashPerformerStats, 3>>& StashPages::performerStats(Menu& m) {
-  StashMenu& st = state(m);
-  StashPerformersState& ps = st.performers;
-  const StashCatalog* c = catalog(m);
-  if (!c) {
-    ps.stats.clear();
-    return ps.stats;
-  }
-  takeChanges(m);
-  if (ps.statsCatalog == st.catalogGeneration && ps.statsLibrary == st.libraryGeneration &&
-      ps.statsAway == st.awayGeneration && ps.stats.size() == c->performers().size())
-    return ps.stats;
-  ps.statsCatalog = st.catalogGeneration;
-  ps.statsLibrary = st.libraryGeneration;
-  ps.statsAway = st.awayGeneration;
-  ps.stats.assign(c->performers().size(), {});
-  const bool history = st.history.size() == c->scenes().size();
-  for (size_t i = 0; i < c->scenes().size(); ++i) {
-    if (history && st.history[i].hidden) continue;
-    const StashScene& s = c->scenes()[i];
-    bool vr = s.vr;
-    if (history && st.history[i].vr >= 0) vr = st.history[i].vr == 1;
-    const int kind = vr ? static_cast<int>(StashFormat::VR) : static_cast<int>(StashFormat::Flat);
-    for (const int p : s.performers)
-      for (const int f : {0, kind}) {
-        StashPerformerStats& stats = ps.stats[p][f];
-        ++stats.scenes;
-        const StashAge age = stashAgeBand(stashAge(c->performers()[p].born, s.day));
-        if (age != StashAge::kCount) stats.ages |= stashBit(age);
-        stats.newest = std::max(stats.newest, s.day);
-        if (!history) continue;
-        const StashHistory& h = st.history[i];
-        if (h.plays > 0) {
-          ++stats.played;
-          stats.plays += h.plays;
-        }
-        if (h.rating > 0) {
-          ++stats.rated;
-          stats.ratingSum += h.rating;
-        }
-        stats.lastPlayed = std::max(stats.lastPlayed, h.lastPlayedAt);
-      }
-  }
-  return ps.stats;
-}
-
 void StashPages::drawPortrait(const Menu& m, cairo_t* cr, const StashPerformer& p, double x,
                               double y, double w, double h, double radius) {
   cairo_surface_t* image = nullptr;
@@ -207,257 +161,32 @@ double StashPages::performerCardHeight(double w, int lines) {
 void StashPages::showPerformers(Menu& m) {
   StashPerformersState& ps = state(m).performers;
   m.showPage(Menu::Page::StashPerformers);
-  m.scrollOffset_ = static_cast<int>(std::floor(ps.scroll));
-  m.scrollFraction_ = ps.scroll - m.scrollOffset_;
+  m.list_.offset = static_cast<int>(std::floor(ps.scroll));
+  m.list_.fraction = ps.scroll - m.list_.offset;
   m.side_.position = ps.railPosition;
 }
 
 void StashPages::leavePerformers(Menu& m) {
   StashMenu& st = state(m);
   StashPerformersState& ps = st.performers;
-  if (st.full == StashFull::None) ps.scroll = m.scrollOffset_ + m.scrollFraction_;
+  if (st.full == StashFull::None) ps.scroll = m.list_.offset + m.list_.fraction;
   ps.railPosition = m.side_.position;
   st.full = StashFull::None;  // a look's full list in place of the cards
   st.fullSearch.clear();
 }
 
-std::function<void()> StashPages::changePerformers(Menu& m,
-                                                   std::function<void(StashPerformerChoice&)> f) {
-  return [&m, f] {
-    StashMenu& st = state(m);
-    StashPerformersState& s = st.performers;
-    f(s.choice);
-    s.stale = true;
-    if (st.full == StashFull::None) {
-      m.scrollOffset_ = 0;
-      m.scrollFraction_ = 0;
-    } else {
-      s.scroll = 0;
-    }
-    m.dirty_ = true;
-  };
-}
-
-// The performers the choices and the search give, in order, the rail's
-// counts (each kind with its own choices left out, so a count never leads
-// to nothing) and the scenes with the chosen looks; when they, the catalog
-// or the history changed.
-void StashPages::buildPerformers(Menu& m) {
+void StashPages::changePerformers(Menu& m, const std::function<void(StashPerformerChoice&)>& f) {
   StashMenu& st = state(m);
-  StashPerformersState& ps = st.performers;
-  const StashStrings& t = strings().stash;
-  const std::vector<std::array<StashPerformerStats, 3>>& stats = performerStats(m);
-  const StashFormat shownIn = shownFormat(m);
-  if (ps.catalogGeneration != st.catalogGeneration ||
-      ps.libraryGeneration != st.libraryGeneration || ps.awayGeneration != st.awayGeneration ||
-      ps.format != shownIn) {
-    ps.catalogGeneration = st.catalogGeneration;
-    ps.libraryGeneration = st.libraryGeneration;
-    ps.awayGeneration = st.awayGeneration;
-    ps.format = shownIn;
-    ps.stale = true;
-  }
-  if (!ps.stale) return;
-  ps.stale = false;
-  ps.shown.clear();
-  ps.rail.clear();
-  ps.all = 0;
-  ps.formats = {};
-  ps.theirScenes = -1;
-  const StashCatalog* c = catalog(m);
-  if (!c || stats.size() != c->performers().size()) {
-    ps.railHeight = 0;
-    return;
-  }
-  const int format = static_cast<int>(shownIn);
-  const bool male = m.view_.stash.malePerformers;
-  const StashPerformerChoice& ch = ps.choice;
-  // The looks chosen, as the catalog's filter has them: per kind, each
-  // value's choice (1 included, 2 left out) and whether any is included.
-  StashFilter chosenLooks;
-  ch.looks.addTo(chosenLooks, *c);
-  std::array<std::vector<uint8_t>, kStashLookKinds> chosen;
-  std::array<bool, kStashLookKinds> including{};
-  for (int k = 0; k < kStashLookKinds; ++k) {
-    chosen[k].assign(k < kStashNamedLooks ? c->lookNames(static_cast<StashLookKind>(k)).size()
-                                          : size_t(kStashLookBuckets[k - kStashNamedLooks]),
-                     0);
-    for (const int v : chosenLooks.looks[k].exclude) chosen[k][v] = 2;
-    for (const int v : chosenLooks.looks[k].include) chosen[k][v] = 1;
-    including[k] = !chosenLooks.looks[k].include.empty();
-  }
-  constexpr int kAge = static_cast<int>(StashLookKind::Age);
-  std::vector<std::string> words;  // all of them in her name or an alias
-  {
-    const std::string folded = stashFold(ps.text);
-    size_t at = 0;
-    while (at < folded.size()) {
-      const size_t end = std::min(folded.find(' ', at), folded.size());
-      if (end > at) words.push_back(folded.substr(at, end - at));
-      at = end + 1;
-    }
-  }
-  // What the app's history says of her scenes in a format, as bits.
-  auto historyOf = [](const StashPerformerStats& s) {
-    return stashBit(s.played ? StashPerformerHistory::Played : StashPerformerHistory::Unplayed) |
-           (s.rated && s.average() >= 4 ? stashBit(StashPerformerHistory::Rated4) : 0u);
-  };
-  // The kinds of choice she misses with her scenes in a format, as bits: a
-  // look included she hasn't (bit k; her age: in none of those scenes), one
-  // left out she has (bit 16 + k), the history (bit 15).
-  constexpr int kHistory = 15;
-  auto misses = [&](int i, int f) {
-    const StashPerformer& p = c->performers()[i];
-    unsigned miss = 0;
-    for (int k = 0; k < kStashLookKinds; ++k) {
-      if (k == kAge) {
-        if (including[k] && !(ch.looks.mask(StashLookKind::Age) & stats[i][f].ages))
-          miss |= 1u << k;
-        continue;
-      }
-      uint8_t choices = 0;
-      stashEachLookValue(static_cast<StashLookKind>(k), p.looks[k], [&](int v) {
-        choices |= chosen[k][v];
-      });
-      if (including[k] && !(choices & 1)) miss |= 1u << k;
-      if (choices & 2) miss |= 1u << (16 + k);
-    }
-    if (ch.history && !(ch.history & historyOf(stats[i][f]))) miss |= 1u << kHistory;
-    return miss;
-  };
-  std::array<std::vector<int>, kStashLookKinds> counts;
-  for (int k = 0; k < kStashLookKinds; ++k) counts[k].assign(chosen[k].size(), 0);
-  std::array<int, size_t(StashPerformerHistory::kCount)> history{};
-  for (size_t i = 0; i < c->performers().size(); ++i) {
-    const StashPerformer& p = c->performers()[i];
-    if (!stashShown(p.gender, male)) continue;
-    const bool listed = stats[i][format].scenes > 0;
-    ps.all += listed;
-    if (!words.empty()) {
-      std::string haystack = stashFold(p.name);
-      for (const std::string& a : p.aliases) haystack += "\n" + stashFold(a);
-      if (!std::all_of(words.begin(), words.end(), [&](const std::string& w) {
-            return haystack.find(w) != std::string::npos;
-          }))
-        continue;
-    }
-    for (int f = 0; f < 3; ++f)
-      ps.formats[f] += stats[i][f].scenes > 0 && !misses(static_cast<int>(i), f);
-    if (!listed) continue;
-    // Each kind counted with the others chosen kept.
-    const unsigned miss = misses(static_cast<int>(i), format);
-    auto fitsBut = [miss](int k) { return !(miss & ~(1u << k)); };
-    for (int k = 0; k < kStashLookKinds; ++k) {
-      if (!fitsBut(k)) continue;
-      if (k == kAge) {
-        for (size_t b = 0; b < counts[k].size(); ++b) counts[k][b] += (stats[i][format].ages >> b) & 1;
-      } else {
-        stashEachLookValue(static_cast<StashLookKind>(k), p.looks[k], [&](int v) { ++counts[k][v]; });
-      }
-    }
-    if (fitsBut(kHistory)) {
-      const unsigned mine = historyOf(stats[i][format]);
-      for (size_t k = 0; k < history.size(); ++k) history[k] += (mine >> k) & 1;
-    }
-    if (!miss) ps.shown.push_back(static_cast<int>(i));
-  }
-
-  // Sorted; ties (and those without the value, last either way) by scenes,
-  // then by name: the catalog's own order.
-  const bool down = ps.descending;
-  auto key = [&](int i) -> double {
-    const StashPerformerStats& s = stats[i][format];
-    switch (ps.sort) {
-      case StashPerformerSort::Scenes: return s.scenes;
-      case StashPerformerSort::Plays: return s.plays;
-      case StashPerformerSort::Rating: return s.rated ? s.average() : -1;
-      case StashPerformerSort::Newest: return s.newest == kStashNoDay ? -1 : s.newest;
-      case StashPerformerSort::Name: break;
-    }
-    return 0;
-  };
-  if (ps.sort == StashPerformerSort::Name) {
-    if (down) std::reverse(ps.shown.begin(), ps.shown.end());
+  StashPerformersState& s = st.performers;
+  f(s.choice);
+  s.stale = true;
+  if (st.full == StashFull::None) {
+    m.list_.offset = 0;
+    m.list_.fraction = 0;
   } else {
-    const bool known = ps.sort == StashPerformerSort::Rating || ps.sort == StashPerformerSort::Newest;
-    std::stable_sort(ps.shown.begin(), ps.shown.end(), [&](int a, int b) {
-      const double ka = key(a), kb = key(b);
-      if (known && (ka < 0) != (kb < 0)) return kb < 0;
-      if (ka != kb) return down ? ka > kb : ka < kb;
-      return stats[a][format].scenes > stats[b][format].scenes;
-    });
+    s.scroll = 0;
   }
-
-  // Their scenes: the Scenes page with these looks (the same filter there:
-  // scenes in which one of them had them all, her age then).
-  if (ch.looks.active() && !ch.history && words.empty()) {
-    StashList list;
-    list.format = shownIn;
-    list.looks = ch.looks;
-    ps.theirScenes = static_cast<int>(
-        c->query(stashFilterOf(list, *c, male, unixNow()), {}, &st.history, false).scenes.size());
-  }
-
-  // The rail: what is chosen first, then what occurs, most first; never a
-  // choice in every one listed (it narrows nothing) or in none.
-  const int total = static_cast<int>(ps.shown.size());
-  auto change = [&m](std::function<void(StashPerformerChoice&)> f) {
-    return changePerformers(m, std::move(f));
-  };
-  auto changeLooks = [&change](std::function<void(StashLooks&)> f) {
-    return change([f](StashPerformerChoice& s) { f(s.looks); });
-  };
-  auto line = [&](StashRailLine::Kind kind, const std::string& label) {
-    StashRailLine l;
-    l.kind = kind;
-    l.label = label;
-    ps.rail.push_back(std::move(l));
-  };
-  if (ch.active()) {
-    StashRailLine l;
-    l.kind = StashRailLine::Link;
-    l.label = t.clearAll;
-    l.include = change([](StashPerformerChoice& s) { s = StashPerformerChoice{}; });
-    ps.rail.push_back(std::move(l));
-    line(StashRailLine::Gap, "");
-  }
-  std::array<std::vector<StashFacet>, kStashLookKinds> facets;
-  for (int k = 0; k < kStashLookKinds; ++k) {
-    for (size_t v = 0; v < counts[k].size(); ++v)
-      if (counts[k][v] > 0) facets[k].push_back({static_cast<int>(v), counts[k][v]});
-    std::stable_sort(facets[k].begin(), facets[k].end(),
-                     [](const StashFacet& a, const StashFacet& b) { return a.count > b.count; });
-  }
-  ps.looks = facets;
-  st.fullStale = true;  // a look's full list, from these
-  auto more = [&m](StashLookKind look) { showFull(m, StashFull::Look, look); };
-  using K = StashLookKind;
-  lookRail(ps.rail, *c, ch.looks, facets, total, {K::Hair, K::Cup, K::Breasts}, true, changeLooks,
-           more);
-  {
-    const size_t at = ps.rail.size();
-    line(StashRailLine::Heading, t.sections[7]);
-    for (int i = 0; i < 3; ++i) {
-      const bool on = ch.history >> i & 1;
-      if (on || (history[i] > 0 && (history[i] < total || ch.history))) {
-        StashRailLine l;
-        l.label = t.performerHistory[i];
-        l.count = history[i] > 0 ? stashNumber(history[i]) : "";
-        l.state = on ? 1 : 0;
-        l.include = change([i](StashPerformerChoice& s) { s.history ^= 1u << i; });
-        ps.rail.push_back(std::move(l));
-      }
-    }
-    if (ps.rail.size() == at + 1)
-      ps.rail.pop_back();
-    else
-      line(StashRailLine::Gap, "");
-  }
-  lookRail(ps.rail, *c, ch.looks, facets, total,
-           {K::Age, K::Ethnicity, K::Country, K::Height, K::Eyes, K::Shape, K::Tattoos}, true,
-           changeLooks, more);
-  if (ps.rail.empty()) line(StashRailLine::Note, t.nothingToNarrow);
-  ps.railHeight = railHeights(ps.rail);
+  m.dirty_ = true;
 }
 
 // Cards from `top` down: six columns beside the rail.
@@ -469,7 +198,7 @@ void StashPages::layoutPerformerGrid(Menu& m, double x0, double top) {
   const double pictureW = cardW - 2 * kCardIn;
   const double rowH = performerCardHeight(cardW) + kTileGap;
   const int count = static_cast<int>(ps.shown.size());
-  m.listTop_ = top;
+  m.list_.top = top;
   int first, end;
   m.gridRows(count, kColumns, rowH, first, end);
   const int32_t now = today();
@@ -480,7 +209,7 @@ void StashPages::layoutPerformerGrid(Menu& m, double x0, double top) {
     Button b;
     b.panel = Menu::kBrowser;
     b.x = x0 + (cell % kColumns) * (cardW + kTileGap);
-    b.y = top + (cell / kColumns - m.scrollFraction_) * rowH;
+    b.y = top + (cell / kColumns - m.list_.fraction) * rowH;
     b.w = cardW;
     b.h = rowH - kTileGap;
     b.label = p.name;
@@ -511,7 +240,7 @@ void StashPages::layoutPerformerGrid(Menu& m, double x0, double top) {
     if (!p.image.empty()) wanted.push_back(Stash::portraitRequest(p, stashPixels(pictureW)));
   };
   for (int i = first; i < end; ++i) want(i);
-  for (int i = end; i < end + (m.visibleRows_ + 1) * kColumns * 3; ++i) want(i);
+  for (int i = end; i < end + (m.list_.rows + 1) * kColumns * 3; ++i) want(i);
   for (int i = first - 1; i >= first - kColumns * 2; --i) want(i);
   m.stash_->images().want(wanted);
   m.addScrollbar();
@@ -523,31 +252,31 @@ void StashPages::layoutPerformers(Menu& m) {
   StashMenu& st = state(m);
   StashPerformersState& ps = st.performers;
   const StashStrings& t = strings().stash;
-  buildPerformers(m);
+  st.buildPerformers(ps, sources(m), m.view_.stash.malePerformers);
   const StashCatalog* c = catalog(m);
   const bool editing = m.editingFilter();
   const double bottom = editing ? kKeyboardY - 16 : kListBottom;
   const double x0 = kContentLeft, right = kContentRight;
 
-  m.listLeft_ = x0 + kRailW + kRailGap;
-  m.listRight_ = right + kListRightPad;
+  m.list_.left = x0 + kRailW + kRailGap;
+  m.list_.right = right + kListRightPad;
   m.listShowsFolder_ = false;
   m.listColumns_ = false;
-  m.listBottom_ = bottom;
-  m.listTop_ = kCardsTop;
+  m.list_.bottom = bottom;
+  m.list_.top = kCardsTop;
   const bool full = st.full != StashFull::None;  // a look's, in place of the letters and cards
   if (c) {
     layoutRail(m, ps.rail, ps.railHeight, kCardsTop, bottom);
     if (full) {
-      st.resultsX = m.listLeft_;
+      st.resultsX = m.list_.left;
       st.resultsTop = kGridTop;
-      layoutFull(m, m.listLeft_, kGridTop);
+      layoutFull(m, m.list_.left, kGridTop);
     } else {
-      layoutPerformerGrid(m, m.listLeft_, kCardsTop);
+      layoutPerformerGrid(m, m.list_.left, kCardsTop);
     }
   } else {
-    m.listCount_ = 0;
-    m.visibleRows_ = 1;
+    m.list_.count = 0;
+    m.list_.rows = 1;
   }
   if (editing) m.layoutKeyboard();
 
@@ -594,13 +323,13 @@ void StashPages::layoutPerformers(Menu& m) {
           s.sort = StashPerformerSort::Name;
           s.descending = false;
           s.stale = true;
-          buildPerformers(m);
+          state(m).buildPerformers(s, sources(m), m.view_.stash.malePerformers);
         }
         const StashCatalog* cat = catalog(m);
         for (size_t at = 0; cat && at < s.shown.size(); ++at)
           if (letterOf(cat->performers()[s.shown[at]].name) == letter) {
-            m.scrollOffset_ = static_cast<int>(at) / kColumns;
-            m.scrollFraction_ = 0;
+            m.list_.offset = static_cast<int>(at) / kColumns;
+            m.list_.fraction = 0;
             break;
           }
         m.dirty_ = true;
@@ -680,8 +409,8 @@ void StashPages::drawPerformersHeading(const Menu& m, cairo_t* cr) {
                false, pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a);
   }
   if (!c)
-    drawWaiting(m, cr, m.listLeft_ + kit::kSpace, kCardsTop + 20,
-                kContentRight - m.listLeft_ - 2 * kit::kSpace);
+    drawWaiting(m, cr, m.list_.left + kit::kSpace, kCardsTop + 20,
+                kContentRight - m.list_.left - 2 * kit::kSpace);
   else if (ps.shown.empty() && m.stashMenu_->full == StashFull::None)
     m.drawEmptyPage(cr, Menu::Icon::People, t.noPerformers);
   drawFullHeading(m, cr);
@@ -726,9 +455,7 @@ void StashPages::enterPerformer(Menu& m) {
   st.list.performers = {st.performer};
   const StashCatalog* c = catalog(m);
   if (c && st.list.format != StashFormat::All &&
-      c->query(stashFilterOf(st.list, *c, m.view_.stash.malePerformers, unixNow()), {},
-               &st.history, false)
-          .scenes.empty())
+      st.count(st.list, *c, m.view_.stash.malePerformers) == 0)
     st.list.format = StashFormat::All;
 }
 
@@ -749,7 +476,7 @@ void StashPages::layoutProfile(Menu& m, int index, double x, double top, double 
   const StashStrings& t = strings().stash;
   const StashCatalog& c = *catalog(m);
   const StashPerformer& p = c.performers()[index];
-  performerStats(m);
+  st.performerStats(ps, sources(m));
   ps.profileX = x;
   ps.profileTop = top;
   std::vector<StashImages::Request> pictures;
@@ -834,7 +561,7 @@ void StashPages::layoutPerformer(Menu& m) {
   StashPerformersState& ps = st.performers;
   const StashStrings& t = strings().stash;
   enterPerformer(m);
-  refresh(m);
+  st.refresh(sources(m), listPage(m));
   ps.waiting = false;  // until a picture drawn is not there yet
   const StashCatalog* c = catalog(m);
   const int index = c ? c->performerById(st.performer) : -1;
@@ -863,7 +590,7 @@ void StashPages::drawProfile(const Menu& m, cairo_t* cr, const StashPerformer& p
   const StashPerformersState& ps = m.stashMenu_->performers;
   const StashStrings& t = strings().stash;
   const Palette& pal = m.palette();
-  const double x = ps.profileX, top = ps.profileTop, bottom = m.listBottom_;
+  const double x = ps.profileX, top = ps.profileTop, bottom = m.list_.bottom;
   drawPortrait(m, cr, p, x, top, kPortraitW, kPortraitH, 12);
 
   // Her history in the app, beside the portrait.

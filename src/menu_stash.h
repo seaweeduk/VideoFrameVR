@@ -4,11 +4,12 @@
 // Home, the Scenes page with its filter rail, chips and full lists, the
 // Performers and Studios pages and a page for each, the strip's Scene tab,
 // and the Settings group with the server's editor. Laid out and drawn by
-// StashPages, a friend of Menu, so the core menu has only a call here and
+// StashPages, nested in Menu, so the core menu has only a call here and
 // there; its state is a StashMenu, kept for the session.
 
 #include "menu.h"
 #include "media_server.h"
+#include "menu_stash_browse.h"
 #include "stash_catalog.h"
 #include "stash_sync.h"
 
@@ -22,73 +23,6 @@
 #include <optional>
 #include <string>
 #include <vector>
-
-// Looks chosen (StashLookKind), on the Scenes page and the Performers page:
-// the named kinds as Stash names them, included (any of) or left out; the
-// buckets as stashBit() masks, any of within each kind.
-struct StashLooks {
-  std::array<std::vector<std::string>, kStashNamedLooks> in, out;
-  std::array<unsigned, kStashLookKinds - kStashNamedLooks> masks{};
-
-  bool operator==(const StashLooks& o) const { return in == o.in && out == o.out && masks == o.masks; }
-  bool active() const;
-  unsigned& mask(StashLookKind kind) { return masks[static_cast<size_t>(kind) - kStashNamedLooks]; }
-  unsigned mask(StashLookKind kind) const {
-    return masks[static_cast<size_t>(kind) - kStashNamedLooks];
-  }
-  // A name included, or left out; again, taken away.
-  void include(int kind, const std::string& name);
-  void exclude(int kind, const std::string& name);
-  // The catalog's filter for them.
-  void addTo(StashFilter& filter, const StashCatalog& catalog) const;
-};
-
-// A look's text: its heading ("Hair"), a value's rail row ("Blonde hair",
-// "Cup D", "18–22") and its chip ("Blonde hair", "Cup D", "Age 18–22"): a
-// named kind's `name`, another kind's `bucket`.
-const char* stashLookHeading(int kind);
-std::string stashLookRow(int kind, const std::string& name, int bucket = -1);
-std::string stashLookChip(int kind, const std::string& name, int bucket = -1);
-
-// A Scenes list: what it shows and in which order, by Stash's ids and names
-// (a catalog's indexes are its own, and the catalog changes with each sync),
-// so it lasts the session and can be pinned. Empty parts don't filter.
-struct StashList {
-  StashFormat format = StashFormat::VR;
-  // Included and left out; tags by any of the Stash ids of a merged tag.
-  std::vector<int64_t> tags, tagsOut, performers, performersOut, studios, studiosOut;
-  bool tagsAll = true, performersAll = true;  // All of, else Any of
-  unsigned women = 0, men = 0;  // stashBit() masks, as StashFilter's
-  StashLooks looks;
-  int year = 0;       // released that year, 0 = any
-  int addedDays = 0;  // added to Stash in the last so many days, 0 = any
-  unsigned resolutions = 0, durations = 0, frameRates = 0, codecs = 0, sizes = 0, history = 0;
-  std::string text;  // the search's words
-  StashSort sort = StashSort::Released;
-  bool descending = true;
-
-  bool operator==(const StashList& o) const;
-  bool operator!=(const StashList& o) const { return !(*this == o); }
-};
-
-struct StashPin {
-  std::string name;
-  StashList list;
-};
-
-// configDir()/stash_lists.conf: the pinned lists (user data, kept as made).
-// Each kind of server has its own (their ids are the server's): Stash's in
-// stash_lists.conf as ever, another's in <its id>_lists.conf.
-std::vector<StashPin> loadStashPins(ServerKind kind);
-void saveStashPins(const std::vector<StashPin>& pins, ServerKind kind);
-
-// The catalog's filter and order for a list (its ids that the catalog has
-// no longer are left out); `now` for the added-since span.
-StashFilter stashFilterOf(const StashList& list, const StashCatalog& catalog, bool malePerformers,
-                          int64_t now);
-StashOrder stashOrderOf(const StashList& list, uint64_t seed);
-// A pinned list's name, made from its filter: "VR · Emily Pink · anal".
-std::string stashListName(const StashList& list, const StashCatalog* catalog);
 
 // How a Stash button is drawn (Menu::Button::stashLook).
 enum class StashLook {
@@ -120,25 +54,6 @@ enum class StashLook {
 };
 enum class StashIcon { None, Stash, Scenes, Performers, Studios, Pin, Shuffle, Filters, Ban,
                        Undo, Back };
-
-// One line of the filter rail, made when the results change; laid out only
-// where it shows.
-struct StashRailLine {
-  enum Kind { Heading, Sub, Row, Link, Note, Gap } kind = Row;
-  std::string label, count;
-  int state = 0;                           // Row: 1 included, 2 left out
-  std::function<void()> include, exclude;  // exclude empty: none offered
-  // Heading of performers or tags with two or more included: All of / Any of.
-  int mode = -1;  // -1 none, else 1 = All of chosen, 0 = Any of
-  std::function<void(bool)> setAll;
-  // Editing the rail's sections (StashMenu::editSections): a Row is a
-  // switch, `command` its action (and a Link's), up and down its moves. A
-  // subgroup's is indented under its section, inactive while that's hidden.
-  std::function<MenuCommand()> command, up, down;
-  bool subgroup = false, inactive = false;
-  int lines = 1;  // the switch's label, wrapped when it doesn't fit beside the moves
-  double height = 0;
-};
 
 // The Scene tab's page (menu_stash_scene.cpp): what it shows of the playing
 // video, kept while the same video plays.
@@ -185,28 +100,6 @@ struct StashSceneTab {
   double dividerY = 0, boxY = 0, boxH = 0;
 };
 
-// The Performers page's choices (docs/stash.md): looks (her age: in one of
-// her scenes) and the app's history, any of within each kind, and a search
-// of names and aliases.
-enum class StashPerformerHistory : uint8_t { Played, Unplayed, Rated4, kCount };
-struct StashPerformerChoice {
-  StashLooks looks;
-  unsigned history = 0;  // stashBit() mask
-  bool active() const { return looks.active() || history; }
-};
-
-// What the app's history says of a performer: over her scenes here in a
-// format.
-struct StashPerformerStats {
-  int scenes = 0;
-  unsigned ages = 0;  // stashBit(StashAge) of her ages in them
-  int played = 0, plays = 0, rated = 0;  // scenes played, plays, scenes rated
-  double ratingSum = 0;
-  int32_t newest = kStashNoDay;  // her newest scene's release date
-  int64_t lastPlayed = 0;
-  double average() const { return rated ? ratingSum / rated : 0; }
-};
-
 // A performer's or a studio's page shows its scenes with the Scenes page's
 // list, rail and results: the Scenes page's list is kept aside meanwhile,
 // and the page's own while away.
@@ -219,29 +112,11 @@ struct StashSavedList {
   ListPlace place;
 };
 
-// The Performers page's state, and the Scenes page's while the performer
-// page shows her scenes in its place.
-struct StashPerformersState {
-  StashPerformerChoice choice;
-  std::string text;
-  StashPerformerSort sort = StashPerformerSort::Scenes;
-  bool descending = true;
+// The Performers page's state: its model's, where its grid and rail were
+// left, the Scenes page's list while the performer page shows her scenes in
+// its place, and where her profile is.
+struct StashPerformersState : StashPerformersBrowse {
   double scroll = 0, railPosition = 0;  // the grid's position (rows) and the rail's, while away
-  // Remade when the choices change, or the catalog, the library or the
-  // format (the Scenes page's) does.
-  bool stale = true;
-  uint64_t catalogGeneration = ~0ull, libraryGeneration = ~0ull, awayGeneration = ~0ull;
-  StashFormat format = StashFormat::VR;
-  uint64_t statsCatalog = ~0ull, statsLibrary = ~0ull, statsAway = ~0ull;
-  // Per catalog performer, per StashFormat.
-  std::vector<std::array<StashPerformerStats, 3>> stats;
-  std::vector<int> shown;       // the performers listed, in order
-  int all = 0;                  // ... and without the choices and search
-  std::array<int, 3> formats{};  // performers listed per StashFormat, with them
-  int theirScenes = -1;                    // scenes with the chosen looks, -1 = not offered
-  std::array<std::vector<StashFacet>, kStashLookKinds> looks;  // the rail's counts, most first
-  std::vector<StashRailLine> rail;
-  double railHeight = 0;
   std::optional<StashSavedList> scenes, her;
   // The performer page's profile: where it is, and whether a picture of it
   // is still coming (it is redrawn when one arrives).
@@ -249,36 +124,23 @@ struct StashPerformersState {
   bool waiting = false;
 };
 
-// The Home page's own state (menu_stash_home.cpp), and the Studios page's
-// and a studio page's (menu_stash_studios.cpp).
-struct StashHomePage;
+// The Studios page's own state and a studio page's (menu_stash_studios.cpp).
 struct StashStudiosPage;
-
-// What the full list (More …) in place of the results lists: Look is a
-// named look's values (StashMenu::fullLook), also in place of the
-// Performers page's cards.
-enum class StashFull { None, Performers, Tags, Studios, Years, Pins, Look };
 
 // The server editor's sign-in fields, after the address and the API key.
 constexpr int kStashUser = 2, kStashPassword = 3;
 
-// The Stash pages' state for the session.
-struct StashMenu {
+// The Stash pages' state for the session: what they browse (StashBrowse),
+// and how they show it.
+struct StashMenu : StashBrowse {
   int64_t performer = 0, studio = 0;  // whose page shows, by Stash id
-  StashList list;                 // what the Scenes page shows
-  std::optional<StashList> undo;  // ... before the last change of its filters
   bool railShown = true;
-  bool editSections = false;  // the rail lists its sections to show, hide and order
   bool gallery = true;
   double scroll = 0;  // the results' position (rows), kept while away or in a full list
   // ... and the results' place, put back once they are laid out again
   // (placePending).
   ListPlace place;
   bool placePending = false;
-  StashFull full = StashFull::None;
-  StashLookKind fullLook = StashLookKind::Hair;  // Look: which
-  bool fullByName = false;  // the full list A–Z, else most first (years: oldest first, else newest)
-  std::string fullSearch;
   // What the keyboard types into.
   enum class Typing { Search, FullSearch, PinName, Server, Performers, Studios, Tags } typing =
       Typing::Search;
@@ -311,7 +173,6 @@ struct StashMenu {
   // The host whose certificate the fields accept without verifying it (as
   // StashSettings::unverifiedHost).
   std::string draftUnverified;
-  std::vector<StashPin> pins;
   // A pinned list shown in the Scenes page's place (openPin()): the page's
   // own list meanwhile, and which pin it is (-1 once unpinned).
   std::optional<StashSavedList> ownScenes;
@@ -321,29 +182,6 @@ struct StashMenu {
   // The kind of server all of this was chosen on (attach()): the pins are
   // its own, as are the ids in every list.
   ServerKind kind = ServerKind::Stash;
-  uint64_t seed = 1;  // Random's order
-
-  // The query and its rail, remade only when the list, the catalog or the
-  // male performers setting changes; the history when the library's does.
-  bool stale = true;
-  uint64_t catalogGeneration = 0, libraryGeneration = ~0ull;
-  std::vector<StashHistory> history;
-  // Away from home: the scenes hidden (StashHistory::hidden), as of the
-  // menu's offlineShapeGeneration_; counted as they change.
-  std::vector<bool> hidden;
-  uint64_t offlineShape = ~0ull, awayGeneration = 0;
-  StashFilter filter;
-  StashResult result;
-  std::vector<StashRailLine> rail;
-  double railHeight = 0;
-  // The full list's rows (indexes into the facet), remade with it.
-  struct FullRow {
-    std::string label, count;
-    int state = 0;
-    std::function<void()> include, exclude;
-  };
-  std::vector<FullRow> fullRows;
-  bool fullStale = true;
 
   StashSceneTab sceneTab;
 
@@ -356,7 +194,6 @@ struct StashMenu {
   std::string studioSearch;  // the Studios page's
   bool bandPending = false;  // a studio's logo was not there when its page was drawn
   std::shared_ptr<StashStudiosPage> studios;
-  std::shared_ptr<StashHomePage> home;
   StashStatus status;
   long minute = -1;
   int renaming = -1;  // the pinned list whose name is typed
@@ -369,6 +206,12 @@ struct StashMenu {
 
   // Where the last layout put what the heading draws.
   double titleX = 0, titleRight = 0, resultsX = 0, resultsTop = 0, fullTitleX = 0, fullTitleRight = 0;
+  // The scene list's columns: how much further apart their headings need
+  // them, in this language (StashPages::sceneApart()).
+  struct {
+    const Strings* strings = nullptr;
+    std::array<double, 3> apart{};
+  } sceneApart;
 };
 
 // What Settings' Stash section shows (StashPages::settingsShown()), kept
@@ -409,7 +252,7 @@ struct StashSettingsShown {
   std::string writeBackLine;  // what waits or was sent, and what went wrong
 };
 
-struct StashPages {
+struct Menu::StashPages {
   using Button = Menu::Button;
   using ListItem = Menu::ListItem;
 
@@ -473,6 +316,7 @@ struct StashPages {
   static void leaveSceneDetails(Menu& m);
   static void updateSceneDetails(Menu& m);
   static void layoutSceneDetails(Menu& m);
+  struct SceneDetails;  // its parts
   static void drawSceneDetailsHeading(const Menu& m, cairo_t* cr);
   static void drawSceneButton(const Menu& m, cairo_t* cr, const Button& b, const double ink[4]);
 
@@ -504,6 +348,7 @@ struct StashPages {
   static void showHome(Menu& m);
   static void leaveHome(Menu& m);
   static void layoutHome(Menu& m);
+  static void layoutHomeHeader(Menu& m, const StashHomePage& p, const StashCatalog* c);
   static void drawHomeHeading(const Menu& m, cairo_t* cr);
   static void drawShelf(const Menu& m, cairo_t* cr, const Button& b, const double ink[4]);
 
@@ -517,11 +362,8 @@ struct StashPages {
   static void leavePerformers(Menu& m);
   static void enterPerformer(Menu& m);  // her scenes in the Scenes page's place
   static void leavePerformer(Menu& m);
-  static const std::vector<std::array<StashPerformerStats, 3>>& performerStats(Menu& m);
-  static void buildPerformers(Menu& m);
-  // A change of the Performers page's choices, as a row's action.
-  static std::function<void()> changePerformers(Menu& m,
-                                                std::function<void(StashPerformerChoice&)> f);
+  // A change of the Performers page's choices.
+  static void changePerformers(Menu& m, const std::function<void(StashPerformerChoice&)>& f);
   static void layoutPerformerGrid(Menu& m, double x0, double top);
   static void layoutProfile(Menu& m, int performer, double x, double top, double bottom);
   static void drawProfile(const Menu& m, cairo_t* cr, const StashPerformer& p);
@@ -538,6 +380,11 @@ struct StashPages {
   // The Scenes page (menu_stash_scenes.cpp).
   static StashMenu& state(Menu& m) { return *m.stashMenu_; }
   static const StashCatalog* catalog(const Menu& m);
+  // What the browsing (StashBrowse) is made from, and for which page.
+  static StashBrowse::Sources sources(const Menu& m);
+  static StashBrowse::Page listPage(const Menu& m);
+  // What its rows do (attach()).
+  static StashBrowse::Host browseHost(Menu& m);
   // menu_stash_folders.cpp
   // The Folders rows Settings shows (settingsShown()).
   static void shownFolders(Menu& m, StashSettingsShown& shown);
@@ -561,15 +408,8 @@ struct StashPages {
                         const std::optional<StashSavedList>& own, int64_t id);
   static void leaveList(Menu& m, std::optional<StashSavedList>& scenes,
                         std::optional<StashSavedList>& own, int64_t id);
-  // Takes a new catalog (the lists are stale) and the library's changed
-  // history; true if either came.
-  static bool takeChanges(Menu& m);
-  static void refresh(Menu& m);
   static void changeList(Menu& m, const std::function<void(StashList&)>& change);
-  static void buildRail(Menu& m);
   static void editSections(Menu& m, bool on);
-  static void editSectionsRail(Menu& m);
-  static void buildFull(Menu& m);
   static void layoutHeader(Menu& m, double x);
   static void layoutTools(Menu& m);
   // The rail, the chips and the results (or a full list) from `top` down,
@@ -583,20 +423,6 @@ struct StashPages {
   static void layoutSearch(Menu& m, double x, double right, const std::string& text,
                            const char* hint, StashMenu::Typing typing);
   static double layoutChips(Menu& m, double x, double right, double y);
-  // The heights of a rail's lines; their sum.
-  static double railHeights(std::vector<StashRailLine>& rail);
-  // The rail's rows for some kinds of look, each under a heading (or a
-  // sub-heading): what is chosen first, then the values `counts` has (most
-  // first; buckets in their order), never one in every one of `total` or in
-  // none; a named kind with more than it lists ends in a link to them all.
-  // `change` makes a row's action from a change of the looks.
-  static void lookRail(std::vector<StashRailLine>& rail, const StashCatalog& c,
-                       const StashLooks& looks,
-                       const std::array<std::vector<StashFacet>, kStashLookKinds>& counts,
-                       int total, const std::vector<StashLookKind>& kinds, bool headings,
-                       const std::function<std::function<void()>(
-                           std::function<void(StashLooks&)>)>& change,
-                       const std::function<void(StashLookKind)>& more);
   // The full list's title, over the page's heading.
   static void drawFullHeading(const Menu& m, cairo_t* cr);
   static void layoutRail(Menu& m, const std::vector<StashRailLine>& rail, double height,
@@ -655,9 +481,8 @@ struct StashPages {
   static void drawIcon(cairo_t* cr, StashIcon icon, double cx, double cy, double s,
                        const double rgba[4]);
 };
+using StashPages = Menu::StashPages;  // as its own files name it
 
-// "3,454".
-std::string stashNumber(long n);
 // "2 min ago", "3 h ago", "4 days ago".
 std::string stashAgo(int64_t when);
 // What a sync under way is doing: "Downloading your Stash … 3.4 MB".
@@ -672,16 +497,3 @@ inline int stashPixels(double w) {
 }
 // The parts that aren't empty, with `between` between them.
 std::string stashJoined(const std::vector<std::string>& parts, const char* between = " · ");
-
-// A printf pattern filled in, std::string arguments as their text.
-inline const char* stashArg(const std::string& s) { return s.c_str(); }
-template <typename T>
-T stashArg(T value) {
-  return value;
-}
-template <typename... Args>
-std::string stashPrinted(const char* pattern, const Args&... args) {
-  char buf[512];
-  std::snprintf(buf, sizeof(buf), pattern, stashArg(args)...);
-  return buf;
-}

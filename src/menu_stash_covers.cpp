@@ -484,10 +484,10 @@ void Menu::setStash(Stash* stash) {
   if (stash)
     stash->prefetchCovers(
         {static_cast<int>(kCardPictureW * scale), static_cast<int>(kRowPictureW * scale)});
-  for (LibraryItem& item : libraryItems_) item.title.clear();
-  if (!libraryItems_.empty()) sortLibrary();
+  for (LibraryItem& item : libraryPage_.items) item.title.clear();
+  if (!libraryPage_.items.empty()) sortLibrary();
   arrangeByTitles();
-  libraryListStale_ = true;
+  libraryPage_.listStale = true;
   // The Stash pages: kept for the session, shown while it is on.
   stash_ = stash;
   if (stash)
@@ -502,15 +502,15 @@ void Menu::setStash(Stash* stash) {
 void Menu::updateStash() {
   StashCovers& stash = *stashCovers_;
   if (stash.changed()) {  // other titles, covers or neither
-    if (!libraryItems_.empty() && fieldOf(librarySort_) == kByName) sortLibrary();
+    if (!libraryPage_.items.empty() && fieldOf(libraryPage_.sort) == kByName) sortLibrary();
     arrangeByTitles();
-    libraryListStale_ = true;
+    libraryPage_.listStale = true;
     dirty_ = true;
   }
   // Logos left out of the last frame: their rows, or all if the list moved.
   double top = 0, bottom = 0;
   if (stash.nextFrame(top, bottom)) {
-    if (drawnScroll_ == scrollOffset_ + scrollFraction_)
+    if (list_.drawn == list_.offset + list_.fraction)
       browserChanged(top, bottom);
     else
       browserChanged();
@@ -595,14 +595,14 @@ void Menu::drawStudioMark(cairo_t* cr, const std::string& path, double x, double
 // Sorted by name, videos with Stash's title are sorted by it, among the
 // others by their file's name; folders stay first, as they were.
 void Menu::arrangeByTitles() {
-  if (!stashCovers_ || fieldOf(sortMode_) != kByName || fileKind_ != FileKind::Video) return;
-  const std::vector<FolderListing::Entry>& entries = listing_.entries();
+  if (!stashCovers_ || fieldOf(files_.sort) != kByName || files_.kind != FileKind::Video) return;
+  const std::vector<FolderListing::Entry>& entries = files_.listing.entries();
   std::vector<std::string> keys(entries.size());
   for (size_t i = 0; i < entries.size(); ++i) {
     const std::string name = entries[i].directory ? "" : stashCovers_->title(entries[i].path);
     keys[i] = name.empty() ? entries[i].nameKey : fileNameSortKey(foldFileName(name));
   }
-  const bool down = sortMode_ == FolderListing::Order::NameDown;
+  const bool down = files_.sort == FolderListing::Order::NameDown;
   std::vector<size_t> order(entries.size());
   std::iota(order.begin(), order.end(), 0);
   std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
@@ -613,10 +613,10 @@ void Menu::arrangeByTitles() {
     return down ? entries[b].nameKey < entries[a].nameKey
                 : entries[a].nameKey < entries[b].nameKey;
   });
-  listing_.arrange(order);
-  if (records_.size() != order.size()) return;
+  files_.listing.arrange(order);
+  if (files_.records.size() != order.size()) return;
   std::vector<VideoRecord> records;
   records.reserve(order.size());
-  for (const size_t i : order) records.push_back(records_[i]);
-  records_ = std::move(records);
+  for (const size_t i : order) records.push_back(files_.records[i]);
+  files_.records = std::move(records);
 }

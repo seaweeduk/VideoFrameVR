@@ -23,20 +23,12 @@
 namespace {
 
 constexpr double kRailW = 400, kRailGap = kit::kSpace;
-constexpr double kRowStep = 54, kRowBox = 50;  // facet rows (rail and full lists)
-constexpr double kLineGrow = 30;               // ... and each wrapped line, editing the rail
+constexpr double kRowStep = kStashRowStep, kRowBox = 50;  // facet rows (rail and full lists)
+constexpr double kLineGrow = kStashLineGrow;   // ... and each wrapped line, editing the rail
 constexpr double kExcludeW = kRowBox;          // ... and their ⊘ target
 constexpr double kChipH = kListHeaderH;
 constexpr double kResultsGap = kit::kSpaceTight;  // under the chips
 constexpr double kTileGap = kGalleryGap;
-constexpr int kRailTop[] = {5, 6, 5};  // performers, tags and studios the rail lists
-constexpr int kRailYears = 6;
-constexpr int kAddedDays[] = {7, 30, 90, 365};
-constexpr StashResolution kResolutionOrder[] = {StashResolution::VR8K,    StashResolution::VR7K,
-                                                StashResolution::VR6K,    StashResolution::VR5K,
-                                                StashResolution::VR4K,    StashResolution::VRUpTo3K,
-                                                StashResolution::Flat4K,  StashResolution::Flat1080,
-                                                StashResolution::Flat720, StashResolution::FlatSD};
 // The Sort by fields, in the dropdown's order: the dates together.
 constexpr int kSortOrder[] = {int(StashSort::Released),   int(StashSort::Added),
                               int(StashSort::Modified),   int(StashSort::LastPlayed),
@@ -45,71 +37,6 @@ constexpr int kSortOrder[] = {int(StashSort::Released),   int(StashSort::Added),
                               int(StashSort::Resolution), int(StashSort::Size),
                               int(StashSort::CastSize),   int(StashSort::Random)};
 
-enum Kind { kPerformers, kTags, kStudios };
-
-// The Looks section's kinds, as its subgroups list them from kSubHair on.
-const std::vector<StashLookKind> kSceneLooks = {
-    StashLookKind::Hair,    StashLookKind::Cup,   StashLookKind::Breasts, StashLookKind::Age,
-    StashLookKind::Ethnicity, StashLookKind::Country, StashLookKind::Height, StashLookKind::Eyes,
-    StashLookKind::Shape,   StashLookKind::Tattoos};
-
-std::vector<int64_t> StashList::* const kIn[] = {&StashList::performers, &StashList::tags,
-                                                 &StashList::studios};
-std::vector<int64_t> StashList::* const kOut[] = {&StashList::performersOut, &StashList::tagsOut,
-                                                  &StashList::studiosOut};
-
-int64_t idOf(const StashCatalog& c, int kind, int index) {
-  if (kind == kPerformers) return c.performers()[index].id;
-  if (kind == kTags) return c.tags()[index].ids.empty() ? 0 : c.tags()[index].ids.front();
-  return c.studios()[index].id;
-}
-
-int indexOf(const StashCatalog& c, int kind, int64_t id) {
-  return kind == kPerformers ? c.performerById(id)
-         : kind == kTags     ? c.tagById(id)
-                             : c.studioById(id);
-}
-
-const std::string& nameOf(const StashCatalog& c, int kind, int index) {
-  if (kind == kPerformers) return c.performers()[index].name;
-  if (kind == kTags) return c.tags()[index].name;
-  return c.studios()[index].name;
-}
-
-const std::vector<StashFacet>& facetOf(const StashResult& r, int kind) {
-  return kind == kPerformers ? r.performers : kind == kTags ? r.tags : r.studios;
-}
-
-const StashPick& pickOf(const StashFilter& f, int kind) {
-  return kind == kPerformers ? f.performers : kind == kTags ? f.tags : f.studios;
-}
-
-// Whether the kind's counts are taken in the results (none included, or
-// All of), so one as many as the results is in every one of them; Any of
-// counts them without its own choices.
-bool inResults(const StashPick& pick) { return pick.all || pick.include.empty(); }
-
-// Removes the id from the list, and the other ids of the same merged tag.
-// By ids, not indexes: a click may come after a new catalog replaced the
-// one the page was laid out with, before it is laid out again.
-bool removeId(std::vector<int64_t>& ids, const StashCatalog* c, int kind, int64_t id) {
-  const int index = c ? indexOf(*c, kind, id) : -1;
-  const size_t before = ids.size();
-  ids.erase(std::remove_if(ids.begin(), ids.end(),
-                           [&](int64_t other) {
-                             return other == id ||
-                                    (index >= 0 && indexOf(*c, kind, other) == index);
-                           }),
-            ids.end());
-  return ids.size() != before;
-}
-
-int countIn(const std::vector<StashFacet>& facet, int index) {
-  for (const StashFacet& f : facet)
-    if (f.index == index) return f.count;
-  return 0;
-}
-
 int64_t unixNow() { return static_cast<int64_t>(std::time(nullptr)); }
 
 // The grid's tiles across, from x0 to the list's right: about 400 wide.
@@ -117,101 +44,7 @@ int gridColumns(double x0, double right) {
   return std::max(1, static_cast<int>((right - kScrollbarRoom - x0 + kTileGap) / (400 + kTileGap)));
 }
 
-// An active filter above the results; tapping it takes it away.
-struct Chip {
-  std::string label;
-  bool out = false;
-  std::function<void(StashList&)> remove;
-};
-
 }  // namespace
-
-bool StashPages::takeChanges(Menu& m) {
-  StashMenu& st = state(m);
-  bool changed = false;
-  if (m.stash_->generation() != st.catalogGeneration) {
-    st.catalogGeneration = m.stash_->generation();
-    st.libraryGeneration = ~0ull;
-    st.stale = true;
-    changed = true;
-  }
-  if (m.library_ && m.library_->generation() != st.libraryGeneration) {
-    st.libraryGeneration = m.library_->generation();
-    std::vector<StashHistory> history = m.stash_->history();
-    // A format chosen in the player moves its scene between VR and 2D: query
-    // again then (a rating alone doesn't).
-    if (history.size() != st.history.size()) {
-      st.stale = true;
-    } else {
-      for (size_t i = 0; i < history.size() && !st.stale; ++i)
-        st.stale = history[i].vr != st.history[i].vr;
-    }
-    st.history = std::move(history);
-    for (size_t i = 0; i < st.history.size() && i < st.hidden.size(); ++i)
-      st.history[i].hidden = st.hidden[i];
-    changed = true;
-  }
-  // Away from home: the scenes on a server that doesn't answer (SMB, or
-  // Stash for those played from its stream), but for those with a copy on
-  // this device; and those whose only file was deleted (Stash::hideScene()).
-  const StashCatalog* c = m.stash_->catalog().get();
-  if (m.offline_ && c && st.history.size() == c->scenes().size() &&
-      (changed || st.offlineShape != m.offlineShapeGeneration_)) {
-    st.offlineShape = m.offlineShapeGeneration_;
-    std::vector<bool> hidden(c->scenes().size());
-    const bool away = !m.offline_->downServers().empty() || m.offline_->stashDown();
-    if (away || m.stash_->hidesScenes())
-      for (size_t i = 0; i < hidden.size(); ++i) {
-        const StashScene& s = c->scenes()[i];
-        if (m.stash_->hidden(s.id)) {
-          hidden[i] = true;
-        } else if (away) {
-          const std::string at = stashSceneLocation(s, m.offline_);
-          hidden[i] = m.offline_->serverDown(at) && m.offline_->copyOf(at, s.oshash).empty();
-        }
-      }
-    if (hidden != st.hidden) {
-      st.hidden = std::move(hidden);
-      for (size_t i = 0; i < st.history.size(); ++i) st.history[i].hidden = st.hidden[i];
-      ++st.awayGeneration;
-      st.stale = true;
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-// The query, when the list or the catalog changed; the history (ratings
-// and plays) when the library's did, without querying again: a rating
-// changed meanwhile doesn't move its tile away from the pointer.
-void StashPages::refresh(Menu& m) {
-  StashMenu& st = state(m);
-  const StashCatalog* c = catalog(m);
-  if (!c) {
-    st.result = StashResult{};
-    st.rail.clear();
-    st.railHeight = 0;
-    st.fullRows.clear();
-    return;
-  }
-  takeChanges(m);
-  if (!st.stale) return;
-  st.stale = false;
-  st.filter = stashFilterOf(st.list, *c, m.view_.stash.malePerformers, unixNow());
-  const bool history = st.history.size() == c->scenes().size();
-  // A studio's page: its own scenes; the rail offers no studios there.
-  StashFilter filter = st.filter;
-  const int64_t fixed = fixedStudio(m);
-  const int scope = fixed ? c->studioById(fixed) : -1;
-  if (scope >= 0) filter.studios = StashPick{{scope}, {}, false};
-  const int64_t her = fixedPerformer(m);
-  if ((fixed && scope < 0) || (her && c->performerById(her) < 0))
-    st.result = StashResult{};  // gone from Stash
-  else
-    st.result = c->query(filter, stashOrderOf(st.list, st.seed), history ? &st.history : nullptr);
-  buildRail(m);
-  st.fullStale = true;
-}
 
 // A change of the filters: the one before can be had back (Undo), and the
 // results start at the top.
@@ -225,357 +58,12 @@ void StashPages::changeList(Menu& m, const std::function<void(StashList&)>& chan
   st.stale = true;
   st.placePending = false;
   if (st.full == StashFull::None) {
-    m.scrollOffset_ = 0;
-    m.scrollFraction_ = 0;
+    m.list_.offset = 0;
+    m.list_.fraction = 0;
   } else {
     st.scroll = 0;
   }
   m.dirty_ = true;
-}
-
-namespace {
-
-// What each kind of choice does to the list: included (or left out) once
-// more, it is taken away.
-std::function<void(StashList&)> includeIn(Menu& m, int kind, int64_t id) {
-  return [&m, kind, id](StashList& l) {
-    const StashCatalog* c = StashPages::catalog(m);
-    removeId(l.*kOut[kind], c, kind, id);
-    if (!removeId(l.*kIn[kind], c, kind, id)) (l.*kIn[kind]).push_back(id);
-  };
-}
-
-std::function<void(StashList&)> excludeIn(Menu& m, int kind, int64_t id) {
-  return [&m, kind, id](StashList& l) {
-    const StashCatalog* c = StashPages::catalog(m);
-    removeId(l.*kIn[kind], c, kind, id);
-    if (!removeId(l.*kOut[kind], c, kind, id)) (l.*kOut[kind]).push_back(id);
-  };
-}
-
-// On a studio's page, studios are no choice: its scenes are all its own.
-bool offered(const Menu& m, int kind) { return kind != kStudios || !StashPages::fixedStudio(m); }
-
-std::function<void(StashList&)> toggleBit(unsigned StashList::* mask, unsigned bit) {
-  return [mask, bit](StashList& l) { l.*mask ^= 1u << bit; };
-}
-
-const char* subgroupLabel(int subgroup) {
-  const StashStrings& t = strings().stash;
-  switch (subgroup) {
-    case kSubWomen: return t.women;
-    case kSubMen: return t.men;
-    case kSubAdded: return t.added;
-    case kSubYear: return t.released;
-    case kSubResolution: return t.resolution;
-    case kSubDuration: return t.duration;
-    case kSubFrameRate: return t.frameRate;
-    case kSubCodec: return t.codec;
-    case kSubFileSize: return t.fileSize;
-    default: return stashLookHeading(static_cast<int>(kSceneLooks[subgroup - kSubHair]));
-  }
-}
-
-// The chips of a list, in the rail's order.
-std::vector<Chip> chipsOf(Menu& m, const StashList& l, const StashCatalog& c) {
-  const StashStrings& t = strings().stash;
-  std::vector<Chip> chips;
-  const int64_t fixed = StashPages::fixedPerformer(m);  // her page: always her
-  for (int kind : {kPerformers, kTags, kStudios}) {
-    for (int out = 0; out < 2; ++out)
-      for (const int64_t id : out ? l.*kOut[kind] : l.*kIn[kind]) {
-        const int index = indexOf(c, kind, id);
-        if (index < 0 || (kind == kPerformers && id == fixed)) continue;
-        chips.push_back({nameOf(c, kind, index), out == 1,
-                         out ? excludeIn(m, kind, id) : includeIn(m, kind, id)});
-      }
-  }
-  auto bits = [&](unsigned StashList::* mask, const char* const* labels, int count,
-                  const char* pattern = nullptr) {
-    for (int i = 0; i < count; ++i)
-      if (l.*mask & (1u << i))
-        chips.push_back({pattern ? stashPrinted(pattern, labels[i]) : labels[i], false,
-                         toggleBit(mask, static_cast<unsigned>(i))});
-  };
-  bits(&StashList::women, t.womenCounts, 3);
-  bits(&StashList::men, t.menCounts, 4);
-  for (const StashLookKind look : kSceneLooks) {
-    const int k = static_cast<int>(look);
-    if (k < kStashNamedLooks) {
-      for (int out = 0; out < 2; ++out)
-        for (const std::string& name : out ? l.looks.out[k] : l.looks.in[k])
-          chips.push_back({stashLookChip(k, name), out == 1, [k, out, name](StashList& list) {
-                             out ? list.looks.exclude(k, name) : list.looks.include(k, name);
-                           }});
-      continue;
-    }
-    for (int b = 0; b < kStashLookBuckets[k - kStashNamedLooks]; ++b)
-      if (l.looks.mask(look) >> b & 1)
-        chips.push_back({stashLookChip(k, "", b), false,
-                         [look, b](StashList& list) { list.looks.mask(look) ^= 1u << b; }});
-  }
-  for (int i = 0; i < 4; ++i)
-    if (l.addedDays == kAddedDays[i])
-      chips.push_back({t.addedSpans[i], false, [](StashList& list) { list.addedDays = 0; }});
-  if (l.year)
-    chips.push_back(
-        {stashPrinted(t.releasedChip, l.year), false, [](StashList& list) { list.year = 0; }});
-  bits(&StashList::resolutions, t.resolutions, 10);
-  bits(&StashList::durations, t.durations, 4);
-  bits(&StashList::frameRates, t.frameRates, 3);
-  bits(&StashList::codecs, t.codecs, 3);
-  bits(&StashList::sizes, t.fileSizes, 4);
-  bits(&StashList::history, t.history, 5);
-  if (!l.text.empty())
-    chips.push_back({"“" + l.text + "”", false, [](StashList& list) { list.text.clear(); }});
-  return chips;
-}
-
-}  // namespace
-
-// The rail's lines: each section lists what occurs in the results, most
-// common first, never a choice that leaves nothing (one in every result
-// would narrow nothing, and leaving it out would leave nothing); what is
-// chosen first, even where it counts nothing now.
-void StashPages::buildRail(Menu& m) {
-  StashMenu& st = state(m);
-  const StashCatalog& c = *catalog(m);
-  const StashResult& r = st.result;
-  const StashStrings& t = strings().stash;
-  const int total = static_cast<int>(r.scenes.size());
-  std::vector<StashRailLine>& rail = st.rail;
-  rail.clear();
-  auto change = [&m](std::function<void(StashList&)> f) { return [&m, f] { changeList(m, f); }; };
-  auto heading = [&](const char* label) {
-    StashRailLine l;
-    l.kind = StashRailLine::Heading;
-    l.label = label;
-    rail.push_back(std::move(l));
-  };
-  auto sub = [&](const std::string& label) {
-    StashRailLine l;
-    l.kind = StashRailLine::Sub;
-    l.label = label;
-    rail.push_back(std::move(l));
-  };
-  auto row = [&](const std::string& label, int count, int state, std::function<void()> include,
-                 std::function<void()> exclude = nullptr) {
-    StashRailLine l;
-    l.label = label;
-    l.count = count > 0 ? stashNumber(count) : "";
-    l.state = state;
-    l.include = std::move(include);
-    l.exclude = std::move(exclude);
-    rail.push_back(std::move(l));
-  };
-  auto gap = [&] {
-    StashRailLine l;
-    l.kind = StashRailLine::Gap;
-    rail.push_back(std::move(l));
-  };
-  // A section's heading goes in only if it gets a row; take it out otherwise.
-  auto section = [&](const char* label, const std::function<void()>& rows) {
-    const size_t at = rail.size();
-    heading(label);
-    rows();
-    if (rail.size() == at + 1)
-      rail.pop_back();
-    else
-      gap();
-  };
-
-  // Performers, tags and studios: chosen first, then the most common. On a
-  // performer's page, her scenes are always hers, with all of the others.
-  const int fixed = c.performerById(fixedPerformer(m));
-  auto people = [&](int kind) {
-    if (!offered(m, kind)) return;
-    section(t.sections[kind], [&, kind] {
-      const StashPick& pick = pickOf(st.filter, kind);
-      const std::vector<StashFacet>& facet = facetOf(r, kind);
-      const int skip = kind == kPerformers ? fixed : -1;
-      if (kind != kStudios && pick.include.size() >= 2 && skip < 0) {
-        rail.back().mode = pick.all ? 1 : 0;
-        rail.back().setAll = [&m, kind](bool all) {
-          changeList(m, [kind, all](StashList& l) {
-            (kind == kTags ? l.tagsAll : l.performersAll) = all;
-          });
-        };
-      }
-      for (const int index : pick.include)
-        if (index != skip)
-          row(nameOf(c, kind, index), countIn(facet, index), 1,
-              change(includeIn(m, kind, idOf(c, kind, index))),
-              change(excludeIn(m, kind, idOf(c, kind, index))));
-      for (const int index : pick.exclude)
-        row(nameOf(c, kind, index), 0, 2, change(includeIn(m, kind, idOf(c, kind, index))),
-            change(excludeIn(m, kind, idOf(c, kind, index))));
-      int shown = 0, more = 0;
-      for (const StashFacet& f : facet) {
-        if (std::find(pick.include.begin(), pick.include.end(), f.index) != pick.include.end() ||
-            (inResults(pick) && f.count >= total) || f.index == skip)
-          continue;
-        if (shown == kRailTop[kind]) {
-          ++more;
-          break;
-        }
-        row(nameOf(c, kind, f.index), f.count, 0,
-            change(includeIn(m, kind, idOf(c, kind, f.index))),
-            change(excludeIn(m, kind, idOf(c, kind, f.index))));
-        ++shown;
-      }
-      if (more) {
-        StashRailLine l;
-        l.kind = StashRailLine::Link;
-        l.label = t.more[kind];
-        const StashFull full = kind == kPerformers ? StashFull::Performers
-                               : kind == kTags     ? StashFull::Tags
-                                                   : StashFull::Studios;
-        l.include = [&m, full] { showFull(m, full); };
-        rail.push_back(std::move(l));
-      }
-    });
-  };
-
-  // Buckets: tapping one includes it (any of within its kind).
-  auto bucket = [&](unsigned StashList::* mask, unsigned chosen, int i, const char* label,
-                    int count) {
-    const bool on = chosen & (1u << i);
-    if (on || (count > 0 && count < total) || (count > 0 && chosen))
-      row(label, count, on ? 1 : 0, change(toggleBit(mask, static_cast<unsigned>(i))));
-  };
-  // A section's subgroups in the order chosen (stash_filters), without
-  // those hidden; one that gets no row goes out.
-  auto subgroups = [&](int section, const std::function<void(int)>& rows) {
-    const StashSettings& s = m.view_.stash;
-    for (const int g : s.subgroups) {
-      if (stashSectionOf(g) != section || s.hiddenSubgroups >> g & 1) continue;
-      const size_t at = rail.size();
-      rows(g);
-      if (rail.size() == at + 1) rail.pop_back();
-    }
-  };
-  auto cast = [&] { section(t.sections[3], [&] { subgroups(kSectionCast, [&](int g) {
-    if (g == kSubWomen) {
-      sub(t.women);
-      for (int i = 0; i < 3; ++i)
-        bucket(&StashList::women, st.list.women, i, t.womenCounts[i], r.women[i]);
-      return;
-    }
-    sub(t.men);
-    for (int i = 0; i < 4; ++i) bucket(&StashList::men, st.list.men, i, t.menCounts[i], r.men[i]);
-  }); }); };
-  auto looks = [&] { section(t.sections[4], [&] {
-    std::vector<StashLookKind> kinds;
-    subgroups(kSectionLooks, [&](int g) { kinds.push_back(kSceneLooks[g - kSubHair]); });
-    lookRail(rail, c, st.list.looks, r.looks, total, kinds, false,
-             [&m](std::function<void(StashLooks&)> f) {
-               return [&m, f] { changeList(m, [f](StashList& l) { f(l.looks); }); };
-             },
-             [&m](StashLookKind look) { showFull(m, StashFull::Look, look); });
-  }); };
-  // A span or a year chosen: the others are counted without it, so each
-  // stays to switch to.
-  auto released = [&] { section(t.sections[5], [&] { subgroups(kSectionReleased, [&](int g) {
-    if (g == kSubAdded) {
-      sub(t.added);
-      for (int i = 0; i < 4 && i < static_cast<int>(r.addedSince.size()); ++i) {
-        const int days = kAddedDays[i], count = r.addedSince[i];
-        const bool on = st.list.addedDays == days;
-        if (on || (count > 0 && (count < total || st.list.addedDays)))
-          row(t.addedSpans[i], count, on ? 1 : 0,
-              change([days](StashList& l) { l.addedDays = l.addedDays == days ? 0 : days; }));
-      }
-      return;
-    }
-    sub(t.released);
-    int shown = 0;
-    for (const auto& [year, count] : r.years) {
-      const bool on = st.list.year == year;
-      if (!on && ((count >= total && !st.list.year) || shown >= kRailYears)) continue;
-      row(std::to_string(year), count, on ? 1 : 0,
-          change([year = year](StashList& l) { l.year = l.year == year ? 0 : year; }));
-      shown += !on;
-    }
-    if (r.years.size() > static_cast<size_t>(kRailYears)) {
-      StashRailLine l;
-      l.kind = StashRailLine::Link;
-      l.label = t.more[3];
-      l.include = [&m] { showFull(m, StashFull::Years); };
-      rail.push_back(std::move(l));
-    }
-  }); }); };
-  auto format = [&] { section(t.sections[6], [&] { subgroups(kSectionFormat, [&](int g) {
-    switch (g) {
-      case kSubResolution:
-        sub(t.resolution);
-        for (const StashResolution res : kResolutionOrder) {
-          const int i = static_cast<int>(res);
-          bucket(&StashList::resolutions, st.list.resolutions, i,
-                 (std::string(i >= static_cast<int>(StashResolution::Flat4K) ? t.flat : t.vr) +
-                  " · " + t.resolutions[i])
-                     .c_str(),
-                 r.resolutions[i]);
-        }
-        break;
-      case kSubDuration:
-        sub(t.duration);
-        for (int i = 0; i < 4; ++i)
-          bucket(&StashList::durations, st.list.durations, i, t.durations[i], r.durations[i]);
-        break;
-      case kSubFrameRate:
-        sub(t.frameRate);
-        for (int i = 0; i < 3; ++i)
-          bucket(&StashList::frameRates, st.list.frameRates, i, t.frameRates[i], r.frameRates[i]);
-        break;
-      case kSubCodec:
-        sub(t.codec);
-        for (int i = 0; i < 3; ++i)
-          bucket(&StashList::codecs, st.list.codecs, i, t.codecs[i], r.codecs[i]);
-        break;
-      case kSubFileSize:
-        sub(t.fileSize);
-        for (int i = 0; i < 4; ++i)
-          bucket(&StashList::sizes, st.list.sizes, i, t.fileSizes[i], r.sizes[i]);
-        break;
-    }
-  }); }); };
-  auto history = [&] { section(t.sections[7], [&] {
-    for (int i = 0; i < 5; ++i)
-      bucket(&StashList::history, st.list.history, i, t.history[i], r.history[i]);
-  }); };
-
-  // In the order chosen (stash_filters), without those hidden.
-  const StashSettings& chosen = m.view_.stash;
-  if (st.editSections) {
-    editSectionsRail(m);
-    return;
-  }
-  for (const int s : chosen.sections) {
-    if (chosen.hiddenSections >> s & 1) continue;
-    switch (s) {
-      case kSectionPerformers: people(kPerformers); break;
-      case kSectionTags: people(kTags); break;
-      case kSectionStudios: people(kStudios); break;
-      case kSectionCast: cast(); break;
-      case kSectionLooks: looks(); break;
-      case kSectionReleased: released(); break;
-      case kSectionFormat: format(); break;
-      case kSectionHistory: history(); break;
-    }
-  }
-  if (rail.empty()) {
-    StashRailLine l;
-    l.kind = StashRailLine::Note;
-    l.label = t.nothingToNarrow;
-    rail.push_back(std::move(l));
-  }
-  StashRailLine edit;
-  edit.kind = StashRailLine::Link;
-  edit.label = t.editFilters;
-  edit.include = [&m] { editSections(m, true); };
-  rail.push_back(std::move(edit));
-
-  st.railHeight = railHeights(rail);
 }
 
 void StashPages::editSections(Menu& m, bool on) {
@@ -586,326 +74,39 @@ void StashPages::editSections(Menu& m, bool on) {
   m.dirty_ = true;
 }
 
-// The rail while editing it: each section with its switch and its moves,
-// its subgroups under it with theirs (moving within it), then back to the
-// defaults, and Done.
-void StashPages::editSectionsRail(Menu& m) {
-  StashMenu& st = state(m);
-  const StashStrings& t = strings().stash;
-  const StashSettings& s = m.view_.stash;
-  std::vector<StashRailLine>& rail = st.rail;
-  auto set = [](const StashSettings& changed) {
-    return [text = stashSectionsText(changed)] {
-      MenuCommand c;
-      c.type = MenuCommand::SetStashSections;
-      c.path = text;
-      return c;
-    };
+StashBrowse::Sources StashPages::sources(const Menu& m) {
+  return {m.stash_, m.library_, m.offline_, m.downloads_.shapeGeneration};
+}
+
+StashBrowse::Page StashPages::listPage(const Menu& m) {
+  return {m.view_.stash, fixedPerformer(m), fixedStudio(m), m.page_ == Menu::Page::StashPerformers};
+}
+
+StashBrowse::Host StashPages::browseHost(Menu& m) {
+  StashBrowse::Host h;
+  h.catalog = [&m] { return catalog(m); };
+  h.changeList = [&m](const std::function<void(StashList&)>& f) { changeList(m, f); };
+  h.changePerformers = [&m](const std::function<void(StashPerformerChoice&)>& f) {
+    changePerformers(m, f);
   };
+  h.showFull = [&m](StashFull full, StashLookKind look) { showFull(m, full, look); };
+  h.editSections = [&m](bool on) { editSections(m, on); };
+  h.openPin = [&m](int pin) { openPin(m, pin); };
   // Two lines for a label too wide beside its switch and moves (as layoutRail
   // and the switch row lay them out).
-  auto lines = [&m](const std::string& label, double indent) {
+  h.switchLines = [&m](const std::string& label, double indent) {
     const double w = kRailW - 14 - indent - 2 * (kRowBox + kit::kSpacePiece) - 88;
     return m.textWidth(label, Menu::kTextSize, false) > w ? 2 : 1;
   };
-  StashRailLine heading;
-  heading.kind = StashRailLine::Heading;
-  heading.label = t.filtersShown;
-  rail.push_back(std::move(heading));
-  for (int i = 0; i < kStashSections; ++i) {
-    const int section = s.sections[i];
-    StashRailLine l;
-    l.label = t.sections[section];
-    l.lines = lines(l.label, 0);
-    l.state = s.hiddenSections >> section & 1 ? 0 : 1;
-    StashSettings changed = s;
-    changed.hiddenSections ^= 1u << section;
-    l.command = set(changed);
-    for (const int to : {i - 1, i + 1}) {
-      if (to < 0 || to >= kStashSections) continue;
-      changed = s;
-      std::swap(changed.sections[i], changed.sections[to]);
-      (to < i ? l.up : l.down) = set(changed);
-    }
-    rail.push_back(std::move(l));
-    for (int k = 0; k < kStashSubgroups; ++k) {
-      const int g = s.subgroups[k];
-      if (stashSectionOf(g) != section) continue;
-      StashRailLine sub;
-      sub.label = subgroupLabel(g);
-      sub.lines = lines(sub.label, 12);
-      sub.state = s.hiddenSubgroups >> g & 1 ? 0 : 1;
-      sub.subgroup = true;
-      sub.inactive = s.hiddenSections >> section & 1;
-      changed = s;
-      changed.hiddenSubgroups ^= 1u << g;
-      sub.command = set(changed);
-      for (const int to : {k - 1, k + 1}) {
-        if (to < 0 || to >= kStashSubgroups || stashSectionOf(s.subgroups[to]) != section) continue;
-        changed = s;
-        std::swap(changed.subgroups[k], changed.subgroups[to]);
-        (to < k ? sub.up : sub.down) = set(changed);
-      }
-      rail.push_back(std::move(sub));
-    }
-  }
-  StashRailLine gap;
-  gap.kind = StashRailLine::Gap;
-  rail.push_back(std::move(gap));
-  StashRailLine reset;
-  reset.kind = StashRailLine::Link;
-  reset.label = t.resetFilters;
-  reset.command = set(StashSettings{});
-  rail.push_back(std::move(reset));
-  StashRailLine done;
-  done.kind = StashRailLine::Link;
-  done.label = t.doneFilters;
-  done.include = [&m] { editSections(m, false); };
-  rail.push_back(std::move(done));
-  st.railHeight = railHeights(rail);
-}
-
-void StashPages::lookRail(std::vector<StashRailLine>& rail, const StashCatalog& c,
-                          const StashLooks& looks,
-                          const std::array<std::vector<StashFacet>, kStashLookKinds>& counts,
-                          int total, const std::vector<StashLookKind>& kinds, bool headings,
-                          const std::function<std::function<void()>(
-                              std::function<void(StashLooks&)>)>& change,
-                          const std::function<void(StashLookKind)>& more) {
-  constexpr int kTop = 6;  // a named kind's values listed besides those chosen
-  auto line = [&](StashRailLine::Kind kind, const std::string& label) {
-    StashRailLine l;
-    l.kind = kind;
-    l.label = label;
-    rail.push_back(std::move(l));
-  };
-  auto row = [&](const std::string& label, int count, int state, std::function<void()> include,
-                 std::function<void()> exclude = nullptr) {
-    StashRailLine l;
-    l.label = label;
-    l.count = count > 0 ? stashNumber(count) : "";
-    l.state = state;
-    l.include = std::move(include);
-    l.exclude = std::move(exclude);
-    rail.push_back(std::move(l));
-  };
-  for (const StashLookKind look : kinds) {
-    const int k = static_cast<int>(look);
-    const size_t at = rail.size();
-    line(headings ? StashRailLine::Heading : StashRailLine::Sub,
-         headings && look == StashLookKind::Age ? strings().stash.ageInScenes
-                                                : stashLookHeading(k));
-    const std::vector<StashFacet>& facet = counts[k];
-    if (k < kStashNamedLooks) {
-      const std::vector<std::string>& names = c.lookNames(look);
-      auto countOf = [&](const std::string& name) {
-        const auto found = std::find(names.begin(), names.end(), name);
-        return found == names.end() ? 0 : countIn(facet, static_cast<int>(found - names.begin()));
-      };
-      auto rowFor = [&](const std::string& name, int count, int state) {
-        row(stashLookRow(k, name), count, state,
-            change([k, name](StashLooks& l) { l.include(k, name); }),
-            change([k, name](StashLooks& l) { l.exclude(k, name); }));
-      };
-      for (const std::string& name : looks.in[k]) rowFor(name, countOf(name), 1);
-      for (const std::string& name : looks.out[k]) rowFor(name, 0, 2);
-      const bool chosen = !looks.in[k].empty() || !looks.out[k].empty();
-      int shown = 0;
-      for (const StashFacet& f : facet) {
-        const std::string& name = names[f.index];
-        if (std::find(looks.in[k].begin(), looks.in[k].end(), name) != looks.in[k].end() ||
-            (!chosen && f.count >= total))
-          continue;
-        if (shown++ == kTop) {
-          StashRailLine l;
-          l.kind = StashRailLine::Link;
-          l.label = strings().stash.moreLooks[k];
-          l.include = [more, look] { more(look); };
-          rail.push_back(std::move(l));
-          break;
-        }
-        rowFor(name, f.count, 0);
-      }
-    } else {
-      const unsigned mask = looks.mask(look);
-      for (int b = 0; b < kStashLookBuckets[k - kStashNamedLooks]; ++b) {
-        const bool on = mask >> b & 1;
-        const int count = countIn(facet, b);
-        if (on || (count > 0 && (count < total || mask)))
-          row(stashLookRow(k, "", b), count, on ? 1 : 0,
-              change([look, b](StashLooks& l) { l.mask(look) ^= 1u << b; }));
-      }
-    }
-    if (rail.size() == at + 1)
-      rail.pop_back();
-    else if (headings)
-      line(StashRailLine::Gap, "");
-  }
-}
-
-double StashPages::railHeights(std::vector<StashRailLine>& rail) {
-  double total = 0;
-  for (StashRailLine& l : rail) {
-    switch (l.kind) {
-      case StashRailLine::Heading:
-        l.height = 56;
-        break;
-      case StashRailLine::Sub:
-        l.height = 36;
-        break;
-      case StashRailLine::Gap:
-        l.height = 14;
-        break;
-      case StashRailLine::Note:
-        l.height = 60;
-        break;
-      default:
-        l.height = kRowStep + (l.lines - 1) * kLineGrow;
-        break;
-    }
-    total += l.height;
-  }
-  return total;
-}
-
-// The full list's rows: what is chosen first, then everything in the
-// results (matching its search), most first or A–Z.
-void StashPages::buildFull(Menu& m) {
-  StashMenu& st = state(m);
-  st.fullStale = false;
-  st.fullRows.clear();
-  const StashCatalog* c = catalog(m);
-  if (!c) return;
-  const StashResult& r = st.result;
-  const int total = static_cast<int>(r.scenes.size());
-  const std::string search = stashFold(st.fullSearch);
-  auto change = [&m](std::function<void(StashList&)> f) { return [&m, f] { changeList(m, f); }; };
-  if (st.full == StashFull::Pins) {
-    const std::vector<StashHistory>* history =
-        st.history.size() == c->scenes().size() ? &st.history : nullptr;
-    for (size_t i = 0; i < st.pins.size(); ++i) {
-      const StashResult pin =
-          c->query(stashFilterOf(st.pins[i].list, *c, m.view_.stash.malePerformers, unixNow()), {},
-                   history, false);
-      StashMenu::FullRow row;
-      row.label = st.pins[i].name;
-      row.count = stashNumber(static_cast<long>(pin.scenes.size()));
-      row.include = [&m, i] { openPin(m, static_cast<int>(i)); };
-      st.fullRows.push_back(std::move(row));
-    }
-    return;
-  }
-  if (st.full == StashFull::Years) {
-    for (const auto& [year, count] : r.years) {
-      const bool on = st.list.year == year;
-      if (!on && count >= total && !st.list.year) continue;
-      const std::string label = std::to_string(year);
-      if (!search.empty() && label.find(search) == std::string::npos) continue;
-      st.fullRows.push_back(
-          {label, stashNumber(count), on ? 1 : 0,
-           change([year = year](StashList& l) { l.year = l.year == year ? 0 : year; }), nullptr});
-    }
-    // Newest first as the catalog has them; fullByName: oldest first.
-    if (st.fullByName) std::reverse(st.fullRows.begin(), st.fullRows.end());
-    return;
-  }
-  // A–Z: what is chosen, then the rest by their collation keys.
-  size_t chosen = 0;
-  std::vector<std::pair<std::string, size_t>> keys;
-  auto sortByName = [&] {
-    if (!st.fullByName) return;
-    std::stable_sort(keys.begin(), keys.end());
-    std::vector<StashMenu::FullRow> sorted(st.fullRows.begin(), st.fullRows.begin() + chosen);
-    for (const auto& k : keys) sorted.push_back(std::move(st.fullRows[k.second]));
-    st.fullRows = std::move(sorted);
-  };
-  if (st.full == StashFull::Look) {
-    // As the rail lists them: the Performers page's counted in performers,
-    // the scenes' otherwise.
-    const int k = static_cast<int>(st.fullLook);
-    const bool cards = m.page_ == Menu::Page::StashPerformers;
-    const StashLooks& looks = cards ? st.performers.choice.looks : st.list.looks;
-    const std::vector<StashFacet>& facet = (cards ? st.performers.looks : r.looks)[k];
-    const int all = cards ? static_cast<int>(st.performers.shown.size()) : total;
-    auto changeLooks = [&m, cards](std::function<void(StashLooks&)> f) -> std::function<void()> {
-      if (cards) return changePerformers(m, [f](StashPerformerChoice& s) { f(s.looks); });
-      return [&m, f] { changeList(m, [f](StashList& l) { f(l.looks); }); };
-    };
-    const std::vector<std::string>& names = c->lookNames(st.fullLook);
-    auto add = [&](const std::string& name, int count, int state) {
-      if (!state && st.fullByName) keys.emplace_back(stashCollateKey(name), st.fullRows.size());
-      st.fullRows.push_back({stashLookRow(k, name), count > 0 ? stashNumber(count) : "", state,
-                             changeLooks([k, name](StashLooks& l) { l.include(k, name); }),
-                             changeLooks([k, name](StashLooks& l) { l.exclude(k, name); })});
-    };
-    for (const std::string& name : looks.in[k]) {
-      const auto found = std::find(names.begin(), names.end(), name);
-      const int count =
-          found == names.end() ? 0 : countIn(facet, static_cast<int>(found - names.begin()));
-      add(name, count, 1);
-    }
-    for (const std::string& name : looks.out[k]) add(name, 0, 2);
-    chosen = st.fullRows.size();
-    const bool any = !looks.in[k].empty() || !looks.out[k].empty();
-    for (const StashFacet& f : facet) {
-      const std::string& name = names[f.index];
-      if (std::find(looks.in[k].begin(), looks.in[k].end(), name) != looks.in[k].end() ||
-          (!any && f.count >= all) ||
-          (!search.empty() && stashFold(name).find(search) == std::string::npos))
-        continue;
-      add(name, f.count, 0);
-    }
-    sortByName();
-    return;
-  }
-  const int kind = st.full == StashFull::Performers ? kPerformers
-                   : st.full == StashFull::Tags     ? kTags
-                                                    : kStudios;
-  if (!offered(m, kind)) return;
-  const StashPick& pick = pickOf(st.filter, kind);
-  const std::vector<StashFacet>& facet = facetOf(r, kind);
-  const int skip = kind == kPerformers ? c->performerById(fixedPerformer(m)) : -1;
-  auto matches = [&](int index) {
-    if (search.empty()) return true;
-    if (stashFold(nameOf(*c, kind, index)).find(search) != std::string::npos) return true;
-    if (kind == kTags)
-      for (const std::string& name : c->tags()[index].names)
-        if (stashFold(name).find(search) != std::string::npos) return true;
-    return false;
-  };
-  for (const int index : pick.include)
-    if (index != skip)
-      st.fullRows.push_back({nameOf(*c, kind, index), stashNumber(countIn(facet, index)), 1,
-                             change(includeIn(m, kind, idOf(*c, kind, index))),
-                             change(excludeIn(m, kind, idOf(*c, kind, index)))});
-  for (const int index : pick.exclude)
-    st.fullRows.push_back({nameOf(*c, kind, index), "", 2,
-                           change(includeIn(m, kind, idOf(*c, kind, index))),
-                           change(excludeIn(m, kind, idOf(*c, kind, index)))});
-  chosen = st.fullRows.size();
-  for (const StashFacet& f : facet) {
-    if (std::find(pick.include.begin(), pick.include.end(), f.index) != pick.include.end() ||
-        (inResults(pick) && f.count >= total) || f.index == skip || !matches(f.index))
-      continue;
-    std::string label = nameOf(*c, kind, f.index);
-    if (kind == kTags && c->tags()[f.index].names.size() > 1)  // merged: all its names
-      for (size_t i = 1; i < c->tags()[f.index].names.size(); ++i)
-        label += " · " + c->tags()[f.index].names[i];
-    if (st.fullByName)
-      keys.emplace_back(stashCollateKey(nameOf(*c, kind, f.index)), st.fullRows.size());
-    st.fullRows.push_back({label, stashNumber(f.count), 0,
-                           change(includeIn(m, kind, idOf(*c, kind, f.index))),
-                           change(excludeIn(m, kind, idOf(*c, kind, f.index)))});
-  }
-  sortByName();
+  return h;
 }
 
 void StashPages::showScenes(Menu& m) {
   StashMenu& st = state(m);
   m.showPage(Menu::Page::StashScenes);
   st.full = StashFull::None;
-  m.scrollOffset_ = static_cast<int>(std::floor(st.scroll));
-  m.scrollFraction_ = st.scroll - m.scrollOffset_;
+  m.list_.offset = static_cast<int>(std::floor(st.scroll));
+  m.list_.fraction = st.scroll - m.list_.offset;
   m.side_.position = st.railPosition;
   st.placePending = true;
 }
@@ -918,7 +119,7 @@ void StashPages::showOwnScenes(Menu& m) {
 void StashPages::leaveScenes(Menu& m) {
   StashMenu& st = state(m);
   if (st.full == StashFull::None) {
-    st.scroll = m.scrollOffset_ + m.scrollFraction_;
+    st.scroll = m.list_.offset + m.list_.fraction;
     st.place = resultsPlace(m);
   }
   st.full = StashFull::None;
@@ -937,7 +138,7 @@ std::vector<std::string> StashPages::resultPaths(Menu& m) {
 ListPlace StashPages::resultsPlace(Menu& m) {
   StashMenu& st = state(m);
   if (st.full != StashFull::None) return {};
-  return m.listPlace(resultPaths(m), st.gallery ? gridColumns(st.resultsX, m.listRight_) : 1);
+  return m.listPlace(resultPaths(m), st.gallery ? gridColumns(st.resultsX, m.list_.right) : 1);
 }
 
 void StashPages::openScenes(Menu& m, const StashList& list) {
@@ -951,8 +152,8 @@ void StashPages::openScenes(Menu& m, const StashList& list) {
     st.stale = true;
   }
   m.editing_ = false;
-  m.scrollOffset_ = 0;
-  m.scrollFraction_ = 0;
+  m.list_.offset = 0;
+  m.list_.fraction = 0;
   st.placePending = false;
   m.dirty_ = true;
 }
@@ -981,8 +182,8 @@ bool StashPages::enterList(Menu& m, std::optional<StashSavedList>& scenes,
   st.scroll = scroll;
   st.placePending = kept;
   st.stale = true;
-  m.scrollOffset_ = static_cast<int>(std::floor(scroll));
-  m.scrollFraction_ = scroll - m.scrollOffset_;
+  m.list_.offset = static_cast<int>(std::floor(scroll));
+  m.list_.fraction = scroll - m.list_.offset;
   m.dirty_ = true;
   return kept;
 }
@@ -992,7 +193,7 @@ void StashPages::leaveList(Menu& m, std::optional<StashSavedList>& scenes,
   StashMenu& st = state(m);
   if (!scenes) return;
   const double scroll =
-      st.full == StashFull::None ? m.scrollOffset_ + m.scrollFraction_ : st.scroll;
+      st.full == StashFull::None ? m.list_.offset + m.list_.fraction : st.scroll;
   own = StashSavedList{st.list, st.undo, scroll, m.side_.position, st.fullByName, id,
                        resultsPlace(m)};
   st.list = scenes->list;
@@ -1015,7 +216,7 @@ void StashPages::showFull(Menu& m, StashFull full, StashLookKind look) {
       m.page_ != Menu::Page::StashStudio && !cards)
     showScenes(m);
   if (st.full == StashFull::None) {
-    (cards ? st.performers.scroll : st.scroll) = m.scrollOffset_ + m.scrollFraction_;
+    (cards ? st.performers.scroll : st.scroll) = m.list_.offset + m.list_.fraction;
     if (!cards && !st.placePending) st.place = resultsPlace(m);  // else as left, not laid out yet
   }
   st.full = full;
@@ -1023,8 +224,8 @@ void StashPages::showFull(Menu& m, StashFull full, StashLookKind look) {
   st.fullSearch.clear();
   st.fullStale = true;
   m.editing_ = false;
-  m.scrollOffset_ = 0;
-  m.scrollFraction_ = 0;
+  m.list_.offset = 0;
+  m.list_.fraction = 0;
   m.dirty_ = true;
 }
 
@@ -1056,7 +257,7 @@ void StashPages::openPin(Menu& m, int pin) {
   if (!st.ownScenes)
     st.ownScenes = StashSavedList{st.list,
                                   st.undo,
-                                  listed ? m.scrollOffset_ + m.scrollFraction_ : st.scroll,
+                                  listed ? m.list_.offset + m.list_.fraction : st.scroll,
                                   m.side_.position,
                                   st.fullByName,
                                   0,
@@ -1069,8 +270,8 @@ void StashPages::openPin(Menu& m, int pin) {
   st.stale = true;
   st.placePending = false;
   m.editing_ = false;
-  m.scrollOffset_ = 0;
-  m.scrollFraction_ = 0;
+  m.list_.offset = 0;
+  m.list_.fraction = 0;
   m.side_.position = 0;
   m.dirty_ = true;
 }
@@ -1091,8 +292,8 @@ void StashPages::leavePin(Menu& m) {
   st.stale = true;
   st.placePending = true;
   m.editing_ = false;
-  m.scrollOffset_ = static_cast<int>(std::floor(own.scroll));
-  m.scrollFraction_ = own.scroll - m.scrollOffset_;
+  m.list_.offset = static_cast<int>(std::floor(own.scroll));
+  m.list_.fraction = own.scroll - m.list_.offset;
   m.side_.position = own.rail;
   m.dirty_ = true;
 }
@@ -1101,7 +302,8 @@ void StashPages::leavePin(Menu& m) {
 // through; shuffled, one of them picked at random, and the player shuffles
 // the list from it.
 MenuCommand StashPages::open(Menu& m, const std::string& path, bool shuffled) {
-  refresh(m);  // the results of this catalog, should a new one have come since the layout
+  // The results of this catalog, should a new one have come since the layout.
+  state(m).refresh(sources(m), listPage(m));
   return play(m, state(m).result.scenes, path, shuffled);
 }
 
@@ -1110,27 +312,27 @@ MenuCommand StashPages::play(Menu& m, const std::vector<int>& scenes, const std:
   StashMenu& st = state(m);
   const StashCatalog* c = catalog(m);
   if (!c) return {};
-  m.playList_.clear();
-  for (const int i : scenes) m.playList_.push_back(stashSceneLocation(c->scenes()[i], m.offline_));
-  if (m.playList_.empty()) return {};
-  m.playAt_ = path;
+  m.played_.list.clear();
+  for (const int i : scenes) m.played_.list.push_back(stashSceneLocation(c->scenes()[i], m.offline_));
+  if (m.played_.list.empty()) return {};
+  m.played_.at = path;
   if (shuffled) {
     std::mt19937_64 random(static_cast<uint64_t>(unixNow()) ^ st.seed++);
-    m.playAt_ = m.playList_[random() % m.playList_.size()];
+    m.played_.at = m.played_.list[random() % m.played_.list.size()];
   }
-  return m.openVideo(m.playAt_, shuffled);
+  return m.openVideo(m.played_.at, shuffled);
 }
 
 bool Menu::listNeighbor(const std::string& path, int step, std::string& next,
                         const PlayOrder& order) {
   next.clear();
-  if (playList_.empty() || path != playAt_) {  // since opened from elsewhere
-    playList_.clear();
-    playAt_.clear();
+  if (played_.list.empty() || path != played_.at) {  // since opened from elsewhere
+    played_.list.clear();
+    played_.at.clear();
     return false;
   }
-  next = neighborIn(playList_, path, step, order);
-  if (!next.empty()) playAt_ = next;
+  next = neighborIn(played_.list, path, step, order);
+  if (!next.empty()) played_.at = next;
   return true;
 }
 
@@ -1219,7 +421,7 @@ void StashPages::layoutHeader(Menu& m, double x0) {
   filters.latched = st.railShown;
   filters.tooltip = t.tipFilters;
   const StashCatalog* c = catalog(m);
-  const size_t active = c ? chipsOf(m, st.list, *c).size() : 0;
+  const size_t active = c ? st.chips(st.list, *c, fixedPerformer(m)).size() : 0;
   if (active && !st.railShown) filters.badge = std::to_string(active);
   m.buttons_.push_back(filters);
   st.titleX = filters.x + filters.w + kit::kSpaceEdge;
@@ -1297,8 +499,8 @@ void StashPages::layoutTools(Menu& m) {
       StashMenu& s = state(m);
       if (s.gallery == gallery) return MenuCommand{};
       s.gallery = gallery;
-      m.scrollOffset_ = 0;
-      m.scrollFraction_ = 0;
+      m.list_.offset = 0;
+      m.list_.fraction = 0;
       return MenuCommand{};
     };
     return p;
@@ -1321,8 +523,8 @@ void StashPages::layoutTools(Menu& m) {
       s.list.format = static_cast<StashFormat>(f);
       s.stale = true;
       if (s.full == StashFull::None) {
-        m.scrollOffset_ = 0;
-        m.scrollFraction_ = 0;
+        m.list_.offset = 0;
+        m.list_.fraction = 0;
       }
       MenuCommand c;
       c.type = MenuCommand::SetStashFormat;
@@ -1371,15 +573,15 @@ double StashPages::layoutSort(Menu& m, double x, const char* const* fields, int 
     const int f = order ? order[i] : i;
     if (f == chosen) at = i;
     list.push_back({fields[f], [&m, f, choose] {
-                      m.scrollOffset_ = 0;
-                      m.scrollFraction_ = 0;
+                      m.list_.offset = 0;
+                      m.list_.fraction = 0;
                       return choose(f);
                     }});
   }
   return m.toolsSort(x, kBrowserToolsY + bandHeight(m), list, at, descending < 0 ? -1 : !descending,
                      strings().stash.tipTurnOrder, [&m, turn] {
-                       m.scrollOffset_ = 0;
-                       m.scrollFraction_ = 0;
+                       m.list_.offset = 0;
+                       m.list_.fraction = 0;
                        return turn();
                      });
 }
@@ -1390,12 +592,12 @@ double StashPages::layoutJumps(Menu& m) {
   return m.toolsJumps(
       kBrowserToolsY + bandHeight(m),
       [&m] {
-        m.scrollOffset_ = 0;
-        m.scrollFraction_ = 0;
+        m.list_.offset = 0;
+        m.list_.fraction = 0;
         return MenuCommand{};
       },
       [&m] {
-        m.scrollOffset_ = 1 << 30;  // clamped to the last page by the layout
+        m.list_.offset = 1 << 30;  // clamped to the last page by the layout
         return MenuCommand{};
       });
 }
@@ -1444,7 +646,8 @@ double StashPages::layoutChips(Menu& m, double x, double right, double y) {
     m.buttons_.push_back(undo);
     x += undo.w + kit::kSpaceTight;
   }
-  const std::vector<Chip> chips = c ? chipsOf(m, st.list, *c) : std::vector<Chip>{};
+  const std::vector<StashChip> chips =
+      c ? st.chips(st.list, *c, fixedPerformer(m)) : std::vector<StashChip>{};
   if (chips.empty()) {
     m.addLabel(x + kit::kSpace, y, right - x - kit::kSpace, h, t.noFilters, kHintSize, true);
     return y + h + kResultsGap;
@@ -1469,7 +672,7 @@ double StashPages::layoutChips(Menu& m, double x, double right, double y) {
   const double end = clear.x - kit::kSpaceTight;
   constexpr int size = kHintSize;
   for (size_t i = 0; i < chips.size(); ++i) {
-    const Chip& chip = chips[i];
+    const StashChip& chip = chips[i];
     const double w =
         std::min(420.0, m.textWidth(chip.label, size, false) + 2 * kit::kSpace + (chip.out ? 30 : 0));
     const std::string more = stashPrinted(t.moreChips, static_cast<int>(chips.size() - i));
@@ -1711,12 +914,12 @@ void StashPages::addSceneCard(Menu& m, const Button& card, const StashScene& s) 
 void StashPages::layoutGrid(Menu& m, double x0, double top) {
   StashMenu& st = state(m);
   const StashCatalog& c = *catalog(m);
-  const int columns = gridColumns(x0, m.listRight_);
+  const int columns = gridColumns(x0, m.list_.right);
   const double cardW = m.gridCellWidth(x0, columns, kTileGap);
   const double rowH = cardHeight(cardW) + kTileGap;
   const std::vector<int>& scenes = st.result.scenes;
   const int count = static_cast<int>(scenes.size());
-  m.listTop_ = top;
+  m.list_.top = top;
   int first, end;
   m.gridRows(count, columns, rowH, first, end);
   const bool history = st.history.size() == c.scenes().size();
@@ -1726,12 +929,12 @@ void StashPages::layoutGrid(Menu& m, double x0, double top) {
     Button b = sceneCard(m, c, s, history ? st.history[index].plays : 0,
                          history ? st.history[index].rating : 0,
                          x0 + (cell % columns) * (cardW + kTileGap),
-                         top + (cell / columns - m.scrollFraction_) * rowH, cardW);
+                         top + (cell / columns - m.list_.fraction) * rowH, cardW);
     b.scrolls = true;
     b.action = [&m, path = b.offlinePath] { return open(m, path, false); };
     addSceneCard(m, b, s);
   }
-  wantThumbnails(m, first, end, m.visibleRows_ * columns, cardW - 2 * kCardIn);
+  wantThumbnails(m, first, end, m.list_.rows * columns, cardW - 2 * kCardIn);
   m.addScrollbar();
 }
 
@@ -1751,7 +954,7 @@ StashPages::SceneColumns StashPages::sceneColumns(const Menu& m, double x1) {
 // Rating's and the release date's headings start at their columns, Plays'
 // and Length's end at theirs (layoutList()); measured once a language.
 const std::array<double, 3>& StashPages::sceneApart(const Menu& m) {
-  Menu::Apart& a = m.sceneApart_;
+  auto& a = m.stashMenu_->sceneApart;
   if (a.strings == &strings()) return a.apart;
   const StashStrings& t = strings().stash;
   a.strings = &strings();
@@ -1772,7 +975,7 @@ void StashPages::layoutList(Menu& m, double x0, double top) {
   StashMenu& st = state(m);
   const StashStrings& t = strings().stash;
   const StashCatalog& c = *catalog(m);
-  const double rowW = m.listRight_ - x0 - kScrollbarRoom;
+  const double rowW = m.list_.right - x0 - kScrollbarRoom;
   const SceneColumns cols = sceneColumns(m, x0 + rowW);
   auto heading = [&](int column, double x, double w, bool rightAligned, int sort) {
     const bool on = sort >= 0 && static_cast<int>(st.list.sort) == sort;
@@ -1787,8 +990,8 @@ void StashPages::layoutList(Menu& m, double x0, double top) {
           s.list.descending = sorted != StashSort::Title;
         s.list.sort = sorted;
         s.stale = true;
-        m.scrollOffset_ = 0;
-        m.scrollFraction_ = 0;
+        m.list_.offset = 0;
+        m.list_.fraction = 0;
         return MenuCommand{};
       };
     m.listHeading(t.columns[column], x, w, rightAligned, top, on, !st.list.descending,
@@ -1818,13 +1021,13 @@ void StashPages::layoutList(Menu& m, double x0, double top) {
     heading(3, cols.released, kReleasedColumnW, false, static_cast<int>(StashSort::Released));
     heading(4, cols.length, kLengthColumnW, true, static_cast<int>(StashSort::Duration));
   }
-  m.listTop_ = top + kListHeaderH + kit::kSpacePiece;
-  m.rowHeight_ = kFileRowH;
-  m.visibleRows_ = std::max(1, static_cast<int>((m.listBottom_ - m.listTop_) / kFileRowH));
+  m.list_.top = top + kListHeaderH + kit::kSpacePiece;
+  m.list_.rowHeight = kFileRowH;
+  m.list_.rows = std::max(1, static_cast<int>((m.list_.bottom - m.list_.top) / kFileRowH));
   m.endOnWholeRow();
-  m.listCount_ = static_cast<int>(scenes.size());
+  m.list_.count = static_cast<int>(scenes.size());
   int first, end;
-  m.clampScroll(m.listCount_, m.visibleRows_, first, end);
+  m.clampScroll(m.list_.count, m.list_.rows, first, end);
   const bool history = st.history.size() == c.scenes().size();
   for (int i = first; i < end; ++i) {
     const int index = scenes[i];
@@ -1833,7 +1036,7 @@ void StashPages::layoutList(Menu& m, double x0, double top) {
     Button b;
     b.panel = Menu::kBrowser;
     b.x = x0;
-    b.y = m.listTop_ + (i - m.scrollOffset_ - m.scrollFraction_) * kFileRowH;
+    b.y = m.list_.top + (i - m.list_.offset - m.list_.fraction) * kFileRowH;
     b.w = rowW;
     b.h = kFileRowH - kRowGap;
     b.radius = kit::kCorner;
@@ -1874,7 +1077,7 @@ void StashPages::layoutList(Menu& m, double x0, double top) {
     stars.listLook = static_cast<int>(ListLook::RowStars);
     m.buttons_.push_back(stars);
   }
-  wantThumbnails(m, first, end, m.visibleRows_, pw);
+  wantThumbnails(m, first, end, m.list_.rows, pw);
   m.addScrollbar();
 }
 
@@ -1904,8 +1107,8 @@ std::string fullTitle(const StashMenu& st, bool cards) {
 void StashPages::layoutFull(Menu& m, double x0, double top) {
   StashMenu& st = state(m);
   const StashStrings& t = strings().stash;
-  if (st.fullStale) buildFull(m);
-  const double right = m.listRight_ - kListRightPad;  // the page's, or a performer's profile's left
+  if (st.fullStale) st.buildFull(sources(m), listPage(m), st.performers);
+  const double right = m.list_.right - kListRightPad;  // the page's, or a performer's profile's left
   const double h = kBrowserToolsH;
   const bool cards = m.page_ == Menu::Page::StashPerformers;  // in place of its cards
   Button back = actionButton(
@@ -1915,8 +1118,8 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
         s.full = StashFull::None;
         m.editing_ = false;
         const double scroll = cards ? s.performers.scroll : s.scroll;
-        m.scrollOffset_ = static_cast<int>(std::floor(scroll));
-        m.scrollFraction_ = scroll - m.scrollOffset_;
+        m.list_.offset = static_cast<int>(std::floor(scroll));
+        m.list_.fraction = scroll - m.list_.offset;
         return MenuCommand{};
       },
       x0, top, h);
@@ -1934,8 +1137,8 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
         StashMenu& s = state(m);
         s.fullByName = years ? !s.fullByName : byName == 1;
         s.fullStale = true;
-        m.scrollOffset_ = 0;
-        m.scrollFraction_ = 0;
+        m.list_.offset = 0;
+        m.list_.fraction = 0;
         return MenuCommand{};
       };
     };
@@ -2027,8 +1230,8 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
     double lx = x0 + in;
     for (const auto& [letter, row] : letters) {
       Button b = m.textButton(letter, Menu::Icon::None, [&m, row = row] {
-        m.scrollOffset_ = row / columns;
-        m.scrollFraction_ = 0;
+        m.list_.offset = row / columns;
+        m.list_.fraction = 0;
         return MenuCommand{};
       });
       b.panel = Menu::kBrowser;
@@ -2047,14 +1250,14 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
   }
 
   const std::vector<StashMenu::FullRow>& rows = st.fullRows;
-  m.listTop_ = listTop;
+  m.list_.top = listTop;
   int first, end;
   m.gridRows(static_cast<int>(rows.size()), columns, kRowStep, first, end);
   const double cellW = m.gridCellWidth(x0, columns, kit::kSpace);
   for (int i = first; i < end; ++i) {
     const StashMenu::FullRow& r = rows[i];
     const double cx = x0 + (i % columns) * (cellW + kit::kSpace);
-    const double cy = listTop + (i / columns - m.scrollOffset_ - m.scrollFraction_) * kRowStep;
+    const double cy = listTop + (i / columns - m.list_.offset - m.list_.fraction) * kRowStep;
     const double w = r.exclude ? cellW - kExcludeW - kit::kSpacePiece : cellW;
     Button b = facetButton(m, r.label, r.count, r.state, r.include, cx, cy, w, kRowBox);
     if (st.full != StashFull::Pins && b.tooltip.empty()) b.tooltip = t.tipFilter;
@@ -2080,12 +1283,12 @@ void StashPages::layoutResults(Menu& m, double top, double right) {
     layoutRail(m, st.rail, st.railHeight, top, bottom);
     resultsX = kContentLeft + kRailW + kRailGap;
   }
-  m.listLeft_ = resultsX;
-  m.listRight_ = right + kListRightPad;
+  m.list_.left = resultsX;
+  m.list_.right = right + kListRightPad;
   m.listShowsFolder_ = false;
   m.listColumns_ = false;
-  m.listBottom_ = bottom;
-  m.listTop_ = top;
+  m.list_.bottom = bottom;
+  m.list_.top = top;
   st.resultsX = resultsX;
   st.resultsTop = layoutChips(m, resultsX, right, top);
   double notHereY = st.resultsTop + 20;
@@ -2095,7 +1298,7 @@ void StashPages::layoutResults(Menu& m, double top, double right) {
     if (st.placePending && st.full == StashFull::None) {
       st.placePending = false;
       m.scrollToPlace(st.place, resultPaths(m),
-                      st.gallery ? gridColumns(resultsX, m.listRight_) : 1);
+                      st.gallery ? gridColumns(resultsX, m.list_.right) : 1);
     }
     if (st.full != StashFull::None)
       layoutFull(m, resultsX, st.resultsTop);
@@ -2113,7 +1316,7 @@ void StashPages::layoutResults(Menu& m, double top, double right) {
 
 // The header row, the tools row, then the rail and the results.
 void StashPages::layoutScenes(Menu& m) {
-  refresh(m);
+  state(m).refresh(sources(m), listPage(m));
   layoutResults(m, kGridTop, kContentRight);
   layoutHeader(m, kContentLeft);
   layoutTools(m);

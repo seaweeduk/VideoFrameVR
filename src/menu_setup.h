@@ -2,7 +2,7 @@
 
 // First-run setup's panel (docs/alpha/first-run.md): Welcome, then the steps
 // with their dots, Back and Set up later; and the cues shown while it is out
-// of view. Laid out and drawn by SetupPages, a friend of Menu; its state is a
+// of view. Laid out and drawn by SetupPages, nested in Menu; its state is a
 // SetupMenu, from Menu::startSetup() to Menu::endSetup().
 
 #include "cairo_canvas.h"
@@ -217,7 +217,7 @@ struct MenuHints {
   bool ready = false;  // the canvas
 };
 
-struct SetupPages {
+struct Menu::SetupPages {
   // Lays the page out and starts drawing all of it (it changes only on
   // clicks), or draws the parts damaged.
   static void redraw(Menu& m);
@@ -353,3 +353,4 @@ struct SetupPages {
   // A footer button's width.
   static double footerWidth(Menu& m, const std::string& label, bool icon = false);
 };
+using SetupPages = Menu::SetupPages;  // as its own files name it

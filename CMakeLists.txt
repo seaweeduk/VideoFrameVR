@@ -44,6 +44,7 @@ add_executable(videoframevr
   src/cairo_canvas.cpp
   src/colour_balance.cpp
   src/controller_guide.cpp
+  src/control_rules.cpp
   src/controls.cpp
   src/gesture_input.cpp
   src/density_map.cpp
@@ -114,6 +115,7 @@ add_executable(videoframevr
   src/menu_whats_new.cpp
   src/mirror_window.cpp
   src/menu_stash.cpp
+  src/menu_stash_browse.cpp
   src/menu_stash_draw.cpp
   src/menu_stash_home.cpp
   src/menu_stash_lists.cpp
@@ -130,11 +132,14 @@ add_executable(videoframevr
   src/offline.cpp
   src/options.cpp
   src/oshash.cpp
+  src/panel_fades.cpp
   src/performance_readout.cpp
   src/photo_preloader.cpp
   src/pipelines.cpp
   src/places.cpp
+  src/playback_session.cpp
   src/presets.cpp
+  src/quality.cpp
   src/refresh_rate.cpp
   src/smb_discovery.cpp
   src/pixel_path.cpp
@@ -160,6 +165,7 @@ add_executable(videoframevr
   src/sftp.cpp
   src/smb.cpp
   src/sqlite_util.cpp
+  src/stash_commands.cpp
   src/stash.cpp
   src/stash_catalog.cpp
   src/stash_diagnostic.cpp

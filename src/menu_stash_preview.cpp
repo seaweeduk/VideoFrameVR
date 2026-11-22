@@ -67,9 +67,9 @@ void Menu::drawPreview() {
   const int x0 = static_cast<int>(std::floor(preview_.x));
   const int x1 = static_cast<int>(std::ceil(preview_.x + preview_.w));
   const int y0 = std::max(static_cast<int>(std::floor(preview_.y)),
-                          static_cast<int>(std::ceil(listTop_ - 2)));
+                          static_cast<int>(std::ceil(list_.top - 2)));
   const int y1 = std::min(static_cast<int>(std::ceil(preview_.y + preview_.h)),
-                          static_cast<int>(std::floor(listBottom_)));
+                          static_cast<int>(std::floor(list_.bottom)));
   if (y1 <= y0) return;
   CairoCanvas& canvas = canvases_[kBrowser];
   cairo_t* cr = canvas.cr();
