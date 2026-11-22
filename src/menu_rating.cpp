@@ -158,6 +158,8 @@ bool Menu::clearRatingAtPointer() {
 
 void Menu::stepRating(const std::string& file, int halves) {
   if (file.empty() || isPhotoFile(file) || !library_ || !library_->available()) return;
+  // Not before the library knows the video: its rating would read as none.
+  if (!library_->known(file)) return;
   ratingDrag_.active = false;
   rate(file, 0, std::clamp(library_->record(file).rating + 0.5f * halves, 0.0f, 5.0f));
 }

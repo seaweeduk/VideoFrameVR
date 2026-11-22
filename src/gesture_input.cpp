@@ -71,8 +71,8 @@ void GestureInput::update(const ControllerState& input, const GestureMap& map, c
     }
     claimed_[i] |= best->bits();
     const char* why = host.why(best->value);
-    if (why && *why) host.say(why);
     start(i, *best, h, why != nullptr);
+    refusal_ = why;  // said once twisted: a tap only does its button's job
     started = true;
   }
   if (hand_ < 0 || started) return;
@@ -95,7 +95,11 @@ void GestureInput::update(const ControllerState& input, const GestureMap& map, c
     if (std::abs(twist_) <= kDeadZone) return;
     for (const Control c : {gesture_.first, gesture_.second})
       if (c != Control::Count) taps.cancelTap(hand_, c);
-    if (refused_) return;
+    if (refused_) {
+      if (refusal_ && *refusal_) host.say(refusal_);
+      refusal_ = nullptr;
+      return;
+    }
     changing_ = true;
     degrees = twist_ - std::copysign(kDeadZone, twist_);
     host.began(v);

@@ -2606,6 +2606,7 @@ int run(Options opts) {
       case V::Rating:
         if (isStream(app.currentFile)) return said.notForStreams;
         if (!library.available()) return said.ratingsLocked;
+        if (!library.known(app.currentFile)) return "";  // its rating isn't read yet
         break;
       default: break;
     }

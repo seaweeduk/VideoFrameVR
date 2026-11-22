@@ -94,6 +94,7 @@ class GestureInput {
   int hand_ = -1;
   Gesture gesture_;
   bool refused_ = false;   // its value can't change: a twist only takes its buttons' jobs
+  const char* refusal_ = nullptr;  // why, until said
   Quat last_;
   bool tracked_ = false;
   float twist_ = 0;        // degrees since it started, until past the dead zone
