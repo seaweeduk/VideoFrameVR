@@ -274,8 +274,10 @@ bool replaceFile(const fs::path& path, const std::string& contents, bool ownerOn
   std::error_code ec;
   fs::path target = path;
   if (fs::is_symlink(path, ec)) {
+    // A link whose target can't be found now (a drive not mounted) stays a link.
     const fs::path resolved = fs::canonical(path, ec);
-    if (!ec) target = resolved;
+    if (ec) return false;
+    target = resolved;
   }
   // A new file each call, never an existing one or a link: another instance may be saving too.
   const fs::path temp = target.string() + ".new." + std::to_string(getpid()) + "." + std::to_string(made++);
