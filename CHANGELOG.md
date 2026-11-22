@@ -15,6 +15,23 @@ Sections, each only if it has lines, in this order: New, Improved, Fixed,
 Removed. Every line starts "- ", then optionally "[Frame] " or "[Desktop] ".
 -->
 
+## 0.7.0 · 2026-11-22
+### New
+- Settings → Controls: choose what each button does, and a second job with grip held
+- Twist gestures: hold a button or two and turn your wrist to change Volume, Opacity and more
+- Many new button jobs, such as Skip, Frame back, chapters, Rating up and Peek at the room
+- Blu-ray, DVD and DVB subtitles show on 3D and 180°/360° video
+### Improved
+- New default button layouts, and the left stick seeks instead of turning the view
+- The trigger moves and resizes the flat screen; the grip only moves the menu
+### Fixed
+- [Frame] Videos couldn't play while Steam held the video decoder; the app now offers to free it
+- [Frame] A video could stop with an error if you seeked while it woke from sleep
+- Settings and saved logins could be lost if the app crashed while saving them
+- A thin line of a closed list could stay along the top of the playback bar
+### Removed
+- Bindings made in SteamVR's binding editor: choose buttons in Settings → Controls instead
+
 ## 0.6.0 · 2026-11-19
 ### New
 - A new look for the whole menu, and fine values open a magnified scale for single steps
