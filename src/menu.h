@@ -1617,6 +1617,9 @@ class Menu {
   static constexpr int kStripParts = 4;
   int stripParts_ = 0;
   double stripPart_[kStripParts][4] = {};  // x0, y0, x1, y1
+  // A list or tooltip was drawn above the strip's body since that room was
+  // last cleared: cleared once it is no longer shown (redraw()).
+  bool stripAboveDrawn_ = false;
   // What of the band moves as a video plays (drawMainPage()): computed, and
   // as last drawn.
   struct BandMarks {
