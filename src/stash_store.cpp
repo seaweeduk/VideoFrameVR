@@ -1,6 +1,6 @@
 #include "stash_store.h"
 
-#include "settings.h"  // dataDir
+#include "app_dirs.h"
 
 #include <algorithm>
 #include <cstdio>

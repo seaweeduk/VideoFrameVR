@@ -274,7 +274,6 @@ struct StashSceneStrings {
   const char* similarHint;
   const char* noSimilar;
   const char* with;           // printf: performers
-  const char* sameStudio;     // printf: studio
   const char* tagsInCommon;   // printf: how many
   const char* oneTagInCommon;
   const char* notInStash;
@@ -350,7 +349,6 @@ struct FocusStrings {
 };
 
 struct FocusStatusStrings {
-  const char* reasons[7];  // FocusReason, except None
   const char* targets[6];  // TargetStatus
   const char* far;
   const char* unavailable;
@@ -1199,7 +1197,7 @@ struct ColourBalanceStrings {
   const char* tipWarmth;
   const char* tipTint;
   const char* tipExposure;
-  const char* tipReset;  // the Picture group's Reset, in place of Strings::tipPictureReset
+  const char* tipReset;  // the Picture group's Reset
   const char* matchRoom;  // a switch
   const char* reading;  // its label while it reads
   const char* failed;   // ... for a few seconds after a reading failed
@@ -1424,8 +1422,6 @@ struct Strings {
   const char* tvGamma;       // global toggle: BT.1886 conversion
   const char* tvGammaHint;
   const char* eyeResolution;       // eye image size (video and menus), followed by the factor and pixels
-  const char* resolutionHint;      // Frame, printf format: the panel width, the instant cap
-  const char* resolutionSteamVr;   // ... 1× is SteamVR's recommended size
   const char* resolutionOverride;  // printf format: this run's eye image pixels are the command line's
   const char* resolutionLimited;   // printf format: the scale SteamVR or the GPU allowed
   const char* resolutionChanged;   // printf format: 1× is now the panel's pixels; the nearest size
@@ -1438,7 +1434,6 @@ struct Strings {
   const char* showFoveationHint;
   const char* frameReuse;  // toggle (Frame): frames that would look like the last one are not drawn
   const char* frameReuseHint;
-  const char* foveationFrameOnly;
   const char* sharpArea;
   const char* sharpBins[2];
   const char* sharpSizeHint;
@@ -1544,7 +1539,6 @@ struct Strings {
   FocusStrings focus;
   const char* tipAdvanced;
   const char* tipSubtitleRaise;
-  const char* tipPictureReset;
   const char* tipMipmaps;
   const char* tipMipmapsFrame;
   const char* tipSharpen;

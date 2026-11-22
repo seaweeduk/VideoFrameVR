@@ -1,6 +1,6 @@
 #pragma once
 
-#include "xr_context.h"
+#include "controller_state.h"
 
 #include <algorithm>
 #include <cmath>

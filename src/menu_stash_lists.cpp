@@ -1,7 +1,7 @@
 #include "menu_stash.h"
 
 #include "file_util.h"
-#include "settings.h"  // configDir
+#include "app_dirs.h"
 
 #include <algorithm>
 #include <cstdio>

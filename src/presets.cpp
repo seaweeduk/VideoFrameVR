@@ -1,5 +1,6 @@
 #include "presets.h"
 
+#include "app_dirs.h"
 #include "eye_resolution.h"
 #include "file_util.h"
 #include "platform.h"

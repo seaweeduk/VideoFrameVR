@@ -2,16 +2,15 @@
 
 #include "accent.h"
 #include "anti_shimmer.h"
-#include "controls.h"
+#include "control_map.h"
 #include "flat_screen.h"
 #include "focus_settings.h"
-#include "foveation.h"
+#include "foveation_level.h"
 #include "script_player.h"
 #include "stash_settings.h"
 
 #include <algorithm>
 #include <cmath>
-#include <filesystem>
 #include <iosfwd>
 #include <string>
 #include <vector>
@@ -25,16 +24,6 @@ enum class PerformancePreset { Low, Balanced, High, Custom };
 // or list it was opened from, in its order or shuffled. Stop and Next are
 // kept as the setting; Repeat and Shuffle last until the player quits.
 enum class AfterVideo { Stop, Repeat, Next, Shuffle };
-
-// Where the player keeps its files: ~/.config/videoframevr (or under
-// $XDG_CONFIG_HOME). A folder from the former name "vrplayer" is moved there.
-std::filesystem::path configDir();
-// Where it keeps what it collects (the media library): ~/.local/share/videoframevr
-// (or under $XDG_DATA_HOME).
-std::filesystem::path dataDir();
-// Where it keeps what can be fetched again (Stash's images): ~/.cache/videoframevr
-// (or under $XDG_CACHE_HOME).
-std::filesystem::path cacheDir();
 
 // User preferences, kept in settings.conf in configDir().
 struct Settings {
@@ -118,7 +107,7 @@ struct Settings {
   StashSettings stash;
   std::vector<StashSettings> otherServers;
   ScriptSettings scripts;  // funscripts played on a device through Intiface (script_player.h)
-  ControlMap controls;     // what each controller type's buttons do (controls.h)
+  ControlMap controls;     // what each controller type's buttons do (control_map.h)
   GestureMap gestures;     // ... and its gestures
   // How far Skip and Big skip go, in seconds; a tap of the stick sideways
   // goes Skip's.

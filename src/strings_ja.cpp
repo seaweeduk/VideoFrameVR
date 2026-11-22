@@ -159,8 +159,6 @@ Strings japaneseStrings(const Strings& english) {
   s.tvGamma = "TVガンマ";
   s.tvGammaHint = "全動画の暗部をTV風に補正 (BT.1886)。オフでは元の値を維持。";
   s.eyeResolution = "解像度";
-  s.resolutionHint = "1× = パネル%d画素。長い目盛りが標準。%d超は切り替えが遅く、8Kの精細さは不変。";
-  s.resolutionSteamVr = "1× = SteamVR推奨の片目解像度。上げるとGPU負荷が増加。";
   s.resolutionOverride = "起動引数で片目%d画素に指定中。ここで変更すると置き換わります。";
   s.resolutionLimited = "SteamVRまたはGPUにより%.2f×に制限";
   s.resolutionChanged = "1× = パネル%d画素に変更。最も近い設定：%.2f×。";
@@ -177,7 +175,6 @@ Strings japaneseStrings(const Strings& english) {
   s.showFoveationHint = "緑：全精細。黄：各軸1/2。無色：1/4。十字：視線。";
   s.frameReuse = "重複フレームを省略";
   s.frameReuseHint = "動画か視点が変わったときだけ描き直します。消費電力とヘッドセットの発熱を抑えます。動きがぎこちない場合はオフに。";
-  s.foveationFrameOnly = "Steam Frame専用";
   s.sharpArea = "高精細領域";
   s.sharpBins[0] = "1ビン";
   s.sharpBins[1] = "3ビン";
@@ -584,7 +581,6 @@ Strings japaneseStrings(const Strings& english) {
   s.stashScene.similarHint = "重み付き共通タグと出演人数を重視。スタジオと出演者の一致は小さく加点。同じ形式のみ。";
   s.stashScene.noSimilar = "十分に似ている他のシーンはありません";
   s.stashScene.with = "出演：%s";
-  s.stashScene.sameStudio = "同じスタジオ · %s";
   s.stashScene.tagsInCommon = "共通タグ%d件";
   s.stashScene.oneTagInCommon = "共通タグ1件";
   s.stashScene.notInStash = "この動画はStashにありません";
@@ -710,7 +706,6 @@ Strings japaneseStrings(const Strings& english) {
 
   s.tipAdvanced = "設定ページに詳細な調整項目を表示。";
   s.tipSubtitleRaise = "立体表示する字幕を上下に移動。";
-  s.tipPictureReset = "この動画の明るさ・コントラスト・彩度・ズーム・視点をリセット。";
   s.tipMipmaps = "各フレームの縮小コピーを使い、縮小映像を滑らかに。";
   s.tipMipmapsFrame = "縮小映像を滑らかに。FrameのGPU負荷が増加。";
   s.tipSharpen = "全動画の輪郭を強調。";
@@ -744,13 +739,6 @@ Strings japaneseStrings(const Strings& english) {
   s.automaticLanguage = "自動";
   s.languageName = "日本語";
   s.languageHint = "すぐに反映。「自動」ではシステムの言語を使用。";
-  s.focusStatus.reasons[0] = "模様の少ない領域";
-  s.focusStatus.reasons[1] = "繰り返し模様";
-  s.focusStatus.reasons[2] = "左右の映像が不一致";
-  s.focusStatus.reasons[3] = "映像の範囲外";
-  s.focusStatus.reasons[4] = "透過領域";
-  s.focusStatus.reasons[5] = "測定結果が不一致";
-  s.focusStatus.reasons[6] = "最小距離より近い";
   s.focusStatus.targets[0] = "頭の向きで照準";
   s.focusStatus.targets[1] = "視線追跡中";
   s.focusStatus.targets[2] = "視線追跡：短い欠落を補間中";

@@ -30,6 +30,9 @@ class CairoCanvas {
   // pixels per unit (sharper text for the same drawing). scrolls: shiftUp()
   // is used, which needs a spare image of the same size.
   bool init(Uploader& uploader, int width, int height, float scale = 1.0f, bool scrolls = false);
+  // The surface alone, without an image: uploads and shifts are dropped and
+  // texture() has nothing (drawing and measuring without a GPU).
+  bool init(int width, int height, float scale = 1.0f);
 
   cairo_t* cr() const { return cr_; }
   cairo_surface_t* surface() const { return surface_; }

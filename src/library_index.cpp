@@ -1,7 +1,7 @@
 #include "library_index.h"
 
 #include "file_util.h"
-#include "settings.h"  // dataDir
+#include "app_dirs.h"
 #include "remote.h"
 #include "stash_catalog.h"
 

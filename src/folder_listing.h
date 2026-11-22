@@ -56,7 +56,6 @@ class FolderListing {
   // Whether the entry's name holds all words of `query`, ignoring case,
   // punctuation and a file's extension. An empty query matches everything.
   static bool matches(const Entry& entry, const std::string& query);
-  int matchCount(const std::string& query) const;
 
  private:
   struct Pending;

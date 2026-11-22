@@ -1,7 +1,7 @@
 #include "video_memory.h"
 
 #include "file_util.h"
-#include "settings.h"  // configDir
+#include "app_dirs.h"
 
 #include <cstdint>
 #include <cstdio>

@@ -4,7 +4,7 @@
 #include "funscript.h"
 #include "oshash.h"
 #include "removable_drives.h"
-#include "settings.h"
+#include "app_dirs.h"
 #include "remote.h"
 #include "stash_stream.h"
 

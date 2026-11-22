@@ -3,9 +3,6 @@
 #include "depth_estimator.h"
 #include "focus_settings.h"
 
-// Why the last measurement did not change the focus (None: it could).
-enum class FocusReason { None, Blank, Ambiguous, Mismatch, Edge, Clear, Disagree, OutOfRange };
-
 // Focus selection (docs/autofocus.md):
 // measurements come from three probes taken in turn (+1, 0, -1, 0, ...; the
 // probe directions are spread apart, less so the higher the sensitivity).
@@ -18,11 +15,7 @@ enum class FocusReason { None, Blank, Ambiguous, Mismatch, Edge, Clear, Disagree
 class FocusController {
  public:
   struct State {
-    bool locked = false;   // an angle was accepted since the probes were cleared
     bool holding = false;  // the accepted depth is nearer than the range: the focus holds
-    FocusReason reason = FocusReason::None;
-    float measured = 0;    // meters, the last probe's depth (0 = none)
-    float confidence = 0;
     float distance = 0;    // meters, what the correction uses now
   };
 
@@ -35,7 +28,6 @@ class FocusController {
   // Advances the filter to `now`; returns the distance to correct at (meters).
   // eyes: aimed by the eyes, small changes are followed faster.
   float advance(const FocusSettings& s, double now, bool eyes);
-  const State& state() const { return state_; }
   // The half-convergence angle (radians) the focus holds to, DepthRequest::held:
   // the accepted one, or the shown one while an accepted one nearer than the
   // range is not followed.

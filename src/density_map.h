@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foveation.h"
+#include "foveation_level.h"
 #include "tile_grid.h"
 
 #include <vulkan/vulkan.h>

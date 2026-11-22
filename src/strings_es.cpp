@@ -159,8 +159,6 @@ Strings spanishStrings(const Strings& english) {
   s.tvGamma = "Gamma de TV";
   s.tvGammaHint = "Sombras de TV, BT.1886. Todos los vídeos. No: conserva los valores originales.";
   s.eyeResolution = "Resolución";
-  s.resolutionHint = "1× = %d píxeles del panel. Marca alta: predeterminado. Más de %d: cambio lento, sin más detalle 8K.";
-  s.resolutionSteamVr = "1× = píxeles por ojo recomendados por SteamVR. Más resolución usa más GPU.";
   s.resolutionOverride = "Opción de inicio: %d píxeles por ojo. Cambia este ajuste para sustituirla.";
   s.resolutionLimited = "Limitado a %.2f× por SteamVR o la GPU";
   s.resolutionChanged = "1× ahora = %d píxeles del panel. Tamaño disponible más cercano: %.2f×.";
@@ -177,7 +175,6 @@ Strings spanishStrings(const Strings& english) {
   s.showFoveationHint = "Verde: detalle total. Amarillo: mitad por eje. Sin color: un cuarto. Cruz: mirada.";
   s.frameReuse = "Omitir fotogramas repetidos";
   s.frameReuseHint = "Dibuja una imagen nueva solo si cambia el vídeo o tu vista. Gasta menos energía y mantiene el visor más fresco. Desactívalo si el movimiento se ve irregular.";
-  s.foveationFrameOnly = "Solo Steam Frame";
   s.sharpArea = "Zona nítida";
   s.sharpBins[0] = "1 bin";
   s.sharpBins[1] = "3 bins";
@@ -584,7 +581,6 @@ Strings spanishStrings(const Strings& english) {
   s.stashScene.similarHint = "Etiquetas compartidas ponderadas y tamaño del reparto; menor peso del estudio y los intérpretes. Solo el mismo formato.";
   s.stashScene.noSimilar = "Ninguna otra escena es lo bastante similar";
   s.stashScene.with = "Con %s";
-  s.stashScene.sameStudio = "Mismo estudio · %s";
   s.stashScene.tagsInCommon = "%d etiquetas en común";
   s.stashScene.oneTagInCommon = "1 etiqueta en común";
   s.stashScene.notInStash = "Stash no reconoce este vídeo";
@@ -710,7 +706,6 @@ Strings spanishStrings(const Strings& english) {
 
   s.tipAdvanced = "Muestra los ajustes finos en las páginas de ajustes.";
   s.tipSubtitleRaise = "Subir o bajar los subtítulos flotantes.";
-  s.tipPictureReset = "Restablecer brillo, contraste, saturación, zoom y punto de vista de este vídeo.";
   s.tipMipmaps = "Suavizar al reducir mediante copias pequeñas de cada fotograma.";
   s.tipMipmapsFrame = "Suavizar vídeos reducidos. Usa GPU del Frame.";
   s.tipSharpen = "Realzar bordes en todos los vídeos.";
@@ -744,13 +739,6 @@ Strings spanishStrings(const Strings& english) {
   s.automaticLanguage = "Auto";
   s.languageName = "Español";
   s.languageHint = "Se aplica al instante. Auto usa el idioma del sistema.";
-  s.focusStatus.reasons[0] = "zona con poca textura";
-  s.focusStatus.reasons[1] = "patrón repetido";
-  s.focusStatus.reasons[2] = "las imágenes de los ojos no coinciden";
-  s.focusStatus.reasons[3] = "fuera de la imagen";
-  s.focusStatus.reasons[4] = "transparente";
-  s.focusStatus.reasons[5] = "las muestras no coinciden";
-  s.focusStatus.reasons[6] = "más cerca que la distancia mínima";
   s.focusStatus.targets[0] = "El objetivo sigue la dirección de la cabeza";
   s.focusStatus.targets[1] = "Seguimiento ocular activo";
   s.focusStatus.targets[2] = "Seguimiento ocular: manteniendo durante una pausa breve";

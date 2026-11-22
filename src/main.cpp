@@ -1,4 +1,5 @@
 #include "anti_shimmer.h"
+#include "app_dirs.h"
 #include "autofocus.h"
 #include "bluray.h"
 #include "direct_depth.h"
@@ -4397,7 +4398,6 @@ int run(Options opts) {
       view.resolutionOverride =
           overrideScale > 0 ? static_cast<int>(std::floor(resolutionBase * overrideScale)) : 0;
       view.resolutionBase = resolutionBase;
-      view.panelBase = kPanelWidth > 0;
       view.foveationAvailable = foveation.active();
       view.foveation = foveation.level();
       view.showFoveation = showFoveation;

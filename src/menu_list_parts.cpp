@@ -579,7 +579,7 @@ bool Menu::listFade(int edge, const CurvedPanel& on, CurvedPanel& part, const Te
   // there (flat, scrollBand(), then its gradient past the list's bottom);
   // drawn again when the list's edges move.
   static_assert(2 + kListFadeH + kListFadePast < kFadeRows, "the list's fades fit their rows");
-  if (!listFade_.cr() && !listFade_.init(*uploader_, kFadeW, 2 * kFadeRows, menu_geometry::kRasterScale))
+  if (!listFade_.cr() && !initCanvas(listFade_, kFadeW, 2 * kFadeRows, menu_geometry::kRasterScale))
     return false;
   if (listFadeAt_[0] != listTop_ || listFadeAt_[1] != listBottom_) {
     listFadeAt_[0] = listTop_;

@@ -33,13 +33,6 @@ class StashImages {
     bool stereo = false;
   };
 
-  // What the cache holds on disk.
-  struct DiskUsage {
-    int originals = 0, copies = 0;
-    uint64_t originalBytes = 0, copyBytes = 0;
-  };
-  static DiskUsage diskUsage(const std::filesystem::path& root);
-
   // `root` is the cache folder (e.g. cacheDir() / "stash"), `url` the
   // server's address as typed: every image is fetched from it, whatever
   // host its URL names (MediaServer::imagePath()). `apiKey` is sent when

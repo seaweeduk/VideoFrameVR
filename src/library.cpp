@@ -4,7 +4,7 @@
 #include "file_util.h"
 #include "library_schema.h"  // kLibrarySchema, made from library_schema.sql at build time
 #include "oshash.h"
-#include "settings.h"  // dataDir
+#include "app_dirs.h"
 
 #include <algorithm>
 #include <cerrno>

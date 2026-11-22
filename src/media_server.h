@@ -102,9 +102,6 @@ std::string serverIdentity(ServerKind kind, const std::string& server);
 bool originalKind(ServerKind kind);
 // Every kind, in the order an address is tried as each (findServer()).
 const std::vector<const MediaServer*>& mediaServers();
-// The kind with this id(); Stash's for any other, as settings from before
-// there were kinds have none.
-ServerKind serverKindOf(std::string_view id);
 // Every kind's name, "Stash / XBVR": Settings' name for its servers'
 // section. In a sentence they are named with the language's "or" between
 // (StashSetupStrings::orKind), as no server is set up yet.

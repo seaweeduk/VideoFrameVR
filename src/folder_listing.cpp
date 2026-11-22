@@ -243,9 +243,3 @@ bool FolderListing::matches(const Entry& entry, const std::string& query) {
   }
   return true;
 }
-
-int FolderListing::matchCount(const std::string& query) const {
-  int n = 0;
-  for (const Entry& entry : entries_) n += matches(entry, query);
-  return n;
-}

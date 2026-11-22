@@ -1,12 +1,14 @@
 #pragma once
 
 #include "cairo_canvas.h"
-#include "menu.h"
+#include "menu_view.h"
 #include "scene_renderer.h"
 #include "xmath.h"
 
 #include <string>
 #include <vector>
+
+class Menu;
 
 // Where the messages in front of the eyes show, the hints' (hints.h) too:
 // this far in front of them, sized as at 1.5 m, about 16° down, out of the

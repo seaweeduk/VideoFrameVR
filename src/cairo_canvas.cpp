@@ -45,8 +45,7 @@ CairoCanvas::~CairoCanvas() {
   if (spare_.image) uploader_->gpu().retire(spare_);
 }
 
-bool CairoCanvas::init(Uploader& uploader, int width, int height, float scale, bool scrolls) {
-  uploader_ = &uploader;
+bool CairoCanvas::init(int width, int height, float scale) {
   width_ = width;
   height_ = height;
   scale_ = scale;
@@ -56,6 +55,12 @@ bool CairoCanvas::init(Uploader& uploader, int width, int height, float scale, b
   if (cairo_surface_status(surface_) != CAIRO_STATUS_SUCCESS) return false;
   cairo_surface_set_device_scale(surface_, scale, scale);
   cr_ = cairo_create(surface_);
+  return true;
+}
+
+bool CairoCanvas::init(Uploader& uploader, int width, int height, float scale, bool scrolls) {
+  uploader_ = &uploader;
+  if (!init(width, height, scale)) return false;
 
   // Down to an eighth of the size at scale 1, a sixteenth at 2.
   const uint32_t full =
@@ -90,6 +95,7 @@ void CairoCanvas::clear(int firstRow, int endRow) {
 }
 
 void CairoCanvas::upload(int firstRow, int endRow, int firstColumn, int endColumn) {
+  if (!uploader_) return;
   if (endRow < 0) endRow = height_;
   if (endColumn < 0) endColumn = width_;
   // In the surface's pixels.
@@ -135,6 +141,7 @@ void CairoCanvas::finishUpdate() {
 }
 
 void CairoCanvas::shiftUp(int x0, int y0, int x1, int y1, double dy) {
+  if (!uploader_) return;
   if (!spare_.image) {
     std::fprintf(stderr, "CairoCanvas: shiftUp() on a canvas made without scrolling\n");
     return;
