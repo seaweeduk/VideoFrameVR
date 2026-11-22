@@ -3,6 +3,7 @@
 #include "file_util.h"
 #include "frame_scaler.h"
 #include "media_decode.h"
+#include "platform.h"
 #include "thread_priority.h"
 #include "app_dirs.h"
 #include "remote_avio.h"
@@ -454,11 +455,12 @@ void Thumbnailer::work(const std::shared_ptr<Worker>& worker) {
     if (exists && !ok) {
       // Photos on the CPU; videos on the GPU, else (e.g. H.264 wider than
       // NVDEC handles) on the CPU. A video that failed both is retried on the
-      // CPU only, so its retries don't keep the CUDA context.
+      // CPU only, so its retries don't keep the CUDA context. The Frame has
+      // no CUDA.
       const bool photo = isPhotoFile(path);
       const bool retry = cached.checked != Clock::time_point{} && !cached.ok;
       AVBufferRef* gpu = nullptr;  // this decode's reference to the shared device
-      if (!photo && !retry && !Interrupt::check(&interrupt)) {
+      if (!kStandaloneHeadset && !photo && !retry && !Interrupt::check(&interrupt)) {
         std::lock_guard<std::mutex> lock(worker->gpuMutex);
         if (!worker->gpuTried) {
           worker->gpuTried = true;

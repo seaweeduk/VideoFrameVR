@@ -114,6 +114,7 @@ int PlayerSleep::open(uint64_t load) {
 
 void PlayerSleep::resumeSeekSent(uint64_t seek) {
   videoSleep_ = VideoSleep::Seeking;
+  sleepActionAt_ = nowSeconds();
   resumeSeek_ = seek;
   sleepSeekChanged_ = false;
   resumeRestarted_ = false;
