@@ -141,16 +141,19 @@ void StashPages::update(Menu& m) {
     st.sendOpen = false;
     m.stash_->closeSend();
   }
-  std::string writeBack;
-  if (const StashWriteBack* w = m.stash_->writeBack()) {
-    const StashWriteBackStatus& a = w->status();
-    const StashSendPlan& p = w->sendPlan();
-    writeBack = std::to_string(a.waitingRatings) + ' ' + std::to_string(a.waitingPlays) + ' ' +
-                std::to_string(a.sentRatings) + ' ' + std::to_string(a.sentPlays) + ' ' + a.error +
-                '|' + std::to_string(static_cast<int>(p.state)) + ' ' + p.error;
-  }
-  if (writeBack != st.shownWriteBack) {
-    st.shownWriteBack = writeBack;
+  const StashWriteBack* w = m.stash_->writeBack();
+  const auto shown = [&](const StashWriteBackStatus& a, const StashSendPlan& p) {
+    const StashWriteBackStatus& b = st.shownWriteBackStatus;
+    return st.shownWriteBack && a.waitingRatings == b.waitingRatings &&
+           a.waitingPlays == b.waitingPlays && a.sentRatings == b.sentRatings &&
+           a.sentPlays == b.sentPlays && a.error == b.error && p.state == st.shownSendState &&
+           p.error == st.shownSendError;
+  };
+  if (w ? !shown(w->status(), w->sendPlan()) : st.shownWriteBack) {
+    st.shownWriteBack = w != nullptr;
+    st.shownWriteBackStatus = w ? w->status() : StashWriteBackStatus{};
+    st.shownSendState = w ? w->sendPlan().state : StashSendPlan::State::None;
+    st.shownSendError = w ? w->sendPlan().error : std::string();
     if (settings) m.dirty_ = true;
   }
   updateSceneDetails(m);

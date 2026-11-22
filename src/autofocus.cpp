@@ -108,10 +108,12 @@ FocusOutput Autofocus::update(const FocusInput& in) {
     char key[64];
     std::snprintf(key, sizeof(key), "|%d|%d|%d", static_cast<int>(in.format.projection),
                   static_cast<int>(in.format.stereo), s.baselineMm);
-    const std::string contentKey = in.video + key;
+    const size_t length = in.video.size();
     const bool loading = in.texture == 0 && !in.drawer;
-    if (contentKey != contentKey_) {
-      contentKey_ = contentKey;
+    // contentKey_ is the video, then the key: compared without joining them.
+    if (contentKey_.compare(0, length, in.video) != 0 ||
+        contentKey_.compare(length, std::string::npos, key) != 0) {
+      contentKey_.assign(in.video).append(key);
       startOver(true, "new video, layout or baseline");
     } else if (!loading && lastPosition_ >= 0) {
       const double moved = in.position - lastPosition_;

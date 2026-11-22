@@ -171,6 +171,7 @@ void StashCommands::connectInSetup(const MenuCommand& c) {
 
 void StashCommands::fill(MenuView& view) const {
   view.stash = &settings.stash;
+  view.serversSetUp = 0;
   for (const MediaServer* server : mediaServers())
     if (serverSetUp(settings.stash, settings.otherServers, server->kind()))
       view.serversSetUp |= 1u << static_cast<int>(server->kind());

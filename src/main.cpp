@@ -2234,7 +2234,9 @@ int run(Options opts) {
 
   auto updateMenu = [&](const ControllerState& input, const HandState& hand,
                         const FocusSettings& focusSettings, const FocusInput& focusIn) {
-    MenuView view;
+    // Filled in place (Menu::nextView()): every field is set below, every
+    // frame, as in a new view.
+    MenuView& view = menu.nextView();
     view.releaseUpdate = releaseUpdate.state();
     view.releaseVersion = releaseUpdate.version();
     view.diagnostics = diagnostics.state();
@@ -2439,13 +2441,11 @@ int run(Options opts) {
     shownCorrection = focusOut.correction.eyes[0];
     if (videoImage && xr.eyeCount() > 0) {
       const ScreenSurface screen(running.screen, eyeDisplayAspect(running.format, frameAspect));
-      samplingLog.update(describeEyeSampling(running.format, photo ? photoWidth : player.width(),
-                                             photo ? photoHeight : player.height(),
-                                             running.screen.zoom,
-                                             screen.width() / screen.distance(),
-                                             xr.eyePixelsPerDegree(0, false),
-                                             photo || settings.videoMipmaps),
-                         now);
+      describeEyeSampling(samplingLog.line(), running.format, photo ? photoWidth : player.width(),
+                          photo ? photoHeight : player.height(), running.screen.zoom,
+                          screen.width() / screen.distance(), xr.eyePixelsPerDegree(0, false),
+                          photo || settings.videoMipmaps);
+      samplingLog.update(now);
     }
     if (menu.setupRunning() && !videoImage) scene.video.reset();  // setup floats in the sky
 
@@ -2618,10 +2618,10 @@ int run(Options opts) {
         if (eyes) mirror.acquire(*slot);
         timer.lap(FrameTimer::Acquire);
         if (eyes) {
-          std::vector<SemaphoreWait> waits;
+          std::vector<SemaphoreWait>& waits = slot->waits;
           const bool whole = renderer.record(*slot, *eyes, &xr.eye(0), scene, glfwGetTime(), waits);
           timer.lap(FrameTimer::Record);
-          std::vector<VkSemaphore> signals;
+          std::vector<VkSemaphore>& signals = slot->signals;
           mirror.addSignals(signals);
           const uint64_t value = gpu.submit(*slot, waits, signals);
           drawn = value != 0;

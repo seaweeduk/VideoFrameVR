@@ -10,6 +10,7 @@
 std::string lowerCase(std::string s);
 bool isVideoFile(const std::filesystem::path& p);
 bool isPhotoFile(const std::filesystem::path& p);
+bool isPhotoFile(const std::string& p);
 bool isSubtitleFile(const std::filesystem::path& p);
 
 // ASCII case-insensitive name order.

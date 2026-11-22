@@ -243,13 +243,12 @@ float eyeDisplayAspect(const VideoFormat& format, float frameAspect) {
 }
 
 bool hasPackedAlpha(const std::string& path) {
-  std::string name = path.substr(path.find_last_of('/') + 1);
-  std::transform(name.begin(), name.end(), name.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  const auto name = path.begin() + static_cast<std::ptrdiff_t>(path.find_last_of('/') + 1);
+  const auto same = [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == b; };
   for (const char* tag : {"_alpha", "-alpha", " alpha"}) {
-    const size_t at = name.find(tag);
-    if (at == std::string::npos) continue;
-    const char after = at + 6 < name.size() ? name[at + 6] : '.';
+    const auto at = std::search(name, path.end(), tag, tag + 6, same);
+    if (at == path.end()) continue;
+    const char after = path.end() - at > 6 ? at[6] : '.';
     if (!std::isalnum(static_cast<unsigned char>(after))) return true;  // not "_alphabet"
   }
   return false;

@@ -4,9 +4,9 @@
 #include <cmath>
 #include <cstdio>
 
-std::string describeEyeSampling(const VideoFormat& format, int frameWidth, int frameHeight,
-                                float zoom, float screenWidthOverDistance,
-                                float eyePixelsPerDegree, bool mipmaps) {
+void describeEyeSampling(std::string& out, const VideoFormat& format, int frameWidth,
+                         int frameHeight, float zoom, float screenWidthOverDistance,
+                         float eyePixelsPerDegree, bool mipmaps) {
   const int eyeW = format.stereo == StereoLayout::SideBySide ? frameWidth / 2 : frameWidth;
   const int eyeH = format.stereo == StereoLayout::TopBottom ? frameHeight / 2 : frameHeight;
   // Source pixels across one degree of the picture, then of the view.
@@ -60,12 +60,12 @@ std::string describeEyeSampling(const VideoFormat& format, int frameWidth, int f
                 "%s straight ahead",
                 eyeW, eyeH, frameWidth, frameHeight, projectionName(format.projection),
                 stereoName(format.stereo), shape, viewPerDegree, where, eyePixelsPerDegree, level);
-  return line;
+  out.assign(line);
 }
 
-void SettledLine::update(const std::string& line, double now) {
-  if (line != pending_) {
-    pending_ = line;
+void SettledLine::update(double now) {
+  if (line_ != pending_) {
+    pending_ = line_;
     since_ = now;
   }
   if (pending_ != printed_ && now - since_ >= 1.0) {

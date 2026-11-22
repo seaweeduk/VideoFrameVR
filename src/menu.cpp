@@ -11,6 +11,7 @@
 
 #include <pango/pangocairo.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -20,12 +21,12 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// Everything about the tracks the menu shows, to detect changes.
-std::string trackSignature(const std::vector<Track>& tracks) {
-  std::string s;
-  for (const Track& t : tracks)
-    s += std::to_string(t.id) + t.type + (t.selected ? "*" : "") + t.title + t.lang + "|";
-  return s;
+// Whether the menu shows these tracks alike: everything about them it shows.
+bool sameTracks(const std::vector<Track>& a, const std::vector<Track>& b) {
+  return std::equal(a.begin(), a.end(), b.begin(), b.end(), [](const Track& x, const Track& y) {
+    return x.id == y.id && x.type == y.type && x.selected == y.selected && x.title == y.title &&
+           x.lang == y.lang;
+  });
 }
 
 // Dragging a list: how far (layout pixels) the pointer has to move along it
@@ -201,7 +202,7 @@ void Menu::update(const MenuView& view) {
                        a.chaptersRevision != b.chaptersRevision;
   const bool changed =
       std::abs(a.duration - b.duration) > 0.5 || a.title != b.title ||
-      trackSignature(a.tracks) != trackSignature(b.tracks) ||
+      !sameTracks(a.tracks, b.tracks) ||
       view.format.projection != view_.format.projection ||
       view.format.stereo != view_.format.stereo ||
       static_cast<const MenuViewLayout&>(view) != view_ ||
@@ -261,7 +262,8 @@ void Menu::update(const MenuView& view) {
     accent_ = accentColours(accent);
     finishes_.setAccent(accent_);
   }
-  view_ = view;
+  if (&view == &nextView_) std::swap(view_, nextView_);
+  else view_ = view;
   viewCopies_.take(view_);
   view_.accent = accent;
   // This video goes with the video (changed: the page is laid out again).
