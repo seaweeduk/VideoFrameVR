@@ -237,6 +237,7 @@ struct MenuViewPage {
   int resolutionOverride = 0;  // eye image pixels across this run asks for from the command line, else 0
   int resolutionBase = 0;    // eye image pixels across at 100 %
   bool resolutionNotice = false;  // 1× has changed meaning; show the migrated size
+  AntiShimmer antiShimmer = AntiShimmer::On;  // this run's: without them (anti_shimmer.h)
   // What the resolution, foveation, mipmaps, anti-shimmer and sharpening
   // match (presets.h), else Custom.
   PerformancePreset performancePreset = PerformancePreset::High;
@@ -270,7 +271,6 @@ struct MenuViewParts {
 // itself.
 struct MenuViewQuiet {
   bool hardwareAv1 = false;  // the headset's decoder takes AV1 (SteamOS 0.5.10)
-  AntiShimmer antiShimmer = AntiShimmer::On;  // this run's: without them (anti_shimmer.h)
   bool seekPreviewAvailable = true;  // the seek bar's preview can show at all (not on the Steam Frame)
   unsigned serversSetUp = 0;    // a bit per ServerKind with a server set up, in use or not
 };

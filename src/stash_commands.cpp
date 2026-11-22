@@ -15,6 +15,7 @@
 #include <vector>
 
 void StashCommands::restart() {
+  menu.stashSetUp(settings.stash);
   menu.setStash(nullptr);
   stash.reset();
   if (settings.stash.enabled && !settings.stash.url.empty())
@@ -80,12 +81,16 @@ bool StashCommands::handle(const MenuCommand& c) {
       if (changed.url != settings.stash.url || changed.apiKey != settings.stash.apiKey ||
           changed.kind != settings.stash.kind || changed.enabled != settings.stash.enabled ||
           changed.unverifiedHost != settings.stash.unverifiedHost) {
-        // Another server than this kind had: where its folders are here
-        // is looked for after its first sync, and one found in a single
-        // place is used without asking. A setup gone back to keeps its
-        // folders as they were left.
-        if (!changed.url.empty() && !sameServer) menu.findStashFolders(true);
-        else if (c.option & 2) menu.findStashFolders(false);
+        // Another server than this kind had: none of the last one's
+        // folders, where its own are here is looked for after its first
+        // sync, and one found in a single place is used without asking. A
+        // setup gone back to keeps its folders as they were left.
+        if (!changed.url.empty() && !sameServer) {
+          changed.folders.clear();
+          menu.findStashFolders(true);
+        } else if (c.option & 2) {
+          menu.findStashFolders(false);
+        }
         settings.stash = std::move(changed);
         settings.otherServers = std::move(others);
         saveSettings(settings);
@@ -156,9 +161,12 @@ void StashCommands::connectInSetup(const MenuCommand& c) {
                     settings.stash.apiKey == key &&
                     settings.stash.unverifiedHost == unverifiedHost;
   useServer(settings.stash, settings.otherServers, kind);
-  // Another server than this kind had: nothing is sent to it unasked.
-  if (StashAddress(url).server != StashAddress(settings.stash.url).server)
+  // Another server than this kind had: nothing is sent to it unasked, and
+  // none of the last one's folders.
+  if (StashAddress(url).server != StashAddress(settings.stash.url).server) {
     settings.stash.writeBack = false;
+    settings.stash.folders.clear();
+  }
   settings.stash.enabled = true;
   settings.stash.url = url;
   settings.stash.apiKey = key;

@@ -281,6 +281,10 @@ class Menu {
   // while Settings shows, never while a video is open) and what is found is
   // saved without a press; with `places` (setup's), there too and again.
   void findStashFolders(bool on, std::vector<std::string> places = {});
+  // Stash starts anew for this setup (StashCommands::restart()): folders
+  // found at another server, or none, and not yet taken (a sign-in to it in
+  // the frame their search ended) are dropped.
+  void stashSetUp(const StashSettings& setup);
   // While setup is out of view: the arrow toward it (pointing right), its
   // label and the line, in front of the eyes; and the desktop window's
   // card until someone wears the headset. Sizes in layout pixels.
@@ -362,9 +366,14 @@ class Menu {
   // Enter: for the folder search, hides the keyboard (what matches stays);
   // Stash's fields are kept.
   MenuCommand submitText();
-  // What the menu decided by itself since the last call (e.g. Stash's
-  // folder found in the one chosen); None if nothing.
-  MenuCommand takeCommand() { return std::exchange(command_, MenuCommand{}); }
+  // What the menu decided by itself (e.g. Stash's folder found in the one
+  // chosen), the oldest first; None once all are taken.
+  MenuCommand takeCommand() {
+    if (commands_.empty()) return {};
+    MenuCommand c = std::move(commands_.front());
+    commands_.erase(commands_.begin());
+    return c;
+  }
   // Escape: leaves the keyboard (the folder search keeps its words), without
   // closing the menu.
   void stopEditing();
@@ -1876,9 +1885,20 @@ class Menu {
     // found in one place only saved as found.
     bool automatic = false;
     std::vector<std::string> places;
+    // The server the last ones queued were found at (its kind and
+    // StashAddress::server).
+    ServerKind kind = ServerKind::Stash;
+    std::string server;
   };
   StashFolders stashFolders_;
-  MenuCommand command_;
+  // SetStashFolders with these mappings queued, found at Stash's server.
+  void queueStashFolders(const std::vector<StashFolderMap>& folders);
+  // What takeCommand() hands on, in the order decided; kept, not
+  // reallocated, from frame to frame.
+  std::vector<MenuCommand> commands_;
+  void queueCommand(MenuCommand c) {
+    if (c.type != MenuCommand::None) commands_.push_back(std::move(c));
+  }
   void updateStashFolders();
   // SetStashFolders with these mappings.
   MenuCommand stashFolders(const std::vector<StashFolderMap>& folders) const;

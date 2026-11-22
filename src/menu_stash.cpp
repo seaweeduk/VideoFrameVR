@@ -334,7 +334,7 @@ void StashPages::updateSignIn(Menu& m) {
   // server without logins has no key.
   if (!st.draft[kStashPassword].empty() || !mediaServer(r.kind).abilities().signIn)
     st.draft[1] = r.apiKey;
-  m.command_ = serverCommand(m, other);
+  m.queueCommand(serverCommand(m, other));
   if (other) st.foundOther = mediaServer(r.kind).name();
 }
 
