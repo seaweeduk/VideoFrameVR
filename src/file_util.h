@@ -50,6 +50,12 @@ std::string neighborIn(const std::vector<std::string>& list, const std::string& 
 std::future<std::string> mediaNeighbor(const std::string& current, int step, bool wrap = false,
                                        PlayOrder order = {});
 
+// Replaces `path` with `contents` by way of a new `path`.new.<pid>.<n>, synced to disk before
+// it is renamed over it, so a crash leaves the old file or the new one, never part of one. A
+// symlink stays one: its target is replaced. `ownerOnly`: mode 0600, else std::ofstream's
+// (0666 less the umask). False if it couldn't (its temporary is removed).
+bool replaceFile(const std::filesystem::path& path, const std::string& contents, bool ownerOnly = false);
+
 // Config reads and writes, in order. Disk work runs outside the queue lock;
 // shutdown waits for the last write, the frame loop never does.
 void queueConfigWork(std::function<void()> work);

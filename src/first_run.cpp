@@ -16,9 +16,9 @@ fs::path markerPath() { return configDir() / "setup.conf"; }
 void writeMarker(const SetupChoices& choices) {
   std::error_code ec;
   fs::create_directories(configDir(), ec);
-  std::ofstream out(markerPath(), std::ios::trunc);
-  out << "language=" << choices.language << "\n";
-  for (const std::string& place : choices.places) out << "place=" << place << "\n";
+  std::string text = "language=" + choices.language + "\n";
+  for (const std::string& place : choices.places) text += "place=" + place + "\n";
+  replaceFile(markerPath(), text);
 }
 
 }  // namespace

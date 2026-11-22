@@ -13,9 +13,7 @@
 #include <fstream>
 #include <map>
 #include <optional>
-#include <fcntl.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 namespace remote {
 namespace {
@@ -113,18 +111,7 @@ struct Registry {
       const auto dir = path.parent_path();
       std::error_code ec;
       std::filesystem::create_directories(dir, ec);
-      if (ec || chmod(dir.c_str(), 0700) != 0) return;
-      const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
-      if (fd < 0) return;
-      if (fchmod(fd, 0600) == 0) {
-        size_t offset = 0;
-        while (offset < contents.size()) {
-          const auto n = ::write(fd, contents.data() + offset, contents.size() - offset);
-          if (n <= 0) break;
-          offset += n;
-        }
-      }
-      ::close(fd);
+      if (!ec && chmod(dir.c_str(), 0700) == 0) replaceFile(path, contents, true);
     });
   }
 };

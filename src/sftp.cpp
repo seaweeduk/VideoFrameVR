@@ -43,27 +43,6 @@ std::string pathOf(const std::string& locator) {
 
 std::string authorityOf(const std::string& root) { return root.substr(std::min(root.size(), kScheme.size())); }
 
-bool writeAll(const fs::path& path, const std::string& contents) {
-  const fs::path temp = path.string() + ".new";
-  const int fd = ::open(temp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
-  if (fd < 0) return false;
-  bool ok = fchmod(fd, 0600) == 0;
-  for (size_t at = 0; ok && at < contents.size();) {
-    const auto n = ::write(fd, contents.data() + at, contents.size() - at);
-    ok = n > 0;
-    if (ok) at += n;
-  }
-  ok = ::fsync(fd) == 0 && ok;
-  ::close(fd);
-  std::error_code ec;
-  if (ok) {
-    fs::rename(temp, path, ec);
-    ok = !ec;
-  }
-  if (!ok) fs::remove(temp, ec);
-  return ok;
-}
-
 // Frees a file's or folder's handle here only: once the connection is gone
 // it can't be closed on the server (sftp_close() would ask it).
 void discard(sftp_file file) {
@@ -108,7 +87,7 @@ struct Keys {
       const fs::path dir = configDir();
       std::error_code ec;
       fs::create_directories(dir, ec);
-      if (!ec && chmod(dir.c_str(), 0700) == 0) writeAll(dir / "sftp-hosts.json", contents);
+      if (!ec && chmod(dir.c_str(), 0700) == 0) replaceFile(dir / "sftp-hosts.json", contents, true);
     });
   }
   // This device's key (a new copy each time: sessions use it from several
@@ -135,7 +114,7 @@ struct Keys {
     const fs::path dir = configDir();
     std::error_code ec;
     fs::create_directories(dir, ec);
-    if (ec || chmod(dir.c_str(), 0700) != 0 || !writeAll(dir / "sftp-key", contents)) {
+    if (ec || chmod(dir.c_str(), 0700) != 0 || !replaceFile(dir / "sftp-key", contents, true)) {
       ssh_key_free(key);
       return nullptr;
     }

@@ -188,19 +188,14 @@ void Offline::Shared::save() {
                       {"oshash", d.oshash}, {"size", d.size}, {"mtime", d.mtime},
                       {"done", d.doneAt}, {"subtitles", d.subtitles}});
   }
-  const fs::path dir = dataDir(), file = dir / "offline.json", temp = dir / "offline.json.new";
+  const fs::path dir = dataDir();
   std::error_code ec;
   fs::create_directories(dir, ec);
-  {
-    std::ofstream out(temp);
-    // Its strings are UTF-8: add() checks a source and its drive, and paths and subtitles are
-    // made of those and of names checked in copy() or parsed from JSON (Stash's, or this file
-    // read back). replace is the last guard, as an exception here would end the app.
-    const json all{{"paused", paused}, {"downloads", list}};
-    out << all.dump(1, ' ', false, json::error_handler_t::replace) << '\n';
-    if (!out) return;
-  }
-  fs::rename(temp, file, ec);
+  // Its strings are UTF-8: add() checks a source and its drive, and paths and subtitles are
+  // made of those and of names checked in copy() or parsed from JSON (Stash's, or this file
+  // read back). replace is the last guard, as an exception here would end the app.
+  const json all{{"paused", paused}, {"downloads", list}};
+  replaceFile(dir / "offline.json", all.dump(1, ' ', false, json::error_handler_t::replace) + '\n');
 }
 
 // Deletes the files in `deleting`; whether there were any.

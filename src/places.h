@@ -48,7 +48,6 @@ class Places {
   void setHidden(const std::string& path, bool hidden);
   void rename(const std::string& path, const std::string& name);
   void resetOrder();
-  ~Places();
 
   // As kept in the file, with the places not there now.
   struct Entry {

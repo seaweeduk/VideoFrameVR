@@ -175,10 +175,6 @@ bool Places::poll() {
   return true;
 }
 
-Places::~Places() {
-  if (saved_.valid()) saved_.wait();
-}
-
 void Places::arrange() {
   auto at = [&](const std::string& path) {
     for (size_t i = 0; i < entries_.size(); ++i)
@@ -300,18 +296,13 @@ void Places::save() {
     if (e.hidden) text += "hide\t" + e.path + '\n';
     if (!e.name.empty()) text += "name\t" + e.name + '\t' + e.path + '\n';
   }
-  // Serialize writes without waiting on disk in the render loop.
   auto done = std::make_shared<std::promise<void>>();
-  const auto previous = saved_;
   saved_ = done->get_future().share();
-  std::thread([text, previous, done] {
-    if (previous.valid()) previous.wait();
+  queueConfigWork([text, done] {
     const fs::path file = configDir() / "pinned_folders.conf";
     std::error_code ec;
     fs::create_directories(file.parent_path(), ec);
-    std::ofstream out(file);
-    out << text;
-    out.close();
+    replaceFile(file, text);
     done->set_value();
-  }).detach();
+  });
 }
