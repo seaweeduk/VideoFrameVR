@@ -56,8 +56,6 @@ void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsSho
                   dropdown_ = Dropdown::None;
                   dirty_ = true;
                 });
-  page.pageSwitch(t.advancedSettings, view_.advancedSettings,
-                  command(MenuCommand::ToggleAdvancedSettings), t.tipAdvanced);
   if (section == SettingsSection::Stash) {
     StashPages::layoutSettings(*this, page, stash ? *stash : StashPages::settingsShown(*this));
     return;
