@@ -70,9 +70,10 @@ All of it works around the Frame's `iris_driver` or fits the decoder to this app
    For 9.0.2 to 9.1, `hevc_mp4toannexb` leaves out a header parameter set that a
    keyframe already carries byte for byte, and takes a new header from a packet's
    side data. It keeps that header after a seek back unless the demuxer sends the
-   earlier one again (MP4 does, FLV and mpv's cache don't), and drops one that
-   arrives on a non-keyframe. FFmpeg's own `v4l2_buffers.c` fixed a reference
-   count these files don't have.
+   earlier one again (MP4 does, FLV and mpv's cache don't). A header that
+   arrives on a non-keyframe is kept, but its parameter sets are only sent from
+   the next keyframe, so that packet goes without them. FFmpeg's own
+   `v4l2_buffers.c` fixed a reference count these files don't have.
 3. Compare FFmpeg's own `v4l2_*` files with the previous release for fixes worth
    taking.
 4. Play the hardware checks on a headset before release. A build that compiles
