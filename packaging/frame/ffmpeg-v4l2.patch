@@ -1,5 +1,5 @@
 # Build the Frame's V4L2 decoder (packaging/frame/ffmpeg/, copied over FFmpeg's own)
-# and refuse to map Qualcomm compressed frames to the CPU. Apply to FFmpeg 9.0.2.
+# and refuse to map Qualcomm compressed frames to the CPU. Apply to FFmpeg 9.1.
 --- a/configure
 +++ b/configure
 @@ -3727,6 +3727,7 @@ vp9_vaapi_encoder_select="vaapi_encode"

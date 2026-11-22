@@ -64,7 +64,7 @@ export CXXFLAGS="$CFLAGS"
 
 json_source=/work/source/json
 mpv_source=/work/source/mpv-0.41.0
-ffmpeg_source=/work/source/ffmpeg-9.0.2
+ffmpeg_source=/work/source/ffmpeg-9.1
 smb2_source=/work/source/libsmb2-2bcb014b23a8c8cccf534eea8bda2fe5df453cfd
 ssh_source=/work/source/libssh-0.12.2
 udfread_source=/work/source/libudfread-1.2.0
