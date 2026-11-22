@@ -444,8 +444,14 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
       StashSendPlan plan;
       // What the app handed over goes in first, or the plan would count its
       // plays as missing and add them again.
+      const bool retried = !unsaved.empty();
       bool ok = keep(outbox, unsaved);
       if (!ok) plan.error = outbox.error();
+      // Settings shows whether the retried events are saved now.
+      if (retried) {
+        status.error = ok ? std::string() : plan.error;
+        counted(outbox, status);
+      }
       ok = ok && makePlan(client, outbox, library, plan);
       if (ok && send) {
         // Kept first, then sent with whatever else waits. Never a clearing
@@ -472,7 +478,7 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
                           : StashSendPlan::State::Ready;
       lock.lock();
       shared->client = nullptr;
-      if (send) publish();
+      if (send || retried) publish();
       if (ticket == shared->ticket) {
         shared->plan = std::move(plan);
         shared->planChanged = true;
