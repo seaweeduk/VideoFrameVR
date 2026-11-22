@@ -15,6 +15,11 @@ constexpr bool kStandaloneHeadset =
 // check), of those Steam gives the app: the compositor's render thread uses 4-6.
 constexpr int kFrameBackgroundCores[] = {3, 7};
 
+// On the Frame, SteamVR's vrcmd and its libraries' directory. Also visible
+// inside the Steam Linux Runtime container.
+constexpr char kVrcmdDir[] = "/opt/steamvr/bin/linuxarm64";
+constexpr char kVrcmd[] = "/opt/steamvr/bin/linuxarm64/vrcmd";
+
 // The app's name: in its config, data and cache paths and as the OpenXR and
 // Vulkan application name (SteamVR derives its app key from it; no spaces),
 // and as shown to people (window title, version).

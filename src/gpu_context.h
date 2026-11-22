@@ -20,7 +20,7 @@ struct GpuRequirements {
   std::vector<const char*> mirrorInstanceExtensions;
 };
 
-// What device setup found and enabled (XrContext::createVulkanDevice).
+// What device setup found and enabled (createVulkanDevice, xr_device.h).
 struct GpuCapabilities {
   bool samplerAnisotropy = false;
   float maxAnisotropy = 1.0f;  // 1 without the feature

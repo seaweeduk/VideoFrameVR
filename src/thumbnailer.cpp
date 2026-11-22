@@ -2,7 +2,8 @@
 
 #include "file_util.h"
 #include "frame_scaler.h"
-#include "platform.h"
+#include "media_decode.h"
+#include "thread_priority.h"
 #include "app_dirs.h"
 #include "remote_avio.h"
 #include "stash_images.h"  // encodeJpeg, decodeJpeg
@@ -25,11 +26,7 @@ extern "C" {
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
-#include <sched.h>
-#include <sys/resource.h>
 #include <sys/stat.h>
-#include <sys/syscall.h>
-#include <unistd.h>
 #include <utility>
 
 namespace fs = std::filesystem;
@@ -47,16 +44,6 @@ constexpr auto kRetryInterval = std::chrono::seconds(60);
 // round trips. On the Frame they run on kFrameBackgroundCores.
 constexpr int kWorkers = 3;
 
-struct Interrupt {
-  const std::atomic<bool>& quit;
-  const std::atomic<bool>& playing;  // a video started: the decode stops
-  Clock::time_point deadline = Clock::now() + std::chrono::seconds(10);
-  static int check(void* opaque) {
-    const auto& self = *static_cast<Interrupt*>(opaque);
-    return self.quit.load() || self.playing.load() || Clock::now() >= self.deadline;
-  }
-};
-
 // Picks the GPU (CUDA) output format when the decoder offers it.
 AVPixelFormat pickCuda(AVCodecContext*, const AVPixelFormat* formats) {
   for (const AVPixelFormat* f = formats; *f != AV_PIX_FMT_NONE; ++f)
@@ -70,58 +57,36 @@ AVPixelFormat pickCuda(AVCodecContext*, const AVPixelFormat* formats) {
 bool decodeFrame(const std::string& path, AVBufferRef* gpu, Size size,
                  std::vector<uint32_t>& pixels, Interrupt& interrupt) {
   if (Interrupt::check(&interrupt)) return false;
-  AVFormatContext* format = avformat_alloc_context();
-  if (!format) return false;
-  format->interrupt_callback = {Interrupt::check, &interrupt};
   RemoteAvio remote;
-  if (!remote.attach(format, path)) {
-    avformat_free_context(format);
-    return false;
-  }
-  if (avformat_open_input(&format, path.c_str(), nullptr, nullptr) < 0) return false;
+  AVFormatContext* format = openMedia(path, remote, interrupt);
+  if (!format) return false;
   AVCodecContext* codec = nullptr;
   AVPacket* packet = av_packet_alloc();
   AVFrame* frame = av_frame_alloc();
   AVFrame* downloaded = av_frame_alloc();
   bool ok = false;
   do {
-    if (avformat_find_stream_info(format, nullptr) < 0) break;
-    const AVCodec* decoder = nullptr;
-    const int stream = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
-    if (stream < 0 || !decoder) break;
-    codec = avcodec_alloc_context3(decoder);
-    if (!codec || avcodec_parameters_to_context(codec, format->streams[stream]->codecpar) < 0)
-      break;
-    if (gpu) {
-      codec->hw_device_ctx = av_buffer_ref(gpu);
-      codec->get_format = pickCuda;
-    } else {
-      // On the CPU: one thread (bursts on all cores make the headset's
-      // frames late). Not keyframes only: many files mark pictures as
-      // keyframes the decoder doesn't take as such, and it read on for
-      // tens of MB to the next one.
-      codec->thread_count = 1;
-    }
-    if (avcodec_open2(codec, decoder, nullptr) < 0) break;
+    int stream = -1;
+    codec = openVideoDecoder(format, stream, [gpu](AVCodecContext* c) {
+      if (gpu) {
+        c->hw_device_ctx = av_buffer_ref(gpu);
+        c->get_format = pickCuda;
+      } else {
+        // On the CPU: one thread (bursts on all cores make the headset's
+        // frames late). Not keyframes only: many files mark pictures as
+        // keyframes the decoder doesn't take as such, and it read on for
+        // tens of MB to the next one.
+        c->thread_count = 1;
+      }
+    });
+    if (!codec) break;
     // Timestamps count from the file's start time: hours in on a Blu-ray
     // disc's transport streams.
     const int64_t start = format->start_time != AV_NOPTS_VALUE ? format->start_time : 0;
     if (!isPhotoFile(path) && format->duration > 0)
       av_seek_frame(format, -1, start + format->duration / 5, AVSEEK_FLAG_BACKWARD);
 
-    bool got = false, ended = false;
-    for (int reads = 0; !got && reads < 3000 && !Interrupt::check(&interrupt); ++reads) {
-      if (!ended && av_read_frame(format, packet) < 0) {
-        ended = true;
-        avcodec_send_packet(codec, nullptr);  // drain what the decoder holds
-      } else if (!ended) {
-        if (packet->stream_index == stream) avcodec_send_packet(codec, packet);
-        av_packet_unref(packet);
-      }
-      got = avcodec_receive_frame(codec, frame) == 0;
-      if (ended && !got) break;
-    }
-    if (!got || Interrupt::check(&interrupt)) break;
+    if (!decodeFirstFrame(format, codec, stream, packet, frame, 3000, interrupt)) break;
     if (frame->format == AV_PIX_FMT_CUDA) {  // copy the picture from the GPU
       if (av_hwframe_transfer_data(downloaded, frame, 0) < 0) break;
       std::swap(frame, downloaded);
@@ -390,15 +355,7 @@ void Thumbnailer::setPlaying(bool playing) {
 
 void Thumbnailer::work(const std::shared_ptr<Worker>& worker) {
   // Behind playback and the menu; on the Frame on kFrameBackgroundCores.
-  const auto tid = static_cast<pid_t>(syscall(SYS_gettid));
-  setpriority(PRIO_PROCESS, static_cast<id_t>(tid), 19);
-  syscall(SYS_ioprio_set, 1 /* IOPRIO_WHO_PROCESS */, tid, 3 << 13 /* IOPRIO_CLASS_IDLE */);
-  if (kStandaloneHeadset) {
-    cpu_set_t cores;
-    CPU_ZERO(&cores);
-    for (const int core : kFrameBackgroundCores) CPU_SET(core, &cores);
-    sched_setaffinity(tid, sizeof(cores), &cores);
-  }
+  runInBackground(Background::Decoding);
   const Size gallery = worker->gallery;
   // Thumbnails made before are read back from disk, much quicker than made.
   const fs::path& dir = worker->dir;
@@ -457,7 +414,8 @@ void Thumbnailer::work(const std::shared_ptr<Worker>& worker) {
         worker.busy.erase(path);
       }
     } done{*worker, path};
-    Interrupt interrupt{worker->quit, worker->playing};
+    // A video started (playing): the decode stops.
+    Interrupt interrupt{std::chrono::seconds(10), worker->quit, &worker->playing};
     struct stat file{};
     bool exists;
     std::string key = path;  // of its disk cache's name

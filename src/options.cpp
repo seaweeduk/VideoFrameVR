@@ -58,6 +58,17 @@ void printUsage(const char* argv0) {
 
 }  // namespace
 
+PlatformPolicy platformPolicy(const Options& opts) {
+  const bool v4l2 = opts.hwdec == "v4l2m2m";
+  PlatformPolicy policy;
+  policy.directVideo = v4l2;
+  policy.egl = v4l2;
+  policy.pipelineByDefault = v4l2;
+  policy.earlyRender = v4l2;
+  policy.followVisibility = kStandaloneHeadset && v4l2;
+  return policy;
+}
+
 std::optional<int> parseOptions(int argc, char** argv, Options& opts) {
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];

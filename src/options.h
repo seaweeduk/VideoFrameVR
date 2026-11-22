@@ -51,6 +51,19 @@ struct Options {
   bool stashSync = false;  // --stash-sync
 };
 
+// What the desktop and Frame video paths differ by outside the player,
+// decided once from the options. The Frame's launcher asks for its V4L2
+// decoder (--hwdec=v4l2m2m), which leaves frames in its own buffers; each
+// fact is what one place does about that.
+struct PlatformPolicy {
+  bool directVideo = false;        // the eyes sample decoded frames
+  bool egl = false;                // GL through EGL, whatever the GPU
+  bool pipelineByDefault = false;  // --video-pipeline's default
+  bool earlyRender = false;        // mpv renders before xrWaitFrame
+  bool followVisibility = false;   // the player and stick seek follow session visibility
+};
+PlatformPolicy platformPolicy(const Options& opts);
+
 // The command line into opts. Returns the exit code when the program ends
 // here (usage, --version, --save-diagnostics, a bad option), else nothing.
 std::optional<int> parseOptions(int argc, char** argv, Options& opts);

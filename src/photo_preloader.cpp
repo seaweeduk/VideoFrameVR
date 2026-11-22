@@ -1,6 +1,7 @@
 #include "photo_preloader.h"
 
 #include "frame_scaler.h"
+#include "media_decode.h"
 #include "remote_avio.h"
 
 extern "C" {
@@ -24,16 +25,6 @@ namespace {
 constexpr int kMaxSize = 16384;            // at most, else the shared image limit
 constexpr size_t kUploadBytes = 8u << 20;  // per frame
 
-struct Interrupt {
-  const std::atomic<bool>& quit;
-  std::chrono::steady_clock::time_point deadline =
-      std::chrono::steady_clock::now() + std::chrono::seconds(10);
-  static int check(void* opaque) {
-    const auto& self = *static_cast<Interrupt*>(opaque);
-    return self.quit.load() || std::chrono::steady_clock::now() >= self.deadline;
-  }
-};
-
 // Turns an RGBA picture clockwise by 90, 180 or 270 degrees.
 void rotate(std::vector<uint32_t>& pixels, int& width, int& height, int degrees) {
   if (degrees != 90 && degrees != 180 && degrees != 270) return;
@@ -54,42 +45,17 @@ void rotate(std::vector<uint32_t>& pixels, int& width, int& height, int degrees)
 bool decodePhoto(const std::string& path, int maxSize, std::vector<uint32_t>& pixels, int& width,
                  int& height, Interrupt& interrupt) {
   if (Interrupt::check(&interrupt)) return false;
-  AVFormatContext* format = avformat_alloc_context();
-  if (!format) return false;
-  format->interrupt_callback = {Interrupt::check, &interrupt};
   RemoteAvio remote;
-  if (!remote.attach(format, path)) {
-    avformat_free_context(format);
-    return false;
-  }
-  if (avformat_open_input(&format, path.c_str(), nullptr, nullptr) < 0) return false;
+  AVFormatContext* format = openMedia(path, remote, interrupt);
+  if (!format) return false;
   AVCodecContext* codec = nullptr;
   AVPacket* packet = av_packet_alloc();
   AVFrame* frame = av_frame_alloc();
   bool ok = false;
   do {
-    if (avformat_find_stream_info(format, nullptr) < 0) break;
-    const AVCodec* decoder = nullptr;
-    const int stream = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
-    if (stream < 0 || !decoder) break;
-    codec = avcodec_alloc_context3(decoder);
-    if (!codec || avcodec_parameters_to_context(codec, format->streams[stream]->codecpar) < 0)
-      break;
-    codec->thread_count = 0;
-    if (avcodec_open2(codec, decoder, nullptr) < 0) break;
-    bool got = false, ended = false;
-    for (int reads = 0; !got && reads < 100 && !Interrupt::check(&interrupt); ++reads) {
-      if (!ended && av_read_frame(format, packet) < 0) {
-        ended = true;
-        avcodec_send_packet(codec, nullptr);
-      } else if (!ended) {
-        if (packet->stream_index == stream) avcodec_send_packet(codec, packet);
-        av_packet_unref(packet);
-      }
-      got = avcodec_receive_frame(codec, frame) == 0;
-      if (ended && !got) break;
-    }
-    if (!got || Interrupt::check(&interrupt)) break;
+    int stream = -1;
+    codec = openVideoDecoder(format, stream, [](AVCodecContext* c) { c->thread_count = 0; });
+    if (!codec || !decodeFirstFrame(format, codec, stream, packet, frame, 100, interrupt)) break;
 
     const double scale =
         std::min({1.0, double(maxSize) / frame->width, double(maxSize) / frame->height});
@@ -185,7 +151,7 @@ void PhotoPreloader::work(const std::shared_ptr<Worker>& worker, int maxSize) {
     }
     Decoded slot;
     slot.path = path;
-    Interrupt interrupt{w.quit};
+    Interrupt interrupt{std::chrono::seconds(10), w.quit};
     const bool ok = decodePhoto(path, maxSize, slot.pixels, slot.width, slot.height, interrupt);
     std::unique_lock<std::mutex> lock(w.mutex);
     if (w.quit) break;

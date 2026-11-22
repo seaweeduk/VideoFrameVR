@@ -112,9 +112,10 @@ bool MaskProbe::update(double now, const std::string& video, bool wanted, GLuint
   bool found = false;
   if (drawer_ && drawer_->ready()) {
     const float* values = drawer_->values();
-    drawer_ = nullptr;
     if (values) found = count(values);
     else stale_ = false;
+    drawer_->release();
+    drawer_ = nullptr;
   } else if (fence_) {
     const GLenum state = glClientWaitSync(fence_, 0, 0);
     if (state == GL_ALREADY_SIGNALED || state == GL_CONDITION_SATISFIED) {

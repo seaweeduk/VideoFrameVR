@@ -1,5 +1,6 @@
 #include "key_mask.h"
 
+#include "offscreen_pass.h"
 #include "pipelines.h"
 
 #include <algorithm>
@@ -32,44 +33,13 @@ bool KeyMask::initPasses(GpuContext& gpu) {
     // it held. The rest of the image keeps what it holds (another eye's
     // rectangle, an earlier frame's spare), so it starts from the layout the
     // passes leave it in, as init() first puts it.
-    VkAttachmentDescription attachment{};
-    attachment.format = formats[i];
-    attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachment.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    VkAttachmentReference color{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &color;
     // After earlier reads of the image (eye passes, the reach pass); a pass
-    // over another rectangle earlier in the frame reaches it through `after`.
-    VkSubpassDependency before{};
-    before.srcSubpass = VK_SUBPASS_EXTERNAL;
-    before.dstSubpass = 0;
-    before.srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    before.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    before.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    VkSubpassDependency after{};
-    after.srcSubpass = 0;
-    after.dstSubpass = VK_SUBPASS_EXTERNAL;
-    after.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    after.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    after.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    after.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    const VkSubpassDependency dependencies[2] = {before, after};
-    VkRenderPassCreateInfo info{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-    info.attachmentCount = 1;
-    info.pAttachments = &attachment;
-    info.subpassCount = 1;
-    info.pSubpasses = &subpass;
-    info.dependencyCount = 2;
-    info.pDependencies = dependencies;
-    if (!gpu.check(vkCreateRenderPass(gpu.device(), &info, nullptr, &pass_[i]), "key mask pass"))
+    // over another rectangle earlier in the frame reaches it through the
+    // dependency after it.
+    if (!createOffscreenPass(gpu, formats[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, pass_[i],
+                             "key mask pass"))
       return false;
   }
   return true;
@@ -104,16 +74,10 @@ bool KeyMask::init(const Pipelines& pipelines) {
   distanceTexture_.view = distances_.view;
   distanceTexture_.width = distanceTexture_.height = kSize;
   const VkImageView views[2] = {distances_.view, mask_.view};
-  for (int i = 0; i < 2; ++i) {
-    VkFramebufferCreateInfo fb{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-    fb.renderPass = pass_[i];
-    fb.attachmentCount = 1;
-    fb.pAttachments = &views[i];
-    fb.width = fb.height = kSize;
-    fb.layers = 1;
-    if (!gpu_->check(vkCreateFramebuffer(d, &fb, nullptr, &framebuffer_[i]), "key mask framebuffer"))
+  for (int i = 0; i < 2; ++i)
+    if (!createOffscreenFramebuffer(*gpu_, pass_[i], views[i], kSize, kSize, framebuffer_[i],
+                                    "key mask framebuffer"))
       return false;
-  }
   const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
   VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
   poolInfo.maxSets = 1;

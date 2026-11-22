@@ -7,6 +7,7 @@
 #include "app_dirs.h"
 #include "remote.h"
 #include "stash_stream.h"
+#include "thread_priority.h"
 
 #include <nlohmann/json.hpp>
 
@@ -27,11 +28,9 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <poll.h>
-#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 
 namespace fs = std::filesystem;
@@ -262,7 +261,7 @@ void Offline::Shared::scan() {
 }
 
 void Offline::Shared::work() {
-  setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 19);
+  runInBackground(Background::Cpu);
   std::map<int64_t, Clock::time_point> retryAt;
   auto scanned = Clock::time_point{};
   for (;;) {

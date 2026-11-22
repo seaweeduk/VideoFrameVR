@@ -117,6 +117,7 @@ bool SceneRenderer::init(GpuContext& gpu, GlInterop& interop, Uploader& uploader
                          EyeTargets& targets) {
   gpu_ = &gpu;
   interop_ = &interop;
+  participants_[0] = &interop;
   uploader_ = &uploader;
   targets_ = &targets;
   return keyMask_.initPasses(gpu) &&
@@ -236,6 +237,7 @@ bool SceneRenderer::createSky() {
 
 void SceneRenderer::setDirectVideo(DirectVideo* direct) {
   direct_ = direct;
+  participants_[1] = direct;
   if (direct && direct->tp10SetLayout() &&
       pipelines_.initTp10(direct->tp10SetLayout(), direct->tp10MaskSetLayout())) {
     direct->setTp10Mask(keyMask_.maskView(), pipelines_.sampler(Pipelines::kVideoBase));
@@ -292,8 +294,8 @@ bool SceneRenderer::record(GpuContext::FrameSlot& slot, const EyeFrame& eyes,
     if (video && video->texture && video->texture->yuv) video->texture = nullptr;
   }
   uploader_->record(cmd, slot.index);
-  interop_->recordAcquires(cmd);
-  if (direct_) direct_->recordAcquires(cmd);
+  for (FrameParticipant* p : participants_)
+    if (p) p->recordAcquires(cmd);
   timestamp(slot, kUploaded, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
   // The colour key's mask, before any pass reads it.
   if (video && !testPattern_) drawKeyMask(cmd, *video, scene.clear, eyes, matrices);
@@ -325,11 +327,22 @@ bool SceneRenderer::record(GpuContext::FrameSlot& slot, const EyeFrame& eyes,
     timestamp(slot, i == 0 ? kEye0Done : kEye1Done, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
   }
   if (eyes.count < 2) timestamp(slot, kEye1Done, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
-  interop_->recordReleases(cmd);
-  if (direct_) direct_->recordReleases(cmd);
+  for (FrameParticipant* p : participants_)
+    if (p) p->recordReleases(cmd);
   if (mirror_ && eyes.count > 0) mirror_->record(cmd, eyes.eyes[0], waits);
   timestamp(slot, kEnd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
   return !scene.video || !scene.video->texture || video->texture;
+}
+
+void SceneRenderer::frameSubmitted(uint64_t value) {
+  for (FrameParticipant* p : participants_)
+    if (p) p->frameSubmitted(value);
+}
+
+void SceneRenderer::frameAbandoned() {
+  for (FrameParticipant* p : participants_)
+    if (p) p->frameAbandoned();
+  keyMask_.frameAbandoned();
 }
 
 // Room-fixed: the eye's own orientation alone turns it.

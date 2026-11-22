@@ -433,6 +433,8 @@ struct QuitWatchdogArm {
 };
 
 int run(Options opts) {
+  // Before the GPU's default decoder is filled in below; that is never the Frame's.
+  const PlatformPolicy platform = platformPolicy(opts);
   WindowPtr mirrorWindow(nullptr, glfwDestroyWindow);
   GpuRequirements requirements;
   if (opts.mirror) {
@@ -453,7 +455,7 @@ int run(Options opts) {
   const bool foveationAsked = opts.foveationSet && opts.foveation != FoveationLevel::Off;
   requirements.foveation = kStandaloneHeadset || foveationAsked;
   // The Frame's decoder frames, sampled by the eyes (docs/vulkan-renderer.md 11).
-  requirements.directVideo = opts.hwdec == "v4l2m2m";
+  requirements.directVideo = platform.directVideo;
 
   // First-run setup (first_run.h), decided before anything below writes
   // the files it looks for. A video to play puts it off to the next start;
@@ -504,7 +506,7 @@ int run(Options opts) {
   // OpenXR chooses the GPU before GL is created, so AMD can use EGL without
   // changing NVIDIA's context API or creating a temporary GLX context.
   MpvGlContext glContext;
-  if (!glContext.init(amd || opts.hwdec == "v4l2m2m", amd && opts.hwdec != "no")) return 1;
+  if (!glContext.init(amd || platform.egl, amd && opts.hwdec != "no")) return 1;
   GpuContext gpu;
   if (!gpu.init(xr.gpuDevice())) return 1;
   GlInterop interop;  // what GL renders, the scene samples
@@ -687,7 +689,7 @@ int run(Options opts) {
   // eyes never wait for its V4L2 decoding, Main 10 conversion and mpv render
   // (--video-pipeline). Set up once the runtime gives its frame period.
   const bool pipelineVideo =
-      opts.videoPipeline < 0 ? opts.hwdec == "v4l2m2m" : opts.videoPipeline == 1;
+      opts.videoPipeline < 0 ? platform.pipelineByDefault : opts.videoPipeline == 1;
   double pipelinePeriod = 0;
   std::printf("Video pipeline: %s\n", pipelineVideo ? "on, one headset frame ahead" : "off");
   // A frame that would look like the last one drawn is not drawn: the
@@ -795,7 +797,7 @@ int run(Options opts) {
   };
   auto describeBindings = [&] {
     std::string profiles[2];
-    xr.pairedProfiles(profiles);
+    xr.input().pairedProfiles(profiles);
     ControllerBindings bindings = describeControls(profiles, settings.controls, settings.gestures);
     if (bindings == shownBindings) return;
     shownBindings = std::move(bindings);
@@ -825,7 +827,7 @@ int run(Options opts) {
   auto sendBuzzes = [&] {
     for (int h = 0; h < 2; ++h) {
       if (buzzes[h].amplitude > 0 && settings.vibration)
-        xr.vibrate(h, buzzes[h].amplitude, buzzes[h].seconds, buzzes[h].frequency);
+        xr.input().vibrate(h, buzzes[h].amplitude, buzzes[h].seconds, buzzes[h].frequency);
       buzzes[h] = {};
     }
   };
@@ -1303,7 +1305,7 @@ int run(Options opts) {
                                    !player.seeking() && !player.loading() && !player.failed() &&
                                    xr.userPresence() != 0);
     }
-    if (kStandaloneHeadset && opts.hwdec == "v4l2m2m") {
+    if (platform.followVisibility) {
       if (!xr.isVisible() && stickSeek.active()) {
         if (stickSeek.pausedVideo()) player.command("set pause no");
         stickSeek.cancel();
@@ -1314,7 +1316,7 @@ int run(Options opts) {
     if (player.shutdownRequested()) return false;
     // Also while nothing is drawn. The input focus here is the last drawn
     // frame's: a frame checks its own before the gaze correction sees its input.
-    if (!xr.isRunning() || !xr.controllers().focused || xr.userPresence() == 0) endGazeSitting();
+    if (!xr.isRunning() || !xr.input().controllers().focused || xr.userPresence() == 0) endGazeSitting();
 
     session.pollFailure();
     const bool opened = player.takeOpened();
@@ -1425,7 +1427,7 @@ int run(Options opts) {
     // Frame's Q10C conversion is asynchronous GPU work, independent of the
     // head pose. Submit it before the runtime wait so it can finish while
     // SteamVR paces the frame, rather than consuming the eye-render deadline.
-    const bool earlyVideo = opts.hwdec == "v4l2m2m";
+    const bool earlyVideo = platform.earlyRender;
     if (earlyVideo) {
       player.render();
       glFlush();
@@ -1497,9 +1499,9 @@ int run(Options opts) {
 
   auto readControllers = [&]() -> const JobInput& {
     // --- Controller and keyboard input ---
-    if (xr.profilesVersion() != profilesSeen) {
-      profilesSeen = xr.profilesVersion();
-      for (int h = 0; h < 2; ++h) controllerTypes[h] = controllerType(xr.interactionProfile(h));
+    if (xr.input().profilesVersion() != profilesSeen) {
+      profilesSeen = xr.input().profilesVersion();
+      for (int h = 0; h < 2; ++h) controllerTypes[h] = controllerType(xr.input().interactionProfile(h));
       describeBindings();
       const ControllerType seen =
           controllerTypes[1] != ControllerType::Count ? controllerTypes[1] : controllerTypes[0];
@@ -1508,7 +1510,7 @@ int run(Options opts) {
         saveSettings(settings);
       }
     }
-    const ControllerState& raw = xr.controllers();
+    const ControllerState& raw = xr.input().controllers();
     // Presses that do something else, and nothing more: grip held and a
     // stick's click on the stars clears the rating; any press skips setup's
     // intro (below).
@@ -2108,7 +2110,7 @@ int run(Options opts) {
     }
     focusIn.now = now;
     focusIn.target = focusTargets.update(
-        settings.focusPrefs.eyeTracking, xr.gaze(), headRot, now,
+        settings.focusPrefs.eyeTracking, xr.input().gaze(), headRot, now,
         settings.focusPrefs.gazeCorrect ? gazeCorrection.fit() : GazeFit{});
     FocusOutput focusOut = autofocus.update(focusIn);
     focusMarker.update(settings.focusPrefs.showTarget,
@@ -2625,15 +2627,12 @@ int run(Options opts) {
           drawn = value != 0;
           mirror.submitted(drawn);
           if (drawn) {
-            interop.frameSubmitted(value);
-            direct.frameSubmitted(value);
+            renderer.frameSubmitted(value);
             // A frame recorded without its picture is not one to show again.
             if (whole) frameReuse.drawn(shown);
             else frameReuse.forget();
             timer.drew();
           } else {
-            interop.frameAbandoned();
-            direct.frameAbandoned();
             renderer.frameAbandoned();
           }
           timer.lap(FrameTimer::Submit);

@@ -1,13 +1,12 @@
 #pragma once
 
-#include "controller_state.h"
-#include "controls.h"
 #include "density_map.h"
 #include "eye_state.h"
 #include "foveation_level.h"
 #include "gpu_context.h"
 #include "tile_grid.h"
 #include "xmath.h"
+#include "xr_input.h"
 
 #include <vulkan/vulkan.h>
 #include <openxr/openxr.h>
@@ -16,7 +15,6 @@
 #include <functional>
 #include <future>
 #include <string>
-#include <utility>
 #include <vector>
 
 // One eye's swapchain image of this frame, acquired and waited for.
@@ -67,8 +65,6 @@ class XrContext {
   // The runtime's recommended eye image size (of the first eye).
   int recommendedEyeWidth() const;
   int recommendedEyeHeight() const;
-  // The OpenXR system's name, as the runtime reports it.
-  const std::string& systemName() const { return systemName_; }
   // The eye images, at videoScale times baseWidth × baseHeight per eye
   // (0 × 0: the runtime's recommended size). They keep their shape and are
   // lowered to fit the runtime's maximum and the GPU's limits. Sizes up to
@@ -115,9 +111,6 @@ class XrContext {
   // The views drawn with, by swapchain image.
   const std::vector<VkImageView>& densityMapViews(int eye) const {
     return appMaps_ ? swapchains_[eye].appMap.views : swapchains_[eye].densityViews;
-  }
-  VkExtent2D densityMapSize(int eye) const {
-    return appMaps_ ? swapchains_[eye].appMap.pixels.size : swapchains_[eye].densitySize;
   }
   // App maps: new ones for the size in use, which `draw` draws for each eye,
   // used from the next frame on; the old ones are retired. Between frames,
@@ -199,21 +192,8 @@ class XrContext {
   // The runtime's frame period in seconds, 0 before the first frame.
   double displayPeriod() const { return frameState_.predictedDisplayPeriod * 1e-9; }
 
-  // Controller input, updated by beginFrame().
-  const ControllerState& controllers() const { return controllers_; }
-  const GazeState& gaze() const { return gaze_; }
-  // Each hand's interaction profile ("" none), read from the runtime again
-  // after it reported a change, which bumps profilesVersion().
-  const std::string& interactionProfile(int hand) const { return handProfileNames_[hand]; }
-  uint64_t profilesVersion() const { return profilesVersion_; }
-  // ... as the controllers' pictures want them: a hand without a controller
-  // gets the other hand's (none on: on the Frame, its controllers').
-  void pairedProfiles(std::string out[2]) const;
-  // A short pulse on a hand's controller (0 left, 1 right, -1 both), while
-  // the app has input focus. 0 seconds is SteamVR's single impulse, its
-  // length set by the amplitude (about 21 ms at 0.16 on the Frame);
-  // frequency 0 leaves it to the runtime.
-  void vibrate(int hand, float amplitude, double seconds, float frequency = 0);
+  // Controller and eye input, updated by beginFrame().
+  XrInput& input() { return input_; }
 
  private:
   // The app's density map, host-written, linear, for all of an eye's images.
@@ -241,14 +221,11 @@ class XrContext {
     bool isAcquired = false, isWaited = false;
   };
 
-  bool createActions();
-  void suggestBindings(const char* profile,
-                       const std::vector<std::pair<XrAction, std::string>>& bindings,
-                       const void* next = nullptr);
-  void updateControllers(bool focused);
-  void readInteractionProfiles();
-  void updateGaze();
-  bool createVulkanDevice(const GpuRequirements& gpu);
+  // The OpenXR system's name, as the runtime reports it.
+  const std::string& systemName() const { return systemName_; }
+  VkExtent2D densityMapSize(int eye) const {
+    return appMaps_ ? swapchains_[eye].appMap.pixels.size : swapchains_[eye].densitySize;
+  }
   bool queryViewConfiguration();
   void queryBlendModes();
   // Records a lost session or instance (failed()).
@@ -257,7 +234,6 @@ class XrContext {
   void submitFrame(bool layerReady);
   // The largest scale up to `scale` whose images fit the runtime and the GPU.
   float fittingScale(float scale, int baseWidth, int baseHeight, bool& runtimeLimited) const;
-  int scaledSize(int base, int recommended, float scale) const;
   bool createSwapchain(int width, int height, bool foveated, Swapchain& out) const;
   void destroySwapchain(Swapchain& sc) const;
   // After their last use on the GPU: their views and maps at once, the
@@ -285,29 +261,12 @@ class XrContext {
   XrSession session_ = XR_NULL_HANDLE;
   XrSpace localSpace_ = XR_NULL_HANDLE;
   XrSpace viewSpace_ = XR_NULL_HANDLE;
-  XrActionSet actionSet_ = XR_NULL_HANDLE;
-  XrAction aimAction_ = XR_NULL_HANDLE;
-  XrAction controlActions_[kControls] = {};  // by Control
-  XrAction stickAction_ = XR_NULL_HANDLE;
-  XrAction hapticAction_ = XR_NULL_HANDLE;
-  XrPath handPaths_[2] = {XR_NULL_PATH, XR_NULL_PATH};
-  XrSpace aimSpaces_[2] = {XR_NULL_HANDLE, XR_NULL_HANDLE};
-  XrPath handProfiles_[2] = {XR_NULL_PATH, XR_NULL_PATH};  // each hand's, as last read
-  std::string handProfileNames_[2];
-  uint64_t profilesVersion_ = 1;
-  ControllerState controllers_;
-  bool inputHeld_ = true;  // since focus came back, something is still held
-  bool gazeExtension_ = false;  // XR_EXT_eye_gaze_interaction enabled
-  bool frameControllerExtension_ = false;  // XR_VALVE_frame_controller_interaction enabled
-  bool triggerThreshold_ = false;  // ... and XR_VALVE_analog_threshold, for its trigger
   bool presenceExtension_ = false;  // XR_EXT_user_presence enabled
   int userPresence_ = -1;
   uint64_t runtimeVersion_ = 0;
-  XrAction gazeAction_ = XR_NULL_HANDLE;
-  XrSpace gazeSpace_ = XR_NULL_HANDLE;
-  GazeState gaze_;
   XrFrameState frameState_{XR_TYPE_FRAME_STATE};
   XrSessionState sessionState_ = XR_SESSION_STATE_UNKNOWN;
+  XrInput input_{sessionState_};
   bool running_ = false;
   bool failed_ = false;
   // Native SteamVR launch only: one dismissal before first focus, never rearmed.

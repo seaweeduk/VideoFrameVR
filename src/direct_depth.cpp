@@ -1,5 +1,7 @@
 #include "direct_depth.h"
 
+#include "offscreen_pass.h"
+
 #include <cstdint>
 // The SPIR-V headers declare bare arrays: <cstdint> first.
 #include "shaders/depth_patch.frag.h"
@@ -79,52 +81,13 @@ bool DirectDepth::init(GpuContext& gpu, DirectVideo& direct, int width, int rows
                        "focus patch image"))
     return false;
 
-  VkAttachmentDescription attachment{};
-  attachment.format = kFormat;
-  attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-  attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-  attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  attachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-  VkAttachmentReference color{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-  VkSubpassDescription subpass{};
-  subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-  subpass.colorAttachmentCount = 1;
-  subpass.pColorAttachments = &color;
-  // The copy after the pass reads what it wrote.
-  VkSubpassDependency after{};
-  after.srcSubpass = 0;
-  after.dstSubpass = VK_SUBPASS_EXTERNAL;
-  after.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-  after.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-  after.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-  after.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
   // The last copy is done reading before the pass writes again.
-  VkSubpassDependency before{};
-  before.srcSubpass = VK_SUBPASS_EXTERNAL;
-  before.dstSubpass = 0;
-  before.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-  before.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-  before.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-  const VkSubpassDependency dependencies[2] = {before, after};
-  VkRenderPassCreateInfo passInfo{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-  passInfo.attachmentCount = 1;
-  passInfo.pAttachments = &attachment;
-  passInfo.subpassCount = 1;
-  passInfo.pSubpasses = &subpass;
-  passInfo.dependencyCount = 2;
-  passInfo.pDependencies = dependencies;
-  if (!gpu.check(vkCreateRenderPass(d, &passInfo, nullptr, &pass_), "focus patch pass")) return false;
-  VkFramebufferCreateInfo fbInfo{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-  fbInfo.renderPass = pass_;
-  fbInfo.attachmentCount = 1;
-  fbInfo.pAttachments = &image_.view;
-  fbInfo.width = width_;
-  fbInfo.height = rows_;
-  fbInfo.layers = 1;
-  if (!gpu.check(vkCreateFramebuffer(d, &fbInfo, nullptr, &framebuffer_), "focus patch framebuffer"))
+  // The copy after the pass reads what it wrote.
+  if (!createOffscreenPass(gpu, kFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                           VK_ACCESS_TRANSFER_READ_BIT, pass_, "focus patch pass") ||
+      !createOffscreenFramebuffer(gpu, pass_, image_.view, width_, rows_, framebuffer_,
+                                  "focus patch framebuffer"))
     return false;
 
   // The planes as the eye passes sample them (DirectVideo), pushed per draw:

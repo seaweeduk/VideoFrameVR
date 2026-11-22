@@ -924,13 +924,7 @@ float candidateAngle(float distance, float baseline, int accuracy) {
   return kAngleStart + bin * step;
 }
 
-DepthEstimator::~DepthEstimator() {
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    quit_ = true;
-  }
-  wake_.notify_all();
-  if (thread_.joinable()) thread_.join();
+GlDepth::~GlDepth() {
   if (fence_) glDeleteSync(fence_);
   if (pbo_) glDeleteBuffers(1, &pbo_);
   if (fbo_) glDeleteFramebuffers(1, &fbo_);
@@ -940,7 +934,7 @@ DepthEstimator::~DepthEstimator() {
   if (program_) glDeleteProgram(program_);
 }
 
-bool DepthEstimator::init() {
+bool GlDepth::init(int width, int rows) {
   program_ = compileProgram(kVertex, kFragment);
   if (!program_) return false;
   uTex_ = glGetUniformLocation(program_, "uTex");
@@ -969,7 +963,7 @@ bool DepthEstimator::init() {
   glSamplerParameteri(sampler_, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glGenTextures(1, &target_);
   glBindTexture(GL_TEXTURE_2D, target_);
-  glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, kMaxWidth, kMaxHeight);
+  glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, width, rows);
   glBindTexture(GL_TEXTURE_2D, 0);
   glGenFramebuffers(1, &fbo_);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
@@ -979,9 +973,107 @@ bool DepthEstimator::init() {
   if (!complete) return false;
   glGenBuffers(1, &pbo_);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_);
-  glBufferData(GL_PIXEL_PACK_BUFFER, sizeof(float) * kMaxWidth * kMaxHeight, nullptr,
-               GL_STREAM_READ);
+  glBufferData(GL_PIXEL_PACK_BUFFER, sizeof(float) * width * rows, nullptr, GL_STREAM_READ);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+  return true;
+}
+
+DepthPatchDrawer* GlDepth::source(const DepthRequest& request) {
+  request_ = &request;
+  return request.texture ? this : nullptr;
+}
+
+bool GlDepth::draw(const DepthPatch& patch) {
+  if (request_->prepareRead && !request_->prepareRead()) return false;
+  const int width = patch.width, height = patch.height;
+  const bool sbs = patch.sbs;
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+  glDisable(GL_FRAMEBUFFER_SRGB);
+  glDisable(GL_BLEND);
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_SCISSOR_TEST);
+  glUseProgram(program_);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, request_->texture);
+  glBindSampler(0, sampler_);
+  glBindVertexArray(vao_);
+  glUniform1i(uTex_, 0);
+  glUniform1f(uStep_, patch.step);
+  glUniform1i(uProjection_, patch.projection);
+  glUniform1f(uFisheyeFov_, patch.fisheyeFov);
+  glUniform1i(uFlip_, patch.flip);
+  glUniform2f(uEyeScale_, sbs ? 0.5f : 1.0f, sbs ? 1.0f : 0.5f);
+  glUniform1i(uAlphaPacked_, patch.alphaPacked);
+  glUniform2f(uAlphaScale_, patch.alphaScale[0], patch.alphaScale[1]);
+  glUniform1f(uGreenKey_, patch.greenKey);
+  glUniform1f(uKeyCut_, patch.keyCut);
+  glUniform3fv(uKey_, 1, request_->seeThrough.keyColour);
+  // Both eyes over the same angles; rows 0.. left, then right, then the thumbnail.
+  glUniform2f(uStart_, patch.start[0], patch.start[1]);
+  for (int eye = 0; eye < 2; ++eye) {
+    glViewport(0, eye * height, width, height);
+    glUniform4f(uRect_, 0.0f, static_cast<float>(eye * height), static_cast<float>(width),
+                static_cast<float>(height));
+    glUniform2f(uEyeOffset_, sbs ? 0.5f * eye : 0.0f, sbs ? 0.0f : 0.5f * eye);
+    glUniform2f(uAlphaCenter_, eye == 0 ? 0.5f : 0.0f, 0.0f);  // as SceneRenderer
+    glUniform1i(uMode_, 0);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+  }
+  if (patch.thumbnail) {
+    glViewport(0, 2 * height, DepthEstimator::kThumbW, DepthEstimator::kThumbH);
+    glUniform4f(uRect_, 0.0f, static_cast<float>(2 * height), DepthEstimator::kThumbW,
+                DepthEstimator::kThumbH);
+    glUniform2f(uEyeOffset_, 0.0f, 0.0f);
+    glUniform1i(uMode_, 1);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+  }
+  glBindVertexArray(0);
+  glBindSampler(0, 0);
+
+  const int rows = 2 * height + (patch.thumbnail ? DepthEstimator::kThumbH : 0);
+  bytes_ = static_cast<size_t>(width) * rows * sizeof(float);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_);
+  glPixelStorei(GL_PACK_ALIGNMENT, 4);
+  glReadBuffer(GL_COLOR_ATTACHMENT0);
+  glReadPixels(0, 0, width, rows, GL_RED, GL_FLOAT, nullptr);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  fence_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);  // flushed with the frame
+  return true;
+}
+
+bool GlDepth::ready() {
+  if (!fence_) return false;
+  const GLenum state = glClientWaitSync(fence_, 0, 0);
+  if (state != GL_ALREADY_SIGNALED && state != GL_CONDITION_SATISFIED) return false;
+  glDeleteSync(fence_);
+  fence_ = nullptr;
+  return true;
+}
+
+const float* GlDepth::values() {
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_);
+  mapped_ = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, bytes_, GL_MAP_READ_BIT);
+  return static_cast<const float*>(mapped_);
+}
+
+void GlDepth::release() {
+  if (mapped_) glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+  mapped_ = nullptr;
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+}
+
+DepthEstimator::~DepthEstimator() {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    quit_ = true;
+  }
+  wake_.notify_all();
+  if (thread_.joinable()) thread_.join();
+}
+
+bool DepthEstimator::init() {
+  if (!gl_.init(kMaxWidth, kMaxHeight)) return false;
   thread_ = std::thread([this] { work(); });
   return true;
 }
@@ -1003,7 +1095,8 @@ bool DepthEstimator::request(const DepthRequest& q) {
   forgetScene_ = forgetVideo_ = false;
   float alpha = 0, beta = 0;
   epipolarAngles(normalize(q.direction), alpha, beta);
-  if (std::sin(alpha) < kMinSinAlpha || (!q.texture && !q.drawer)) {
+  DepthPatchDrawer* drawer = q.drawer ? q.drawer : gl_.source(q);
+  if (std::sin(alpha) < kMinSinAlpha || !drawer) {
     forgetScene_ = job.forget;  // for the next real measurement
     forgetVideo_ = job.forgetVideo;
     std::lock_guard<std::mutex> lock(mutex_);
@@ -1065,93 +1158,32 @@ bool DepthEstimator::request(const DepthRequest& q) {
   if (q.format.projection == Projection::Fisheye200) projection = 2, fisheyeFov = 200 * kDegree;
   const bool sbs = q.format.stereo == StereoLayout::SideBySide;
 
-  if (q.drawer) {
-    DepthPatch patch;
-    patch.width = width;
-    patch.height = height;
-    patch.thumbnail = job.thumbnail;
-    patch.start[0] = alpha - 0.5f * width * step;
-    patch.start[1] = beta - 0.5f * height * step;
-    patch.step = step;
-    patch.projection = projection;
-    patch.fisheyeFov = fisheyeFov;
-    patch.flip = q.flip;
-    patch.sbs = sbs;
-    patch.alphaPacked = maskRule(q.seeThrough);
-    patch.alphaScale[0] = 0.4f * (sbs ? 0.5f : 1.0f);
-    patch.alphaScale[1] = 0.4f * (sbs ? 1.0f : 0.5f);
-    patch.greenKey = q.seeThrough.greenKey;
-    if (q.seeThrough.colourKey) {
-      patch.keyColour = q.seeThrough.packedKeyColour();
-      patch.keyCut = keyCut(q.seeThrough);
-    }
-    if (!q.drawer->draw(patch)) {
-      forgetScene_ = job.forget;
-      forgetVideo_ = job.forgetVideo;
-      return false;
-    }
-    if (job.thumbnail) thumbnailAt_ = now;
-    drawer_ = q.drawer;
-    pending_ = std::move(job);
-    std::lock_guard<std::mutex> lock(mutex_);
-    stage_ = Stage::Gpu;
-    return true;
+  DepthPatch patch;
+  patch.width = width;
+  patch.height = height;
+  patch.thumbnail = job.thumbnail;
+  patch.start[0] = alpha - 0.5f * width * step;
+  patch.start[1] = beta - 0.5f * height * step;
+  patch.step = step;
+  patch.projection = projection;
+  patch.fisheyeFov = fisheyeFov;
+  patch.flip = q.flip;
+  patch.sbs = sbs;
+  patch.alphaPacked = maskRule(q.seeThrough);
+  patch.alphaScale[0] = 0.4f * (sbs ? 0.5f : 1.0f);
+  patch.alphaScale[1] = 0.4f * (sbs ? 1.0f : 0.5f);
+  patch.greenKey = q.seeThrough.greenKey;
+  if (q.seeThrough.colourKey) {
+    if (q.drawer) patch.keyColour = q.seeThrough.packedKeyColour();  // GlDepth takes it as floats
+    patch.keyCut = keyCut(q.seeThrough);
   }
-  if (q.prepareRead && !q.prepareRead()) {
+  if (!drawer->draw(patch)) {
     forgetScene_ = job.forget;
     forgetVideo_ = job.forgetVideo;
     return false;
   }
-  glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-  glDisable(GL_FRAMEBUFFER_SRGB);
-  glDisable(GL_BLEND);
-  glDisable(GL_DEPTH_TEST);
-  glDisable(GL_SCISSOR_TEST);
-  glUseProgram(program_);
-  glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, q.texture);
-  glBindSampler(0, sampler_);
-  glBindVertexArray(vao_);
-  glUniform1i(uTex_, 0);
-  glUniform1f(uStep_, step);
-  glUniform1i(uProjection_, projection);
-  glUniform1f(uFisheyeFov_, fisheyeFov);
-  glUniform1i(uFlip_, q.flip);
-  glUniform2f(uEyeScale_, sbs ? 0.5f : 1.0f, sbs ? 1.0f : 0.5f);
-  glUniform1i(uAlphaPacked_, maskRule(q.seeThrough));
-  glUniform2f(uAlphaScale_, 0.4f * (sbs ? 0.5f : 1.0f), 0.4f * (sbs ? 1.0f : 0.5f));
-  glUniform1f(uGreenKey_, q.seeThrough.greenKey);
-  glUniform1f(uKeyCut_, q.seeThrough.colourKey ? keyCut(q.seeThrough) : 0.0f);
-  glUniform3fv(uKey_, 1, q.seeThrough.keyColour);
-  // Both eyes over the same angles; rows 0.. left, then right, then the thumbnail.
-  glUniform2f(uStart_, alpha - 0.5f * width * step, beta - 0.5f * height * step);
-  for (int eye = 0; eye < 2; ++eye) {
-    glViewport(0, eye * height, width, height);
-    glUniform4f(uRect_, 0.0f, static_cast<float>(eye * height), static_cast<float>(width),
-                static_cast<float>(height));
-    glUniform2f(uEyeOffset_, sbs ? 0.5f * eye : 0.0f, sbs ? 0.0f : 0.5f * eye);
-    glUniform2f(uAlphaCenter_, eye == 0 ? 0.5f : 0.0f, 0.0f);  // as SceneRenderer
-    glUniform1i(uMode_, 0);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-  }
-  if (job.thumbnail) {
-    glViewport(0, 2 * height, kThumbW, kThumbH);
-    glUniform4f(uRect_, 0.0f, static_cast<float>(2 * height), kThumbW, kThumbH);
-    glUniform2f(uEyeOffset_, 0.0f, 0.0f);
-    glUniform1i(uMode_, 1);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-    thumbnailAt_ = now;
-  }
-  glBindVertexArray(0);
-  glBindSampler(0, 0);
-
-  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_);
-  glPixelStorei(GL_PACK_ALIGNMENT, 4);
-  glReadBuffer(GL_COLOR_ATTACHMENT0);
-  glReadPixels(0, 0, width, job.rows(), GL_RED, GL_FLOAT, nullptr);
-  glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  fence_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);  // flushed with the frame
+  if (job.thumbnail) thumbnailAt_ = now;
+  drawer_ = drawer;
   pending_ = std::move(job);
   std::lock_guard<std::mutex> lock(mutex_);
   stage_ = Stage::Gpu;
@@ -1168,35 +1200,13 @@ bool DepthEstimator::poll(DepthEstimate& out) {
     pending_.pixels.resize(count);
     if (const float* data = drawer_->values()) std::copy_n(data, count, pending_.pixels.begin());
     else pending_.pixels.assign(count, -1.0f);
+    drawer_->release();
     drawer_ = nullptr;
     job_ = std::move(pending_);
     stage_ = Stage::Working;
     lock.unlock();
     wake_.notify_one();
     return false;
-  }
-  if (stage_ == Stage::Gpu && fence_) {
-    const GLenum state = glClientWaitSync(fence_, 0, 0);
-    if (state == GL_ALREADY_SIGNALED || state == GL_CONDITION_SATISFIED) {
-      glDeleteSync(fence_);
-      fence_ = nullptr;
-      const size_t count = static_cast<size_t>(pending_.stride) * pending_.rows();
-      pending_.pixels.resize(count);
-      glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_);
-      if (const void* data = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, count * sizeof(float),
-                                              GL_MAP_READ_BIT)) {
-        std::copy_n(static_cast<const float*>(data), count, pending_.pixels.begin());
-        glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-      } else {
-        pending_.pixels.assign(count, -1.0f);
-      }
-      glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-      job_ = std::move(pending_);
-      stage_ = Stage::Working;
-      lock.unlock();
-      wake_.notify_one();
-      return false;
-    }
   }
   if (stage_ != Stage::Ready) return false;
   out = job_.result;
