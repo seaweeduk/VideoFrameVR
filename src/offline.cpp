@@ -98,6 +98,13 @@ bool exists(const std::string& path) {
   return ::stat(path.c_str(), &st) == 0;
 }
 
+// Not there at all, as remote::Status::Missing: a folder off limits or a
+// drive's error isn't.
+bool missing(const std::string& path) {
+  struct stat st;
+  return ::stat(path.c_str(), &st) != 0 && (errno == ENOENT || errno == ENOTDIR);
+}
+
 // Whether a server (its root locator) answers on its port within two seconds.
 bool answers(const std::string& server) {
   addrinfo hints{}, *found = nullptr;
@@ -348,6 +355,7 @@ void Offline::Shared::copy(Download& d) {
   // The source as it is now; a source changed since its copy started is
   // copied from the start.
   const bool stash = isStashSource(d.source);
+  const bool local = !stash && !remote::isRemote(d.source);
   bool gone = false;
   const FileFingerprint source = stash ? stashFingerprint(d.source, gone) : fingerprintFile(d.source);
   if (source.oshash.empty()) {
@@ -355,9 +363,9 @@ void Offline::Shared::copy(Download& d) {
       remote::Entry entry;
       gone = remote::stat(d.source, entry) == remote::Status::Missing;
     } else if (!stash) {
-      gone = !exists(d.source);
+      gone = missing(d.source);
     }
-    gone ? fail(Why::Gone) : wait(Why::Server);
+    gone ? fail(Why::Gone) : wait(local ? Why::Unreadable : Why::Server);
     return;
   }
   {
@@ -463,6 +471,7 @@ void Offline::Shared::copy(Download& d) {
   }
   std::vector<char> buffer(kChunk);
   bool failed = !remote && !streamed && in < 0;
+  bool unread = local && failed;  // the source's fault, not the copy's
   uint64_t synced = offset;
   auto windowStart = Clock::now();
   uint64_t windowBytes = 0;
@@ -482,6 +491,7 @@ void Offline::Shared::copy(Download& d) {
                                  : ::pread(in, buffer.data(), want, static_cast<off_t>(offset));
     if (n <= 0) {
       failed = true;
+      unread = local;
       break;
     }
     for (int64_t at = 0; at < n;) {
@@ -547,7 +557,7 @@ void Offline::Shared::copy(Download& d) {
       return;
     }
     const bool driveThere = exists(d.root);
-    wait(driveThere ? Why::Server : Why::Drive);
+    wait(!driveThere ? Why::Drive : unread ? Why::Unreadable : Why::Server);
     return;
   }
   ::fdatasync(out);

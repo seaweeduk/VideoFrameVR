@@ -35,6 +35,30 @@ bool counted(StashOutbox& outbox, StashWriteBackStatus& status) {
   return true;
 }
 
+// A rating or plays made in the app, for the outbox.
+struct Event {
+  std::string oshash;
+  bool rating = false;
+  float stars = 0;
+  int64_t at = 0;
+  int count = 0;
+};
+
+// Puts the events into the outbox in order. One it can't take stays in
+// `events` with those after it (a later rating must stay the later one),
+// tried again with the next events or before the next send.
+bool keep(StashOutbox& outbox, std::vector<Event>& events) {
+  size_t kept = 0;
+  for (; kept < events.size(); ++kept) {
+    const Event& e = events[kept];
+    if (!(e.rating ? outbox.addRating(e.oshash, e.stars, true)
+                   : outbox.addPlays(e.oshash, e.at, e.count)))
+      break;
+  }
+  events.erase(events.begin(), events.begin() + kept);
+  return events.empty();
+}
+
 // Sends what waits in the outbox: each rating as it is, each scene's plays
 // but those its play_history has already (beyond the ones kept as sent);
 // to a server without play times, one play of a scene it doesn't have as
@@ -234,13 +258,6 @@ struct StashWriteBack::Shared : StashWorkerShared {
   enum class Ask { None, Plan, Send } ask = Ask::None;
   uint64_t ticket = 0;  // the one-off asked for; a closed one's result is dropped
   std::vector<StashLibraryEntry> library;
-  struct Event {
-    std::string oshash;
-    bool rating = false;
-    float stars = 0;
-    int64_t at = 0;
-    int count = 0;
-  };
   std::vector<Event> events;
   struct Tags {
     bool pending = false;
@@ -355,6 +372,7 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
   StashOutbox outbox(serverIdentity(kind.kind(), StashAddress(shared->settings.url).server),
                      originalKind(kind.kind()));
   StashWriteBackStatus status;  // the worker's; published as shared->status
+  std::vector<Event> unsaved;   // handed over, not in the outbox yet (keep())
   std::unique_lock<std::mutex> lock(shared->mutex);
   auto publish = [&] {
     shared->status = status;
@@ -368,17 +386,13 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
     });
     // What the app handed over is kept first, even when stopping.
     if (!shared->events.empty()) {
-      const std::vector<Shared::Event> events = std::move(shared->events);
+      unsaved.insert(unsaved.end(), shared->events.begin(), shared->events.end());
       shared->events.clear();
       lock.unlock();
       status.error.clear();
-      for (const Shared::Event& e : events) {
-        const bool kept = e.rating ? outbox.addRating(e.oshash, e.stars, true)
-                                   : outbox.addPlays(e.oshash, e.at, e.count);
-        if (!kept) {
-          status.error = outbox.error();
-          std::fprintf(stderr, "%s: %s\n", name, status.error.c_str());
-        }
+      if (!keep(outbox, unsaved)) {
+        status.error = outbox.error();
+        std::fprintf(stderr, "%s: %s\n", name, status.error.c_str());
       }
       counted(outbox, status);
       lock.lock();
@@ -386,7 +400,11 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
       publish();
       continue;
     }
-    if (shared->stop) return;
+    if (shared->stop) {
+      lock.unlock();
+      if (!keep(outbox, unsaved)) std::fprintf(stderr, "%s: %s\n", name, outbox.error().c_str());
+      return;
+    }
     if (shared->paused) continue;
 
     const std::unique_ptr<MediaClient> made = kind.client(
@@ -424,7 +442,17 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
       shared->ask = Shared::Ask::None;
       lock.unlock();
       StashSendPlan plan;
-      bool ok = makePlan(client, outbox, library, plan);
+      // What the app handed over goes in first, or the plan would count its
+      // plays as missing and add them again.
+      const bool retried = !unsaved.empty();
+      bool ok = keep(outbox, unsaved);
+      if (!ok) plan.error = outbox.error();
+      // Settings shows whether the retried events are saved now.
+      if (retried) {
+        status.error = ok ? std::string() : plan.error;
+        counted(outbox, status);
+      }
+      ok = ok && makePlan(client, outbox, library, plan);
       if (ok && send) {
         // Kept first, then sent with whatever else waits. Never a clearing
         // rating, and never over one made in the app meanwhile.
@@ -450,7 +478,7 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
                           : StashSendPlan::State::Ready;
       lock.lock();
       shared->client = nullptr;
-      if (send) publish();
+      if (send || retried) publish();
       if (ticket == shared->ticket) {
         shared->plan = std::move(plan);
         shared->planChanged = true;
@@ -461,7 +489,9 @@ void StashWriteBack::work(std::shared_ptr<Shared> shared) {
     lock.unlock();
     int ratings = 0, plays = 0;
     std::string error;
-    const bool ok = deliverWaiting(client, outbox, ratings, plays, error, paused);
+    const bool kept = keep(outbox, unsaved);
+    if (!kept) error = outbox.error();
+    const bool ok = deliverWaiting(client, outbox, ratings, plays, error, paused) && kept;
     const bool halted = paused();  // switched off: what is left waits, no error
     status.sentRatings += ratings;
     status.sentPlays += plays;

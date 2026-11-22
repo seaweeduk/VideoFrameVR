@@ -575,6 +575,7 @@ struct OfflineStrings {
   const char* pausedPlaying;  // printf: percent, copied, size
   const char* waitingServer;
   const char* waitingDrive;
+  const char* waitingUnreadable;  // a file on this device there but not readable: tried again
   const char* restarting;     // the copy didn't match its source
   const char* failedGone;
   const char* failedNoRoom;

@@ -437,7 +437,7 @@ MenuCommand Menu::submitSmbForm() {
   // open the share (and folder) after it.
   std::string server = adding ? f.text[0] : f.root;
   std::replace(server.begin(), server.end(), '\\', '/');
-  if (server.rfind("smb://", 0) == 0) server.erase(0, 6);
+  if (lower(server.substr(0, 6)) == "smb://") server.erase(0, 6);
   server.erase(0, server.find_first_not_of("/ "));
   const size_t slash = server.find('/');
   const std::string host = lower(server.substr(0, slash));

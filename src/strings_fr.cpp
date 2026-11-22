@@ -902,6 +902,7 @@ Strings frenchStrings(const Strings& english) {
   s.offline.pausedPlaying = "En pause pendant la lecture d'une vidéo · %d %% · %s sur %s";
   s.offline.waitingServer = "En attente du serveur";
   s.offline.waitingDrive = "En attente du support";
+  s.offline.waitingUnreadable = "La vidéo ne peut pas être lue ; nouvel essai à venir";
   s.offline.restarting = "La copie ne correspondait pas ; elle recommence";
   s.offline.failedGone = "La vidéo n'est plus là";
   s.offline.failedNoRoom = "Pas assez de place sur le support";

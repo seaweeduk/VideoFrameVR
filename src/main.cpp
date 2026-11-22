@@ -42,6 +42,7 @@
 #include "presets.h"
 #include "quality.h"
 #include "refresh_rate.h"
+#include "remote.h"
 #include "decoder_holders.h"
 #include "deletion.h"
 #include "diagnostics.h"
@@ -2748,6 +2749,7 @@ int main(int argc, char** argv) {
     const auto absolute = std::filesystem::absolute(opts.file, ec);
     if (!ec) opts.file = absolute.string();
   }
+  opts.file = remote::lowerScheme(opts.file);
 
   glfwSetErrorCallback([](int code, const char* desc) {
     std::fprintf(stderr, "GLFW error %d: %s\n", code, desc);

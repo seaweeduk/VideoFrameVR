@@ -58,7 +58,7 @@ const fs::path workingDirectory = [] {
 }();
 
 std::string normalPath(const std::string& path) {
-  if (path.empty() || remote::isRemote(path)) return path;
+  if (path.empty() || remote::isRemote(path)) return remote::lowerScheme(path);
   if (path[0] == '/' && path.find("//") == std::string::npos &&
       path.find("/./") == std::string::npos && path.find("/../") == std::string::npos &&
       (path.size() == 1 || path.back() != '/') && !endsWith(path, "/.") && !endsWith(path, "/.."))

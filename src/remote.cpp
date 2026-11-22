@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -20,11 +21,12 @@ namespace {
 
 constexpr std::string_view kSchemes[] = {"smb", "sftp"};
 
-// "smb" or "sftp" of a locator, else "".
+// "smb" or "sftp" of a locator, in any case ("SMB://"), else "".
 std::string_view scheme(std::string_view location) {
   for (std::string_view s : kSchemes)
-    if (location.size() >= s.size() + 3 && location.substr(0, s.size()) == s &&
-        location.substr(s.size(), 3) == "://")
+    if (location.size() >= s.size() + 3 && location.substr(s.size(), 3) == "://" &&
+        std::equal(s.begin(), s.end(), location.begin(),
+                   [](char a, char b) { return a == std::tolower(static_cast<unsigned char>(b)); }))
       return s;
   return {};
 }
@@ -161,6 +163,11 @@ std::string parent(const std::string& locator) {
   const size_t end = locator.find_last_not_of('/');
   const size_t slash = locator.rfind('/', end);
   return slash < s.size() + 3 ? std::string() : locator.substr(0, slash);
+}
+
+std::string lowerScheme(const std::string& location) {
+  const std::string_view s = scheme(location);
+  return s.empty() ? location : std::string(s) + location.substr(s.size());
 }
 
 std::shared_ptr<Connection> connection(const std::string& name) {

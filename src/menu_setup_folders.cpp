@@ -526,7 +526,7 @@ void SetupPages::treeRows(Menu& m) {
     r.path = path;
     r.name = name;
     r.whole = whole;
-    r.tickable = path != "/";
+    r.tickable = Places::pinnable(path);  // File system: it would take in every video on the device
     r.opened = !whole && f.open.count(path) > 0;
     r.chevron = !whole;
     r.y = y;
@@ -860,7 +860,7 @@ void SetupPages::addComputer(Menu& m) {
   }
   std::string host = f.computer;
   std::replace(host.begin(), host.end(), '\\', '/');
-  if (host.rfind("smb://", 0) == 0) host.erase(0, 6);
+  if (lowerCase(host.substr(0, 6)) == "smb://") host.erase(0, 6);
   host.erase(0, std::min(host.size(), host.find_first_not_of("/ ")));
   host = host.substr(0, host.find('/'));
   while (!host.empty() && host.back() == ' ') host.pop_back();

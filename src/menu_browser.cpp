@@ -864,7 +864,7 @@ void Menu::layoutFilesPage() {
   buttons_.push_back(where);
 
   const bool pinned = navigation_.places.pinned(directory());
-  if (!stashFolders_.picking) {
+  if (!stashFolders_.picking && (pinned || Places::pinnable(directory()))) {
     Button& pin = addRound(Icon::Pin, pinned ? t.unpinFolder : t.pinFolder,
                            [this] {
                              navigation_.places.togglePin(directory());
