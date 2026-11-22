@@ -494,7 +494,7 @@ void Menu::layoutOfflinePage() {
   listCount_ = units;
   int first, end;
   clampScroll(listCount_, visibleRows_, first, end);
-  const double x0 = listLeft_, rowW = listRight_ - 30 - x0;
+  const double x0 = listLeft_, rowW = listRight_ - kScrollbarRoom - x0;
   constexpr double rowH = kFileRowH - kRowGap;
   // The drive column: as wide as the longest drive name in it needs, the
   // columns taking at most half the row.

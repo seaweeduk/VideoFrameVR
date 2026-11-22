@@ -1000,27 +1000,29 @@ class Menu {
   void drawKeyboard(cairo_t* cr) const;  // its well (its keys are buttons)
   // Redraws a key, its shadow around it.
   void keyChanged(double x, double y, double w);
-  // Typing into the folder's (or the library's) search: the keyboard shows
-  // under its results. On Stash's pages, into what stashText() is; in
-  // setup, its SMB form.
+  // The field typed into: setup's (setupText()), the SMB form's, a place's
+  // name, a preset's name, the funscript address, Stash's (stashText()), or
+  // else the folder's (or the library's) search. filterText(), setFilter(),
+  // submitText() and stopEditing() each do what theirs does.
+  enum class TextTarget { Setup, SmbForm, PlaceName, PresetName, ScriptAddress, Stash, Search };
+  TextTarget textTarget() const {
+    if (setup_ && setupText()) return TextTarget::Setup;
+    if (smbForm_.kind != SmbForm::Kind::None) return TextTarget::SmbForm;
+    if (page_ == Page::Places) return TextTarget::PlaceName;
+    if (page_ == Page::VideoSettings && presetName_.open) return TextTarget::PresetName;
+    if (page_ == Page::Settings && scriptAddress_.open) return TextTarget::ScriptAddress;
+    return stashTextPage() ? TextTarget::Stash : TextTarget::Search;
+  }
+  // Typing into it: the keyboard shows (under the search's results). In
+  // setup, only into its own fields.
   bool editingFilter() const {
     if (setup_) return (smbForm_.kind != SmbForm::Kind::None || setupText()) && editing_;
-    return (page_ == Page::Files || page_ == Page::Library || page_ == Page::Network ||
-            page_ == Page::Places || stashTextPage() ||
-            (page_ == Page::VideoSettings && presetName_.open) ||
-            (page_ == Page::Settings && scriptAddress_.open)) &&
-           editing_;
+    return editing_ && (textTarget() != TextTarget::Search || page_ == Page::Files ||
+                        page_ == Page::Library || page_ == Page::Network);
   }
   bool editing_ = false;
   void setFilter(const std::string& text);
-  const std::string& filterText() const {
-    if (setup_ && setupText()) return *setupText();
-    if (smbForm_.kind != SmbForm::Kind::None) return smbForm_.text[smbForm_.field];
-    if (page_ == Page::Places) return placeRename_.text;
-    if (page_ == Page::VideoSettings && presetName_.open) return presetName_.text;
-    if (page_ == Page::Settings && scriptAddress_.open) return scriptAddress_.text;
-    return stashTextPage() ? stashText() : page_ == Page::Library ? libraryFilter_ : fileFilter_;
-  }
+  const std::string& filterText() const;
   // The text cursor in the field typed into: a byte of filterText(), kept
   // with the text it was placed in. In other text (another field, or this
   // one changed from elsewhere) it is at the end.
@@ -1707,6 +1709,13 @@ class Menu {
   // Clamps the scroll position to `count` rows of which `rows` fit, and
   // returns the first and last (exclusive) row to lay out.
   void clampScroll(int count, int rows, int& first, int& end);
+  // A grid's cells, `columns` across from x0 to the scroll bar, `gap` apart:
+  // their width.
+  double gridCellWidth(double x0, int columns, double gap) const;
+  // Its `count` cells in rows rowH apart from listTop_, `rows` on screen (0:
+  // as many as fit above listBottom_, at least one), scrolling by rows: the
+  // first and last (exclusive) cell to lay out.
+  void gridRows(int count, int columns, double rowH, int& first, int& end, int rows = 0);
   // A list of rows (not cards) with the keyboard up under it ends on its
   // last whole row (visibleRows_ of rowHeight_ from listTop_).
   void endOnWholeRow();

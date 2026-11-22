@@ -153,10 +153,11 @@ constexpr double kListHeaderY = kBrowserToolsY + kBrowserToolsH + kit::kSpace, k
 constexpr double kListTop = kListHeaderY + kListHeaderH + kit::kSpacePiece, kGridTop = kListHeaderY;
 constexpr double kListBottom = Menu::kBrowserHeight - kContentInset;
 // The scroll bar's track: kScrollTrackW wide along the panel's inside edge;
-// the rows end kit::kSpace left of it, 30 left of Menu::listRight_. Its
-// target is kScrollbarW wide, its thumb at least kScrollThumbMin long.
-constexpr double kScrollTrackW = 10, kScrollbarW = 40, kScrollThumbMin = 48;
-constexpr double kListRightPad = 30 - kit::kSpace - kScrollTrackW;
+// the rows end kit::kSpace left of it, kScrollbarRoom left of
+// Menu::listRight_. Its target is kScrollbarW wide, its thumb at least
+// kScrollThumbMin long.
+constexpr double kScrollTrackW = 10, kScrollbarW = 40, kScrollThumbMin = 48, kScrollbarRoom = 30;
+constexpr double kListRightPad = kScrollbarRoom - kit::kSpace - kScrollTrackW;
 // Where a list's content fades out where more of it is, above and below.
 // Each fade also covers the panel kListFadePast past the list's edge,
 // opaque: sampling the browser's texture carries the list's edge rows a few

@@ -370,6 +370,20 @@ void Menu::clampScroll(int count, int rows, int& first, int& end) {
   end = std::min(count, scrollOffset_ + std::max(rows, static_cast<int>(shown)) + 1);
 }
 
+double Menu::gridCellWidth(double x0, int columns, double gap) const {
+  return (listRight_ - kScrollbarRoom - x0 - (columns - 1) * gap) / columns;
+}
+
+void Menu::gridRows(int count, int columns, double rowH, int& first, int& end, int rows) {
+  rowHeight_ = rowH;
+  visibleRows_ = rows > 0 ? rows : std::max(1, static_cast<int>((listBottom_ - listTop_) / rowH));
+  listCount_ = (count + columns - 1) / columns;
+  int firstRow, endRow;
+  clampScroll(listCount_, visibleRows_, firstRow, endRow);
+  first = firstRow * columns;
+  end = std::min(count, endRow * columns);
+}
+
 void Menu::endOnWholeRow() {
   if (editingFilter())
     listBottom_ = std::min(listBottom_, listTop_ + visibleRows_ * rowHeight_ - kRowGap);
@@ -388,7 +402,7 @@ void Menu::addList(const std::vector<ListItem>& items, double x0, double rowH, i
     b.panel = kBrowser;
     b.x = x0;
     b.y = listTop_ + (i - scrollOffset_ - scrollFraction_) * rowH;
-    b.w = listRight_ - x0 - 30;
+    b.w = listRight_ - x0 - kScrollbarRoom;
     b.h = rowH - kRowGap;
     b.radius = kit::kCorner;
     b.label = items[i].label;
@@ -456,15 +470,10 @@ void Menu::addList(const std::vector<ListItem>& items, double x0, double rowH, i
 void Menu::addGallery(const std::vector<ListItem>& items, double x0, int rows) {
   constexpr int columns = kGalleryColumns;
   constexpr double gap = kGalleryGap, rowH = kGalleryRowH;
-  const double cardW = (listRight_ - 30 - x0 - (columns - 1) * gap) / columns;
+  const double cardW = gridCellWidth(x0, columns, gap);
   const int count = static_cast<int>(items.size());
-  visibleRows_ = rows;
-  rowHeight_ = rowH;
-  listCount_ = (count + columns - 1) / columns;
-  int firstRow, endRow;
-  clampScroll(listCount_, visibleRows_, firstRow, endRow);
-  const int first = firstRow * columns;
-  const int end = std::min(count, endRow * columns);
+  int first, end;
+  gridRows(count, columns, rowH, first, end, rows);
   for (int i = first; i < end; ++i) {
     const int cell = i - first;
     Button b;
@@ -526,7 +535,7 @@ void Menu::addScrollbar() {
   if (listCount_ <= visibleRows_) return;
   Button bar;
   bar.panel = kBrowser;
-  bar.x = listRight_ - kScrollbarW / 2 - (30 - kit::kSpace - kScrollTrackW / 2);
+  bar.x = listRight_ - kScrollbarW / 2 - (kScrollbarRoom - kit::kSpace - kScrollTrackW / 2);
   bar.y = listTop_;
   bar.w = kScrollbarW;
   bar.h = listBottom_ - listTop_;
@@ -889,7 +898,7 @@ void Menu::layoutFilesPage() {
     listTop_ = kListTop;
     listColumns_ = true;
     addList(fileItems(), listX, kFileRowH, editing ? kEditingFileRows : kFileRows);
-    if (listCount_ > 0) layoutListHeader(listX, listRight_ - listX - 30);
+    if (listCount_ > 0) layoutListHeader(listX, listRight_ - listX - kScrollbarRoom);
   }
   if (editing) layoutKeyboard();
   layoutFileTools();

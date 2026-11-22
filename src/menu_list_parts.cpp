@@ -474,7 +474,7 @@ void Menu::drawEmptyPage(cairo_t* cr, Icon icon, const std::string& heading,
   constexpr double kIcon = 72, kIconGap = 20, kHintGap = 8, kHintMaxW = 880;
   constexpr int kHeadingSize = 30, kHintSize = 24, kHeadingLines = 2, kHintLines = 3;
   const Palette& pal = palette();
-  const double x0 = listLeft_ + kit::kSpace, x1 = listRight_ - 30 - kit::kSpace;
+  const double x0 = listLeft_ + kit::kSpace, x1 = listRight_ - kScrollbarRoom - kit::kSpace;
   const double cx = (x0 + x1) / 2, w = x1 - x0;
   double hintW = std::min(w, kHintMaxW);
   if (!hint.empty()) {

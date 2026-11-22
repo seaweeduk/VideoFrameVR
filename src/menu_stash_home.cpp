@@ -229,7 +229,7 @@ void StashPages::layoutHome(Menu& m) {
   }
 
   // Where each part goes, from the top of the shelves down.
-  const double w = m.listRight_ - 30 - x0;
+  const double w = m.listRight_ - kScrollbarRoom - x0;
   const double tileW = (w - (kSceneColumns - 1) * kTileGap) / kSceneColumns;
   const double tileH = cardHeight(tileW);
   const double cardW = (w - (kPerformerColumns - 1) * kTileGap) / kPerformerColumns;

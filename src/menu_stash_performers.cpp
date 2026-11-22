@@ -465,17 +465,13 @@ void StashPages::layoutPerformerGrid(Menu& m, double x0, double top) {
   StashPerformersState& ps = state(m).performers;
   const StashCatalog& c = *catalog(m);
   const StashStrings& t = strings().stash;
-  const double cardW = (m.listRight_ - 30 - x0 - (kColumns - 1) * kTileGap) / kColumns;
+  const double cardW = m.gridCellWidth(x0, kColumns, kTileGap);
   const double pictureW = cardW - 2 * kCardIn;
   const double rowH = performerCardHeight(cardW) + kTileGap;
   const int count = static_cast<int>(ps.shown.size());
   m.listTop_ = top;
-  m.rowHeight_ = rowH;
-  m.visibleRows_ = std::max(1, static_cast<int>((m.listBottom_ - top) / rowH));
-  m.listCount_ = (count + kColumns - 1) / kColumns;
-  int firstRow, endRow;
-  m.clampScroll(m.listCount_, m.visibleRows_, firstRow, endRow);
-  const int first = firstRow * kColumns, end = std::min(count, endRow * kColumns);
+  int first, end;
+  m.gridRows(count, kColumns, rowH, first, end);
   const int32_t now = today();
   for (int i = first; i < end; ++i) {
     const int cell = i - first, index = ps.shown[i];

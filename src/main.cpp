@@ -33,6 +33,7 @@
 #include "mpv_gl_context.h"
 #include "notices.h"
 #include "offline.h"
+#include "options.h"
 #include "performance_readout.h"
 #include "photo_preloader.h"
 #include "pixel_path.h"
@@ -47,6 +48,7 @@
 #include "screen_control.h"
 #include "see_through.h"
 #include "seek_preview.h"
+#include "setting_commands.h"
 #include "settings.h"
 #include "setup_intro.h"
 #include "setup_placement.h"
@@ -146,8 +148,6 @@ struct App {
   VideoSettings video;  // what is remembered about the running video
   int slideshowSeconds = 0;  // photos: show the next one after this long; 0 = off
   double nextSlideAt = 0;    // glfwGetTime() when it does
-  bool recenter = false;
-  bool togglePassthrough = false;  // T key; handled where the settings are
   // Picking the background key's colour (MenuCommand::PickKeyColour): the
   // video it is for (empty: not picking); a press to read it at keyPickUv
   // within keyPickPart (KeyPicker::pointOf()); why the last one gave none.
@@ -163,21 +163,6 @@ struct App {
   double saveAt = 0;
   bool screenChanged = false;  // by key: keep the flat screen's new size
   bool flipVideo = false;
-  bool toggleMenu = false;
-  bool seekBackKey = false;     // arrow keys held down
-  bool seekForwardKey = false;
-  bool turnLeftKey = false;     // A / D held down
-  bool turnRightKey = false;
-  int videoStep = 0;            // +1 / -1: switch to the next / previous video
-  // While the menu's search field is open, the keyboard types into it.
-  bool textInput = false;
-  std::string typed;
-  int backspaces = 0;
-  int cursorSteps = 0;  // ← → (Home and End: far enough to the start or the end)
-  bool submit = false;
-  bool stopTyping = false;  // Esc while typing: leave the search keyboard
-  bool quit = false;
-  double lastEscape = -10;  // glfwGetTime() of the last Esc; a second one soon after quits
 };
 
 std::string utf8(unsigned int codepoint) {
@@ -198,50 +183,6 @@ std::string utf8(unsigned int codepoint) {
     s += static_cast<char>(0x80 | (codepoint & 0x3F));
   }
   return s;
-}
-
-void printUsage(const char* argv0) {
-  std::printf("Usage: %s [--hwdec=API] [--preview-hwdec=API] [--no-mirror] [--timing] [--xr-test]\n"
-              "          [--fixed-view] [--open-menu=PAGE] [--foveation=LEVEL] [--foveation-gaze=WHERE]\n"
-              "          [--resolution=SIZE] [--resolution-cycle=SIZES[:SECONDS]] [--sharp-area=WHAT]\n"
-              "          [--video-pipeline=on|off] [--decoder-queue=on|off] [--anti-shimmer=off|on|strong]\n"
-              "          [--frame-reuse=on|off]\n"
-              "          [--show-performance] [--menu-sharpness=BIAS]\n"
-              "          [--show-foveation]\n"
-              "          [--sharp-bins=1|3] [--ring=on|off]\n"
-              "          [--first-run] [--stash-sync] [--save-diagnostics] [--version]\n"
-              "          [video file or URL]\n"
-              "Without a video the file browser opens. --stash-sync syncs from Stash once, without\n"
-              "the headset, and prints what it found and how long it took. --save-diagnostics saves\n"
-              "the logs and settings, anonymised, in one zip in Downloads and prints its path.\n"
-              "--first-run shows the first-run setup, changing nothing in the profile until it ends.\n"
-              "For repeatable measurements without anyone wearing the headset: --fixed-view draws\n"
-              "the scene in front of the view wherever the headset points; --open-menu opens the\n"
-              "menu at start on PAGE: strip, browser, settings, or seek (the strip with the pointer\n"
-              "sweeping along the seek bar, for the seek preview).\n"
-              "For this run only: --resolution=PIXELS or PERCENT%% (eye image width; 100%% is 1x);\n"
-              "--resolution-cycle=PIXELS,PIXELS,...[:SECONDS] changes the eye width to each in turn\n"
-              "every SECONDS (10 by default), to compare sizes or measure the switches.\n"
-              "--anti-shimmer=off|on|strong (the setting: fine lines smoothed with mipmaps off).\n"
-              "--show-performance shows frame rates and dropped frames at the bottom left (the\n"
-              "setting Show performance).\n"
-              "--menu-sharpness=BIAS adds BIAS (-2 to 1) to the mip level the menu is drawn from;\n"
-              "negative is sharper, 0 the default.\n"
-              "Steam Frame, for this run only: --foveation=off|low|medium|high; --foveation-gaze=\n"
-              "tracked (SteamVR's eye tracking), centre, or X,Y (a fixed point, -1..1, +y down);\n"
-              "--sharp-area=bins (whole bins around the gaze, our density maps; the default where\n"
-              "the GPU's bins are known) or runtime (SteamVR's density maps).\n"
-              "--video-pipeline=on shows each new video frame from the next headset frame on, so\n"
-              "drawing never waits for its decoding and conversion (on by default with\n"
-              "--hwdec=v4l2m2m); off shows it in the frame it arrives in.\n"
-              "--decoder-queue=off disables the Frame's two-frame V4L2 decoder queue for this run.\n"
-              "--frame-reuse=on shows the last drawn frame again, reprojected by the runtime, while\n"
-              "a new one would look the same (no new video frame, nothing else drawn, the head\n"
-              "nearly still); off draws every frame. Without it, the Steam Frame follows the setting\n"
-              "Skip repeated frames (on by default) and other devices draw every frame. The option\n"
-              "is never saved; changing the setting in the menu replaces it for the rest of the run.\n",
-              argv0);
-  std::printf("%s\n", strings().refreshRateHelp);
 }
 
 void printControls() {
@@ -299,29 +240,55 @@ std::string clipboardText(GLFWwindow* window) {
   return text;
 }
 
-void onKey(GLFWwindow* window, int key, int /*scancode*/, int action, int mods) {
-  App& app = *static_cast<App*>(glfwGetWindowUserPointer(window));
-  if (app.textInput) {
+// The desktop window's keys, from GLFW's callbacks (on the GL thread, inside
+// glfwPollEvents): what they ask for, until the frame loop takes it. Keys for
+// the running video change it at once.
+struct KeyboardInput {
+  App& app;
+  bool recenter = false;
+  bool togglePassthrough = false;  // T key; handled where the settings are
+  bool toggleMenu = false;
+  bool seekBackKey = false;     // arrow keys held down
+  bool seekForwardKey = false;
+  bool turnLeftKey = false;     // A / D held down
+  bool turnRightKey = false;
+  int videoStep = 0;            // +1 / -1: switch to the next / previous video
+  // While the menu's search field is open, the keyboard types into it.
+  bool textInput = false;
+  std::string typed;
+  int backspaces = 0;
+  int cursorSteps = 0;  // ← → (Home and End: far enough to the start or the end)
+  bool submit = false;
+  bool stopTyping = false;  // Esc while typing: leave the search keyboard
+  bool quit = false;
+  double lastEscape = -10;  // glfwGetTime() of the last Esc; a second one soon after quits
+
+  void onKey(GLFWwindow* window, int key, int action, int mods);
+  void onChar(unsigned int codepoint);
+};
+
+void KeyboardInput::onKey(GLFWwindow* window, int key, int action, int mods) {
+  if (textInput) {
     // Letters arrive through onChar; only editing keys matter here.
     if (action == GLFW_RELEASE) return;
-    if (key == GLFW_KEY_V && (mods & GLFW_MOD_CONTROL)) app.typed += clipboardText(window);
-    else if (key == GLFW_KEY_BACKSPACE) ++app.backspaces;
-    else if (key == GLFW_KEY_LEFT || key == GLFW_KEY_RIGHT) app.cursorSteps += key == GLFW_KEY_LEFT ? -1 : 1;
-    else if (key == GLFW_KEY_HOME || key == GLFW_KEY_END) app.cursorSteps = key == GLFW_KEY_HOME ? -(1 << 20) : 1 << 20;
-    else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) app.submit = true;
-    else if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) app.stopTyping = true;
-    else if (key == GLFW_KEY_TAB && action == GLFW_PRESS) app.toggleMenu = true;
+    if (key == GLFW_KEY_V && (mods & GLFW_MOD_CONTROL)) typed += clipboardText(window);
+    else if (key == GLFW_KEY_BACKSPACE) ++backspaces;
+    else if (key == GLFW_KEY_LEFT || key == GLFW_KEY_RIGHT) cursorSteps += key == GLFW_KEY_LEFT ? -1 : 1;
+    else if (key == GLFW_KEY_HOME || key == GLFW_KEY_END) cursorSteps = key == GLFW_KEY_HOME ? -(1 << 20) : 1 << 20;
+    else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) submit = true;
+    else if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) stopTyping = true;
+    else if (key == GLFW_KEY_TAB && action == GLFW_PRESS) toggleMenu = true;
     return;
   }
   // Seeking repeats on its own while the key is held, so track press/release.
   if (key == GLFW_KEY_LEFT || key == GLFW_KEY_RIGHT) {
     const bool down = action != GLFW_RELEASE;
-    (key == GLFW_KEY_LEFT ? app.seekBackKey : app.seekForwardKey) = down;
+    (key == GLFW_KEY_LEFT ? seekBackKey : seekForwardKey) = down;
     return;
   }
   if (key == GLFW_KEY_A || key == GLFW_KEY_D) {
     const bool down = action != GLFW_RELEASE;
-    (key == GLFW_KEY_A ? app.turnLeftKey : app.turnRightKey) = down;
+    (key == GLFW_KEY_A ? turnLeftKey : turnRightKey) = down;
     return;
   }
   if (action != GLFW_PRESS) return;
@@ -332,18 +299,18 @@ void onKey(GLFWwindow* window, int key, int /*scancode*/, int action, int mods) 
     case GLFW_KEY_ESCAPE: {
       // Quitting takes two presses, so a stray Esc doesn't end the video.
       const double now = glfwGetTime();
-      if (now - app.lastEscape < 1.5) {
-        app.quit = true;
+      if (now - lastEscape < 1.5) {
+        quit = true;
       } else {
-        app.lastEscape = now;
+        lastEscape = now;
         std::printf("Press Esc again to quit\n");
       }
       break;
     }
-    case GLFW_KEY_TAB: app.toggleMenu = true; break;
+    case GLFW_KEY_TAB: toggleMenu = true; break;
     case GLFW_KEY_SPACE: player.command("cycle pause"); break;
-    case GLFW_KEY_UP: app.videoStep = 1; break;
-    case GLFW_KEY_DOWN: app.videoStep = -1; break;
+    case GLFW_KEY_UP: videoStep = 1; break;
+    case GLFW_KEY_DOWN: videoStep = -1; break;
     case GLFW_KEY_M: player.command("cycle mute"); break;
     case GLFW_KEY_P:
       app.format.projection = nextProjection(app.format.projection);
@@ -359,8 +326,8 @@ void onKey(GLFWwindow* window, int key, int /*scancode*/, int action, int mods) 
       screen.size.curve = screen.size.curve > 0 ? 0.0f : ScreenSize::kMaxCurve;
       app.screenChanged = true;
       break;
-    case GLFW_KEY_T: app.togglePassthrough = true; break;
-    case GLFW_KEY_R: app.recenter = true; break;
+    case GLFW_KEY_T: togglePassthrough = true; break;
+    case GLFW_KEY_R: recenter = true; break;
     case GLFW_KEY_F:
       app.flipVideo = !app.flipVideo;
       std::printf("Video flip: %s\n", app.flipVideo ? "on" : "off");
@@ -381,10 +348,9 @@ void onKey(GLFWwindow* window, int key, int /*scancode*/, int action, int mods) 
 
 // + and - by the typed character, so they work on any keyboard layout and
 // on the number pad. Held keys repeat through the system's key repeat.
-void onChar(GLFWwindow* window, unsigned int codepoint) {
-  App& app = *static_cast<App*>(glfwGetWindowUserPointer(window));
-  if (app.textInput) {
-    app.typed += utf8(codepoint);
+void KeyboardInput::onChar(unsigned int codepoint) {
+  if (textInput) {
+    typed += utf8(codepoint);
     return;
   }
   if (codepoint == '+') app.player->command("add volume 5");
@@ -499,49 +465,6 @@ int menuHitTest(const MenuPanels& panel, const Menu& menu, Vec3 origin, Vec3 dir
   }
   return hit;
 }
-
-// --open-menu: the menu page opened at start.
-enum class StartMenu { None, Strip, Browser, Settings, Seek };
-
-struct Options {
-  std::string file;
-  // Empty selects defaults for the OpenXR GPU, after device creation.
-  std::string hwdec;
-  std::string previewHwdec;
-  bool mirror = true;
-  bool timing = false;
-  float refreshRate = -1;  // --refresh-rate, never saved; -1 makes no request
-  bool xrTest = false;
-  bool fixedView = false;
-  StartMenu startMenu = StartMenu::None;
-  // Foveation for this run (--foveation, --foveation-gaze); never saved.
-  bool foveationSet = false;
-  FoveationLevel foveation = FoveationLevel::High;
-  FoveationGaze foveationGaze;
-  bool runtimeDensityMaps = false;  // --sharp-area=runtime
-  // --resolution for this run, never saved: eye pixels across, or a percent
-  // of 1× (eye_resolution.h); 0 = the setting's.
-  int resolutionPixels = 0;
-  double resolutionPercent = 0;
-  // --resolution-cycle: eye pixels across, taken in turn every so many
-  // seconds for this run (scripted switches, A/B comparison by eye).
-  std::vector<int> resolutionCycle;
-  double resolutionCycleSeconds = 10;
-  // --video-pipeline: -1 = on with V4L2 decoding (the Frame), else 0/1.
-  int videoPipeline = -1;
-  bool decoderQueue = true;  // Frame V4L2 only; --decoder-queue=off for comparison
-  // --frame-reuse at start, never saved: -1 = the setting's on the Steam
-  // Frame, off elsewhere, else 0/1.
-  int frameReuse = -1;
-  // --anti-shimmer for this run, never saved.
-  bool antiShimmerSet = false;
-  AntiShimmer antiShimmer = AntiShimmer::On;
-  bool showPerformance = false;  // --show-performance for this run, never saved
-  bool showFoveation = false;  // --show-foveation, never saved
-  float menuLodBias = 0.0f;    // --menu-sharpness
-  int sharpBins = 0, ring = -1;  // run-only overrides
-  bool firstRun = false;  // --first-run: setup whatever the profile has
-};
 
 // The desktop mirror's window (docs/vulkan-renderer.md, 6): without a client
 // API, so it can have a Vulkan surface; the GL context's window stays hidden.
@@ -1005,9 +928,14 @@ int run(Options opts) {
 
   App app;
   app.player = &player;
-  glfwSetWindowUserPointer(input, &app);
-  glfwSetKeyCallback(input, onKey);
-  glfwSetCharCallback(input, onChar);
+  KeyboardInput keys{app};
+  glfwSetWindowUserPointer(input, &keys);
+  glfwSetKeyCallback(input, [](GLFWwindow* window, int key, int /*scancode*/, int action, int mods) {
+    static_cast<KeyboardInput*>(glfwGetWindowUserPointer(window))->onKey(window, key, action, mods);
+  });
+  glfwSetCharCallback(input, [](GLFWwindow* window, unsigned int codepoint) {
+    static_cast<KeyboardInput*>(glfwGetWindowUserPointer(window))->onChar(codepoint);
+  });
   printControls();
 
   // Deleting the playing file (docs/alpha/delete-file.md): what the dialog
@@ -1674,6 +1602,7 @@ int run(Options opts) {
   };
 
   auto execute = [&](const MenuCommand& c) {
+    if (applySettingCommand(c, settings)) return;
     switch (c.type) {
       case MenuCommand::TogglePause: player.command("cycle pause"); break;
       case MenuCommand::Stop:
@@ -1809,19 +1738,6 @@ int run(Options opts) {
         if (!app.slideshowSeconds && neighborWrap) neighbor = {};
         app.nextSlideAt = glfwGetTime() + app.slideshowSeconds;
         break;
-      case MenuCommand::SetAccent:
-      case MenuCommand::SetAccentHue:
-      case MenuCommand::SetAccentBrightness:
-      case MenuCommand::SetAccentSaturation: {
-        Accent& accent = settings.accent;
-        const int value = static_cast<int>(c.value);
-        if (c.type == MenuCommand::SetAccent) accent.preset = std::clamp(value, 0, kAccentCustom);
-        else if (c.type == MenuCommand::SetAccentHue) accent.hue = (value % 360 + 360) % 360;
-        else if (c.type == MenuCommand::SetAccentBrightness) accent.brightness = std::clamp(value, 0, 100);
-        else accent.saturation = std::clamp(value, 0, 100);
-        saveSettings(settings);
-        break;
-      }
       case MenuCommand::SetScreenDistance:
       case MenuCommand::SetScreenHeight:
       case MenuCommand::SetScreenCurve: {
@@ -1849,10 +1765,6 @@ int run(Options opts) {
         settings.keyGreen = !settings.keyGreen;
         saveSettings(settings);
         passthroughSettled = false;  // Automatic passthrough, for the video playing
-        break;
-      case MenuCommand::ToggleBackground:
-        settings.background = !settings.background;
-        saveSettings(settings);
         break;
       case MenuCommand::ToggleVideoMipmaps:
         settings.videoMipmaps = !settings.videoMipmaps;
@@ -1926,10 +1838,6 @@ int run(Options opts) {
       case MenuCommand::MoveUserPreset:
         userPresetsListing = moveUserPreset(c.path, static_cast<int>(c.value));
         break;
-      case MenuCommand::ToggleAdvancedSettings:
-        settings.advancedSettings = !settings.advancedSettings;
-        saveSettings(settings);
-        break;
       case MenuCommand::SetLanguage:
         if (menu.setupRunning()) {  // shown at once, kept when setup ends
           setupChoices.language = languageCode(static_cast<int>(c.value));
@@ -1986,19 +1894,6 @@ int run(Options opts) {
       case MenuCommand::DismissSetupBanner:
         hideSetupBanner();
         break;
-      case MenuCommand::StashCard:
-        // The menu's "Use Stash?" card, gone for good: dismissed, or used
-        // (Settings open where a server is chosen).
-        settings.stash.card = false;
-        saveSettings(settings);
-        break;
-      case MenuCommand::SetKeyboardLayout: {
-        const size_t line = c.path.find('\n');
-        settings.keyboardLayout = c.path.substr(0, line);
-        settings.keyboardOther = line == std::string::npos ? "" : c.path.substr(line + 1);
-        saveSettings(settings);
-        break;
-      }
       case MenuCommand::ToggleShowFoveation:
         if (!foveation.active()) break;
         settings.showFoveation = showFoveation = !showFoveation;
@@ -2024,14 +1919,6 @@ int run(Options opts) {
         foveationOutside = c.value == 2 ? 2 : 4;
         pendingFoveation = true;
         break;
-      case MenuCommand::ToggleMotion:
-        settings.motionEmulation = !settings.motionEmulation;
-        saveSettings(settings);
-        break;
-      case MenuCommand::SetMotionDistance:
-        settings.motionDistance = clampMotionDistance(static_cast<int>(c.value));
-        saveSettings(settings);
-        break;
       case MenuCommand::SetSharpen:
         settings.sharpen = std::clamp(static_cast<int>(c.value), 0, 300);
         player.setSharpened(settings.sharpen > 0);
@@ -2049,22 +1936,10 @@ int run(Options opts) {
         frameReuse.forget();  // nothing drawn before the switch is shown again
         std::printf("Frame reuse: %s\n", frameReuse.enabled() ? "on" : "off");
         break;
-      case MenuCommand::ToggleResume:
-        settings.resume = !settings.resume;
-        saveSettings(settings);
-        break;
-      case MenuCommand::SetDownloadsTo:
-        settings.downloadsTo = c.path;
-        saveSettings(settings);
-        break;
       case MenuCommand::ToggleSeekPreview:
         settings.seekPreview = !settings.seekPreview;
         saveSettings(settings);
         seekPreview.setEnabled(settings.seekPreview);
-        break;
-      case MenuCommand::ToggleThumbnails:
-        settings.thumbnails = !settings.thumbnails;
-        saveSettings(settings);
         break;
       case MenuCommand::ToggleShowPerformance:
         settings.showPerformance = !showPerformance;
@@ -2126,18 +2001,6 @@ int run(Options opts) {
         describeBindings();
         break;
       }
-      case MenuCommand::SetSkipSeconds:
-        settings.skipSeconds = kSkipRange.snap(c.value);
-        saveSettings(settings);
-        break;
-      case MenuCommand::SetBigSkipSeconds:
-        settings.bigSkipSeconds = kBigSkipRange.snap(c.value);
-        saveSettings(settings);
-        break;
-      case MenuCommand::ToggleVibration:
-        settings.vibration = !settings.vibration;
-        saveSettings(settings);
-        break;
       case MenuCommand::ToggleScripts:
       case MenuCommand::SetScriptAddress:
       case MenuCommand::SetScriptOffset:
@@ -2167,12 +2030,8 @@ int run(Options opts) {
         offline.setScripts(s.enabled);
         break;
       }
-      case MenuCommand::ToggleShowWhatsNew:
-        settings.showWhatsNew = !settings.showWhatsNew;
-        saveSettings(settings);
-        break;
       case MenuCommand::TogglePassthrough:
-        app.togglePassthrough = true;
+        keys.togglePassthrough = true;
         break;
       case MenuCommand::TogglePackedMask: {
         // Nothing is stored when the choice is what the name says.
@@ -2261,7 +2120,7 @@ int run(Options opts) {
         }
         storeVideo(VideoSettings::kFocus);
         break;
-      case MenuCommand::Quit: app.quit = true; break;
+      case MenuCommand::Quit: keys.quit = true; break;
       case MenuCommand::OpenFile:
         openVideo(c.path);
         panel.open = false;
@@ -2296,10 +2155,6 @@ int run(Options opts) {
                            : "set sid no");
         break;
       case MenuCommand::LoadSubtitle: player.addSubtitle(c.path); break;
-      case MenuCommand::ToggleFloatingSubtitles:
-        settings.floatingSubtitles = !settings.floatingSubtitles;
-        saveSettings(settings);
-        break;
       case MenuCommand::RequestDelete: {
         // The dialog is open; the video pauses meanwhile, a slideshow stops.
         if (c.path != app.currentFile) {  // it changed meanwhile
@@ -2540,29 +2395,6 @@ int run(Options opts) {
         saveSettings(settings);
         if (stash) stash->setWriteBack(settings.stash.writeBack);
         break;
-      case MenuCommand::SetStashSections:
-        readServerSetting("filters", c.path, settings.stash);
-        saveSettings(settings);
-        break;
-      case MenuCommand::SetStashFormat:
-        settings.stash.format = static_cast<StashFormat>(static_cast<int>(c.value));
-        saveSettings(settings);
-        break;
-      case MenuCommand::SetStashScenesSort:
-        readServerSetting("scenes_sort", c.path, settings.stash);
-        settings.stash.scenesDescending = c.value != 0;
-        saveSettings(settings);
-        break;
-      case MenuCommand::SetStashPerformersSort:
-        readServerSetting("performers_sort", c.path, settings.stash);
-        settings.stash.performersDescending = c.value != 0;
-        saveSettings(settings);
-        break;
-      case MenuCommand::SetStashStudiosSort:
-        readServerSetting("studios_sort", c.path, settings.stash);
-        settings.stash.studiosDescending = c.value != 0;
-        saveSettings(settings);
-        break;
       case MenuCommand::DownloadReleaseUpdate: releaseUpdate.download(); break;
       case MenuCommand::FreeDecoder:
         if (c.value != 0 && !settings.freeDecoder) {
@@ -2575,12 +2407,9 @@ int run(Options opts) {
           if (decoderRescue.openedMenu) panel.open = false;
         }
         break;
-      case MenuCommand::ToggleFreeDecoder:
-        settings.freeDecoder = !settings.freeDecoder;
-        saveSettings(settings);
-        break;
       case MenuCommand::SaveDiagnostics: diagnostics.start(); break;
       case MenuCommand::None: break;
+      default: break;  // applySettingCommand's
     }
   };
 
@@ -2733,7 +2562,7 @@ int run(Options opts) {
     return text;
   };
   EyeCorrection shownCorrection;  // the left eye's stereo correction, as last drawn
-  while (!xrQuit && !app.quit && !quitSignal && !glfwWindowShouldClose(input)) {
+  while (!xrQuit && !keys.quit && !quitSignal && !glfwWindowShouldClose(input)) {
     timer.start();
     glfwPollEvents();
     xr.pollEvents(xrQuit);
@@ -2794,9 +2623,9 @@ int run(Options opts) {
       library.setDuration(app.currentFile, player.playback().duration);
     }
 
-    if (app.videoStep != 0) {
-      stepVideo(app.videoStep);
-      app.videoStep = 0;
+    if (keys.videoStep != 0) {
+      stepVideo(keys.videoStep);
+      keys.videoStep = 0;
     }
 
     if (app.saveAt > 0 && glfwGetTime() >= app.saveAt) {
@@ -3115,14 +2944,14 @@ int run(Options opts) {
     // video, which would show cut apart in the new format; show nothing instead.
     bool photo = isPhotoFile(app.currentFile);
     bool loading = !photo && player.loading() && !app.currentFile.empty();
-    if (app.togglePassthrough && !passthroughAvailable) {
+    if (keys.togglePassthrough && !passthroughAvailable) {
       // The video keeps its choice for a runtime that shows the room.
-      app.togglePassthrough = false;
+      keys.togglePassthrough = false;
       std::printf("Passthrough: the runtime offers no alpha blending, so the camera cannot "
                   "show\n");
     }
-    if (app.togglePassthrough) {
-      app.togglePassthrough = false;
+    if (keys.togglePassthrough) {
+      keys.togglePassthrough = false;
       app.video.passthrough = !app.video.passthrough;
       app.video.passthroughChosen = true;  // never switched by itself again
       passthroughShownUntil = 0;
@@ -3286,12 +3115,12 @@ int run(Options opts) {
       const Mat4 frame = headFrame(headRot);
       const Mat4 menuAt = menuFrame(headRot);
       if (app.recenterAt > 0 && now >= app.recenterAt) {  // the menu's countdown is over
-        app.recenter = true;
+        keys.recenter = true;
         app.recenterAt = 0;
         buzz(-1, 0.3f, 0.020);
       }
-      if ((initialRecenter || (app.recenter && !menu.setupRunning())) && headValid) {
-        if (app.recenter) {
+      if ((initialRecenter || (keys.recenter && !menu.setupRunning())) && headValid) {
+        if (keys.recenter) {
           if (app.video.originForward != 0)
             viewpointShownUntil = now + kValueShown;  // "Centered": it did go back
           app.video.originForward = 0;
@@ -3304,7 +3133,7 @@ int run(Options opts) {
         app.screen.turn = 0.0f;
         turnDrag.tracking = false;  // a drag goes on from here, without catching up first
         if (panel.open) panel.placeInFrontOf(headPos, menuAt);  // the menu comes along
-        app.recenter = false;
+        keys.recenter = false;
         initialRecenter = false;
       }
 
@@ -3379,7 +3208,7 @@ int run(Options opts) {
         s.headPos = headPos;
         s.headRot = headRot;
         s.presence = xr.userPresence();
-        s.bring = menuPressed || jobs.wasPressed(Job::Recenter) || app.toggleMenu || app.recenter;
+        s.bring = menuPressed || jobs.wasPressed(Job::Recenter) || keys.toggleMenu || keys.recenter;
         s.pressed = s.bring;
         for (const uint8_t hands : jobs.pressed) s.pressed |= hands != 0;
         for (const HandState& h : input.hands) {
@@ -3404,7 +3233,7 @@ int run(Options opts) {
           menu.dropSetupIntro();
           setupIntroDropped = true;
         }
-        app.recenter = false;
+        keys.recenter = false;
         menu.setSetupController(now - controllerSeen < 1.0);
         // Your controllers: the bindings when they changed, and what is held.
         if (controlsVersion != bindingsSeen) {
@@ -3446,9 +3275,9 @@ int run(Options opts) {
         if (!panel.open) panel.placeInFrontOf(headPos, menuAt);
         panel.open = true;
         menu.showPlayedFrom();
-      } else if ((menuPressed || app.toggleMenu) && !app.keyPickFor.empty()) {
+      } else if ((menuPressed || keys.toggleMenu) && !app.keyPickFor.empty()) {
         endKeyPick();  // the menu button cancels picking the key's colour, the menu stays
-      } else if (menuPressed || app.toggleMenu) {
+      } else if (menuPressed || keys.toggleMenu) {
         panel.open = !panel.open;
         openedNow = panel.open;
         menuBroughtBack = panel.open && menuPressed;
@@ -3458,7 +3287,7 @@ int run(Options opts) {
           if (headValid) panel.placeInFrontOf(headPos, menuAt);
         }
       }
-      app.toggleMenu = false;
+      keys.toggleMenu = false;
       if (app.video.opacity < 100 && !app.currentFile.empty() &&
           (app.video.opacity != seeThroughSeen || app.currentFile != seeThroughFile))
         lastSeeThrough[seeThroughKey()] = app.video.opacity;
@@ -3749,7 +3578,7 @@ int run(Options opts) {
         }
       }
       if (jobs.wasPressed(Job::Recenter) && !menu.setupRunning()) {
-        app.recenter = true;
+        keys.recenter = true;
         recentered = true;
         buzz(-1, 0.3f, 0.020);
       }
@@ -3954,8 +3783,8 @@ int run(Options opts) {
         const float x = typing || valueStick ? 0.0f : seekStick.stickX;
         const float sideways =
             heldSeek.active() || std::abs(x) > std::abs(seekStick.stickY) ? x : 0.0f;
-        const float back = seekable ? std::max(app.seekBackKey ? 1.0f : 0.0f, -sideways) : 0.0f;
-        const float forward = seekable ? std::max(app.seekForwardKey ? 1.0f : 0.0f, sideways) : 0.0f;
+        const float back = seekable ? std::max(keys.seekBackKey ? 1.0f : 0.0f, -sideways) : 0.0f;
+        const float forward = seekable ? std::max(keys.seekForwardKey ? 1.0f : 0.0f, sideways) : 0.0f;
         // Its limits from where it started: the video plays on until a hold.
         const double from = heldSeek.active() ? heldSeekFrom : p.position;
         // A tap goes Skip's length by the stick, the keyboard's arrows 10 s:
@@ -4026,8 +3855,8 @@ int run(Options opts) {
         }
         if (heldSeekLanding && !player.seeking()) heldSeekLanding = false;
       }
-      if (turnLeft.update(app.turnLeftKey, now)) app.screen.turn = wrapAngle(app.screen.turn - kTurnStep);
-      if (turnRight.update(app.turnRightKey, now)) app.screen.turn = wrapAngle(app.screen.turn + kTurnStep);
+      if (turnLeft.update(keys.turnLeftKey, now)) app.screen.turn = wrapAngle(app.screen.turn - kTurnStep);
+      if (turnRight.update(keys.turnRightKey, now)) app.screen.turn = wrapAngle(app.screen.turn + kTurnStep);
       if (listMode) {
         // Lists glide: the further the stick is tilted, the faster (up to
         // ~14 rows a second), with a small dead zone around the middle.
@@ -4289,11 +4118,11 @@ int run(Options opts) {
       if (whatsNewWasOpen && !whatsNewOpen && markVersionSeen(settings.versionSeen))
         saveSettings(settings);
       whatsNewWasOpen = whatsNewOpen;
-      if (panel.open && releaseUpdate.state() == ReleaseUpdate::State::Restarting && !app.quit) {
+      if (panel.open && releaseUpdate.state() == ReleaseUpdate::State::Restarting && !keys.quit) {
         std::printf("Update: restarting into %s\n", releaseUpdate.version().c_str());
         menu.showUpdate();
         releaseUpdate.restartAtExit();
-        app.quit = true;
+        keys.quit = true;
       }
       if (std::string name = serverNameNow(menu.setupRunning()); name != serverNamed) {
         serverNamed = std::move(name);
@@ -4467,15 +4296,15 @@ int run(Options opts) {
         hitPanelId = Menu::kMain;
       }
       menu.setPointer(hitPanelId, hitU, hitV);
-      app.textInput = panel.open && menu.textInputActive();
-      menu.typeText(app.typed);
-      for (; app.backspaces > 0; --app.backspaces) menu.backspace();
-      if (app.cursorSteps) menu.moveCursor(std::exchange(app.cursorSteps, 0));
-      if (app.submit) execute(menu.submitText());
-      if (app.stopTyping) menu.stopEditing();
-      app.typed.clear();
-      app.submit = false;
-      app.stopTyping = false;
+      keys.textInput = panel.open && menu.textInputActive();
+      menu.typeText(keys.typed);
+      for (; keys.backspaces > 0; --keys.backspaces) menu.backspace();
+      if (keys.cursorSteps) menu.moveCursor(std::exchange(keys.cursorSteps, 0));
+      if (keys.submit) execute(menu.submitText());
+      if (keys.stopTyping) menu.stopEditing();
+      keys.typed.clear();
+      keys.submit = false;
+      keys.stopTyping = false;
       // Trigger on the panel clicks it (anywhere else it drags the picture).
       const bool clicked = panel.open && hand.selectPressed && !openedNow && hitPanel;
       {
@@ -5032,177 +4861,11 @@ int main(int argc, char** argv) {
   // then come from heaps that keep the memory after each file.
   mallopt(M_MMAP_THRESHOLD, 1 << 20);
   Options opts;
-  bool stashSync = false;
-  for (int i = 1; i < argc; ++i) {
-    const std::string arg = argv[i];
-    if (arg.rfind("--hwdec=", 0) == 0) {
-      opts.hwdec = arg.substr(8);
-    } else if (arg.rfind("--preview-hwdec=", 0) == 0) {
-      opts.previewHwdec = arg.substr(16);
-    } else if (arg == "--no-mirror") {
-      opts.mirror = false;
-    } else if (arg == "--timing") {
-      opts.timing = true;
-    } else if (arg.rfind("--refresh-rate=", 0) == 0) {
-      const std::string value = arg.substr(15);
-      char* end = nullptr;
-      const float hz = std::strtof(value.c_str(), &end);
-      if (end == value.c_str() || *end != '\0' || !std::isfinite(hz) || hz < 0) {
-        std::fprintf(stderr, "%s\n", strings().refreshRateUsage);
-        return 2;
-      }
-      opts.refreshRate = hz;
-    } else if (arg == "--show-performance") {
-      opts.showPerformance = true;
-    } else if (arg == "--show-foveation") {
-      opts.showFoveation = true;
-    } else if (arg.rfind("--menu-sharpness=", 0) == 0) {
-      const std::string value = arg.substr(17);
-      char* end = nullptr;
-      const float bias = std::strtof(value.c_str(), &end);
-      if (end == value.c_str() || *end != '\0' || !(bias >= -2.0f && bias <= 1.0f)) {
-        std::fprintf(stderr, "--menu-sharpness=%s: give a mip bias from -2 to 1\n", value.c_str());
-        return 2;
-      }
-      opts.menuLodBias = bias;
-    } else if (arg.rfind("--sharp-bins=", 0) == 0) {
-      const std::string value = arg.substr(13);
-      if (value != "1" && value != "3") {
-        std::fprintf(stderr, "%s\n", strings().sharpBinsUsage);
-        return 2;
-      }
-      opts.sharpBins = value == "1" ? 1 : 3;
-    } else if (arg.rfind("--ring=", 0) == 0) {
-      const std::string value = arg.substr(7);
-      if (value != "on" && value != "off") {
-        std::fprintf(stderr, "%s\n", strings().foveationRingUsage);
-        return 2;
-      }
-      opts.ring = value == "on";
-    } else if (arg == "--xr-test") {
-      opts.xrTest = true;
-    } else if (arg == "--fixed-view") {
-      opts.fixedView = true;
-    } else if (arg == "--video-pipeline=on" || arg == "--video-pipeline=off") {
-      opts.videoPipeline = arg == "--video-pipeline=on";
-    } else if (arg == "--decoder-queue=on" || arg == "--decoder-queue=off") {
-      opts.decoderQueue = arg == "--decoder-queue=on";
-    } else if (arg == "--frame-reuse=on" || arg == "--frame-reuse=off") {
-      opts.frameReuse = arg == "--frame-reuse=on";
-    } else if (arg.rfind("--foveation=", 0) == 0) {
-      opts.foveationSet = true;
-      if (!parseFoveationLevel(arg.substr(12), opts.foveation) || opts.foveation == FoveationLevel::Custom) {
-        std::fprintf(stderr, "Unknown foveation level: %s\n", arg.substr(12).c_str());
-        printUsage(argv[0]);
-        return 2;
-      }
-    } else if (arg.rfind("--anti-shimmer=", 0) == 0) {
-      opts.antiShimmerSet = true;
-      if (!parseAntiShimmer(arg.substr(15), opts.antiShimmer)) {
-        std::fprintf(stderr, "Unknown anti-shimmer: %s\n", arg.substr(15).c_str());
-        printUsage(argv[0]);
-        return 2;
-      }
-    } else if (arg.rfind("--foveation-gaze=", 0) == 0) {
-      if (!parseFoveationGaze(arg.substr(17), opts.foveationGaze)) {
-        std::fprintf(stderr, "Unknown foveation gaze: %s\n", arg.substr(17).c_str());
-        printUsage(argv[0]);
-        return 2;
-      }
-    } else if (arg.rfind("--resolution=", 0) == 0) {
-      const std::string value = arg.substr(13);
-      char* end = nullptr;
-      const double number = std::strtod(value.c_str(), &end);
-      const bool percent = end && *end == '%' && end[1] == '\0';
-      if (!end || end == value.c_str() || (*end != '\0' && !percent) || !(number > 0) ||
-          (percent ? number < kMinResolution || number > kMaxResolution
-                   : number < 256 || number > 16384 || number != std::floor(number))) {
-        std::fprintf(stderr, "--resolution=%s: give eye pixels across (256 to 16384) or a percent "
-                     "(%d%% to %d%%)\n", value.c_str(), kMinResolution, kMaxResolution);
-        return 2;
-      }
-      if (percent) {
-        opts.resolutionPercent = number;
-        opts.resolutionPixels = 0;
-      } else {
-        opts.resolutionPixels = static_cast<int>(number);
-        opts.resolutionPercent = 0;
-      }
-    } else if (arg.rfind("--resolution-cycle=", 0) == 0) {
-      // PIXELS,PIXELS,...[:SECONDS]
-      std::string value = arg.substr(19);
-      bool ok = true;
-      const size_t colon = value.find(':');
-      if (colon != std::string::npos) {
-        char* end = nullptr;
-        opts.resolutionCycleSeconds = std::strtod(value.c_str() + colon + 1, &end);
-        ok = end && *end == '\0' && opts.resolutionCycleSeconds >= 1;
-        value.resize(colon);
-      }
-      opts.resolutionCycle.clear();
-      for (size_t at = 0; ok && at <= value.size();) {
-        const size_t comma = std::min(value.find(',', at), value.size());
-        char* end = nullptr;
-        const long pixels = std::strtol(value.c_str() + at, &end, 10);
-        ok = end == value.c_str() + comma && pixels >= 256 && pixels <= 16384;
-        opts.resolutionCycle.push_back(static_cast<int>(pixels));
-        at = comma + 1;
-      }
-      if (!ok) {
-        std::fprintf(stderr, "--resolution-cycle=%s: give eye pixels across (256 to 16384), separated "
-                     "by commas, and optionally :SECONDS (at least 1)\n", arg.substr(19).c_str());
-        return 2;
-      }
-    } else if (arg.rfind("--sharp-area=", 0) == 0) {
-      const std::string what = arg.substr(13);
-      if (what != "bins" && what != "runtime") {
-        std::fprintf(stderr, "Unknown sharp area: %s (bins or runtime)\n", what.c_str());
-        return 2;
-      }
-      opts.runtimeDensityMaps = what == "runtime";
-    } else if (arg.rfind("--open-menu=", 0) == 0) {
-      const std::string page = arg.substr(12);
-      opts.startMenu = page == "strip"      ? StartMenu::Strip
-                       : page == "browser"  ? StartMenu::Browser
-                       : page == "settings" ? StartMenu::Settings
-                       : page == "seek"     ? StartMenu::Seek
-                                            : StartMenu::None;
-      if (opts.startMenu == StartMenu::None) {
-        std::fprintf(stderr, "Unknown menu page: %s\n", page.c_str());
-        printUsage(argv[0]);
-        return 2;
-      }
-    } else if (arg == "-h" || arg == "--help") {
-      printUsage(argv[0]);
-      return 0;
-    } else if (arg == "--first-run") {
-      opts.firstRun = true;
-    } else if (arg == "--stash-sync") {
-      stashSync = true;
-    } else if (arg == "--save-diagnostics") {
-      // No log of its own: it would add one to what it saves.
-      std::string error;
-      const std::string path = saveDiagnostics(error);
-      if (path.empty()) {
-        std::fprintf(stderr, "Could not save diagnostics: %s\n", error.c_str());
-        return 1;
-      }
-      std::printf("%s\n", path.c_str());
-      return 0;
-    } else if (arg == "--version") {
-      std::printf("%s %s\n", kAppTitle, VIDEOFRAMEVR_VERSION);
-      return 0;
-    } else if (arg.rfind("--", 0) == 0) {
-      std::fprintf(stderr, strings().unknownOption, arg.c_str());
-      return 2;
-    } else {
-      opts.file = arg;
-    }
-  }
+  if (const std::optional<int> code = parseOptions(argc, argv, opts)) return *code;
   std::atexit(restartIfRequested);  // before the run log starts, so it runs after the log ends
   startRunLog();
   printRunHeader();
-  if (stashSync) {
+  if (opts.stashSync) {
     // The setup in use; with none on, the one that has a server.
     const Settings saved = loadSettings();
     StashSettings stash = saved.stash;
