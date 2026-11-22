@@ -1089,20 +1089,22 @@ void DirectVideo::addBarriers(std::vector<VkImageMemoryBarrier>& list, DirectFra
 }
 
 void DirectVideo::barriers(VkCommandBuffer cmd, bool acquire) {
-  std::vector<VkImageMemoryBarrier> list;
-  for (DirectFrame* f : inFrame_) addBarriers(list, *f, acquire);
-  if (list.empty()) return;
+  barriers_.clear();
+  for (DirectFrame* f : inFrame_) addBarriers(barriers_, *f, acquire);
+  if (barriers_.empty()) return;
   // External ownership transfers have no defined pipeline stage on Vulkan 1.2.
   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                       0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(list.size()), list.data());
+                       0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(barriers_.size()),
+                       barriers_.data());
 }
 
 void DirectVideo::recordBarriers(VkCommandBuffer cmd, DirectFrame& frame, bool acquire) {
-  std::vector<VkImageMemoryBarrier> list;
-  addBarriers(list, frame, acquire);
-  if (list.empty()) return;
+  barriers_.clear();
+  addBarriers(barriers_, frame, acquire);
+  if (barriers_.empty()) return;
   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                       0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(list.size()), list.data());
+                       0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(barriers_.size()),
+                       barriers_.data());
 }
 
 void DirectVideo::unpin(DirectFrame& frame, uint64_t lastUse) {

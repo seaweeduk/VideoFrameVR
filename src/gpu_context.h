@@ -103,6 +103,10 @@ class GpuContext {
     VkQueryPool queries = VK_NULL_HANDLE;
     uint64_t completion = 0;  // the frame timeline value of its last submission
     uint32_t timestampsWritten = 0;  // by that submission
+    // What the next submission waits for and signals, emptied by
+    // beginFrame(): kept, so that frames don't allocate them.
+    std::vector<SemaphoreWait> waits;
+    std::vector<VkSemaphore> signals;
   };
 
   GpuContext() = default;
@@ -217,6 +221,10 @@ class GpuContext {
   uint64_t frameSubmissions_ = 0;  // of frames (beginFrame()), choosing the next slot
   bool recording_ = false;
   FrameSlot slots_[kFramesInFlight];
+  // submit()'s arrays, kept as the slots' waits and signals are.
+  std::vector<VkSemaphore> waitSemaphores_, signalSemaphores_;
+  std::vector<uint64_t> waitValues_, signalValues_;
+  std::vector<VkPipelineStageFlags> waitStages_;
   VkCommandPool oneShotPool_ = VK_NULL_HANDLE;
   std::deque<Retired> retired_;
   VkDeviceSize liveBytes_ = 0, retiredBytes_ = 0;

@@ -390,23 +390,20 @@ void GlInterop::acquireForGl(SharedImage& image) {
 
 void GlInterop::publish() {
   if (!signalNeeded_) return;
-  std::vector<GLuint> textures;
-  std::vector<GLenum> layouts;
-  for (SharedImage* image : inGl_) {
-    if (image->keepInGl_) continue;
-    textures.push_back(image->glTexture_);
-    layouts.push_back(GL_LAYOUT_SHADER_READ_ONLY_EXT);
-  }
+  textures_.clear();
+  for (SharedImage* image : inGl_)
+    if (!image->keepInGl_) textures_.push_back(image->glTexture_);
+  layouts_.assign(textures_.size(), GL_LAYOUT_SHADER_READ_ONLY_EXT);
   const GLuint64 value = ++glDoneValue_;
   gl.semaphoreParameterui64v(glDoneGl_, GL_TIMELINE_SEMAPHORE_VALUE_NV, &value);
-  gl.signalSemaphore(glDoneGl_, 0, nullptr, static_cast<GLuint>(textures.size()), textures.data(),
-                     layouts.data());
+  gl.signalSemaphore(glDoneGl_, 0, nullptr, static_cast<GLuint>(textures_.size()), textures_.data(),
+                     layouts_.data());
   glFlush();
-  std::vector<SharedImage*> kept;
+  size_t kept = 0;
   for (SharedImage* image : inGl_) {
     image->lastGlUse_ = value;
     if (image->keepInGl_) {
-      kept.push_back(image);
+      inGl_[kept++] = image;
       continue;
     }
     image->inGl_ = false;
@@ -415,7 +412,7 @@ void GlInterop::publish() {
     if (image->written_) image->contentAt_ = value;
     image->written_ = false;
   }
-  inGl_ = kept;
+  inGl_.resize(kept);
   signalNeeded_ = !inGl_.empty();
 }
 
@@ -430,7 +427,7 @@ bool GlInterop::useInFrame(SharedImage& image) {
 
 void GlInterop::recordAcquires(VkCommandBuffer cmd) {
   if (inFrame_.empty()) return;
-  std::vector<VkImageMemoryBarrier> barriers;
+  barriers_.clear();
   for (SharedImage* image : inFrame_) {
     VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     b.srcAccessMask = 0;
@@ -441,16 +438,16 @@ void GlInterop::recordAcquires(VkCommandBuffer cmd) {
     b.dstQueueFamilyIndex = gpu_->queueFamily();
     b.image = image->texture_.image;
     b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, image->texture_.levels, 0, 1};
-    barriers.push_back(b);
+    barriers_.push_back(b);
   }
   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                       0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(barriers.size()),
-                       barriers.data());
+                       0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(barriers_.size()),
+                       barriers_.data());
 }
 
 void GlInterop::recordReleases(VkCommandBuffer cmd) {
   if (inFrame_.empty()) return;
-  std::vector<VkImageMemoryBarrier> barriers;
+  barriers_.clear();
   for (SharedImage* image : inFrame_) {
     VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     b.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -461,11 +458,11 @@ void GlInterop::recordReleases(VkCommandBuffer cmd) {
     b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL;
     b.image = image->texture_.image;
     b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, image->texture_.levels, 0, 1};
-    barriers.push_back(b);
+    barriers_.push_back(b);
   }
   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                       0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(barriers.size()),
-                       barriers.data());
+                       0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(barriers_.size()),
+                       barriers_.data());
 }
 
 void GlInterop::frameWaits(std::vector<SemaphoreWait>& waits) const {

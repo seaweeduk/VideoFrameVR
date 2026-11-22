@@ -282,6 +282,8 @@ GpuContext::FrameSlot* GpuContext::beginFrame() {
   VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
   if (!check(vkBeginCommandBuffer(slot.cmd, &begin), "beginning a frame")) return nullptr;
+  slot.waits.clear();
+  slot.signals.clear();
   recording_ = true;
   return &slot;
 }
@@ -290,34 +292,34 @@ uint64_t GpuContext::submit(FrameSlot& slot, const std::vector<SemaphoreWait>& w
                             const std::vector<VkSemaphore>& signals) {
   recording_ = false;
   if (!check(vkEndCommandBuffer(slot.cmd), "ending a frame")) return 0;
-  std::vector<VkSemaphore> waitSemaphores;
-  std::vector<uint64_t> waitValues;
-  std::vector<VkPipelineStageFlags> waitStages;
+  waitSemaphores_.clear();
+  waitValues_.clear();
+  waitStages_.clear();
   for (const SemaphoreWait& w : waits) {
-    waitSemaphores.push_back(w.semaphore);
-    waitValues.push_back(w.value);
-    waitStages.push_back(w.stage);
+    waitSemaphores_.push_back(w.semaphore);
+    waitValues_.push_back(w.value);
+    waitStages_.push_back(w.stage);
   }
-  std::vector<VkSemaphore> signalSemaphores = {frameTimeline_};
-  std::vector<uint64_t> signalValues = {submitted_ + 1};
+  signalSemaphores_.assign(1, frameTimeline_);
+  signalValues_.assign(1, submitted_ + 1);
   for (VkSemaphore s : signals) {
-    signalSemaphores.push_back(s);
-    signalValues.push_back(0);
+    signalSemaphores_.push_back(s);
+    signalValues_.push_back(0);
   }
   VkTimelineSemaphoreSubmitInfo timeline{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
-  timeline.waitSemaphoreValueCount = static_cast<uint32_t>(waitValues.size());
-  timeline.pWaitSemaphoreValues = waitValues.data();
-  timeline.signalSemaphoreValueCount = static_cast<uint32_t>(signalValues.size());
-  timeline.pSignalSemaphoreValues = signalValues.data();
+  timeline.waitSemaphoreValueCount = static_cast<uint32_t>(waitValues_.size());
+  timeline.pWaitSemaphoreValues = waitValues_.data();
+  timeline.signalSemaphoreValueCount = static_cast<uint32_t>(signalValues_.size());
+  timeline.pSignalSemaphoreValues = signalValues_.data();
   VkSubmitInfo info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
   info.pNext = &timeline;
-  info.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
-  info.pWaitSemaphores = waitSemaphores.data();
-  info.pWaitDstStageMask = waitStages.data();
+  info.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores_.size());
+  info.pWaitSemaphores = waitSemaphores_.data();
+  info.pWaitDstStageMask = waitStages_.data();
   info.commandBufferCount = 1;
   info.pCommandBuffers = &slot.cmd;
-  info.signalSemaphoreCount = static_cast<uint32_t>(signalSemaphores.size());
-  info.pSignalSemaphores = signalSemaphores.data();
+  info.signalSemaphoreCount = static_cast<uint32_t>(signalSemaphores_.size());
+  info.pSignalSemaphores = signalSemaphores_.data();
   if (!check(vkQueueSubmit(device_.queue, 1, &info, VK_NULL_HANDLE), "submitting a frame")) {
     // Nothing waits for a value that was never submitted; the app stops.
     lost_ = true;

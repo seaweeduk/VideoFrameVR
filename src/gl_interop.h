@@ -111,6 +111,10 @@ class GlInterop : public FrameParticipant {
   bool signalNeeded_ = false;  // GL work since the last signal that something waits for
   std::vector<SharedImage*> inGl_;     // acquired by GL in this window
   std::vector<SharedImage*> inFrame_;  // used by the frame being recorded
+  // publish()'s and the barriers' arrays, kept so that frames don't allocate them.
+  std::vector<GLuint> textures_;
+  std::vector<GLenum> layouts_;
+  std::vector<VkImageMemoryBarrier> barriers_;
   VkImageUsageFlags usage_ = 0;
   uint32_t maxSize_ = 0;
   uint32_t live_ = 0;

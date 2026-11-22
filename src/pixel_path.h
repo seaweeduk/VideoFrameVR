@@ -9,17 +9,20 @@
 // the mip level that roughly picks there against the eye image's density.
 // screenWidthOverDistance: the flat screen's width over its distance;
 // mipmaps: the picture is sampled through its mipmaps (else level 0 only).
-std::string describeEyeSampling(const VideoFormat& format, int frameWidth, int frameHeight,
-                                float zoom, float screenWidthOverDistance,
-                                float eyePixelsPerDegree, bool mipmaps);
+// Written into `line`, which keeps its memory.
+void describeEyeSampling(std::string& line, const VideoFormat& format, int frameWidth,
+                         int frameHeight, float zoom, float screenWidthOverDistance,
+                         float eyePixelsPerDegree, bool mipmaps);
 
 // Prints a line once it has stayed the same for a second, so dragging a
-// slider or the screen does not flood the console.
+// slider or the screen does not flood the console. Each update() takes
+// line(), written in place before it.
 class SettledLine {
  public:
-  void update(const std::string& line, double now);
+  std::string& line() { return line_; }
+  void update(double now);
 
  private:
-  std::string printed_, pending_;
+  std::string line_, printed_, pending_;
   double since_ = 0;
 };

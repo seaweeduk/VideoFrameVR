@@ -12,6 +12,7 @@
 #include "menu_stash_browse.h"
 #include "stash_catalog.h"
 #include "stash_sync.h"
+#include "stash_write_back.h"
 
 #include <array>
 #include <cmath>
@@ -195,7 +196,10 @@ struct StashMenu : StashBrowse {
   // the Settings page, its dry run listed; what it last showed of the
   // write-back, to redraw when that changes.
   bool sendOpen = false, sendList = false;
-  std::string shownWriteBack;
+  bool shownWriteBack = false;  // there was one: its status, and its send's state and error
+  StashWriteBackStatus shownWriteBackStatus;
+  StashSendPlan::State shownSendState = StashSendPlan::State::None;
+  std::string shownSendError;
 
   // Where the last layout put what the heading draws.
   double titleX = 0, titleRight = 0, resultsX = 0, resultsTop = 0, fullTitleX = 0, fullTitleRight = 0;

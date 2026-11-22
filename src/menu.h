@@ -156,6 +156,11 @@ class Menu {
   bool videoSettingsThisVideo() const { return settingsPages_.videoSectionPicked == VideoSection::ThisVideo; }
 
   void update(const MenuView& view);
+  // The view for the next update(), filled in place: the one shown before
+  // the last, so that its strings and lists keep their memory. Whoever fills
+  // it sets every field, as in a new view. update(nextView()) takes it over
+  // without a copy.
+  MenuView& nextView() { return nextView_; }
   // Pointer on a panel in 0..1 of its texture (v = 0 at the top); panel
   // -1 = pointing at none.
   void setPointer(int panel, float u, float v);
@@ -1547,6 +1552,7 @@ class Menu {
   bool shiftList();
 
   MenuView view_;
+  MenuView nextView_;  // nextView(), swapped with view_ by update()
   MenuViewCopies viewCopies_;  // what view_ points at
 
   int pointerPanel_ = -1;

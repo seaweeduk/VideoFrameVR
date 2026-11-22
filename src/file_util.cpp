@@ -18,6 +18,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
+#include <cstring>
 #include <deque>
 #include <initializer_list>
 #include <iterator>
@@ -30,9 +31,15 @@ namespace fs = std::filesystem;
 
 namespace {
 
-bool hasExtension(const fs::path& p, std::initializer_list<const char*> extensions) {
-  const std::string ext = lowerCase(p.extension().string());
-  return std::any_of(extensions.begin(), extensions.end(), [&](const char* e) { return ext == e; });
+// The extension as fs::path::extension() finds it (none for ".bashrc"), in
+// any case. Without making a path: the frame loop asks every frame.
+bool hasExtension(const std::string& p, std::initializer_list<const char*> extensions) {
+  const size_t name = p.find_last_of('/') + 1, dot = p.find_last_of('.');
+  if (dot == std::string::npos || dot <= name) return false;
+  return std::any_of(extensions.begin(), extensions.end(), [&](const char* e) {
+    return std::equal(p.begin() + dot, p.end(), e, e + std::strlen(e),
+                      [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == b; });
+  });
 }
 
 }  // namespace
@@ -44,17 +51,19 @@ std::string lowerCase(std::string s) {
 }
 
 bool isVideoFile(const fs::path& p) {
-  return hasExtension(p, {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".ts", ".m2ts", ".wmv",
-                          ".flv", ".mpg", ".mpeg", ".iso"});
+  return hasExtension(p.native(), {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".ts", ".m2ts",
+                                   ".wmv", ".flv", ".mpg", ".mpeg", ".iso"});
 }
 
-bool isPhotoFile(const fs::path& p) {
+bool isPhotoFile(const fs::path& p) { return isPhotoFile(p.native()); }
+
+bool isPhotoFile(const std::string& p) {
   return hasExtension(p, {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff",
                           ".avif", ".heic", ".jxl"});
 }
 
 bool isSubtitleFile(const fs::path& p) {
-  return hasExtension(p, {".srt", ".ass", ".ssa", ".vtt", ".sub", ".sup"});
+  return hasExtension(p.native(), {".srt", ".ass", ".ssa", ".vtt", ".sub", ".sup"});
 }
 
 bool fileNameLess(const std::string& a, const std::string& b) {

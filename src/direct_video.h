@@ -216,6 +216,7 @@ class DirectVideo : public FrameParticipant {
   std::vector<std::unique_ptr<DirectFrame>> frames_;
   std::vector<uint64_t> rejected_;  // ids handed out but not imported
   std::vector<DirectFrame*> inFrame_;
+  std::vector<VkImageMemoryBarrier> barriers_;  // reused by barriers() and recordBarriers()
   std::vector<Semaphore> semaphores_;   // idle once the GPU passed freeAfter
   std::vector<size_t> frameSemaphores_;  // waited on by the frame being recorded
   // still(): its planes, the frame shown from them (never mpv's), and the
