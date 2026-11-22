@@ -156,8 +156,9 @@ std::vector<std::string> fileNames(const std::vector<UserPreset>& presets) {
 }
 
 void writeOrder(const std::vector<std::string>& files) {
-  std::ofstream out(orderPath(), std::ios::trunc);
-  for (const std::string& file : files) out << file << "\n";
+  std::string text;
+  for (const std::string& file : files) text += file + "\n";
+  replaceFile(orderPath(), text);
 }
 
 // Where a preset called `name` goes: the name made safe for a file name,
@@ -178,12 +179,12 @@ fs::path presetPath(const std::string& name, const fs::path& own) {
   }
 }
 
-void writePreset(const fs::path& path, const std::string& name, const std::string& lines) {
+bool writePreset(const fs::path& path, const std::string& name, const std::string& lines) {
   std::error_code ec;
   fs::create_directories(path.parent_path(), ec);
-  std::ofstream out(path, std::ios::trunc);
-  out << "name=" << name << "\n" << lines;
-  if (!out) std::fprintf(stderr, "Could not save the preset\n");
+  if (replaceFile(path, "name=" + name + "\n" + lines)) return true;
+  std::fprintf(stderr, "Could not save the preset\n");
+  return false;
 }
 
 std::future<std::vector<UserPreset>> queued(std::function<void()> change) {
@@ -303,7 +304,7 @@ std::future<std::vector<UserPreset>> saveUserPreset(const std::string& name, con
     for (const UserPreset& preset : before)
       if (samePresetName(preset.name, name)) own = presetFile(preset.file);
     const fs::path path = presetPath(name, own);
-    writePreset(path, name, lines);
+    if (!writePreset(path, name, lines)) return;
     std::vector<std::string> files = fileNames(before);
     if (own.empty()) {
       files.push_back(path.filename().string());
@@ -326,7 +327,7 @@ std::future<std::vector<UserPreset>> renameUserPreset(const std::string& file, c
     in.close();
     std::vector<std::string> files = fileNames(readPresets());
     const fs::path to = presetPath(name, from);
-    writePreset(to, name, kept);
+    if (!writePreset(to, name, kept)) return;
     std::error_code ec;
     if (to != from) fs::remove(from, ec);
     std::replace(files.begin(), files.end(), from.filename().string(), to.filename().string());

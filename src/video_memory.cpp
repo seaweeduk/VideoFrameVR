@@ -122,8 +122,9 @@ void FolderMemory::save() const {
     const fs::path path = configFile("folders.conf");
     std::error_code ec;
     fs::create_directories(path.parent_path(), ec);
-    std::ofstream out(path);
+    std::ostringstream out;
     for (const auto& [hash, view] : entries)
       out << hash << ' ' << view.sort << ' ' << (view.gallery ? 1 : 0) << '\n';
+    replaceFile(path, out.str());
   });
 }

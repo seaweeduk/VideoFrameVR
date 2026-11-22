@@ -253,11 +253,7 @@ static void writeStashPins(const std::vector<StashPin>& pins, ServerKind kind) {
   const fs::path path = pinsPath(kind);
   std::error_code ec;
   fs::create_directories(path.parent_path(), ec);
-  std::ofstream out(path);
-  if (!out) {
-    std::fprintf(stderr, "Could not save the pinned Stash lists\n");
-    return;
-  }
+  std::ostringstream out;
   out << "# VideoFrameVR's pinned Stash lists: Stash's ids of tags, performers and studios\n";
   for (const StashPin& p : pins) {
     const StashList& l = p.list;
@@ -283,6 +279,7 @@ static void writeStashPins(const std::vector<StashPin>& pins, ServerKind kind) {
         << "\nsort=" << kStashSortNames[static_cast<int>(l.sort)]
         << "\ndescending=" << (l.descending ? 1 : 0) << "\n";
   }
+  if (!replaceFile(path, out.str())) std::fprintf(stderr, "Could not save the pinned Stash lists\n");
 }
 
 void saveStashPins(const std::vector<StashPin>& pins, ServerKind kind) {

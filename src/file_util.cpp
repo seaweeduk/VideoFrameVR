@@ -3,12 +3,17 @@
 #include "stash_text.h"
 #include "remote.h"
 
+#include <fcntl.h>
 #include <glib.h>
 #include <langinfo.h>
 #include <locale.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <cerrno>
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
@@ -262,6 +267,49 @@ std::future<std::string> mediaNeighbor(const std::string& current, int step, boo
   auto result = task.get_future();
   std::thread(std::move(task)).detach();
   return result;
+}
+
+bool replaceFile(const fs::path& path, const std::string& contents, bool ownerOnly) {
+  static std::atomic<unsigned> made{0};
+  std::error_code ec;
+  fs::path target = path;
+  if (fs::is_symlink(path, ec)) {
+    // A link whose target can't be found now (a drive not mounted) stays a link.
+    const fs::path resolved = fs::canonical(path, ec);
+    if (ec) return false;
+    target = resolved;
+  }
+  // A new file each call, never an existing one or a link: another instance may be saving too.
+  const fs::path temp = target.string() + ".new." + std::to_string(getpid()) + "." + std::to_string(made++);
+  const int fd = ::open(temp.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, ownerOnly ? 0600 : 0666);
+  if (fd < 0) return false;
+  bool ok = !ownerOnly || fchmod(fd, 0600) == 0;
+  for (size_t at = 0; ok && at < contents.size();) {
+    const auto n = ::write(fd, contents.data() + at, contents.size() - at);
+    if (n < 0 && errno == EINTR) continue;
+    ok = n > 0;
+    if (ok) at += n;
+  }
+  int synced;
+  while ((synced = ::fsync(fd)) != 0 && errno == EINTR) {
+  }
+  ok = synced == 0 && ok;
+  ok = ::close(fd) == 0 && ok;
+  if (ok) {
+    fs::rename(temp, target, ec);
+    ok = !ec;
+  }
+  if (!ok) {
+    fs::remove(temp, ec);
+    return false;
+  }
+  // The rename too, through a power cut. The new file is in place either way.
+  const int dir = ::open(target.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+  if (dir >= 0) {
+    ::fsync(dir);
+    ::close(dir);
+  }
+  return true;
 }
 
 void queueConfigWork(std::function<void()> work) {

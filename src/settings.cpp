@@ -11,7 +11,6 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
-#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -20,7 +19,6 @@
 #include <string>
 #include <sys/stat.h>
 #include <system_error>
-#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -348,14 +346,6 @@ static void writeSettings(const Settings& s) {
   const fs::path path = settingsPath();
   std::error_code ec;
   fs::create_directories(path.parent_path(), ec);
-  const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
-  FILE* file = nullptr;
-  if (fd >= 0 && fchmod(fd, 0600) == 0) file = fdopen(fd, "w");
-  if (!file) {
-    if (fd >= 0) close(fd);
-    std::fprintf(stderr, "Could not save settings\n");
-    return;
-  }
   std::ostringstream out;
   auto defaults = lineMap(defaultSettings());
   {
@@ -374,9 +364,7 @@ static void writeSettings(const Settings& s) {
         d == defaults.end() || d->second != value)
       out << key << "=" << value << "\n";
   }
-  const std::string contents = out.str();
-  std::fwrite(contents.data(), 1, contents.size(), file);
-  std::fclose(file);
+  if (!replaceFile(path, out.str(), true)) std::fprintf(stderr, "Could not save settings\n");
 }
 
 static std::atomic<bool> held{false};  // read by Stash's sync worker too
