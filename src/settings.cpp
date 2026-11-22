@@ -101,6 +101,7 @@ std::string allLines(const Settings& s) {
   out << "motion_emulation=" << (s.motionEmulation ? 1 : 0) << "\n";
   out << "motion_distance_cm=" << s.motionDistance << "\n";
   out << "resume=" << (s.resume ? 1 : 0) << "\n";
+  out << "free_decoder_from_steam=" << (s.freeDecoder ? 1 : 0) << "\n";
   out << "after_video=" << (s.afterVideo == AfterVideo::Stop ? "stop" : "next") << "\n";
   out << "seek_preview=" << (s.seekPreview ? 1 : 0) << "\n";
   out << "auto_passthrough=" << (s.autoPassthrough ? 1 : 0) << "\n";
@@ -291,6 +292,7 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "motion_distance_cm")
       s.motionDistance = clampMotionDistance(std::atoi(value.c_str()));
     else if (key == "resume") s.resume = value != "0";
+    else if (key == "free_decoder_from_steam") s.freeDecoder = value != "0";
     else if (key == "after_video") s.afterVideo = value == "stop" ? AfterVideo::Stop : AfterVideo::Next;
     else if (key == "seek_preview") s.seekPreview = value != "0";
     else if (key == "auto_passthrough") s.autoPassthrough = value != "0";

@@ -38,6 +38,7 @@
 #include "platform.h"
 #include "presets.h"
 #include "refresh_rate.h"
+#include "decoder_holders.h"
 #include "diagnostics.h"
 #include "release_update.h"
 #include "run_log.h"
@@ -783,6 +784,20 @@ int run(Options opts) {
   ReleaseUpdate releaseUpdate;  // inert unless the GitHub install launcher opts in
   bool updateOffered = false, menuWasOpen = false;  // its dialog, once a run as the menu opens
   bool whatsNewWasOpen = false;
+  // The Frame's decoder refused a video while Steam holds part of it
+  // (decoder_holders.h): the menu asks whether to end Steam's holders; if
+  // so, the video opens again where it was, once.
+  struct {
+    std::string path;      // the video refused
+    double at = 0;         // ... where
+    uint64_t handled = 0;  // the opening (VideoPlayer::loadCount()) whose refusal was handled
+    uint64_t retry = 0;    // ... the one after freeing the decoder
+    bool ask = false;      // to ask once no other dialog is open
+    bool openedMenu = false;  // the menu was opened to ask
+    decoder_holders::Busy busy = decoder_holders::Busy::No;
+    std::future<std::vector<decoder_holders::Holder>> holders;
+    std::future<bool> freed;
+  } decoderRescue;
   DiagnosticsExport diagnostics;
   SubtitleOverlay subtitles;
   if (!subtitles.init(uploader)) return 1;
@@ -2548,6 +2563,21 @@ int run(Options opts) {
         saveSettings(settings);
         break;
       case MenuCommand::DownloadReleaseUpdate: releaseUpdate.download(); break;
+      case MenuCommand::FreeDecoder:
+        if (c.value != 0 && !settings.freeDecoder) {
+          settings.freeDecoder = true;
+          saveSettings(settings);
+        }
+        if (decoderRescue.busy == decoder_holders::Busy::Steam && !decoderRescue.freed.valid()) {
+          decoderRescue.busy = decoder_holders::Busy::Freeing;
+          decoderRescue.freed = std::async(std::launch::async, decoder_holders::freeFromSteam);
+          if (decoderRescue.openedMenu) panel.open = false;
+        }
+        break;
+      case MenuCommand::ToggleFreeDecoder:
+        settings.freeDecoder = !settings.freeDecoder;
+        saveSettings(settings);
+        break;
       case MenuCommand::SaveDiagnostics: diagnostics.start(); break;
       case MenuCommand::None: break;
     }
@@ -2730,7 +2760,9 @@ int run(Options opts) {
 
     // A Stash scene's file on a server that doesn't play plays from Stash's
     // stream instead (once: the stream is no server's file), if that serves it.
-    if (player.failed() && remote::isRemote(app.currentFile) && stash && stash->catalog())
+    // Not one the decoder refused: the stream is the same video.
+    if (player.failed() && !player.decoderRefused() && remote::isRemote(app.currentFile) && stash &&
+        stash->catalog())
       if (const int i = stash->catalog()->sceneByPath(app.currentFile); i >= 0) {
         const StashScene& scene = stash->catalog()->scenes()[i];
         if (!scene.oshashes.empty() && scene.oshashes.front() == scene.oshash) {
@@ -2743,6 +2775,8 @@ int run(Options opts) {
     // A play counts each time a video file opens (a resumed
     // one too; pausing, looping and seeking don't). Streams and photos don't.
     const bool opened = player.takeOpened();
+    // Played after freeing the decoder: a later refusal (after a sleep) is asked about again.
+    if (opened && player.loadCount() == decoderRescue.retry) decoderRescue.retry = 0;
     if (opened && setupBanner && !isPhotoFile(app.currentFile)) hideSetupBanner();
     if (opened && !app.currentFile.empty() && !isStream(app.currentFile) &&
         !isPhotoFile(app.currentFile)) {
@@ -4163,12 +4197,75 @@ int run(Options opts) {
                          (focusIn.leftEye + focusIn.rightEye) * 0.5f, headRot, focusOut.marker,
                          focusOut.markerDistance, focusOut.distanceText);
 
+      if (kStandaloneHeadset) {
+        using decoder_holders::Busy;
+        auto& r = decoderRescue;
+        auto ready = [](const auto& f) {
+          return f.valid() && f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+        };
+        const bool refused = player.decoderRefused() && !app.currentFile.empty();
+        const uint64_t opening = player.loadCount();
+        if (refused && r.handled != opening && !r.holders.valid() && !r.freed.valid()) {
+          r.handled = opening;
+          r.path = app.currentFile;
+          r.at = player.refusedAt();
+          r.ask = false;
+          // Refused again once freed: not Steam's doing, or not only.
+          if (opening == r.retry) {
+            r.busy = Busy::StillBusy;
+          } else {
+            r.busy = Busy::Checking;
+            r.holders = std::async(std::launch::async, decoder_holders::find);
+          }
+        }
+        const bool current = refused && r.handled == opening;
+        if (ready(r.holders)) {
+          bool steam = false, others = false;
+          for (const decoder_holders::Holder& h : r.holders.get()) {
+            std::printf("Decoder: also held by %s (%d)\n", h.name.c_str(), static_cast<int>(h.pid));
+            (h.steam ? steam : others) = true;
+          }
+          r.busy = !current ? Busy::No : steam ? Busy::Steam : others ? Busy::StillBusy : Busy::No;
+          // Freed without asking once the user chose Always free.
+          if (r.busy == Busy::Steam && settings.freeDecoder) {
+            r.busy = Busy::Freeing;
+            r.freed = std::async(std::launch::async, decoder_holders::freeFromSteam);
+          }
+          r.ask = r.busy == Busy::Steam;
+        }
+        // Not over another question, nor first-run setup. A dialog left in a
+        // closed menu is gone once it opens, as with the menu button.
+        if (r.ask && current && !(panel.open && menu.dialogOpen()) && !menu.setupRunning()) {
+          r.ask = false;
+          r.openedMenu = !panel.open;
+          if (!panel.open) {
+            panel.open = true;
+            menu.showMainPage();
+            if (headValid) panel.placeInFrontOf(headPos, menuAt);
+          }
+          menu.showDecoderBusy();
+        }
+        if (ready(r.freed)) {
+          r.freed.get();
+          r.busy = Busy::No;
+          if (current && app.currentFile == r.path) {
+            r.retry = opening + 1;  // load() counts one more
+            player.load(r.path, r.at);
+          }
+        }
+        // Another video, or none: the question is gone with it.
+        if (r.busy == Busy::Steam && !current) {
+          r.ask = false;
+          menu.closeDecoderBusy();
+          r.busy = Busy::No;
+        }
+      }
       if (panel.open && !loading) releaseUpdate.menuOpened();
       releaseUpdate.poll();
       // Never over playback: a newer release is offered as the menu opens,
       // and an installed one restarts the app while the menu is open.
       if (panel.open && !menuWasOpen && !updateOffered && !menu.setupRunning() &&
-          releaseUpdate.state() == ReleaseUpdate::State::Available) {
+          !menu.dialogOpen() && releaseUpdate.state() == ReleaseUpdate::State::Available) {
         updateOffered = true;
         menu.showUpdate();
       }
@@ -4231,6 +4328,9 @@ int run(Options opts) {
       view.currentFile = app.currentFile;
       view.playbackFailed = player.failed();
       view.discEncrypted = player.failed() && bdmv::isEncrypted(app.currentFile);
+      view.decoderBusy = player.decoderRefused() && decoderRescue.path == app.currentFile &&
+                         (decoderRescue.busy == decoder_holders::Busy::Steam ||
+                          decoderRescue.busy == decoder_holders::Busy::StillBusy);
       view.accent = settings.accent;
       view.floatingSubtitles = settings.floatingSubtitles;
       view.streaming = isStream(app.currentFile);
@@ -4335,6 +4435,7 @@ int run(Options opts) {
       view.motionEmulation = settings.motionEmulation;
       view.motionDistance = settings.motionDistance;
       view.resume = settings.resume;
+      view.freeDecoder = settings.freeDecoder;
       view.downloadsTo = settings.downloadsTo;
       view.seekPreview = settings.seekPreview;
       view.seekPreviewAvailable = !kStandaloneHeadset;
@@ -4558,10 +4659,17 @@ int run(Options opts) {
                                                     yawFromQuat(headRot), settings));
       if ((stillLoading || (!photo && player.failed())) && headValid) {
         // Where the picture will be, the size of the messages in front of the eyes.
-        const bool failed = player.failed();
+        using decoder_holders::Busy;
+        const Busy busy = player.decoderRefused() && decoderRescue.path == app.currentFile
+                              ? decoderRescue.busy
+                              : Busy::No;
+        // While the decoder's holders are found or freed, it isn't a failure yet.
+        const bool failed = player.failed() && busy != Busy::Checking && busy != Busy::Freeing;
         loadingText.set(menu, failed ? NoticeIcon::Warning : NoticeIcon::None,
-                        !failed                              ? strings().loading
+                        busy == Busy::Freeing                ? strings().decoderBusy.freeing
+                        : !failed                            ? strings().loading
                         : bdmv::isEncrypted(app.currentFile) ? strings().discEncrypted
+                        : busy != Busy::No                   ? strings().decoderBusy.busy
                                                              : strings().playbackFailed);
         constexpr float kAt = 2.0f, kScale = kAt / notice_place::kNear * notice_place::kScale;
         const Vec3 center = headPos + transformDir(frame, {0.0f, 0.0f, -kAt});

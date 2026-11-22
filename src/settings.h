@@ -86,6 +86,7 @@ struct Settings {
   bool motionEmulation = true;    // surround video: head translation shown as parallax (motion.h)
   int motionDistance = 200;       // ... of things this far away, cm
   bool resume = true;             // videos start where they were left (library.h)
+  bool freeDecoder = false;       // Frame: free the decoder from Steam without asking (decoder_holders.h)
   AfterVideo afterVideo = AfterVideo::Next;  // Stop or Next
   bool seekPreview = true;        // pointing along the seek bar shows the frame there (seek_preview.h)
   bool thumbnails = true;         // file browser and library: video thumbnails, else a video icon

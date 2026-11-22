@@ -171,6 +171,7 @@ struct MenuView {
   std::string currentFile;
   bool playbackFailed = false;  // the current video couldn't be played
   bool discEncrypted = false;   // ... because it is an encrypted disc image
+  bool decoderBusy = false;     // ... because the decoder is busy (decoder_holders.h)
   Accent accent;
   bool floatingSubtitles = false;
   bool hardwareAv1 = false;  // the headset's decoder takes AV1 (SteamOS 0.5.10)
@@ -232,6 +233,7 @@ struct MenuView {
   bool motionEmulation = true;  // global: head translation emulation (motion.h)
   int motionDistance = 200;     // ... cm
   bool resume = true;           // videos start where they were left
+  bool freeDecoder = false;     // Frame: the decoder is freed from Steam without asking
   bool seekPreview = true;      // the seek bar shows the frame where the pointer is
   bool seekPreviewAvailable = true;  // ... can at all (not on the Steam Frame)
   bool showPerformance = false;  // the performance readout, this run's (--show-performance)
@@ -419,6 +421,13 @@ class Menu {
   void showSettings() { showPage(Page::Settings); }
   // The update dialog, over the page shown (MenuView::releaseUpdate).
   void showUpdate() { openDialog(Dialog::Update, ""); }
+  // The decoder refused the playing video while Steam holds part of it:
+  // ending Steam's holders (MenuCommand::FreeDecoder), over the page shown.
+  void showDecoderBusy() { openDialog(Dialog::DecoderBusy, ""); }
+  // ... closed once that video is no longer the one playing.
+  void closeDecoderBusy() {
+    if (dialog_ == Dialog::DecoderBusy) openDialog(Dialog::None, "");
+  }
   // What's new (menu_whats_new.cpp): these releases' notes, newest first,
   // over the page shown. Several came with an update from `from` to `to`;
   // otherwise it is headed by the app's name.
@@ -632,6 +641,8 @@ class Menu {
   enum class Dialog { None, ConfirmDelete, Deleting, Error, Deleted, ConfirmQuit,
                       SaveTo, NoRoom, RemoveDownload,  // offline downloads' (menu_offline.cpp)
                       Update,  // a newer release (menu_settings.cpp)
+                      // Steam holds the decoder a video needs: free it?
+                      DecoderBusy,
                       WhatsNew,  // the release notes (menu_whats_new.cpp)
                       // Settings' Controls (menu_controls.cpp): a button's
                       // job to choose, Reset's question, and a gesture's

@@ -33,6 +33,9 @@ struct MenuCommand {
               ToggleStashMalePerformers, SyncStash, SetStashFormat,
               ToggleStashWriteBack, SetStashSections, SetStashScenesSort, SetStashPerformersSort,
               SetStashStudiosSort, SetLanguage, DownloadReleaseUpdate,
+              FreeDecoder,  // end Steam's holders of the decoder, open the video again;
+                            // value 1: from now on without asking
+              ToggleFreeDecoder,  // ... always, or ask first
               SaveDiagnostics,
               SetDownloadsTo,  // the drive's root (path) new offline downloads go to
               ApplyPreset,  // a performance preset (presets.h)

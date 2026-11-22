@@ -1254,6 +1254,20 @@ struct WhatsNewStrings {
 };
 
 // Funscripts played on a device through Intiface (script_player.h): the
+// The headset's video decoder refused a video while Steam holds part of it
+// (decoder_holders.h): the dialog offering to free it, and the notice when
+// it is still busy.
+struct DecoderBusyStrings {
+  const char* title;
+  const char* explain;
+  const char* free;      // the dialog's button
+  const char* freeing;   // the notice meanwhile
+  const char* busy;      // the notice instead of playbackFailed
+  const char* always;    // the dialog's button: free it, and from now on without asking
+  const char* setting;   // Settings → Playback: the same, switched on or off
+  const char* settingHint;
+};
+
 // Settings group, the address being typed, and the strip's label. "Intiface"
 // and "funscript" are names, and the quoted Intiface setting is English there.
 struct ScriptStrings {
@@ -1582,6 +1596,7 @@ struct Strings {
   ControlsPageStrings controlsPage;
   GestureStrings gestures;
   GesturePageStrings gesturePage;
+  DecoderBusyStrings decoderBusy;
 };
 
 const Strings& strings();

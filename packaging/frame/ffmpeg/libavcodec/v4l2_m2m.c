@@ -35,6 +35,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include "libavcodec/avcodec.h"
+#include "libavutil/file_open.h"
 #include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/imgutils.h"
@@ -168,7 +169,7 @@ static int v4l2_probe_driver(V4L2m2mContext *s)
     void *log_ctx = s->avctx;
     int ret;
 
-    s->fd = open(s->devname, O_RDWR | O_NONBLOCK, 0);
+    s->fd = avpriv_open(s->devname, O_RDWR | O_NONBLOCK);
     if (s->fd < 0)
         return AVERROR(errno);
 
@@ -243,7 +244,7 @@ static int v4l2_configure_contexts(V4L2m2mContext *s)
     int ret;
     struct v4l2_format ofmt, cfmt;
 
-    s->fd = open(s->devname, O_RDWR | O_NONBLOCK, 0);
+    s->fd = avpriv_open(s->devname, O_RDWR | O_NONBLOCK);
     if (s->fd < 0)
         return AVERROR(errno);
 

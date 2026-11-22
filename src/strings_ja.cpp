@@ -1480,5 +1480,13 @@ Strings japaneseStrings(const Strings& english) {
   s.gesturePage.gripTriggerHandsTip = "グリップを押さえてからトリガーを引き、手首をひねる：左コントローラーは%s、右は%s。ジェスチャーで変更できます。";
   s.gesturePage.moveTwist = "トリガーを加えてひねると%s。";
   s.gesturePage.volumeOneHint = "%sを押さえたまま手首をひねる";
+  s.decoderBusy.title = "Steamがビデオデコーダーを使用中です";
+  s.decoderBusy.explain = "解放するとSteamのバックグラウンドプロセスが終了しますが、Steamが自動で再起動します。";
+  s.decoderBusy.free = "解放して再生";
+  s.decoderBusy.freeing = "ビデオデコーダーを解放しています…";
+  s.decoderBusy.busy = "デコーダー使用中。Steamかヘッドセットを再起動してください。";
+  s.decoderBusy.always = "常に解放";
+  s.decoderBusy.setting = "ビデオデコーダーを常に解放";
+  s.decoderBusy.settingHint = "Steamが使用中のとき、確認せずに解放します。Steamはバックグラウンドプロセスを自動で再起動します。";
   return s;
 }

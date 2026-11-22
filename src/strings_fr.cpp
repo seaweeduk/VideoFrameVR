@@ -1480,5 +1480,13 @@ Strings frenchStrings(const Strings& english) {
   s.gesturePage.gripTriggerHandsTip = "Maintenez la poignée, puis la gâchette, et tournez le poignet : %s avec la manette gauche, %s avec la droite. Modifiable dans Gestes.";
   s.gesturePage.moveTwist = "Ajoutez la gâchette et tournez : %s.";
   s.gesturePage.volumeOneHint = "Maintenez %s, puis tournez le poignet";
+  s.decoderBusy.title = "Steam utilise le décodeur vidéo";
+  s.decoderBusy.explain = "Le libérer ferme un processus d'arrière-plan de Steam, que Steam relance de lui-même.";
+  s.decoderBusy.free = "Libérer et lire";
+  s.decoderBusy.freeing = "Libération du décodeur vidéo …";
+  s.decoderBusy.busy = "Le décodeur vidéo est occupé. Redémarrez Steam ou le casque.";
+  s.decoderBusy.always = "Toujours libérer";
+  s.decoderBusy.setting = "Toujours libérer le décodeur vidéo";
+  s.decoderBusy.settingHint = "Le libérer sans demander quand Steam l'utilise. Steam relance de lui-même son processus d'arrière-plan.";
   return s;
 }
