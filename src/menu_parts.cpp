@@ -729,26 +729,12 @@ Menu::GroupLayout Menu::PageLayout::group(int column, const std::string& title,
   const size_t index = m.groups_.size() - 1;
   last_[column] = index;
   next_[column] = g.y + g.h + kit::kSpace;
-  if (action.action) {  // a small bare button at the title row's right end
-    constexpr int size = kit::kGroupTitleSize;
-    Button b = m.textButton(action.label, Icon::None, action.action);
-    b.panel = kBrowser;
-    b.bare = b.dimInk = true;
-    b.fontSize = size;
-    b.h = 36;
-    b.w = m.textWidth(action.label, size, false) + 2 * 14;
-    b.x = g.x + g.w - kit::kGroupPadX - b.w;
-    b.y = g.y + (kit::kGroupTitle - b.h) / 2;
-    b.radius = kit::kPieceCorner;
-    b.tooltip = action.tooltip;
-    b.disabled = action.disabled;
-    m.buttons_.push_back(b);
-  }
+  titleAction(g, action);
   return GroupLayout(*this, column, index);
 }
 
 Menu::GroupLayout Menu::PageLayout::groupAt(int column, double x, double y, double w,
-                                            const std::string& title) {
+                                            const std::string& title, const Action& action) {
   if (!headed_) header();
   Group g{x, y, w, kit::kGroupTitle, title};
   g.titleH = kit::kGroupTitle;
@@ -756,7 +742,27 @@ Menu::GroupLayout Menu::PageLayout::groupAt(int column, double x, double y, doub
   const size_t index = menu_.groups_.size() - 1;
   last_[column] = index;
   next_[column] = g.y + g.h + kit::kSpace;
+  titleAction(g, action);
   return GroupLayout(*this, column, index);
+}
+
+// A small bare button at the title row's right end.
+void Menu::PageLayout::titleAction(const Group& g, const Action& action) {
+  if (!action.action) return;
+  Menu& m = menu_;
+  constexpr int size = kit::kGroupTitleSize;
+  Button b = m.textButton(action.label, Icon::None, action.action);
+  b.panel = kBrowser;
+  b.bare = b.dimInk = true;
+  b.fontSize = size;
+  b.h = 36;
+  b.w = m.textWidth(action.label, size, false) + 2 * 14;
+  b.x = g.x + g.w - kit::kGroupPadX - b.w;
+  b.y = g.y + (kit::kGroupTitle - b.h) / 2;
+  b.radius = kit::kPieceCorner;
+  b.tooltip = action.tooltip;
+  b.disabled = action.disabled;
+  m.buttons_.push_back(b);
 }
 
 // ---------------------------------------------------------------- the strip's parts

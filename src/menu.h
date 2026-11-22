@@ -3,6 +3,7 @@
 #include "cairo_canvas.h"
 #include "colour_balance.h"
 #include "controller_guide.h"
+#include "controls.h"
 #include "folder_listing.h"
 #include "key_share.h"
 #include "library.h"
@@ -16,6 +17,7 @@
 #include "release_update.h"
 #include "menu_feel.h"
 #include "menu_finish.h"
+#include "menu_command.h"
 #include "menu_geometry.h"
 #include "settings.h"
 #include "remote.h"
@@ -67,6 +69,7 @@ struct StashMenu;
 struct StashSettingsShown;
 struct SetupMenu;
 struct MenuHints;
+struct ControlsPage;
 struct CurvedPanel;
 
 struct Palette;
@@ -78,89 +81,37 @@ enum class RoomMatch { Hidden, Off, Ready, Reading, Failed };
 // A message's icon (notices.h), from the menu's set.
 enum class NoticeIcon { None, Recenter, Viewpoint, Passthrough, Card, Usb, Drive, Warning };
 
-// Something the menu asks the app to do.
-struct MenuCommand {
-  enum Type { None, TogglePause, Seek, SeekTo, ToggleMute, PreviousVideo, NextVideo,
-              SetProjection, SetStereo, Recenter, OpenFile, SelectAudio,
-              SelectSubtitle, LoadSubtitle, ToggleFloatingSubtitles,
-              SetVolume, RequestDelete,
-              DeleteFile, CancelDelete, Quit, SetBrightness,
-              SetContrast, SetSaturation, SetZoom, ResetPicture, Paste,
-              SetAccent, SetAccentHue, SetAccentBrightness, SetAccentSaturation,
-              SetSlideshow, SetAfterVideo, ToggleBackground, SetSubtitleSize,
-              SetSubtitleRaise, SetSubtitleDistance, TogglePassthrough, ToggleGreenScreen,
-              SetKeyStrength, SetKeySoftness, SetKeySpill, SetKeyShrink,
-              SetKeyBackground,  // the key removes this KeySource (Automatic or GreenScreen)
-              PickKeyColour, CancelKeyPick,  // ... or a colour pointed at: start or cancel that
-              ResetPassthrough,
-              SetPacking, ToggleVideoMipmaps, SetAntiShimmer, SetSharpen, SetVideoResolution,
-              SetFoveation, ToggleShowFoveation, ToggleFoveationLearned, SetSharpBins, ToggleFoveationRing,
-              SetFoveationOutside, ToggleAdvancedSettings, SetRefreshRate, SetFocus,
-              ToggleMotion, SetMotionDistance, ToggleResume, ToggleToneLook, ToggleFrameReuse, Stop,
-              ToggleTvGamma, ToggleSeekPreview, ToggleThumbnails, ToggleShowPerformance, SetScreenDistance,
-              SetScreenHeight, SetScreenCurve, ResetScreen, SetOriginForward, SetOpacity,
-              SetWarmth, SetTint, SetExposure, ToggleMatchRoom, ReadRoomAgain,
-              SetMatchColour, SetMatchBrightness,
-              ToggleAutoPassthrough, ToggleKeyGreen, ToggleVibration,
-              // Stash (docs/stash.md): on or off, its server, its switches,
-              // its folders here, Sync now, and the format the Scenes page
-              // shows. UseServer: which kind of media server is used, or none.
-              UseServer, SetStashServer, SetStashFolders, ToggleStashCovers, ToggleStashTitles,
-              ToggleStashMalePerformers, SyncStash, SetStashFormat,
-              ToggleStashWriteBack, SetStashSections, SetStashScenesSort, SetStashPerformersSort,
-              SetStashStudiosSort, SetLanguage, DownloadReleaseUpdate,
-              SaveDiagnostics,
-              SetDownloadsTo,  // the drive's root (path) new offline downloads go to
-              ApplyPreset,  // a performance preset (presets.h)
-              // The user's named presets: list them again, save the
-              // settings as one, apply, rename or delete one.
-              ListUserPresets, SaveUserPreset, ApplyUserPreset, RenameUserPreset,
-              DeleteUserPreset, MoveUserPreset, TogglePackedMask,
-              ToggleSecondLayer,     // the packed mask's second layer, shown or hidden
-              SetKeyboardLayout,
-              EndSetup,  // first-run setup ended: value 1 finished, 0 Set up later
-              SetupPlaces,  // ... the places ticked so far, one per line in path
-              SetupStash,   // ... a server connected: its address, then its API key, in
-                            // path; its kind in value; option 1: its certificate
-                            // accepted unverified
-              StashCard,  // the menu's "Use Stash?" card, used or dismissed
-              DismissSetupBanner,  // the Library's "You're all set" after setup
-              ToggleShowWhatsNew,  // What's new opens by itself after updates
-              // Funscripts (script_player.h): on or off, Intiface's address
-              // (path), and the timing offset and stroke range (value).
-              ToggleScripts, SetScriptAddress, SetScriptOffset, SetScriptRangeLow,
-              SetScriptRangeHigh };
-  Type type = None;
-  // seconds (Seek, SeekTo), enum index, track id (0 = off), volume 0..100,
-  // 1 = only the downloaded copy (DeleteFile), picture value
-  // -100..100, zoom in percent, the surround viewpoint in percent of the
-  // sphere's radius toward the picture, slideshow seconds per photo (0 = off),
-  // AfterVideo (SetAfterVideo), green
-  // screen setting 0..100, Packing (SetPacking), the flat screen's distance
-  // and height in centimeters, its curve in percent, StashFormat
-  // (SetStashFormat), PerformancePreset (ApplyPreset), ServerKind
-  // (SetStashServer, SetupStash; UseServer, -1 for none)
-  double value = 0;
-  // OpenFile, LoadSubtitle, RequestDelete and DeleteFile.
-  // RequestDelete: the strip's delete button, the dialog open (the app
-  // looks the file up and calls askDelete()); DeleteFile: confirmed;
-  // CancelDelete: not. SetStashServer: the URL and the API key, one per
-  // line (option 1: the server's certificate accepted unverified; 2: the
-  // key isn't one typed for this kind, which keeps its own at the address
-  // it had). SetStashFolders: each mapping's folder on the server and the
-  // folder here, one per line. SetStashSections:
-  // the Scenes rail's sections and subgroups as <id>_filters= keeps them.
-  // SetStash*Sort: the stable sort name, with its direction in value
-  // (1 = descending).
-  // SaveUserPreset: its name; ApplyUserPreset and DeleteUserPreset: its file;
-  // RenameUserPreset: its file and the new name, one per line;
-  // MoveUserPreset: its file (value: places, -1 up).
-  // SetKeyboardLayout: the layout and the other one, one per line.
-  std::string path;
-  // SetFocus: the FocusControl; SeekTo: 1 = from the seek bar; SetupStash,
-  // SetStashServer; OpenFile: 1 = Shuffle from it, for the list it is opened from
-  int option = 0;
+// A gesture's value as its notice shows it (Menu::drawRingNotice()): a ring
+// in the pill's round start, a knob's travel of 270° open at the bottom,
+// filled clockwise to the value, and its name and number beside it.
+struct RingNotice {
+  // A value; a rating in ten half-star steps; a place in the video.
+  enum class Kind : uint8_t { Value, Stars, Position };
+  Kind kind = Kind::Value;
+  // Along the ring, 0..1: the value, where its fill starts (0, or the
+  // middle's for a value centred on 0, which gets a tick), its default
+  // (-1: none), and Position's chapters.
+  double at = 0, from = 0, mark = -1;
+  bool centred = false;
+  bool limit = false;  // at an end: the end brighter
+  std::vector<double> ticks;
+  int halves = 0;  // Stars: the rating
+  // Its name, then its number in the semibold, then dim what follows it
+  // ("Volume" "64 %"; Position: "12:40" "/ 48:10").
+  std::string name, number, after;
+  // Equal as drawn: the fill to a 300th of the ring.
+  bool operator==(const RingNotice& o) const {
+    const auto step = [](double x) { return std::lround(x * 300); };
+    return kind == o.kind && step(at) == step(o.at) && step(from) == step(o.from) &&
+           step(mark) == step(o.mark) && centred == o.centred && limit == o.limit &&
+           ticks == o.ticks && halves == o.halves && name == o.name && number == o.number &&
+           after == o.after;
+  }
+  bool operator!=(const RingNotice& o) const { return !(*this == o); }
 };
+
+// An audio or subtitle track as the menu names it: "English (eng)", "eng" or "Track 2".
+std::string trackName(const Track& track, const Strings& t);
 
 // The flat screen's size (ScreenSize) as the menu shows it.
 struct ScreenView {
@@ -181,6 +132,20 @@ struct ScreenView {
 // Why a press while picking the background key's colour took none: the
 // patch pointed at isn't one colour, or the picture can't be read.
 enum class KeyPickNote { None, Uneven, Unreadable };
+
+// Settings' Controls (menu_controls.cpp): the controller type it shows,
+// what the buttons do, its gestures, and how far Skip and Big skip go.
+struct ControlsView {
+  ControllerType type = ControllerType::Touch;
+  ControlMap map;
+  GestureMap gestures;
+  int skipSeconds = 10, bigSkipSeconds = 60;
+  bool operator==(const ControlsView& o) const {
+    return type == o.type && map == o.map && gestures == o.gestures && skipSeconds == o.skipSeconds &&
+           bigSkipSeconds == o.bigSkipSeconds;
+  }
+  bool operator!=(const ControlsView& o) const { return !(*this == o); }
+};
 
 // Everything the menu shows about the app.
 struct MenuView {
@@ -290,6 +255,7 @@ struct MenuView {
   // (nothing open, a link), shown, or shown disabled for a scene played
   // from Stash's stream: Send to Stash off, or Stash not answering.
   enum class Deletable : uint8_t { No, Yes, NeedsSendToStash, StashDown } deletable = Deletable::No;
+  ControlsView controls;
 };
 
 // The delete dialog's (docs/alpha/delete-file.md): the file playing, and
@@ -439,6 +405,10 @@ class Menu {
   // Clears the rating the pointer is on (reset gesture: grip
   // held and a stick click); false if it is on none.
   bool clearRatingAtPointer();
+  // The playing file's rating half a star up (1) or down (-1), from the
+  // library's record of it, where the strip shows its stars: a video's,
+  // not a photo's (nor a link's: the caller knows one).
+  void stepRating(const std::string& file, int halves);
   // Switches to the video file browser, next to the current video or in $HOME.
   void showFileBrowser();
   // Switches to the library view: every video in the pinned folders.
@@ -472,12 +442,23 @@ class Menu {
   // Finished: the places ticked are pinned.
   void endSetup(bool finished);
   bool setupRunning() const { return setup_ != nullptr; }
+  // Setup's Your controllers shows: buttons are pressed to see what they do.
+  bool setupShowsControls() const;
   // Whether a controller is tracked: Welcome's button waits for one.
   void setSetupController(bool tracked);
   // Your controllers: what the actions are bound to, and what the hands
   // hold, as heldBit()s (controller_guide.h).
   void setSetupControls(const ControllerBindings& bindings);
   void setSetupHeld(uint32_t held);
+  // The buttons each hand holds (controlBit()s): Settings' Controls lights
+  // their labels. `lost`: a bit per hand that wasn't letting go (JobInput::lost):
+  // a new gesture's buttons are held again from the start.
+  void setControlsHeld(const uint32_t held[2], uint8_t lost);
+  // Settings' Controls waits for a new gesture's buttons to be held: presses
+  // are only for that, not their jobs nor gestures.
+  bool recordingGesture() const;
+  // The menu closed: that editor closes, as with Cancel.
+  void stopRecordingGesture();
   // The keyboard is up on a setup page; and in the image shown, a few frames
   // later: the panel is raised.
   bool setupTyping() const;
@@ -508,6 +489,8 @@ class Menu {
   static constexpr int kNoticeMaxW = 1040, kNoticeShadow = 64;
   void drawNotice(cairo_t* cr, double w, double h, NoticeIcon icon, const std::string& text,
                   double drawn[4]);
+  // ... a gesture's value, in the one-line pill.
+  void drawRingNotice(cairo_t* cr, double w, double h, const RingNotice& ring, double drawn[4]);
   // A list longer than its page pointed at (`page`: the page shown); the
   // pointer on the strip's volume.
   bool pointingAtLongList(int& page) const;
@@ -537,6 +520,12 @@ class Menu {
   // the list the video came from shows; with `error`, the dialog says why
   // it failed; with `note`, something left to know once it was deleted.
   // cancelDelete(): playback moved on; closes it unless confirmed.
+  // requestDelete(): opens it as the strip's button does, where that can be
+  // pressed (canRequestDelete(): for `file`, the one the strip shows; show
+  // the page first), and returns the command it sends (else none).
+  bool canRequestDelete(const std::string& file) const;
+  MenuView::Deletable deletable() const { return view_.deletable; }
+  MenuCommand requestDelete();
   void askDelete(const DeleteInfo& info);
   void cancelDelete();
   void showDeleteError(const std::string& error);
@@ -644,6 +633,10 @@ class Menu {
                       SaveTo, NoRoom, RemoveDownload,  // offline downloads' (menu_offline.cpp)
                       Update,  // a newer release (menu_settings.cpp)
                       WhatsNew,  // the release notes (menu_whats_new.cpp)
+                      // Settings' Controls (menu_controls.cpp): a button's
+                      // job to choose, Reset's question, and a gesture's
+                      // buttons and value.
+                      ChooseJob, ResetButtons, EditGesture,
                       // Stash's certificate isn't trusted: connect without
                       // verifying it? (menu_stash_settings.cpp)
                       StashCertificate,
@@ -765,6 +758,7 @@ class Menu {
     std::string example;
     bool keyCap = false;  // a key of the on-screen keyboard: pushed in while keyDown_ is on it
     bool dialog = false;  // a dialog's button (DialogLayout): its icon and label centred
+    int controlPart = -1;  // drawn by drawControlPart() instead (menu_controls.cpp): its part
   };
   struct ListItem {
     std::string label;
@@ -811,9 +805,11 @@ class Menu {
   struct Tile;
   struct Action;
   struct Field;
-  // Settings' sections: General, Stash (menu_stash_settings.cpp) and
-  // Funscripts (menu_scripts.cpp).
-  enum class SettingsSection { General, Stash, Scripts };
+  // Settings' sections, in the order the page's well shows them: General,
+  // Controls (menu_controls.cpp), Stash (menu_stash_settings.cpp) and
+  // Funscripts (menu_scripts.cpp). Never stored; the well picks them by
+  // their index.
+  enum class SettingsSection { General, Controls, Stash, Scripts };
   SettingsSection settingsSection_ = SettingsSection::General;
   // `stash`: what the Stash section shows, if not what it shows now (the fit check).
   void layoutSettingsSection(SettingsSection section, const StashSettingsShown* stash = nullptr);
@@ -863,6 +859,9 @@ class Menu {
   const Strings* fitChecked_ = nullptr;  // the language it was checked in
   // ... and Settings (both sections) and Stereo focus.
   void checkSettingsFit();
+  // A type's gestures as many as there can be, with the longest names, the
+  // left column's or Either's first.
+  GestureMap fullestGestures(ControllerType type, bool eitherFirst = false) const;
   void checkFocusFit();
   const Strings* settingsFitChecked_ = nullptr;
   const Strings* focusFitChecked_ = nullptr;
@@ -1653,6 +1652,10 @@ class Menu {
   mutable std::unordered_map<std::string, int> lineCounts_;  // wrappedLines()'s, by its arguments
   void drawText(cairo_t* cr, const std::string& text, double x, double y, double w, double h,
                 int size, bool bold, bool center, double r, double g, double b, double a = 1.0) const;
+  // As drawText(), left-aligned, but shortened at its end where it is too
+  // long (drawText() cuts its middle out).
+  void drawTextEnd(cairo_t* cr, const std::string& text, double x, double y, double w, double h, int size,
+                   bool bold, double r, double g, double b, double a = 1.0) const;
   // Text laid out for drawText() (lines 0) or drawTextLines(), kept to draw
   // again: scrolled lists draw the same titles in strip after strip, and
   // laying them out is about half of drawing them. `fileName`: over more
@@ -2175,6 +2178,37 @@ class Menu {
   std::unique_ptr<SetupMenu> setup_;
   std::string* setupText() const;
   std::unique_ptr<MenuHints> hints_;  // once setHintBindings() or drawHint() is called
+  // Settings' Controls (menu_controls.cpp): SteamVR's drawings of the
+  // controllers shown, its parts as laid out, the chooser and the notice.
+  std::unique_ptr<ControlsPage> controls_;
+  bool controlsShown() const {
+    return page_ == Page::Settings && settingsSection_ == SettingsSection::Controls;
+  }
+  void layoutControls(PageLayout& page);
+  void layoutControlsDialog();
+  void drawControls(cairo_t* cr);
+  void drawControlsDialog(cairo_t* cr);
+  void drawControlPart(cairo_t* cr, const Button& b, const double ink[4]) const;
+  void updateControls(const MenuView& view);
+  // Its Gestures view: the list from `top` (headings, then rows); the editor
+  // (both steps), and while it waits for buttons, what the hands hold.
+  void layoutGestureList(double top);
+  void layoutGestureEditor();
+  void drawGestureEditor(cairo_t* cr);
+  // A gesture's row (the part's index) drawn.
+  void gestureRow(cairo_t* cr, int part, const double ink[4]) const;
+  // A gesture's row's widths: its controls (glyphs or names, and word), its
+  // movement, what it does and where. `glyphs`: SteamVR's glyphs as its art
+  // has them (-1), none (0) or every one (1).
+  struct GestureWidths {
+    double controls = 0, move = 0, name = 0, where = 0;
+  };
+  GestureWidths gestureWidths(int part, int glyphs) const;
+  // The gestures' rows from part `first` on placed, each column's from what
+  // its rows need (`glyphs` as for gestureWidths()).
+  void placeGestureRows(size_t first, int glyphs);
+  void recordGesture();
+  void openGestureEditor(int edit);
   Uploader* uploader_ = nullptr;
 
   std::vector<Button> buttons_;

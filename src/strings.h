@@ -849,8 +849,7 @@ struct ControllerStrings {
   const char* menu;
   const char* playPause;
   const char* recenter;
-  const char* turn;  // the left stick, sideways
-  const char* seek;  // the right one
+  const char* seek;  // either stick, sideways
   const char* sideways;
   const char* scroll;
   const char* upDown;
@@ -881,6 +880,307 @@ struct ControllerStrings {
   const char* recenterLeftHint;   // ... the left stick
   const char* recenterHint;       // ... a button
   const char* volumeHint;         // pointing at the volume (printf: grip's name, then the trigger's)
+  // ... recenter by a button with grip held (printf: the button's name).
+  const char* recenterGripHint;
+  // Your controllers, under the controllers: where to change what the
+  // buttons do (printf: Settings' name, then its Controls section's).
+  const char* changeInSettings;
+};
+
+// What the controllers' buttons can do (controls.h), where the app has no
+// words for it already: the chooser's labels and sections.
+struct JobStrings {
+  const char* nothing;
+  const char* back;     // printf: how far Skip or Big skip goes ("10 s")
+  const char* forward;  // ... the same
+  const char* previousChapter;
+  const char* nextChapter;
+  const char* fromStart;
+  const char* scripts;  // funscripts on or off
+  const char* ratingUp;    // half a star more
+  const char* ratingDown;  // ... less
+  const char* volumeUp;
+  const char* volumeDown;
+  const char* nextAudioTrack;
+  const char* subtitles;  // on or off
+  const char* zoomIn;     // the Zoom (180°/360°) setting
+  const char* zoomOut;
+  const char* resetScreen;  // the flat screen's size and place
+  // The sections (General, Playback and Picture are the app's own).
+  const char* videos;
+  const char* sound;
+  // The chooser's tooltips, where the app has none of its own.
+  const char* menuTip;
+  const char* recenterTip;
+  const char* chooseTip;
+  const char* fromStartTip;
+  const char* scriptsTip;
+  const char* ratingUpTip;
+  const char* ratingDownTip;
+  const char* deleteTip;
+  const char* nextAudioTrackTip;
+  const char* opacityTip;
+  const char* zoomTip;  // Zoom in's and Zoom out's
+  const char* resetScreenTip;
+  // The other jobs' labels: the Controls page's own, so they can be shorter
+  // than the menu's words for the same.
+  const char* menu;
+  const char* recenter;
+  const char* choose;
+  const char* playPause;
+  const char* stop;
+  const char* previousVideo;
+  const char* nextVideo;
+  const char* deleteVideo;
+  const char* mute;
+  const char* passthrough;
+  const char* opacity;  // see-through at its last value, or solid
+  const char* matchRoom;
+  const char* removeBackground;
+  const char* toneLook;
+  const char* stereoFocus;
+  const char* showFocusTarget;
+  const char* frameBack;  // one frame, paused
+  const char* frameForward;
+  const char* afterVideo;  // the next of AfterVideoStrings' choices
+  const char* peekRoom;    // while held, the room instead of the video
+  const char* motion;      // motion emulation on or off
+  const char* resetPicture;
+  // Their tooltips (Reset picture's is the Picture group's Reset's).
+  const char* frameBackTip;
+  const char* frameForwardTip;
+  const char* afterVideoTip;
+  const char* peekRoomTip;
+  const char* motionTip;
+  // A moment's message over the video, where a job's change doesn't show by
+  // itself, or why it does nothing now.
+  const char* switched;    // printf: a setting's name, then On or Off ("Tone look: On")
+  const char* rating;      // printf: the stars ("3.5")
+  const char* notRated;
+  const char* volume;      // printf: percent (an int)
+  const char* audioTrack;  // printf: the track's name
+  const char* noOtherAudio;
+  const char* noSubtitles;
+  const char* noChapters;
+  const char* nothingOpen;
+  const char* notForPhotos;
+  const char* notForStreams;
+  const char* noRoom;            // the headset can't show the room
+  const char* needsPassthrough;  // Remove background, Match the room
+  const char* ownMask;           // Remove background: the video has its own
+  const char* notForFlat;        // Zoom in and out
+  const char* flatOnly;          // Reset screen
+  const char* needsFocus;        // Show focus target
+  const char* ratingsLocked;     // the library is in use by another copy of the app
+  const char* firstVideo;        // Previous video at the start of the list or folder
+  const char* lastVideo;
+  const char* firstChapter;
+  const char* lastChapter;
+  const char* notOnHeadset;      // Match the room where the room's light can't be read
+  const char* deleteNeedsStash;  // a Stash scene with Send to Stash off
+  const char* serverKeeps;       // a scene from a server that doesn't delete files
+  const char* notInSetup;        // Delete video: its question can't show over setup
+  const char* pictureReset;      // Reset picture did
+};
+
+// Settings' Controls section (menu_controls.cpp): the controllers in use
+// with what each button does, the chooser for a button, the gestures and
+// the skips' lengths.
+struct ControlsPageStrings {
+  const char* section;
+  // The controllers group's title, by controller type.
+  const char* frame;
+  const char* index;
+  const char* touch;
+  const char* simple;
+  const char* resetTip;    // the group's Reset, and the line of its question
+  const char* resetTitle;  // the question
+  // The chooser: Menu's last button, and Nothing.
+  const char* kept;
+  const char* nothingTip;
+  // The notice after a change (printf: the button, then the jobs), and its
+  // Undo's tooltip.
+  const char* nowDoes;
+  const char* noLonger;
+  const char* undoTip;
+  // A button in those sentences, lower case: one both hands have (printf:
+  // its name), Menu, View and a stick's click.
+  const char* leftOne;
+  const char* rightOne;
+  const char* menuButton;
+  const char* viewButton;
+  const char* stickClick;
+  // Before a glyph both hands have, in the chooser: the hand's letter.
+  const char* leftTag;
+  const char* rightTag;
+  // The controls that can't be changed: what they do in a few words, and
+  // their tooltips.
+  const char* chooseHow;
+  const char* chooseTip;
+  const char* moveHow;
+  const char* moveTip;
+  const char* seekHow;
+  const char* seekTip;
+  const char* closer;
+  const char* closerHow;
+  const char* closerTip;
+  // The gestures: each one's name, how, and its tooltip.
+  const char* gestures;
+  const char* volume;
+  const char* twist;
+  const char* heightHow;
+  const char* heightTip;
+  const char* sizeHow;
+  const char* sizeTip;
+  const char* horizon;
+  const char* horizonTip;
+  const char* clearRating;
+  const char* clearRatingHow;
+  const char* clearRatingTip;
+  // How far Back and Forward go (printf: seconds, minutes).
+  const char* skip;
+  const char* skipTip;
+  const char* bigSkip;
+  const char* bigSkipTip;
+  const char* seconds;
+  const char* minutes;
+  // Grip combinations: the well under the drawings that shows the buttons'
+  // jobs alone or with grip held, and in that view: a button's tooltip
+  // (printf: its name), the chooser's hand line (printf: the hand), the
+  // notice's start (printf: the button, lower case), Nothing's tooltip,
+  // Reset's line, and why a button that chooses takes no grip job.
+  const char* buttons;
+  const char* withGripHeld;
+  const char* gripPlus;
+  const char* handWithGrip;
+  const char* withGrip;
+  const char* gripNothingTip;
+  const char* resetGripTip;
+  const char* chooserVolumeTip;
+  // A control's name as a label (the chooser's header, tooltips; where its
+  // glyph is missing), where its name in a sentence (ControllerStrings)
+  // differs: the trigger, the bumper, a stick's click, the grip, the stick;
+  // and the bumper after a hand's letter in the chooser ("L bumper").
+  const char* triggerName;
+  const char* bumperName;
+  const char* stickClickName;
+  const char* gripName;
+  const char* stickName;
+  const char* bumperTag;
+  // The grip chooser's way back to doing what the button does alone, and
+  // its tooltip; a button's tooltip in the grip view while it has no grip
+  // job (printf: its name).
+  const char* sameAsAlone;
+  const char* sameAsAloneTip;
+  const char* gripInheritsTip;
+  // The D-pad's directions as button names (the chooser's header, tooltips;
+  // where their glyphs are missing).
+  const char* dpadUpName;
+  const char* dpadDownName;
+  const char* dpadLeftName;
+  const char* dpadRightName;
+  // Labels of the page's own for what the menu or first-run also names:
+  // the grip's Move, the stick's Seek, and Height (the stick with grip held,
+  // and its gesture).
+  const char* move;
+  const char* seek;
+  const char* height;
+};
+
+// The gestures (controls.h): the values a twist can change, where the app
+// has no name for them already, and the value chooser's sections.
+struct GestureStrings {
+  const char* room;   // a section: Opacity, Match the room's strengths, Remove background's
+  const char* place;  // ... the viewpoint and the flat screen
+  const char* screenDistance;
+  const char* screenHeight;
+  const char* screenCurve;
+  const char* scrub;   // where the video is, moved by the twist
+  const char* rating;
+  const char* grouped;  // printf: a group's name, then the value's ("Subtitles: Size")
+  const char* background;  // that group's name for Remove background's values, kept short
+  // Why a twist changes nothing now, where the buttons' jobs have no words for it.
+  const char* needsMatchRoom;
+  const char* needsRemoveBackground;
+  const char* nothingRemoved;  // Remove background's Automatic found nothing to remove
+};
+
+// Settings' Controls, its Gestures view (menu_controls.cpp): the list, its
+// rows' tooltips, the notice after a change, and the editor.
+struct GesturePageStrings {
+  // Add gesture, its tooltip, and why it is greyed out (printf: the most).
+  const char* add;
+  const char* addTip;
+  const char* fullTip;
+  // A gesture's row: its tooltip (printf: its buttons in a sentence, the
+  // value; and with the job a tap does), and its ×'s.
+  const char* rowTip;
+  const char* rowTapTip;
+  // ... added where its button chooses (printf: that button in a sentence).
+  const char* choosesTip;
+  const char* removeTip;
+  // A button's label in the Buttons view, for each gesture it is in (printf:
+  // the gesture's buttons, the value).
+  const char* labelTip;
+  // The notice after a change (printf: the buttons, then the values).
+  const char* nowDoes;
+  const char* noLonger;
+  // The gestures that can't be changed: a tooltip's end (printf: what it
+  // does), Resize's name, the movements and where.
+  const char* fixedTip;
+  const char* resize;
+  const char* drag;
+  const char* move;
+  const char* click;
+  const char* surround;
+  const char* onMenu;
+  // Buttons both controllers have, as a gesture's on one of them (printf:
+  // the buttons): "Right A"; after another button ("Left grip + right A").
+  const char* rightName;
+  const char* leftName;
+  const char* rightNext;
+  const char* leftNext;
+  // Move the menu's tooltip.
+  const char* moveMenuTip;
+  // The editor: its title, the first step's line and its mistakes, what it
+  // shows before a button is held, the hand line for both, Back's tooltip.
+  const char* addTitle;
+  const char* hold;
+  const char* noneHeld;
+  const char* oneController;
+  const char* twoAtMost;
+  const char* triggerAlone;
+  const char* chooses;
+  const char* noRoomLeft;
+  const char* noRoomRight;
+  const char* noRoomEither;
+  const char* bothControllers;
+  const char* backTip;
+  // ... the second step: Change button and its tooltip, the hands' tooltip,
+  // Remove and its tooltip, and where a value works.
+  const char* changeButton;
+  const char* changeButtonTip;
+  const char* handTip;
+  const char* remove;
+  const char* removeGestureTip;
+  const char* onlySurround;
+  const char* onlyFlat;
+  const char* onlyRoom;            // Opacity: where the headset shows the room
+  const char* onlyMatchRoom;       // Match the room's strengths
+  const char* onlyRemoveBackground;  // Remove background's sliders
+  const char* onlyVideo;           // Scrub
+  const char* onlyRated;           // Rating: a video of the library's, not a stream
+  // With grip held, the trigger's label: its tooltip (printf: the value),
+  // without a gesture, and with another on each hand (printf: the left
+  // one's value, the right one's).
+  const char* gripTriggerTip;
+  const char* gripTriggerNothingTip;
+  const char* gripTriggerHandsTip;
+  // Your controllers: after the grip's line, its gesture with the trigger
+  // (printf: the value); the volume's hint with one button (printf: its
+  // name).
+  const char* moveTwist;
+  const char* volumeOneHint;
 };
 
 // What happens when a video ends (AfterVideo): the strip's button right of
@@ -1278,6 +1578,10 @@ struct Strings {
   WhatsNewStrings whatsNew;
   const char* foveationLearnedHint;
   ScriptStrings scripts;
+  JobStrings jobs;
+  ControlsPageStrings controlsPage;
+  GestureStrings gestures;
+  GesturePageStrings gesturePage;
 };
 
 const Strings& strings();

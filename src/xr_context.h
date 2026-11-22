@@ -1,6 +1,7 @@
 #pragma once
 
-#include "controller_guide.h"
+#include "controller_state.h"
+#include "controls.h"
 #include "density_map.h"
 #include "foveation.h"
 #include "gpu_context.h"
@@ -27,17 +28,6 @@ struct EyeMatrices {
   float tanLeft = 0, tanRight = 0, tanUp = 0, tanDown = 0;
 };
 
-struct HandState {
-  bool poseValid = false;
-  Vec3 aimPosition;      // pointing ray origin, local space
-  Quat aimOrientation;   // the ray points along -Z of this orientation
-  bool select = false;          // trigger held
-  bool selectPressed = false;   // trigger went down this frame
-  bool grip = false;            // grip button held
-  bool gripPressed = false;     // grip went down this frame
-  float stickX = 0, stickY = 0;
-};
-
 // Eye gaze from XR_EXT_eye_gaze_interaction (Steam Frame), updated by beginFrame().
 struct GazeState {
   bool available = false;  // the runtime offers it and the system supports it
@@ -49,17 +39,6 @@ struct GazeState {
   bool ageKnown = false;
   double ageSeconds = 0;   // sample time before the frame's display time (negative: predicted)
   double sampleSeconds = 0;  // the sample time itself (XrTime in seconds)
-};
-
-struct ControllerState {
-  // The app has input focus (not Steam's dashboard or other system UI).
-  // Without it, or until every button and stick is let go after it comes
-  // back, the hands press nothing; without it, they have no pose either.
-  bool focused = false;
-  HandState hands[2];  // 0 = left, 1 = right
-  bool menuPressed = false;
-  bool playPausePressed = false;
-  bool recenterPressed = false;
 };
 
 // One eye's swapchain image of this frame, acquired and waited for.
@@ -245,16 +224,13 @@ class XrContext {
   // Controller input, updated by beginFrame().
   const ControllerState& controllers() const { return controllers_; }
   const GazeState& gaze() const { return gaze_; }
-  // Whether Menu, PlayPause or Recenter is held on a hand (0 left, 1 right),
-  // read from the runtime on each call (controllers() has their presses).
-  bool held(ControlAction action, int hand) const;
-  // Each hand's interaction profile and what the actions are bound to, read
-  // from the runtime again only after it reported a change, which bumps
-  // bindingsVersion(). A hand without a controller gets the other hand's
-  // profile (none on: on the Frame, its controllers') and the app's
-  // suggested bindings on it.
-  const ControllerBindings& controllerBindings();
-  uint64_t bindingsVersion() const { return bindingsVersion_; }
+  // Each hand's interaction profile ("" none), read from the runtime again
+  // after it reported a change, which bumps profilesVersion().
+  const std::string& interactionProfile(int hand) const { return handProfileNames_[hand]; }
+  uint64_t profilesVersion() const { return profilesVersion_; }
+  // ... as the controllers' pictures want them: a hand without a controller
+  // gets the other hand's (none on: on the Frame, its controllers').
+  void pairedProfiles(std::string out[2]) const;
   // A short pulse on a hand's controller (0 left, 1 right, -1 both), while
   // the app has input focus. 0 seconds is SteamVR's single impulse, its
   // length set by the amplitude (about 21 ms at 0.16 on the Frame);
@@ -289,10 +265,10 @@ class XrContext {
 
   bool createActions();
   void suggestBindings(const char* profile,
-                       const std::vector<std::pair<XrAction, const char*>>& bindings,
+                       const std::vector<std::pair<XrAction, std::string>>& bindings,
                        const void* next = nullptr);
   void updateControllers(bool focused);
-  void logInteractionProfiles();
+  void readInteractionProfiles();
   void updateGaze();
   bool createVulkanDevice(const GpuRequirements& gpu);
   bool queryViewConfiguration();
@@ -333,20 +309,15 @@ class XrContext {
   XrSpace viewSpace_ = XR_NULL_HANDLE;
   XrActionSet actionSet_ = XR_NULL_HANDLE;
   XrAction aimAction_ = XR_NULL_HANDLE;
-  XrAction selectAction_ = XR_NULL_HANDLE;
-  XrAction gripAction_ = XR_NULL_HANDLE;
-  XrAction menuAction_ = XR_NULL_HANDLE;
-  XrAction playPauseAction_ = XR_NULL_HANDLE;
-  XrAction recenterAction_ = XR_NULL_HANDLE;
+  XrAction controlActions_[kControls] = {};  // by Control
   XrAction stickAction_ = XR_NULL_HANDLE;
   XrAction hapticAction_ = XR_NULL_HANDLE;
   XrPath handPaths_[2] = {XR_NULL_PATH, XR_NULL_PATH};
   XrSpace aimSpaces_[2] = {XR_NULL_HANDLE, XR_NULL_HANDLE};
-  XrPath handProfiles_[2] = {XR_NULL_PATH, XR_NULL_PATH};  // each hand's, as last logged
+  XrPath handProfiles_[2] = {XR_NULL_PATH, XR_NULL_PATH};  // each hand's, as last read
+  std::string handProfileNames_[2];
+  uint64_t profilesVersion_ = 1;
   ControllerState controllers_;
-  ControllerBindings bindings_;
-  uint64_t bindingsVersion_ = 1, bindingsRead_ = 0;
-  std::vector<std::pair<std::string, std::pair<XrAction, std::string>>> suggested_;  // profile, binding
   bool inputHeld_ = true;  // since focus came back, something is still held
   bool gazeExtension_ = false;  // XR_EXT_eye_gaze_interaction enabled
   bool frameControllerExtension_ = false;  // XR_VALVE_frame_controller_interaction enabled

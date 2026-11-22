@@ -124,6 +124,15 @@ std::string allLines(const Settings& s) {
   out << "script_offset_ms=" << s.scripts.offsetMs << "\n";
   out << "script_range_low=" << s.scripts.rangeLow << "\n";
   out << "script_range_high=" << s.scripts.rangeHigh << "\n";
+  out << "skip_seconds=" << s.skipSeconds << "\n";
+  out << "big_skip_seconds=" << s.bigSkipSeconds << "\n";
+  if (s.controllersSeen != ControllerType::Count)
+    out << "controllers=" << controllerLayout(s.controllersSeen).id << "\n";
+  for (int t = 0; t < kControllerTypes; ++t) {
+    const ControllerType type = static_cast<ControllerType>(t);
+    out << "buttons_" << controllerLayout(type).id << "=" << s.controls.line(type) << "\n";
+    out << "gestures_" << controllerLayout(type).id << "=" << s.gestures.line(type) << "\n";
+  }
   return out.str();
 }
 
@@ -304,6 +313,21 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
       s.scripts.offsetMs = std::clamp(std::atoi(value.c_str()), -kScriptOffsetLimit, kScriptOffsetLimit);
     else if (key == "script_range_low") s.scripts.rangeLow = std::atoi(value.c_str());
     else if (key == "script_range_high") s.scripts.rangeHigh = std::atoi(value.c_str());
+    else if (key == "skip_seconds")
+      s.skipSeconds = kSkipRange.snap(std::atof(value.c_str()));
+    else if (key == "big_skip_seconds")
+      s.bigSkipSeconds = kBigSkipRange.snap(std::atof(value.c_str()));
+    else if (key == "controllers") s.controllersSeen = controllerTypeById(value);
+    else if (key.rfind("buttons_", 0) == 0) {
+      for (int t = 0; t < kControllerTypes; ++t)
+        if (key.compare(8, std::string::npos, controllerLayout(static_cast<ControllerType>(t)).id) == 0)
+          s.controls.read(static_cast<ControllerType>(t), value);
+    }
+    else if (key.rfind("gestures_", 0) == 0) {
+      for (int t = 0; t < kControllerTypes; ++t)
+        if (key.compare(9, std::string::npos, controllerLayout(static_cast<ControllerType>(t)).id) == 0)
+          s.gestures.read(static_cast<ControllerType>(t), value);
+    }
     else if (!servers.read(key, value)) focusRead |= focus.read(key, value);
   }
   servers.finish();

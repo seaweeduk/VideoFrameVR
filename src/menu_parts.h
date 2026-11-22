@@ -214,7 +214,8 @@ class Menu::PageLayout {
   GroupLayout group(int column, const std::string& title, const Action& action = {});
   // A group at x, y, w on a panel whose code places its parts itself
   // (setup's), the last of column `column` (0..2) for the rows added to it.
-  GroupLayout groupAt(int column, double x, double y, double w, const std::string& title);
+  GroupLayout groupAt(int column, double x, double y, double w, const std::string& title,
+                      const Action& action = {});
   // Every column's bottom so far, for what is laid out under them.
   double bottom(int column) const { return next_[column] - kit::kSpace; }
 
@@ -231,6 +232,7 @@ class Menu::PageLayout {
  private:
   friend class Menu::GroupLayout;
   void header();
+  void titleAction(const Group& g, const Action& action);
   Menu& menu_;
   std::string title_, about_;
   std::vector<std::string> sections_;

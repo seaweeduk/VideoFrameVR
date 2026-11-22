@@ -75,8 +75,8 @@ void Menu::layoutScriptSettings(PageLayout& page) {
     std::snprintf(text, sizeof(text), v ? "%+d%s" : "%d%s", v, tick ? "" : " ms");
     return std::string(text);
   };
-  motion.value(t.offset, MenuCommand::SetScriptOffset, s.offsetMs, -kScriptOffsetLimit,
-               kScriptOffsetLimit, ms(s.offsetMs, false), 10)
+  motion.value(t.offset, MenuCommand::SetScriptOffset, s.offsetMs, value_range::kScriptOffset.least,
+               value_range::kScriptOffset.most, ms(s.offsetMs, false), value_range::kScriptOffset.step)
       .format(ms)
       .mark(0)
       .tip(t.offsetHint);

@@ -5,6 +5,7 @@
 
 #include "menu.h"
 #include "menu_finish.h"
+#include "value_ranges.h"
 
 #include <cairo.h>
 
@@ -298,16 +299,6 @@ constexpr double kIconButtonW = 120;
 constexpr double kIconSize = 52;
 
 constexpr int kSlideshowSeconds[] = {0, 3, 5, 10, 20, 30, 60};
-constexpr int kPictureStep = 1;  // brightness etc., of mpv's -100..100
-constexpr int kSharpenStep = 1;  // hundredths
-constexpr int kZoomStepPercent = 1;
-// The surround viewpoint, in percent of the sphere's radius toward the picture.
-constexpr int kViewpointStepPercent = 1;
-constexpr int kMaxViewpointPercent =
-    static_cast<int>(VideoSettings::kMaxOriginForward * 100 + 0.5f);
-// Match the sliders' centimetre and hundredth units for fine adjustment.
-constexpr int kScreenStepCm = 1;
-constexpr int kCurveStepPercent = 1;
 
 inline double steadySeconds() {
   return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();

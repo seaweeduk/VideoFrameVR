@@ -287,10 +287,10 @@ bool XrContext::init(const GpuRequirements& gpu) {
   return queryViewConfiguration();
 }
 
-// Bindings are suggested for several common controller profiles. The Steam
-// Frame controllers use their own profile where SteamVR offers it, else
-// SteamVR maps the Touch one onto them. Users rebind in SteamVR, which keys
-// bindings by action name: keep the names.
+// One action per physical control (controls.h), each bound to itself in
+// every controller type's profile; what a control does is the app's
+// (ControlMap). The Steam Frame controllers use their own profile where
+// SteamVR offers it, else SteamVR maps the Touch one onto them.
 bool XrContext::createActions() {
   XrActionSetCreateInfo setInfo{XR_TYPE_ACTION_SET_CREATE_INFO};
   std::strncpy(setInfo.actionSetName, "player", XR_MAX_ACTION_SET_NAME_SIZE - 1);
@@ -311,24 +311,39 @@ bool XrContext::createActions() {
     return check(xrCreateAction(actionSet_, &info, &out), name);
   };
   if (!createAction(XR_ACTION_TYPE_POSE_INPUT, "aim", "Pointer", aimAction_) ||
-      !createAction(XR_ACTION_TYPE_BOOLEAN_INPUT, "select", "Click, drag", selectAction_) ||
-      !createAction(XR_ACTION_TYPE_BOOLEAN_INPUT, "grab", "Grab the screen or menu", gripAction_) ||
-      !createAction(XR_ACTION_TYPE_BOOLEAN_INPUT, "menu", "Menu", menuAction_) ||
-      !createAction(XR_ACTION_TYPE_BOOLEAN_INPUT, "play_pause", "Play / pause", playPauseAction_) ||
-      !createAction(XR_ACTION_TYPE_BOOLEAN_INPUT, "recenter", "Recenter", recenterAction_) ||
-      !createAction(XR_ACTION_TYPE_VECTOR2F_INPUT, "stick", "Seek, turn, scroll, move closer",
-                    stickAction_) ||
+      !createAction(XR_ACTION_TYPE_VECTOR2F_INPUT, "thumbstick", "Thumbstick", stickAction_) ||
       !createAction(XR_ACTION_TYPE_VIBRATION_OUTPUT, "haptic", "Vibration", hapticAction_))
     return false;
+  for (int c = 0; c < kControls; ++c) {
+    const ControlInfo& info = controlInfo(static_cast<Control>(c));
+    if (!createAction(XR_ACTION_TYPE_BOOLEAN_INPUT, info.id, info.name, controlActions_[c]))
+      return false;
+  }
 
-  if (frameControllerExtension_) {
+  for (int t = 0; t < kControllerTypes; ++t) {
+    const ControllerType type = static_cast<ControllerType>(t);
+    if (type == ControllerType::Frame && !frameControllerExtension_) continue;
+    const ControllerLayout& layout = controllerLayout(type);
+    std::vector<std::pair<XrAction, std::string>> bindings;
+    for (const char* hand : {"/user/hand/left", "/user/hand/right"}) {
+      bindings.push_back({aimAction_, std::string(hand) + "/input/aim/pose"});
+      bindings.push_back({hapticAction_, std::string(hand) + "/output/haptic"});
+      if (layout.stick) bindings.push_back({stickAction_, std::string(hand) + "/input/thumbstick"});
+    }
+    for (const LayoutControl& c : layout.controls)
+      bindings.push_back({controlActions_[static_cast<int>(c.control)],
+                          std::string(c.hand ? "/user/hand/right" : "/user/hand/left") + c.input});
+    if (type != ControllerType::Frame || !triggerThreshold_) {
+      suggestBindings(layout.profile, bindings);
+      continue;
+    }
     // The trigger clicks at 0.7 and lets go at 0.65, as it did through
     // SteamVR's Touch remapping.
     XrInteractionProfileAnalogThresholdVALVE thresholds[2];
     const XrBindingModificationBaseHeaderKHR* modifications[2];
     for (int h = 0; h < 2; ++h) {
       thresholds[h] = {XR_TYPE_INTERACTION_PROFILE_ANALOG_THRESHOLD_VALVE};
-      thresholds[h].action = selectAction_;
+      thresholds[h].action = controlActions_[static_cast<int>(Control::Trigger)];
       XR_TRY(xrStringToPath(instance_, h ? "/user/hand/right/input/trigger/value"
                                          : "/user/hand/left/input/trigger/value",
                             &thresholds[h].binding));
@@ -339,73 +354,8 @@ bool XrContext::createActions() {
     XrBindingModificationsKHR modified{XR_TYPE_BINDING_MODIFICATIONS_KHR};
     modified.bindingModificationCount = 2;
     modified.bindingModifications = modifications;
-    suggestBindings("/interaction_profiles/valve/frame_controller_valve",
-                    {{aimAction_, "/user/hand/left/input/aim/pose"},
-                     {aimAction_, "/user/hand/right/input/aim/pose"},
-                     {selectAction_, "/user/hand/left/input/trigger/value"},
-                     {selectAction_, "/user/hand/right/input/trigger/value"},
-                     {selectAction_, "/user/hand/left/input/shoulder/click"},
-                     {selectAction_, "/user/hand/right/input/shoulder/click"},
-                     {gripAction_, "/user/hand/left/input/squeeze/value"},
-                     {gripAction_, "/user/hand/right/input/squeeze/value"},
-                     {menuAction_, "/user/hand/left/input/view/click"},
-                     {menuAction_, "/user/hand/right/input/menu/click"},
-                     {menuAction_, "/user/hand/right/input/b/click"},
-                     {menuAction_, "/user/hand/right/input/x/click"},
-                     {menuAction_, "/user/hand/right/input/y/click"},
-                     {playPauseAction_, "/user/hand/right/input/a/click"},
-                     {recenterAction_, "/user/hand/right/input/thumbstick/click"},
-                     {recenterAction_, "/user/hand/left/input/dpad_up/click"},
-                     {recenterAction_, "/user/hand/left/input/dpad_left/click"},
-                     {recenterAction_, "/user/hand/left/input/dpad_right/click"},
-                     {stickAction_, "/user/hand/left/input/thumbstick"},
-                     {stickAction_, "/user/hand/right/input/thumbstick"},
-                     {hapticAction_, "/user/hand/left/output/haptic"},
-                     {hapticAction_, "/user/hand/right/output/haptic"}},
-                    triggerThreshold_ ? &modified : nullptr);
+    suggestBindings(layout.profile, bindings, &modified);
   }
-
-  suggestBindings("/interaction_profiles/valve/index_controller",
-                  {{aimAction_, "/user/hand/left/input/aim/pose"},
-                   {aimAction_, "/user/hand/right/input/aim/pose"},
-                   {selectAction_, "/user/hand/left/input/trigger/click"},
-                   {selectAction_, "/user/hand/right/input/trigger/click"},
-                   {gripAction_, "/user/hand/left/input/squeeze/value"},
-                   {gripAction_, "/user/hand/right/input/squeeze/value"},
-                   {menuAction_, "/user/hand/left/input/b/click"},
-                   {menuAction_, "/user/hand/right/input/b/click"},
-                   {playPauseAction_, "/user/hand/right/input/a/click"},
-                   {recenterAction_, "/user/hand/right/input/thumbstick/click"},
-                   {stickAction_, "/user/hand/left/input/thumbstick"},
-                   {stickAction_, "/user/hand/right/input/thumbstick"},
-                   {hapticAction_, "/user/hand/left/output/haptic"},
-                   {hapticAction_, "/user/hand/right/output/haptic"}});
-  suggestBindings("/interaction_profiles/oculus/touch_controller",
-                  {{aimAction_, "/user/hand/left/input/aim/pose"},
-                   {aimAction_, "/user/hand/right/input/aim/pose"},
-                   {selectAction_, "/user/hand/left/input/trigger/value"},
-                   {selectAction_, "/user/hand/right/input/trigger/value"},
-                   {gripAction_, "/user/hand/left/input/squeeze/value"},
-                   {gripAction_, "/user/hand/right/input/squeeze/value"},
-                   {menuAction_, "/user/hand/left/input/menu/click"},
-                   // The Steam Frame's right B, X and Y buttons all arrive as B.
-                   {menuAction_, "/user/hand/right/input/b/click"},
-                   {playPauseAction_, "/user/hand/right/input/a/click"},
-                   {recenterAction_, "/user/hand/right/input/thumbstick/click"},
-                   {recenterAction_, "/user/hand/left/input/y/click"},
-                   {stickAction_, "/user/hand/left/input/thumbstick"},
-                   {stickAction_, "/user/hand/right/input/thumbstick"},
-                   {hapticAction_, "/user/hand/left/output/haptic"},
-                   {hapticAction_, "/user/hand/right/output/haptic"}});
-  suggestBindings("/interaction_profiles/khr/simple_controller",
-                  {{aimAction_, "/user/hand/left/input/aim/pose"},
-                   {aimAction_, "/user/hand/right/input/aim/pose"},
-                   {selectAction_, "/user/hand/left/input/select/click"},
-                   {selectAction_, "/user/hand/right/input/select/click"},
-                   {menuAction_, "/user/hand/left/input/menu/click"},
-                   {menuAction_, "/user/hand/right/input/menu/click"},
-                   {hapticAction_, "/user/hand/left/output/haptic"},
-                   {hapticAction_, "/user/hand/right/output/haptic"}});
 
   // One gaze pose, not per hand. A failure only loses eye tracking.
   if (gaze_.available) {
@@ -442,16 +392,15 @@ bool XrContext::createActions() {
 
 // A rejected profile only loses that controller type, so failures just warn.
 void XrContext::suggestBindings(const char* profile,
-                                const std::vector<std::pair<XrAction, const char*>>& bindings,
+                                const std::vector<std::pair<XrAction, std::string>>& bindings,
                                 const void* next) {
   XrPath profilePath;
   if (!check(xrStringToPath(instance_, profile, &profilePath), profile)) return;
   std::vector<XrActionSuggestedBinding> suggested;
   for (const auto& [action, path] : bindings) {
     XrPath binding;
-    if (!check(xrStringToPath(instance_, path, &binding), path)) return;
+    if (!check(xrStringToPath(instance_, path.c_str(), &binding), path.c_str())) return;
     suggested.push_back({action, binding});
-    suggested_.push_back({profile, {action, path}});
   }
   XrInteractionProfileSuggestedBinding info{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
   info.next = next;
@@ -463,30 +412,33 @@ void XrContext::suggestBindings(const char* profile,
 
 void XrContext::updateControllers(bool focused) {
   if (!focused) {
+    const uint32_t losses = controllers_.focusLosses + (controllers_.focused ? 1 : 0);
     controllers_ = {};
+    controllers_.focusLosses = losses;
     inputHeld_ = true;
     return;
   }
-  auto getBool = [&](XrAction action, XrPath subaction) {
-    XrActionStateGetInfo info{XR_TYPE_ACTION_STATE_GET_INFO};
-    info.action = action;
-    info.subactionPath = subaction;
-    XrActionStateBoolean state{XR_TYPE_ACTION_STATE_BOOLEAN};
-    xrGetActionStateBoolean(session_, &info, &state);
-    return state;
-  };
-  auto pressed = [](const XrActionStateBoolean& s) {
-    return s.isActive && s.currentState && s.changedSinceLastSync;
-  };
-
+  bool held = false;
   for (int h = 0; h < 2; ++h) {
     HandState& hand = controllers_.hands[h];
-    const XrActionStateBoolean select = getBool(selectAction_, handPaths_[h]);
-    hand.select = select.isActive && select.currentState;
-    hand.selectPressed = pressed(select);
-    const XrActionStateBoolean grip = getBool(gripAction_, handPaths_[h]);
-    hand.grip = grip.isActive && grip.currentState;
-    hand.gripPressed = pressed(grip);
+    hand.controls = hand.pressed = 0;
+    hand.present = false;
+    for (int c = 0; c < kControls; ++c) {
+      XrActionStateGetInfo info{XR_TYPE_ACTION_STATE_GET_INFO};
+      info.action = controlActions_[c];
+      info.subactionPath = handPaths_[h];
+      XrActionStateBoolean state{XR_TYPE_ACTION_STATE_BOOLEAN};
+      if (XR_FAILED(xrGetActionStateBoolean(session_, &info, &state)) || !state.isActive) continue;
+      hand.present = true;
+      if (!state.currentState) continue;
+      hand.controls |= 1u << c;
+      if (state.changedSinceLastSync) hand.pressed |= 1u << c;
+    }
+    const uint32_t trigger = controlBit(Control::Trigger), grip = controlBit(Control::Grip);
+    hand.select = hand.controls & trigger;
+    hand.selectPressed = hand.pressed & trigger;
+    hand.grip = hand.controls & grip;
+    hand.gripPressed = hand.pressed & grip;
 
     XrActionStateGetInfo stickInfo{XR_TYPE_ACTION_STATE_GET_INFO};
     stickInfo.action = stickAction_;
@@ -512,31 +464,20 @@ void XrContext::updateControllers(bool focused) {
       hand.aimPosition = toVec3(location.pose.position);
       hand.aimOrientation = toQuat(location.pose.orientation);
     }
+    held = held || hand.controls || std::abs(hand.stickX) > 0.15f || std::abs(hand.stickY) > 0.15f;
   }
-  const XrActionStateBoolean menu = getBool(menuAction_, XR_NULL_PATH);
-  const XrActionStateBoolean playPause = getBool(playPauseAction_, XR_NULL_PATH);
-  const XrActionStateBoolean recenter = getBool(recenterAction_, XR_NULL_PATH);
-  controllers_.menuPressed = pressed(menu);
-  controllers_.playPausePressed = pressed(playPause);
-  controllers_.recenterPressed = pressed(recenter);
   controllers_.focused = true;
 
   // Back from the dashboard: what was held over it presses nothing here
   // until all of it is let go, and no gesture starts from it.
   if (!inputHeld_) return;
-  bool held = (menu.isActive && menu.currentState) ||
-              (playPause.isActive && playPause.currentState) ||
-              (recenter.isActive && recenter.currentState);
-  for (const HandState& hand : controllers_.hands)
-    held = held || hand.select || hand.grip || std::abs(hand.stickX) > 0.15f ||
-           std::abs(hand.stickY) > 0.15f;
   inputHeld_ = held;
   if (!held) return;
   for (HandState& hand : controllers_.hands) {
     hand.select = hand.selectPressed = hand.grip = hand.gripPressed = false;
+    hand.controls = hand.pressed = 0;
     hand.stickX = hand.stickY = 0;
   }
-  controllers_.menuPressed = controllers_.playPausePressed = controllers_.recenterPressed = false;
 }
 
 void XrContext::vibrate(int hand, float amplitude, double seconds, float frequency) {
@@ -551,9 +492,10 @@ void XrContext::vibrate(int hand, float amplitude, double seconds, float frequen
   xrApplyHapticFeedback(session_, &info, reinterpret_cast<const XrHapticBaseHeader*>(&vibration));
 }
 
-// Shows whether the Frame controllers come through their own profile or
-// SteamVR's Touch remapping. SteamVR sends the event several times per change.
-void XrContext::logInteractionProfiles() {
+// Logged, it shows whether the Frame controllers come through their own
+// profile or SteamVR's Touch remapping. SteamVR sends the event several
+// times per change.
+void XrContext::readInteractionProfiles() {
   XrPath profiles[2] = {XR_NULL_PATH, XR_NULL_PATH};
   for (int h = 0; h < 2; ++h) {
     XrInteractionProfileState state{XR_TYPE_INTERACTION_PROFILE_STATE};
@@ -561,107 +503,30 @@ void XrContext::logInteractionProfiles() {
       profiles[h] = state.interactionProfile;
   }
   if (profiles[0] == handProfiles_[0] && profiles[1] == handProfiles_[1]) return;
-  char names[2][XR_MAX_PATH_LENGTH];
+  ++profilesVersion_;
   for (int h = 0; h < 2; ++h) {
     handProfiles_[h] = profiles[h];
+    char name[XR_MAX_PATH_LENGTH];
     uint32_t length = 0;
-    if (profiles[h] == XR_NULL_PATH ||
-        XR_FAILED(xrPathToString(instance_, profiles[h], XR_MAX_PATH_LENGTH, &length, names[h])))
-      std::strcpy(names[h], "none");
+    handProfileNames_[h] =
+        profiles[h] != XR_NULL_PATH &&
+                XR_SUCCEEDED(xrPathToString(instance_, profiles[h], sizeof(name), &length, name))
+            ? name
+            : "";
   }
-  std::printf("Controllers: left %s, right %s\n", names[0], names[1]);
+  std::printf("Controllers: left %s, right %s\n",
+              handProfileNames_[0].empty() ? "none" : handProfileNames_[0].c_str(),
+              handProfileNames_[1].empty() ? "none" : handProfileNames_[1].c_str());
 }
 
-bool XrContext::held(ControlAction action, int hand) const {
-  const XrAction actions[] = {menuAction_, playPauseAction_, recenterAction_};
-  const int i = static_cast<int>(action) - static_cast<int>(ControlAction::Menu);
-  if (i < 0 || i > 2 || !controllers_.focused || inputHeld_) return false;
-  XrActionStateGetInfo info{XR_TYPE_ACTION_STATE_GET_INFO};
-  info.action = actions[i];
-  info.subactionPath = handPaths_[hand];
-  XrActionStateBoolean state{XR_TYPE_ACTION_STATE_BOOLEAN};
-  return XR_SUCCEEDED(xrGetActionStateBoolean(session_, &info, &state)) && state.isActive &&
-         state.currentState;
-}
-
-const ControllerBindings& XrContext::controllerBindings() {
-  if (bindingsRead_ == bindingsVersion_ || session_ == XR_NULL_HANDLE) return bindings_;
-  bindingsRead_ = bindingsVersion_;
-  const auto start = std::chrono::steady_clock::now();
-  auto pathString = [&](XrPath path) {
-    char text[XR_MAX_PATH_LENGTH];
-    uint32_t length = 0;
-    return path != XR_NULL_PATH &&
-                   XR_SUCCEEDED(xrPathToString(instance_, path, sizeof(text), &length, text))
-               ? std::string(text)
-               : std::string();
-  };
-  ControllerBindings b;
-  for (int h = 0; h < 2; ++h) {
-    XrInteractionProfileState state{XR_TYPE_INTERACTION_PROFILE_STATE};
-    if (XR_SUCCEEDED(xrGetCurrentInteractionProfile(session_, handPaths_[h], &state)))
-      b.profiles[h] = pathString(state.interactionProfile);
-  }
-  const XrAction actions[kControlActions] = {selectAction_,   gripAction_,     menuAction_,
-                                              playPauseAction_, recenterAction_, stickAction_};
-  for (int a = 0; a < kControlActions; ++a) {
-    XrBoundSourcesForActionEnumerateInfo info{XR_TYPE_BOUND_SOURCES_FOR_ACTION_ENUMERATE_INFO};
-    info.action = actions[a];
-    uint32_t count = 0;
-    if (XR_FAILED(xrEnumerateBoundSourcesForAction(session_, &info, 0, &count, nullptr))) continue;
-    std::vector<XrPath> paths(count);
-    if (XR_FAILED(xrEnumerateBoundSourcesForAction(session_, &info, count, &count, paths.data())))
-      continue;
-    paths.resize(count);
-    for (XrPath path : paths) {
-      const std::string full = pathString(path);
-      ControllerBindings::Source s;
-      s.hand = full.rfind("/user/hand/right/", 0) == 0;
-      const std::string hand = s.hand ? "/user/hand/right" : "/user/hand/left";
-      if (full.rfind(hand + "/", 0) != 0) continue;
-      s.input = full.substr(hand.size());
-      // Only the control's name ("B Button"), without the hand or the profile.
-      XrInputSourceLocalizedNameGetInfo nameInfo{XR_TYPE_INPUT_SOURCE_LOCALIZED_NAME_GET_INFO};
-      nameInfo.sourcePath = path;
-      nameInfo.whichComponents = XR_INPUT_SOURCE_LOCALIZED_NAME_COMPONENT_BIT;
-      uint32_t length = 0;
-      if (XR_SUCCEEDED(xrGetInputSourceLocalizedName(session_, &nameInfo, 0, &length, nullptr)) &&
-          length > 1) {
-        std::vector<char> name(length);
-        if (XR_SUCCEEDED(
-                xrGetInputSourceLocalizedName(session_, &nameInfo, length, &length, name.data())))
-          s.name = name.data();
-      }
-      b.sources[a].push_back(std::move(s));
-    }
-  }
+void XrContext::pairedProfiles(std::string out[2]) const {
   // Controllers come in pairs: the one on (the right, if they differ) stands
   // for both; none on, the Frame's own.
-  std::string pair = !b.profiles[1].empty() ? b.profiles[1] : b.profiles[0];
+  std::string pair = !handProfileNames_[1].empty() ? handProfileNames_[1] : handProfileNames_[0];
   if (pair.empty() && kStandaloneHeadset)
-    pair = frameControllerExtension_ ? "/interaction_profiles/valve/frame_controller_valve"
-                                     : "/interaction_profiles/oculus/touch_controller";
-  for (int h = 0; h < 2; ++h) {
-    if (!b.profiles[h].empty()) continue;
-    b.profiles[h] = pair;
-    const std::string hand = h ? "/user/hand/right/" : "/user/hand/left/";
-    for (const auto& [profile, binding] : suggested_)
-      for (int a = 0; a < kControlActions; ++a)
-        if (profile == b.profiles[h] && binding.first == actions[a] && binding.second.rfind(hand, 0) == 0)
-          b.sources[a].push_back({h, binding.second.substr(hand.size() - 1), ""});
-  }
-  if (b == bindings_) return bindings_;
-  bindings_ = std::move(b);
-  std::printf("Controllers: bindings read in %.1f ms\n",
-              std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
-  const char* const names[kControlActions] = {"select", "grab", "menu", "play_pause", "recenter", "stick"};
-  for (int a = 0; a < kControlActions; ++a) {
-    std::string line;
-    for (const ControllerBindings::Source& s : bindings_.sources[a])
-      line += std::string(s.hand ? " right" : " left") + s.input + " \"" + s.name + "\"";
-    std::printf("Controllers: %s:%s\n", names[a], line.empty() ? " none" : line.c_str());
-  }
-  return bindings_;
+    pair = controllerLayout(frameControllerExtension_ ? ControllerType::Frame : ControllerType::Touch)
+               .profile;
+  for (int h = 0; h < 2; ++h) out[h] = handProfileNames_[h].empty() ? pair : handProfileNames_[h];
 }
 
 void XrContext::updateGaze() {
@@ -1692,8 +1557,7 @@ void XrContext::pollEvents(bool& quit) {
         break;
       }
       case XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED:
-        ++bindingsVersion_;
-        logInteractionProfiles();
+        readInteractionProfiles();
         break;
       case XR_TYPE_EVENT_DATA_USER_PRESENCE_CHANGED_EXT:
         userPresence_ = reinterpret_cast<XrEventDataUserPresenceChangedEXT*>(&event)->isUserPresent;

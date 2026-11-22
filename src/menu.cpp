@@ -1,6 +1,7 @@
 #include "menu_parts.h"
 
 #include "file_util.h"
+#include "menu_controls.h"
 #include "menu_list_parts.h"
 #include "menu_setup.h"
 #include "menu_stash.h"
@@ -291,6 +292,7 @@ void Menu::update(const MenuView& view) {
     if (view.motionEmulation != view_.motionEmulation) browserChanged();
     if (view.motionDistance != view_.motionDistance) sliderChanged(MenuCommand::SetMotionDistance);
   }
+  updateControls(view);
   if (library_ && (changed || library_->generation() != currentGeneration_)) {
     const VideoRecord current = library_->record(view.currentFile);
     if (current.rating != current_.rating) stripDirty_ = true;
@@ -996,6 +998,8 @@ void Menu::showPage(Page page) {
     videoSection_ = view_.currentFile.empty() ? VideoSection::Display : videoSectionPicked_;
   // Settings opens on General (showStashSettings(): on Stash).
   if (page == Page::Settings && page_ != page) settingsSection_ = SettingsSection::General;
+  // A change's notice on the Controls page is for the visit it was made in.
+  if (controls_) controls_->noticeShown = false;
   page_ = page;
   if (page == Page::Files || page == Page::Library || page == Page::Network ||
       page == Page::Settings || page == Page::Offline || stashListPage())
@@ -1064,6 +1068,10 @@ void Menu::layoutDialog() {
   };
   if (dialog_ == Dialog::WhatsNew) {  // its own size, its notes scrolling
     layoutWhatsNew();
+    return;
+  }
+  if (dialog_ == Dialog::ChooseJob || dialog_ == Dialog::ResetButtons || dialog_ == Dialog::EditGesture) {
+    layoutControlsDialog();
     return;
   }
   const bool question = dialog_ == Dialog::ConfirmQuit || dialog_ == Dialog::Error ||
@@ -1162,6 +1170,7 @@ void Menu::drawDialog(cairo_t* cr) {
       drawText(cr, t.text, x, t.y, w, t.h, t.size, t.bold, false, ink[0], ink[1], ink[2]);
   }
   if (dialog_ == Dialog::WhatsNew) drawWhatsNew(cr);
+  if (dialog_ == Dialog::ChooseJob || dialog_ == Dialog::EditGesture) drawControlsDialog(cr);
   drawButtons(cr, kBrowser, true);
 }
 
@@ -1851,6 +1860,7 @@ void Menu::drawBrowser(cairo_t* cr) {
     StashPages::drawHeading(*this, cr);
   } else {
     drawGroups(cr);
+    if (controlsShown()) drawControls(cr);
   }
 
   drawButtons(cr, kBrowser);

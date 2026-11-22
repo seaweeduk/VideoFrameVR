@@ -16,11 +16,27 @@ bool NoticeCanvas::init(Uploader& uploader) {
 
 void NoticeCanvas::set(Menu& menu, NoticeIcon icon, const std::string& text) {
   const bool lost = canvas_.takeLost();
-  if (drawn_ && !lost && icon == icon_ && text == text_) return;
+  if (drawn_ && !lost && !ringShown_ && icon == icon_ && text == text_) return;
   icon_ = icon;
   text_ = text;
+  ringShown_ = false;
   std::string shown = text;
   if (lines_ < 2) std::replace(shown.begin(), shown.end(), '\n', ' ');
+  redraw(lost, [&](cairo_t* cr, double box[4]) { menu.drawNotice(cr, width(), height(), icon, shown, box); });
+  pillHeight_ = Menu::kNoticeH[shown.find('\n') != std::string::npos];
+}
+
+void NoticeCanvas::set(Menu& menu, const RingNotice& ring) {
+  const bool lost = canvas_.takeLost();
+  if (drawn_ && !lost && ringShown_ && ring == ring_) return;
+  ring_ = ring;
+  ringShown_ = true;
+  redraw(lost, [&](cairo_t* cr, double box[4]) { menu.drawRingNotice(cr, width(), height(), ring, box); });
+  pillHeight_ = Menu::kNoticeH[0];
+}
+
+template <class Draw>
+void NoticeCanvas::redraw(bool lost, Draw draw) {
   cairo_t* cr = canvas_.cr();
   if (drawn_) {  // the old pill away
     cairo_save(cr);
@@ -30,8 +46,7 @@ void NoticeCanvas::set(Menu& menu, NoticeIcon icon, const std::string& text) {
     cairo_restore(cr);
   }
   double box[4];
-  menu.drawNotice(cr, width(), height(), icon, shown, box);
-  pillHeight_ = Menu::kNoticeH[shown.find('\n') != std::string::npos];
+  draw(cr, box);
   // Uploaded where the old and the new are; all of it if what waited to be
   // uploaded was dropped.
   double x0 = box[0], y0 = box[1], x1 = box[0] + box[2], y1 = box[1] + box[3];
@@ -62,6 +77,11 @@ bool Notices::init(Uploader& uploader) {
 
 void Notices::show(Menu& menu, Slot slot, NoticeIcon icon, const std::string& text) {
   slots_[slot].set(menu, icon, text);
+  shown_[slot] = any_ = true;
+}
+
+void Notices::show(Menu& menu, Slot slot, const RingNotice& ring) {
+  slots_[slot].set(menu, ring);
   shown_[slot] = any_ = true;
 }
 

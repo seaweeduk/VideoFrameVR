@@ -28,7 +28,7 @@ int verticalPushes(const ControllerState& input) {
 bool ScreenControl::update(const ControllerState& input, const Frame& frame,
                            ScreenPlacement& screen) {
   const ScreenSize before = screen.size;
-  if (hand_ >= 0 && !input.hands[hand_].grip) {
+  if (hand_ >= 0 && !input.hands[hand_].select) {
     hand_ = -1;
     corner_ = {};
   }
@@ -44,7 +44,8 @@ bool ScreenControl::update(const ControllerState& input, const Frame& frame,
     }
     for (int i = 0; i < 2 && hand_ < 0 && !frame.menuHeld; ++i) {
       const HandState& h = input.hands[i];
-      if (h.gripPressed && h.poseValid && !frame.onMenu[i]) takeHold(i, h, surface, screen);
+      if (h.selectPressed && h.poseValid && !frame.onMenu[i] && !h.grip && !frame.triggerTaken[i])
+        takeHold(i, h, surface, screen);
     }
   }
 
@@ -59,17 +60,21 @@ bool ScreenControl::update(const ControllerState& input, const Frame& frame,
   if (frame.sticksFree && !frame.menuHeld && !corner_.valid()) {
     const float push = verticalPushes(input) * frame.dt;
     const int grips = input.hands[0].grip + input.hands[1].grip;
-    if (grips == 0)
-      screen.size.distance += push * kDistanceRate;
-    else if (grips == 1)
-      screen.size.height += push * kHeightRate;
-    screen.size = screen.size.clamped();
+    if (push != 0 && grips < 2) {
+      if (grips == 0)
+        screen.size.distance += push * kDistanceRate;
+      else
+        screen.size.height += push * kHeightRate;
+      screen.size = screen.size.clamped();
+      shown_ = grips == 0 ? GestureValue::ScreenDistance : GestureValue::ScreenHeight;
+      shownAt_ = frame.now;
+    }
   }
 
-  ScreenCorner shown = corner_;
+  ScreenCorner corner = corner_;
   for (const Pointing& p : pointing_)
-    if (!shown.valid()) shown = p.corner;
-  handle_ = cornerHandle(ScreenSurface(screen, frame.aspect), shown);
+    if (!corner.valid()) corner = p.corner;
+  handle_ = cornerHandle(ScreenSurface(screen, frame.aspect), corner);
   return screen.size != before;
 }
 
@@ -78,6 +83,7 @@ void ScreenControl::reset() {
   corner_ = {};
   pointing_[0] = pointing_[1] = {};
   handle_.clear();
+  shownAt_ = -1e9;
 }
 
 void ScreenControl::takeHold(int hand, const HandState& h, const ScreenSurface& surface,
@@ -97,12 +103,6 @@ void ScreenControl::takeHold(int hand, const HandState& h, const ScreenSurface& 
 }
 
 void ScreenControl::carry(const HandState& h, Vec3 up, ScreenPlacement& screen) {
-  if (h.select) {
-    // The trigger is held as well: the screen stays, and goes on from here.
-    startInverse_ = poseInverse(h.aimPosition, h.aimOrientation);
-    startCentre_ = transformPoint(screen.pose(), {0.0f, 0.0f, -screen.size.distance});
-    return;
-  }
   // The centre moves with the hand; the screen turns about the viewer to face it.
   const Vec3 centre =
       transformPoint(poseMatrix(h.aimPosition, h.aimOrientation) * startInverse_, startCentre_);

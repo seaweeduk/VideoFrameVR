@@ -153,6 +153,12 @@ struct SetupControls {
     int control = 0;  // its heldBit() control
     int column = 0;   // 0 the left controller's, 1 either's, 2 the right one's
     std::string glyph, title, line;
+    // Its title's lines (two where one is too narrow) and their height, and
+    // the most its line takes, its end cut short beyond them; in a crowded
+    // column, a short line beside the title.
+    int titleLines = 1, lines = 1;
+    double titleH = 0;
+    bool beside = false;
     double x = 0, y = 0, w = 0, h = 0;
     double want = 0;  // the height its title would have, beside its points
     std::vector<Point> points;
