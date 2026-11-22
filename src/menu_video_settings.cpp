@@ -95,8 +95,9 @@ void Menu::layoutVideoSection(VideoSection section) {
   });
   if (!open)
     page.disableSection(static_cast<int>(VideoSection::ThisVideo), t.thisVideoClosed);
-  // On the Frame the advanced rows can be hidden (desktop: nothing here is).
-  if (kStandaloneHeadset)
+  // On the Frame Display's advanced rows can be hidden (desktop: nothing here
+  // is, nor in This video).
+  if (kStandaloneHeadset && section == VideoSection::Display)
     page.pageSwitch(t.advancedSettings, view_.advancedSettings,
                     command(MenuCommand::ToggleAdvancedSettings), t.tipAdvanced);
   const bool flat = view_.format.projection == Projection::Flat;
