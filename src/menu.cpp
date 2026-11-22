@@ -2004,7 +2004,7 @@ void Menu::redraw() {
   bool stripAll = all || stripDirty_;
   const bool bandTicked = strip_.bandTicked, clockTicked = strip_.clockTicked;
   const bool ticked = bandTicked || clockTicked;
-  const bool strip = stripAll || stripParts_ > 0 || ticked;
+  bool strip = stripAll || stripParts_ > 0 || ticked;
   const bool asked = browserDirty_ || list_.moved || side_.moved;
   const bool browser = all || (browserRow_ < 0 && asked);
   // A browser change alone redraws and uploads only its rows; scrolling alone
@@ -2080,7 +2080,9 @@ void Menu::redraw() {
         const double* box = tooltipBox_;
         browserChanged(box[1] - reach, box[1] + box[3] + reach, box[0] - reach, box[0] + box[2] + reach);
       }
-      if (tipOnStrip && ticked) stripAll = true;  // as the whole strip drawn each second did
+      // Its rows above the body go with it (shownRows()), so the strip is
+      // drawn again, also when only the browser asked for this redraw.
+      if (tipOnStrip) strip = stripAll = true;
       tooltip_ = -1;
     }
   }
@@ -2117,7 +2119,11 @@ void Menu::redraw() {
   if (panelShown(kMain) && strip) {  // only its rows shown now
     int first = 0, end = 0;
     shownRows(kMain, first, end);
-    Damage boxes[kStripParts];
+    // What a list or tooltip left above the body shows at the panel's top
+    // edge (its filtering and smaller mip levels): cleared once it goes.
+    const bool clearAbove = first >= kStripBodyY && stripAboveDrawn_;
+    stripAboveDrawn_ = first < kStripBodyY;
+    Damage boxes[kStripParts + 1];
     int count = 0;
     if (stripAll) {
       boxes[count++] = {0, first, kMainWidth, end};
@@ -2141,6 +2147,7 @@ void Menu::redraw() {
         boxes[count++] = d;
       }
     }
+    if (clearAbove) boxes[count++] = {0, 0, kMainWidth, kStripBodyY};
     if (count > 0) {
       cairo_t* cr = canvases_[kMain].cr();
       cairo_save(cr);
@@ -2369,6 +2376,8 @@ const Texture* Menu::texture(PanelId panel) {
     if (canvas.takeLost()) {
       dirty_ = true;
       if (&canvas == &canvases_[kBrowser]) publishedKnown_ = false;
+      // A clear of the room above the strip's body may have been dropped.
+      if (&canvas == &canvases_[kMain]) stripAboveDrawn_ = true;
     }
   if (panel == kSetup) {
     if (setup_->canvas.takeLost()) dirty_ = true;
