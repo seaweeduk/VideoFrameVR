@@ -399,8 +399,8 @@ bool fixedLabel(Part& part, std::string& tooltip, const Item& item, const Layout
       if (!c.gripView) {
         part.text = t.jobs.choose, part.how = cp.chooseHow, tooltip = cp.chooseTip;
       } else {  // with grip held, each hand's gesture's; one for both where they agree
-        const Gesture* g[2] = {v.gestures.find(type, 0, Control::Grip, Control::Trigger),
-                               v.gestures.find(type, 1, Control::Grip, Control::Trigger)};
+        const Gesture* g[2] = {v.gestures->find(type, 0, Control::Grip, Control::Trigger),
+                               v.gestures->find(type, 1, Control::Grip, Control::Trigger)};
         std::string value[2];
         for (int h = 0; h < 2; ++h) value[h] = g[h] ? gestureValueLabel(g[h]->value, t) : t.jobs.nothing;
         if (!g[0] && !g[1]) {
@@ -634,11 +634,11 @@ void Menu::layoutControlLabels(double y0, double bottom) {
           item.what == Item::Button ? layoutControl(type, item.hand, item.control) : nullptr;
       // With grip held, a stick's click and a button that chooses keep a
       // job of their own: shown as fixed.
-      if (lc && !lc->fixed && (!c.gripView || v.map.takesGrip(type, item.hand, item.control))) {
+      if (lc && !lc->fixed && (!c.gripView || v.map->takesGrip(type, item.hand, item.control))) {
         const ControlSlot slot{type, item.hand, item.control, c.gripView};
         // With grip held and no grip job: its own, dim.
-        const int shown = shownJob(v.map, slot);
-        const Job job = shown == ControlsPage::kInherit ? v.map.job(type, item.hand, item.control)
+        const int shown = shownJob(*v.map, slot);
+        const Job job = shown == ControlsPage::kInherit ? v.map->job(type, item.hand, item.control)
                                                        : static_cast<Job>(shown);
         Part part;
         part.kind = Part::Label;
@@ -653,7 +653,7 @@ void Menu::layoutControlLabels(double y0, double bottom) {
         // The gestures it is in, alone (with grip held: with the grip): a
         // mark, and its tooltip names them.
         std::string twists;
-        for (const Gesture& g : v.gestures.list(type))
+        for (const Gesture& g : v.gestures->list(type))
           if ((g.hands >> item.hand & 1) && g.has(item.control) && g.has(Control::Grip) == c.gripView)
             twists += (twists.empty() ? "" : "; ") +
                       capitalized(printed(t.gesturePage.labelTip, gestureName(type, g, t),
@@ -668,7 +668,7 @@ void Menu::layoutControlLabels(double y0, double bottom) {
         b.tooltip = buttonName(*lc, t);
         if (c.gripView) b.tooltip = printed(part.inherited ? cp.gripInheritsTip : cp.gripPlus, b.tooltip);
         if (part.twist) b.tooltip = twists;
-        b.controlPart = static_cast<int>(c.parts.size());
+        b.part = PartKind::Control, b.look = static_cast<int>(c.parts.size());
         b.action = [this, slot, job] {
           ControlsPage& page = *controls_;
           page.open = slot;
@@ -878,7 +878,7 @@ void Menu::layoutGestureList(double y0) {
   const GesturePageStrings& gp = t.gesturePage;
   const ControlsView& v = view_.controls;
   const ControllerType type = v.type;
-  const std::vector<Gesture>& list = v.gestures.list(type);
+  const std::vector<Gesture>& list = v.gestures->list(type);
   const char* headings[3] = {t.controls.left, t.controls.either, t.controls.right};
   const std::vector<FixedGesture> fixed = fixedGestures(type, t);
   const size_t first = c.parts.size();
@@ -929,10 +929,10 @@ void Menu::layoutGestureList(double y0) {
       Control chooser = Control::Count;
       int chooserHand = hand;
       for (int h = 0; h < 2 && chooser == Control::Count; ++h)
-        if (g.hands >> h & 1) chooser = choosingButton(v.map, type, chooserHand = h, g);
+        if (g.hands >> h & 1) chooser = choosingButton(*v.map, type, chooserHand = h, g);
       part.faint = chooser != Control::Count;
       // A tap of its one button still does that button's job.
-      const Job tap = g.controls() == 1 && g.first != Control::Grip ? v.map.job(type, hand, g.first) : Job::None;
+      const Job tap = g.controls() == 1 && g.first != Control::Grip ? v.map->job(type, hand, g.first) : Job::None;
       const std::string name = gestureName(type, g, t, true);
       Button b;
       b.panel = kBrowser;
@@ -942,14 +942,14 @@ void Menu::layoutGestureList(double y0) {
       b.tooltip = capitalized(tap == Job::None || part.faint ? printed(gp.rowTip, name, part.text)
                                                              : printed(gp.rowTapTip, name, part.text, tapJob));
       if (part.faint) b.tooltip += " " + printed(gp.choosesTip, controlName(type, chooserHand, chooser, true, t));
-      b.controlPart = static_cast<int>(c.parts.size());
+      b.part = PartKind::Control, b.look = static_cast<int>(c.parts.size());
       b.action = [this, i] {
         openGestureEditor(static_cast<int>(i));
         return MenuCommand{};
       };
       buttons_.push_back(b);
       c.parts.push_back(part);
-      Button remove = iconButton(Icon::Close, [this, i, g, type, before = v.gestures.listLine(type)] {
+      Button remove = iconButton(Icon::Close, [this, i, g, type, before = v.gestures->listLine(type)] {
         ControlsPage& page = *controls_;
         page.noticeShown = true;
         page.notice = {};
@@ -985,7 +985,7 @@ void Menu::layoutGestureList(double y0) {
       b.radius = kit::kCorner;
       b.disabled = full;
       b.tooltip = full ? printed(gp.fullTip, kMaxGestures) : gp.addTip;
-      b.controlPart = static_cast<int>(c.parts.size());
+      b.part = PartKind::Control, b.look = static_cast<int>(c.parts.size());
       b.action = [this] {
         openGestureEditor(-1);
         return MenuCommand{};
@@ -1306,9 +1306,9 @@ void Menu::drawControls(cairo_t* cr) {
 // A button's label (its glyph and job), and a job in the chooser (its label
 // and the glyphs of the buttons that do it).
 void Menu::drawControlPart(cairo_t* cr, const Button& b, const double ink[4]) const {
-  if (!controls_ || b.controlPart < 0 || b.controlPart >= static_cast<int>(controls_->parts.size())) return;
+  if (!controls_ || b.look < 0 || b.look >= static_cast<int>(controls_->parts.size())) return;
   const ControlsPage& c = *controls_;
-  const Part& p = c.parts[static_cast<size_t>(b.controlPart)];
+  const Part& p = c.parts[static_cast<size_t>(b.look)];
   const Palette pal = palette();
   const ControllerArt* art = c.art.get();
   const double cy = b.y + b.h / 2;
@@ -1337,7 +1337,7 @@ void Menu::drawControlPart(cairo_t* cr, const Button& b, const double ink[4]) co
     return;
   }
   if (p.kind == Part::Gesture) {
-    gestureRow(cr, b.controlPart, ink);
+    gestureRow(cr, b.look, ink);
     return;
   }
   if (p.kind == Part::Add) {  // its + in the accent, its words dim
@@ -1470,22 +1470,22 @@ void Menu::layoutControlsDialog() {
     return;
   }
   // Its job; with grip held, kInherit while it has none of its own.
-  const int now = shownJob(v.map, slot);
+  const int now = shownJob(*v.map, slot);
   // Menu's last button: every other job, and Nothing, is greyed out.
-  const bool kept = !slot.grip && !v.map.allowed(slot.type, slot.hand, slot.control, Job::None);
+  const bool kept = !slot.grip && !v.map->allowed(slot.type, slot.hand, slot.control, Job::None);
   auto pick = [this, slot, &v](int job) {
     // What the slot does, before and after (with grip held and none of its
     // own, what the button does alone), and whether a grip job goes with it
     // (a button set to choose).
-    const Job plain = v.map.job(slot.type, slot.hand, slot.control);
-    const int shown = shownJob(v.map, slot);
+    const Job plain = v.map->job(slot.type, slot.hand, slot.control);
+    const int shown = shownJob(*v.map, slot);
     const Job was = shown == ControlsPage::kInherit ? plain : static_cast<Job>(shown);
     const Job after = job == ControlsPage::kInherit ? plain : static_cast<Job>(job);
-    const bool gripGoes = !slot.grip && after == Job::Choose && v.map.hasGrip(slot.type, slot.hand, slot.control);
-    ControlsPage::Notice notice{slot, was, after, v.map.button(slot.type, slot.hand, slot.control)};
+    const bool gripGoes = !slot.grip && after == Job::Choose && v.map->hasGrip(slot.type, slot.hand, slot.control);
+    ControlsPage::Notice notice{slot, was, after, v.map->button(slot.type, slot.hand, slot.control)};
     if (gripGoes && was == Job::None)  // only its grip job is lost: that one's
       notice = {{slot.type, slot.hand, slot.control, true},
-                v.map.gripJob(slot.type, slot.hand, slot.control),
+                v.map->gripJob(slot.type, slot.hand, slot.control),
                 Job::None,
                 notice.before};
     const bool shownNotice = job != shown && (gripGoes || (was != Job::None && was != after));
@@ -1561,7 +1561,7 @@ void Menu::layoutControlsDialog() {
                   // The buttons doing it alone, then with grip held.
                   for (int grip = 0; grip < 2; ++grip)
                     for (const LayoutControl& lc : layout.controls) {
-                      if (shownJob(v.map, {v.type, lc.hand, lc.control, grip == 1}) != static_cast<int>(job))
+                      if (shownJob(*v.map, {v.type, lc.hand, lc.control, grip == 1}) != static_cast<int>(job))
                         continue;
                       const std::string glyph = glyphOf(lc);
                       std::string tag;
@@ -1593,7 +1593,7 @@ void Menu::layoutControlsDialog() {
                   b.disabled = off;
                   const char* tip = jobTip(job, t);
                   b.tooltip = off ? cp.kept : tip ? tip : "";
-                  b.controlPart = static_cast<int>(page.parts.size());
+                  b.part = PartKind::Control, b.look = static_cast<int>(page.parts.size());
                   b.action = pick(static_cast<int>(job));
                   part.x = b.x, part.y = b.y, part.w = b.w, part.h = b.h;
                   page.parts.push_back(part);
@@ -1601,24 +1601,14 @@ void Menu::layoutControlsDialog() {
                 }
               });
   // Bottom left: Nothing; with grip held, also back to its own job.
-  auto bottomLeft = [this](const char* label, std::function<MenuCommand()> action, double x) {
-    Button b = textButton(label, Icon::None, std::move(action));
-    b.raised = b.dialog = true;
-    b.fontSize = DialogLayout::kLineSize;
-    b.h = DialogLayout::kButtonH;
-    b.w = textWidth(label, DialogLayout::kLineSize, false) + 2 * DialogLayout::kButtonPad;
-    b.x = x;
-    b.radius = kit::kCorner;
-    return b;
-  };
-  Button nothing = bottomLeft(t.jobs.nothing, pick(static_cast<int>(Job::None)), DialogLayout::kEdge);
+  Button nothing = dialog.besideButton(t.jobs.nothing, pick(static_cast<int>(Job::None)));
   nothing.latched = now == static_cast<int>(Job::None);
   nothing.disabled = kept;
   nothing.tooltip = kept ? cp.kept : slot.grip ? cp.gripNothingTip : cp.nothingTip;
   dialog.beside(nothing);
   if (slot.grip) {
-    Button same = bottomLeft(cp.sameAsAlone, pick(ControlsPage::kInherit),
-                             nothing.x + nothing.w + kit::kSpaceTight);
+    Button same = dialog.besideButton(cp.sameAsAlone, pick(ControlsPage::kInherit),
+                                      nothing.x + nothing.w + kit::kSpaceTight);
     same.disabled = now == ControlsPage::kInherit;
     same.tooltip = cp.sameAsAloneTip;
     dialog.beside(same);
@@ -1700,7 +1690,7 @@ GestureMap Menu::fullestGestures(ControllerType type, bool eitherFirst) const {
 void Menu::openGestureEditor(int edit) {
   ControlsPage& c = *controls_;
   const ControlsView& v = view_.controls;
-  const std::vector<Gesture>& list = v.gestures.list(v.type);
+  const std::vector<Gesture>& list = v.gestures->list(v.type);
   Editor& e = c.editor;
   e = Editor{};
   if (edit >= 0 && static_cast<size_t>(edit) < list.size()) {
@@ -1733,22 +1723,22 @@ void Menu::recordGesture() {
   }
   if (now[0] | now[1]) {
     for (int h = 0; h < 2; ++h) e.seen[h] |= now[h], e.shown[h] = e.seen[h];
-    e.mistake = heldMistake(v.map, type, e.seen);
+    e.mistake = heldMistake(*v.map, type, e.seen);
   } else if (e.seen[0] | e.seen[1]) {
     const uint32_t seen[2] = {e.seen[0], e.seen[1]};
     e.seen[0] = e.seen[1] = 0;
-    e.mistake = heldMistake(v.map, type, seen);
+    e.mistake = heldMistake(*v.map, type, seen);
     if (e.mistake == Mistake::None) {
       const int side = seen[1] ? 1 : 0;
       const std::vector<Control> controls = orderedControls(type, side, seen[side]);
-      const std::vector<Gesture>& list = v.gestures.list(type);
+      const std::vector<Gesture>& list = v.gestures->list(type);
       Gesture g;
       g.hands = static_cast<uint8_t>(1 << side);
       g.first = controls[0];
       g.second = controls.size() > 1 ? controls[1] : Control::Count;
       // One for either controller stays so, where both have its buttons.
       const Gesture* edited = e.edit >= 0 ? &list[static_cast<size_t>(e.edit)] : nullptr;
-      if (edited && edited->hands == 3 && bothHave(type, g) && !choosesOnEither(v.map, type, g)) g.hands = 3;
+      if (edited && edited->hands == 3 && bothHave(type, g) && !choosesOnEither(*v.map, type, g)) g.hands = 3;
       // Its value: the one changed's, or the one it would replace's.
       if (edited) g.value = edited->value;
       else
@@ -1781,7 +1771,7 @@ void Menu::layoutGestureEditor() {
   const GesturePageStrings& gp = t.gesturePage;
   const ControlsView& v = view_.controls;
   const ControllerType type = v.type;
-  const std::vector<Gesture>& list = v.gestures.list(type);
+  const std::vector<Gesture>& list = v.gestures->list(type);
   if (e.edit >= static_cast<int>(list.size()) || !gesturesFor(type)) {
     dialog_ = Dialog::None;
     return;
@@ -1789,16 +1779,6 @@ void Menu::layoutGestureEditor() {
   auto close = [this] {
     dialog_ = Dialog::None;
     return MenuCommand{};
-  };
-  auto bottomLeft = [this](const char* label, std::function<MenuCommand()> action) {
-    Button b = textButton(label, Icon::None, std::move(action));
-    b.raised = b.dialog = true;
-    b.fontSize = DialogLayout::kLineSize;
-    b.h = DialogLayout::kButtonH;
-    b.w = textWidth(label, DialogLayout::kLineSize, false) + 2 * DialogLayout::kButtonPad;
-    b.x = DialogLayout::kEdge;
-    b.radius = kit::kCorner;
-    return b;
   };
   c.parts.erase(std::remove_if(c.parts.begin(), c.parts.end(), [](const Part& p) { return p.kind == Part::Job; }),
                 c.parts.end());
@@ -1833,7 +1813,7 @@ void Menu::layoutGestureEditor() {
   if (e.step == 1) {
     layoutGestureRecording(dialog);
     if (e.back) {
-      Button back = bottomLeft(t.back, [this] {
+      Button back = dialog.besideButton(t.back, [this] {
         Editor& e = controls_->editor;
         e.step = 2;
         e.mistake = Mistake::None;
@@ -1849,8 +1829,8 @@ void Menu::layoutGestureEditor() {
 
   layoutGestureValues(dialog);
   if (e.edit >= 0) {
-    Button remove = bottomLeft(gp.remove, [this, type, index = e.edit, old = list[static_cast<size_t>(e.edit)],
-                                           before = v.gestures.listLine(type)] {
+    Button remove = dialog.besideButton(gp.remove, [this, type, index = e.edit, old = list[static_cast<size_t>(e.edit)],
+                                                    before = v.gestures->listLine(type)] {
       dialog_ = Dialog::None;
       ControlsPage& page = *controls_;
       page.noticeShown = true;
@@ -1895,7 +1875,7 @@ void Menu::layoutGestureValues(DialogLayout& dialog) {
   const ControlsPageStrings& cp = t.controlsPage;
   const ControlsView& v = view_.controls;
   const ControllerType type = v.type;
-  const std::vector<Gesture>& list = v.gestures.list(type);
+  const std::vector<Gesture>& list = v.gestures->list(type);
   const Gesture& g = e.gesture;
   const int side = e.side;
   if (bothHave(type, g)) {
@@ -1917,7 +1897,7 @@ void Menu::layoutGestureValues(DialogLayout& dialog) {
         Gesture moved = e.gesture;
         moved.hands = static_cast<uint8_t>(i ? 3 : 1 << e.side);
         const bool full = moved.hands != e.gesture.hands && noRoom(type, list, moved, e.edit);
-        const bool chooses = i == 1 && moved.hands != e.gesture.hands && choosesOnEither(v.map, type, moved);
+        const bool chooses = i == 1 && moved.hands != e.gesture.hands && choosesOnEither(*v.map, type, moved);
         Button b = textButton(names[i], Icon::None,
                               [this, hands = moved.hands] {
                                 controls_->editor.gesture.hands = hands;
@@ -1981,7 +1961,7 @@ void Menu::layoutGestureValues(DialogLayout& dialog) {
       const Editor& e = page.editor;
       const ControlsView& v = view_.controls;
       const ControllerType type = v.type;
-      const std::vector<Gesture>& list = v.gestures.list(type);
+      const std::vector<Gesture>& list = v.gestures->list(type);
       dialog_ = Dialog::None;
       Gesture g = e.gesture;
       g.value = value;
@@ -1989,7 +1969,7 @@ void Menu::layoutGestureValues(DialogLayout& dialog) {
       if (e.edit < 0)
         for (const Gesture& o : list)
           if (o.bits() == g.bits() && o.value == value && (o.hands & g.hands) == g.hands) return MenuCommand{};
-      GestureMap after = v.gestures;
+      GestureMap after = *v.gestures;
       std::vector<Gesture> replaced;
       if (!(e.edit >= 0 ? after.replace(type, static_cast<size_t>(e.edit), g, &replaced) : after.add(type, g, &replaced)))
         return MenuCommand{};
@@ -2017,7 +1997,7 @@ void Menu::layoutGestureValues(DialogLayout& dialog) {
       page.notice.changed = said;
       page.notice.wasValue = was;
       page.notice.nowValue = now;
-      page.notice.gestures = v.gestures.listLine(type);
+      page.notice.gestures = v.gestures->listLine(type);
       MenuCommand cmd;
       cmd.type = e.edit >= 0 ? MenuCommand::ChangeGesture : MenuCommand::AddGesture;
       cmd.option = static_cast<int>(type) << 17 | g.pack();
@@ -2071,7 +2051,7 @@ void Menu::layoutGestureValues(DialogLayout& dialog) {
                     b.radius = kit::kCorner;
                     b.fontSize = kJobSize;
                     b.tooltip = gestureNeeds(value, gp);
-                    b.controlPart = static_cast<int>(page.parts.size());
+                    b.part = PartKind::Control, b.look = static_cast<int>(page.parts.size());
                     b.action = pick(value);
                     part.x = b.x, part.y = b.y, part.w = b.w, part.h = b.h;
                     page.parts.push_back(part);

@@ -1,11 +1,11 @@
 #pragma once
 
 #include "stash_settings.h"
+#include "stash_worker.h"
 
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <thread>
 #include <vector>
 
 // A video of the app's library that was rated or played, by its oshash, as
@@ -103,9 +103,8 @@ class StashWriteBack {
   struct Shared;
   static void work(std::shared_ptr<Shared> shared);
 
-  std::shared_ptr<Shared> shared_;
-  std::thread worker_;
   StashWriteBackStatus status_;
   StashSendPlan plan_;
   StashTagSave tagSave_;
+  StashWorker<Shared> shared_;  // last: stopped and waited for first
 };

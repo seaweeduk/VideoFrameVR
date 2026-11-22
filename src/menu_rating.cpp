@@ -169,10 +169,7 @@ void Menu::rate(const std::string& path, int64_t video, float rating) {
   if (!library_ || (path.empty() && !video)) return;
   const VideoRecord now = video ? library_->video(video) : library_->record(path);
   if (now.rating == rating) return;  // unchanged: nothing to write
-  if (video)
-    library_->setRating(video, rating);
-  else
-    library_->setRating(path, rating);
+  services_.rate(path, video, rating);
   lookUpRecords();
   if (page_ == Page::Library) refreshLibraryRecords();
   current_ = library_->record(view_.currentFile);
@@ -238,7 +235,8 @@ void Menu::drawRating(cairo_t* cr, const Button& b) const {
     const float at = held ? ratingDrag_.rating : ratingHover_.rating;
     shown = at == b.rating ? 0 : at;
     if (pointed) ink = StarInk::White;
-  } else if ((b.card || b.listLook == static_cast<int>(ListLook::RowStars)) && b.rating <= 0) {
+  } else if ((b.card || (b.part == PartKind::List && b.look == static_cast<int>(ListLook::RowStars))) &&
+             b.rating <= 0) {
     return;  // a row's are shown by the panel shader while the row is pointed at (hoverLook())
   }
   const double cell = b.w / 5, cy = b.y + b.h / 2;

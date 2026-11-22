@@ -2,6 +2,7 @@
 
 #include "file_util.h"
 #include "app_dirs.h"
+#include "location.h"
 #include "remote.h"
 #include "sqlite_util.h"
 #include "stash_catalog.h"
@@ -69,10 +70,6 @@ int64_t now() { return static_cast<int64_t>(std::time(nullptr)); }
 bool under(const std::string& path, const std::string& root) {
   return path.compare(0, root.size(), root) == 0 &&
          (path.size() == root.size() || path[root.size()] == '/' || root.back() == '/');
-}
-
-std::string parentOf(const std::string& path) {
-  return remote::isRemote(path) ? remote::parent(path) : fs::path(path).parent_path().string();
 }
 
 // Hidden folders are looked into, bins and lost+found aren't; hidden files
@@ -282,7 +279,7 @@ void LibraryIndex::Shared::run() {
     }
     for (const auto& [dir, entries] : listed) feed(dir, entries);
     for (const std::string& path : gone) {
-      if (const auto folder = folders.find(parentOf(path)); folder != folders.end())
+      if (const auto folder = folders.find(parentFolder(path)); folder != folders.end())
         if (folder->second.files.erase(path)) ++folder->second.revision;
       if (files.erase(path)) touch(path);
     }
@@ -364,11 +361,11 @@ void LibraryIndex::Shared::load() {
        });
   for (auto& [path, folder] : folders)
     if (!roots.count(path))
-      if (const auto parent = folders.find(parentOf(path)); parent != folders.end())
+      if (const auto parent = folders.find(parentFolder(path)); parent != folders.end())
         parent->second.folders.insert(path);
   rows("SELECT path, size, mtime, added_at, found_at FROM files",
        [this](std::string path, sqlite3_stmt* st) {
-         const auto folder = folders.find(parentOf(path));
+         const auto folder = folders.find(parentFolder(path));
          if (folder == folders.end()) return;
          folder->second.files.insert(path);
          files[path] = {static_cast<uint64_t>(sqlite3_column_int64(st, 1)),
@@ -381,7 +378,7 @@ void LibraryIndex::Shared::load() {
   for (const Visit& visit : todo) {
     if (folders.try_emplace(visit.path).second) dirtyFolders.insert(visit.path);
     if (roots.count(visit.path)) continue;  // "/" is its own parent
-    if (const auto parent = folders.find(parentOf(visit.path)); parent != folders.end())
+    if (const auto parent = folders.find(parentFolder(visit.path)); parent != folders.end())
       parent->second.folders.insert(visit.path);
   }
   rows("SELECT key, value FROM meta", [this](std::string key, sqlite3_stmt* st) {
@@ -722,7 +719,7 @@ void LibraryIndex::Shared::apply(const std::string& dir, const Listing& listing)
   if (added) {
     dirtyFolders.insert(dir);
     if (!roots.count(dir))
-      if (const auto parent = folders.find(parentOf(dir)); parent != folders.end())
+      if (const auto parent = folders.find(parentFolder(dir)); parent != folders.end())
         parent->second.folders.insert(dir);
   }
   Folder& folder = at->second;
@@ -811,7 +808,7 @@ void LibraryIndex::Shared::dropStashCopies() {
   for (const auto& [path, file] : files)
     if (stashCopy(path, file.size)) copies.push_back(path);
   for (const std::string& path : copies) {
-    if (const auto folder = folders.find(parentOf(path)); folder != folders.end())
+    if (const auto folder = folders.find(parentFolder(path)); folder != folders.end())
       folder->second.files.erase(path);
     files.erase(path);
     touch(path);
@@ -843,7 +840,7 @@ void LibraryIndex::Shared::sift(const std::string& dir, Listing& listing) {
 bool LibraryIndex::Shared::inGenerated(const std::string& dir, const std::string& root) const {
   if (generated.empty()) return false;
   for (std::string path = dir; path.size() > root.size();) {
-    std::string parent = parentOf(path);
+    std::string parent = parentFolder(path);
     if (parent.size() >= path.size()) break;
     if (generated.count(parent)) return true;
     path = std::move(parent);
@@ -863,7 +860,7 @@ void LibraryIndex::Shared::dropFolder(const std::string& dir) {
     touch(path);
   }
   for (const std::string& sub : folder.folders) dropFolder(sub);
-  if (const auto parent = folders.find(parentOf(dir)); parent != folders.end())
+  if (const auto parent = folders.find(parentFolder(dir)); parent != folders.end())
     parent->second.folders.erase(dir);
 }
 

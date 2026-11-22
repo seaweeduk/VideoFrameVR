@@ -45,7 +45,7 @@ Menu::Row& Menu::Row::inner(Icon icon, const std::string& tooltip,
                             std::function<MenuCommand()> action, bool disabled) {
   for (size_t i = first_; i < end_; ++i) {
     Button& row = menu_->buttons_[i];
-    if (!row.toggle) continue;
+    if (row.part != PartKind::Toggle) continue;
     constexpr double size = kit::kRowH;
     row.inner = size + kit::kSpaceTight;
     Button b = menu_->iconButton(icon, std::move(action));
@@ -75,13 +75,14 @@ Menu::Row& Menu::Row::endButton(const std::string& label, std::function<MenuComm
   b.x = right - b.w;
   b.y = top;
   b.radius = kit::kCorner;
-  b.select = b.alignLeft = list;
+  if (list) b.part = PartKind::Select;
+  b.alignLeft = list;
   b.latched = open;
   // What the row says stops before it, its field (or list button) 8 before.
   for (size_t i = first_; i < end_; ++i) {
     Button& part = menu_->buttons_[i];
     const double gap = part.staticText ? kit::kSpace : kit::kSpaceTight;
-    if ((part.staticText || part.field || part.select) && part.x + part.w > b.x - gap)
+    if ((part.staticText || part.field || part.part == PartKind::Select) && part.x + part.w > b.x - gap)
       part.w = std::max(0.0, b.x - gap - part.x);
   }
   menu_->buttons_.push_back(b);
@@ -226,7 +227,8 @@ Menu::Button& Menu::addSwitch(double x, double y, double w, double h, const std:
   b.w = w;
   b.h = h;
   b.label = label;
-  b.toggle = b.bare = true;
+  b.part = PartKind::Toggle;
+  b.bare = true;
   b.on = on;
   b.fontSize = kit::kRowSize;
   b.action = std::move(action);
@@ -430,7 +432,8 @@ Menu::Row Menu::GroupLayout::select(const std::string& label, const std::string&
   b.w = w() - labelW_;
   b.h = kit::kRowH;
   b.radius = kit::kCorner;
-  b.select = b.alignLeft = true;
+  b.part = PartKind::Select;
+  b.alignLeft = true;
   b.latched = open;
   b.fontSize = kit::kWellSize;
   m.buttons_.push_back(b);
@@ -557,7 +560,7 @@ Menu::Row Menu::GroupLayout::swatches(const std::vector<std::string>& names, int
     Button b;
     b.panel = kBrowser;
     b.piece = true;
-    b.swatch = static_cast<int>(i);
+    b.part = PartKind::Swatch, b.look = static_cast<int>(i);
     b.selected = static_cast<int>(i) == chosen;
     b.radius = kit::kPieceCorner;
     b.x = well.x + in + i * (each + in);
@@ -673,7 +676,8 @@ void Menu::PageLayout::header() {
     b.y = top;
     b.h = h;
     b.label = s->label;
-    b.toggle = b.bare = true;
+    b.part = PartKind::Toggle;
+    b.bare = true;
     b.on = s->on;
     b.fontSize = kit::kWellSize;
     b.tooltip = s->tooltip;
@@ -750,7 +754,8 @@ double Menu::StripLayout::tabWidth(const std::string& label) const {
 Menu::Button& Menu::StripLayout::tab(const std::string& label, Icon icon, bool open,
                                      std::function<MenuCommand()> action) {
   Button b = menu_.textButton(label, icon, std::move(action), open);
-  b.tab = b.piece = true;
+  b.part = PartKind::Tab;
+  b.piece = true;
   b.x = tabsEnd_;
   b.y = strip::kTabsY + kit::kSpacePiece;
   b.w = tabWidth(label);
@@ -777,7 +782,8 @@ double Menu::StripLayout::endTabs() {
 Menu::Button& Menu::StripLayout::quit(double right, const std::string& label,
                                       std::function<MenuCommand()> action) {
   Button b = menu_.textButton(label, Icon::Power, std::move(action));
-  b.tab = b.bare = b.dangerHover = true;
+  b.part = PartKind::Tab;
+  b.bare = b.dangerHover = true;
   b.w = tabWidth(label);
   b.x = right - b.w;
   b.y = strip::kTabsY;
@@ -796,7 +802,7 @@ Menu::Button& Menu::StripLayout::chip(double x, const std::string& text, bool ba
                                       std::function<MenuCommand()> action) {
   Button b;
   b.label = text;
-  b.chip = bad ? 1 : 2;
+  b.part = PartKind::Chip, b.look = bad ? 1 : 2;
   b.action = std::move(action);
   b.x = x;
   b.y = strip::kTabsY + (strip::kTabsH - strip::kChipH) / 2;
@@ -839,7 +845,7 @@ Menu::Button& Menu::StripLayout::volume(double x, const std::string& tooltip) {
   b.y = strip::kRowY;
   b.w = strip::kVolumeW;
   b.h = strip::kButton;
-  b.volumeSlider = true;
+  b.part = PartKind::VolumeSlider;
   b.tooltip = tooltip;
   b.action = [] { return MenuCommand{}; };  // handled in click()/drag()
   menu_.buttons_.push_back(b);
@@ -868,7 +874,8 @@ void Menu::StripLayout::list(const Button& opener, const std::vector<Item>& item
   for (int i = 0; i < count; ++i) {
     const Item& item = items[i];
     Button e;
-    e.popup = e.listItem = true;
+    e.popup = true;
+    e.part = PartKind::ListItem;
     e.icon = item.icon;
     e.label = item.label;
     e.detail = item.sub;
@@ -996,6 +1003,19 @@ void Menu::DialogLayout::button(Button b) { buttons_.push_back(std::move(b)); }
 
 void Menu::DialogLayout::beside(Button b) { beside_.push_back(std::move(b)); }
 
+Menu::Button Menu::DialogLayout::besideButton(const char* label, std::function<MenuCommand()> action,
+                                              double x) const {
+  Button b = menu_.textButton(label, Icon::None, std::move(action));
+  b.raised = true;
+  b.part = PartKind::Dialog;
+  b.fontSize = kLineSize;
+  b.h = kButtonH;
+  b.w = menu_.textWidth(label, kLineSize, false) + 2 * kButtonPad;
+  b.x = x;
+  b.radius = kit::kCorner;
+  return b;
+}
+
 Menu::DialogLayout::~DialogLayout() {
   Menu& m = menu_;
   const double h = y_ - kLineGap + kButtonsGap + kButtonH + kEdge;
@@ -1020,7 +1040,8 @@ Menu::DialogLayout::~DialogLayout() {
   double right = x + w_ - kEdge;
   for (auto b = buttons_.rbegin(); b != buttons_.rend(); ++b) {
     b->panel = kBrowser;
-    b->popup = b->raised = b->dialog = true;
+    b->popup = b->raised = true;
+    b->part = PartKind::Dialog;
     b->fontSize = kLineSize;
     b->w = m.textWidth(b->label, kLineSize, false) + 2 * kButtonPad +
            (b->icon != Icon::None ? kButtonIcon + kButtonIconGap : 0);

@@ -115,17 +115,18 @@ void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsSho
       const int saturation = view_.accent.saturation;
       look.labelsFor({at.hue, at.brightness, at.saturation});
       // Around the circle: − from 0 goes to 359.
-      look.value(at.hue, MenuCommand::SetAccentHue, hue, 0, 359, std::to_string(hue) + "°", 1,
+      look.value(at.hue, MenuCommand::SetAccentHue, hue, value_range::kAccentHue.least,
+                 value_range::kAccentHue.most, std::to_string(hue) + "°", value_range::kAccentHue.step,
                  command(MenuCommand::SetAccentHue, (hue + 359) % 360),
                  command(MenuCommand::SetAccentHue, (hue + 1) % 360))
           .format(withUnit("°"));
-      look.value(at.brightness, MenuCommand::SetAccentBrightness, light, 0, 100,
-                 std::to_string(light) + " %")
+      look.value(at.brightness, MenuCommand::SetAccentBrightness, light, value_range::kPercent.least,
+                 value_range::kPercent.most, std::to_string(light) + " %")
           .format(withUnit(" %"))
           .mark(Accent{}.brightness)
           .tip(at.brightnessHint);
-      look.value(at.saturation, MenuCommand::SetAccentSaturation, saturation, 0, 100,
-                 std::to_string(saturation) + " %")
+      look.value(at.saturation, MenuCommand::SetAccentSaturation, saturation, value_range::kPercent.least,
+                 value_range::kPercent.most, std::to_string(saturation) + " %")
           .format(withUnit(" %"));
     }
   }
@@ -310,8 +311,9 @@ void Menu::checkSettingsFit() {
   for (int type = 0; type < kControllerTypes; ++type)
     for (const bool eitherFirst : {false, true}) {
       v.controls.type = static_cast<ControllerType>(type);
-      v.controls.gestures = fullestGestures(v.controls.type, eitherFirst);
-      const std::vector<Gesture>& list = v.controls.gestures.list(v.controls.type);
+      const GestureMap gestures = fullestGestures(v.controls.type, eitherFirst);
+      v.controls.gestures = &gestures;
+      const std::vector<Gesture>& list = v.controls.gestures->list(v.controls.type);
       controls_->type = v.controls.type;
       controls_->gripView = false;
       controls_->gestureView = true;

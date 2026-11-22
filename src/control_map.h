@@ -180,7 +180,8 @@ constexpr int kMaxGestures = 12;  // a controller type's
 // Each controller type's gestures: the user's, else the layout's defaults.
 // Kept in the settings as a type's whole list once it differs from them.
 // Each type's list is shared between copies until one of them changes, so
-// the menu's copy each frame costs no more than a pointer's.
+// a copy (the menu's, when the settings change) costs no more than a
+// pointer's.
 class GestureMap {
  public:
   GestureMap();

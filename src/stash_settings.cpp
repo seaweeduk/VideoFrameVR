@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <sstream>
+#include <tuple>
 #include <utility>
 
 namespace {
@@ -185,6 +186,22 @@ std::string StashSettings::localPath(const std::string& stashPath) const {
 
 bool StashSettings::unverified() const {
   return !unverifiedHost.empty() && stashHost(url) == unverifiedHost;
+}
+
+// Every field, in order: one added to StashSettings and not named here
+// doesn't compile.
+bool StashSettings::operator==(const StashSettings& o) const {
+  const auto fields = [](const StashSettings& s) {
+    const auto& [enabled, kind, url, apiKey, unverifiedHost, folders, covers, titles, malePerformers,
+                 writeBack, card, format, sections, hiddenSections, subgroups, hiddenSubgroups,
+                 scenesSort, performersSort, studiosSort, scenesDescending, performersDescending,
+                 studiosDescending] = s;
+    return std::tie(enabled, kind, url, apiKey, unverifiedHost, folders, covers, titles, malePerformers,
+                    writeBack, card, format, sections, hiddenSections, subgroups, hiddenSubgroups,
+                    scenesSort, performersSort, studiosSort, scenesDescending, performersDescending,
+                    studiosDescending);
+  };
+  return fields(*this) == fields(o);
 }
 
 void useServer(StashSettings& inUse, std::vector<StashSettings>& others, ServerKind kind) {

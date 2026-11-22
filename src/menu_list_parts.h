@@ -8,7 +8,7 @@ constexpr int kCountSize = 22;
 
 // The parts of the browser's navigation column and of its content pages
 // (the File explorer, the Library, Offline) that draw themselves:
-// Menu::Button::listLook, drawn by Menu::drawListPart() (menu_list_parts.cpp).
+// Menu::Button::look of a PartKind::List, drawn by Menu::drawListPart() (menu_list_parts.cpp).
 enum class ListLook {
   None,
   NavSection,  // a navigation row (File explorer, Network …): its icon and label
@@ -21,7 +21,4 @@ enum class ListLook {
   Section,     // a heading within a list (Offline's To go): semibold, dim, in line with the names
   Counted,     // a piece of a tools row's well: its label, then a count (`detail`), dim
   Badge,       // a label on a card's picture, from its top left corner ("VR · 8K"): not clickable
-  // Drawn over the row or card before it by its own look (stashLook): its
-  // columns, say; not clickable.
-  Overlay,
 };

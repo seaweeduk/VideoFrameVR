@@ -169,7 +169,8 @@ bool RunningVideo::handle(const MenuCommand& c, Passthrough& passthrough) {
       storeVideoSoon(VideoSettings::kScreen);
       break;
     case MenuCommand::SetSharpen:
-      settings.sharpen = std::clamp(static_cast<int>(c.value), 0, 300);
+      settings.sharpen =
+          std::clamp(static_cast<int>(c.value), value_range::kSharpen.least, value_range::kSharpen.most);
       player.setSharpened(settings.sharpen > 0);
       keepSharpenSoon();
       break;

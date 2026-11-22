@@ -1,5 +1,6 @@
 #include "file_util.h"
 
+#include "location.h"
 #include "stash_text.h"
 #include "remote.h"
 
@@ -127,8 +128,7 @@ const auto mediaCache = std::make_shared<ListingCache>();
 // The videos (or photos) in the folder of `current`, in file browser order.
 std::vector<std::string> sameKindNames(const std::string& current, ListingCache& shared) {
   const bool photos = isPhotoFile(current);
-  const std::string folder = remote::isRemote(current) ? remote::parent(current)
-                                                : fs::path(current).parent_path().string();
+  const std::string folder = parentFolder(current);
   const auto now = std::chrono::steady_clock::now();
   unsigned generation;
   {
@@ -238,8 +238,7 @@ std::future<std::string> mediaNeighbor(const std::string& current, int step, boo
   std::packaged_task<std::string()> task([current, step, wrap, order = std::move(order),
                                           cache = mediaCache]() mutable -> std::string {
     const fs::path path(current);
-    const std::string folder = remote::isRemote(current) ? remote::parent(current)
-                                                : path.parent_path().string();
+    const std::string folder = parentFolder(current);
     const std::string prefix = folder + (!folder.empty() && folder.back() != '/' ? "/" : "");
     // The listing has names: the start as one, if it is this folder's.
     order.start = order.start.compare(0, prefix.size(), prefix) == 0

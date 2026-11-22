@@ -136,8 +136,8 @@ void Menu::layoutFocus() {
           .tip(t.autoIpdHint)
           .disable(!on);
       const int ipd = p.autoIpd && f.headsetIpdTenthMm > 0 ? f.headsetIpdTenthMm : p.ipdTenthMm;
-      value(all, t.ipd, FocusControl::Ipd, ipd, 400, 900, tenths(ipd, " mm"),
-            [](int v) { return tenths(v, " mm"); })
+      value(all, t.ipd, FocusControl::Ipd, ipd, value_range::kIpd.least, value_range::kIpd.most,
+            tenths(ipd, " mm"), [](int v) { return tenths(v, " mm"); })
           .tip(t.ipdHint)
           .disable(!on);
     }
@@ -164,12 +164,13 @@ void Menu::layoutFocus() {
     if (advanced)
       labels.insert(labels.end(), std::begin(t.tuningLabels) + 1, std::end(t.tuningLabels));
     video.labelsFor(labels);
-    value(video, t.baseline, FocusControl::Baseline, s.baselineMm, 10, 120,
-          tenths(s.baselineMm, " cm"), [](int v) { return tenths(v, " cm"); })
+    value(video, t.baseline, FocusControl::Baseline, s.baselineMm, value_range::kFocusBaseline.least,
+          value_range::kFocusBaseline.most, tenths(s.baselineMm, " cm"),
+          [](int v) { return tenths(v, " cm"); })
         .tip(t.baselineHint)
         .disable(!manual && !automatic);
-    value(video, t.distance, FocusControl::Distance, s.distanceCm, 10, 1000,
-          distanceText(s.distanceCm), distanceText)
+    value(video, t.distance, FocusControl::Distance, s.distanceCm, value_range::kFocusDistance.least,
+          value_range::kFocusDistance.most, distanceText(s.distanceCm), distanceText)
         .logarithmic()
         .tip(t.distanceHint)
         .disable(!manual);
@@ -181,24 +182,26 @@ void Menu::layoutFocus() {
       };
       struct Tuning {
         FocusControl control;
-        int now, lo, hi;
+        int now;
+        ValueRange range;
         bool logarithmic;
         std::function<std::string(int)> format;
       };
       const Tuning tuning[] = {
-          {FocusControl::MinDistance, s.minCm, 5, 100000, true, distanceText},
-          {FocusControl::MaxDistance, s.maxCm, 5, 100000, true, distanceText},
-          {FocusControl::Transition, s.speed, 10, 1000, true, hundredths},
-          {FocusControl::Sensitivity, s.sensitivity, 50, 200, false, hundredths},
-          {FocusControl::Accuracy, s.accuracy, 1, 128, true, [](int v) { return std::to_string(v); }},
-          {FocusControl::Pitch, s.pitchDeg, -45, 45, false, degrees},
-          {FocusControl::Yaw, s.yawDeg, -45, 45, false, degrees}};
+          {FocusControl::MinDistance, s.minCm, value_range::kFocusRange, true, distanceText},
+          {FocusControl::MaxDistance, s.maxCm, value_range::kFocusRange, true, distanceText},
+          {FocusControl::Transition, s.speed, value_range::kFocusSpeed, true, hundredths},
+          {FocusControl::Sensitivity, s.sensitivity, value_range::kFocusSensitivity, false, hundredths},
+          {FocusControl::Accuracy, s.accuracy, value_range::kFocusAccuracy, true,
+           [](int v) { return std::to_string(v); }},
+          {FocusControl::Pitch, s.pitchDeg, value_range::kFocusOffset, false, degrees},
+          {FocusControl::Yaw, s.yawDeg, value_range::kFocusOffset, false, degrees}};
       // The minimum distance always; the rest with Advanced settings on.
       const size_t shown = advanced ? std::size(tuning) : 1;
       for (size_t i = 0; i < shown; ++i) {
         const Tuning& r = tuning[i];
-        Row row = value(video, t.tuningLabels[i], r.control, r.now, r.lo, r.hi, r.format(r.now),
-                        r.format);
+        Row row = value(video, t.tuningLabels[i], r.control, r.now, r.range.least, r.range.most,
+                        r.format(r.now), r.format);
         if (r.logarithmic) row.logarithmic();
         row.tip(t.tuningHints[i]).disable(!automatic);
       }
@@ -219,7 +222,8 @@ void Menu::layoutFocus() {
         .tip(t.motionHint);
     const int md = view_.motionDistance;
     motion
-        .value(t.motionDistance, MenuCommand::SetMotionDistance, md, 5, 1000, distanceText(md), 1,
+        .value(t.motionDistance, MenuCommand::SetMotionDistance, md, value_range::kMotionDistance.least,
+               value_range::kMotionDistance.most, distanceText(md), value_range::kMotionDistance.step,
                command(MenuCommand::SetMotionDistance, nextMotionDistance(md, -1)),
                command(MenuCommand::SetMotionDistance, nextMotionDistance(md, 1)))
         .format([](int v, bool) { return distanceText(v); })

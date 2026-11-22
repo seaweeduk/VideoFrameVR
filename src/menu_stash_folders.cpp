@@ -56,7 +56,7 @@ void Menu::updateStashFolders() {
       !stash_->folderFinder().running()) {
     f.automatic = false;
     const std::vector<StashFolderMap> found = stash_->foundFolders();
-    if (found != view_.stash.folders) command_ = stashFolders(found);
+    if (found != view_.stash->folders) command_ = stashFolders(found);
   }
   if (stash_->folderSearches() == f.searches) return;
   f.searches = stash_->folderSearches();
@@ -91,7 +91,7 @@ void Menu::chooseStashFolder(const std::string& folder) {
   std::vector<std::string> fallbacks;
   if (!directory().empty()) fallbacks.push_back(directory());
   fallbacks.push_back(std::getenv("HOME") ? std::getenv("HOME") : "/");
-  const StashFolderMap* map = mappingOf(view_.stash, folder);
+  const StashFolderMap* map = mappingOf(*view_.stash, folder);
   std::string dir = map ? (folder.empty() ? map->to : stashMapped(*map, folder)) : std::string();
   if (dir.empty() || dir.find('/') == std::string::npos) {
     dir = fallbacks.front();
@@ -149,7 +149,7 @@ double Menu::layoutStashFolderChoice() {
 // places its videos were found in, with Use.
 void StashPages::shownFolders(Menu& m, StashSettingsShown& shown) {
   const StashFoldersStrings& tf = strings().stashFolders;
-  const StashSettings& s = m.view_.stash;
+  const StashSettings& s = *m.view_.stash;
   const StashCatalog* c = catalog(m);
   if (!c) return;
   const std::vector<StashCatalogFolder>& rows = c->folders();

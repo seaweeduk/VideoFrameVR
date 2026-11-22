@@ -41,7 +41,7 @@ void Menu::layoutMain() {
   // The band: the timeline, pointed as a whole (click() and drag() seek).
   if (!view_.photo && p.duration > 0) {
     Button band;
-    band.band = true;
+    band.part = PartKind::Band;
     band.x = kLeft;
     band.y = kBandY;
     band.w = kRight - kLeft;

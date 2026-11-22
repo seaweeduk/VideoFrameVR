@@ -1,5 +1,7 @@
 #pragma once
 
+#include "stash_worker.h"
+
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -58,6 +60,6 @@ class StashFolderFinder {
 
  private:
   struct State;
-  std::shared_ptr<State> state_;
   std::vector<Result> found_;
+  StashWorker<State> state_;  // last: stopped and waited for first
 };

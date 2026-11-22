@@ -1,9 +1,9 @@
 #include "options.h"
 
 #include "diagnostics.h"
-#include "eye_resolution.h"
 #include "platform.h"
 #include "strings.h"
+#include "value_ranges.h"
 
 #include <algorithm>
 #include <cmath>

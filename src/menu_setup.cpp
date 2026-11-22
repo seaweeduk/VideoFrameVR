@@ -103,7 +103,7 @@ void Menu::endSetup(bool finished) {
     for (auto it = setup_->places.rbegin(); it != setup_->places.rend(); ++it)
       if (!navigation_.places.pinned(*it)) navigation_.places.togglePin(*it);
     pinsChanged();
-    for (const std::string& root : setup_->logins) remote::remember(root);
+    for (const std::string& root : setup_->logins) services_.rememberLogin(root);
   }
   if (setup_ && setup_->stash.client) setup_->stash.client->cancel();
   setup_.reset();
@@ -344,7 +344,8 @@ void SetupPages::layout(Menu& m) {
                                                             : Menu::Dropdown::Language;
       return MenuCommand{};
     });
-    language.select = language.alignLeft = true;
+    language.part = PartKind::Select;
+    language.alignLeft = true;
     language.latched = open;
     language.fontSize = kit::kWellSize;
     language.radius = kit::kCorner;
@@ -449,7 +450,8 @@ void SetupPages::listBelow(Menu& m, const Menu::Button& opener, const std::vecto
   double y = opener.y + opener.h + kit::kSpaceTight + kit::kPopPad;
   for (size_t i = 0; i < items.size(); ++i) {
     Menu::Button e;
-    e.popup = e.listItem = true;
+    e.popup = true;
+    e.part = PartKind::ListItem;
     e.label = items[i].label;
     e.tooltip = items[i].tooltip;
     e.selected = static_cast<int>(i) == chosen;

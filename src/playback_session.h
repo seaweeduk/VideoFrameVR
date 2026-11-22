@@ -26,9 +26,6 @@ class VideoPlayer;
 struct MenuCommand;
 struct MenuView;
 
-// A link: a scene from Stash plays as its file does.
-bool isStream(const std::string& location);
-
 // What plays: opening and closing videos and photos, Previous and Next
 // through a folder or a list, what happens at a video's end, the slideshow,
 // resuming, play counts, the record a file is kept under arriving, and its

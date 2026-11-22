@@ -138,7 +138,8 @@ void Menu::layoutWhatsNew() {
   // The switch's label on the left edge (a switch's label is 12 into it).
   Button show;
   show.label = t.showAfterUpdates;
-  show.toggle = show.bare = true;
+  show.part = PartKind::Toggle;
+  show.bare = true;
   show.on = view_.showWhatsNew;
   show.x = kPad - 12;
   show.w = std::max(412.0, textWidth(show.label, kTextSize, false) + 112);
@@ -159,7 +160,7 @@ void Menu::layoutWhatsNew() {
   bar.h = box.notesH;
   bar.radius = kBar / 2;
   bar.bare = true;
-  bar.scrollbar = true;
+  bar.part = PartKind::Scrollbar;
   bar.action = [] { return MenuCommand{}; };  // handled in click()/drag()
   buttons_.push_back(bar);
 }

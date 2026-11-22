@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdio>
 #include <functional>
+#include <mutex>
 
 namespace {
 
@@ -103,13 +104,10 @@ std::shared_ptr<const StashCatalog> sync(MediaClient& client, const StashSetting
 
 }  // namespace
 
-struct StashSync::Shared {
+struct StashSync::Shared : StashWorkerShared {
   StashSettings settings;
-  std::mutex mutex;
-  std::condition_variable wake;
-  bool load = false, sync = false, stop = false;
+  bool load = false, sync = false;
   StashLibraryFormats library;
-  MediaClient* client = nullptr;  // the request under way, to stop it
   // What the worker finished, for poll().
   bool changed = false;
   std::shared_ptr<const StashCatalog> catalog;
@@ -119,42 +117,26 @@ struct StashSync::Shared {
   std::shared_ptr<const StashCatalog> retired;
 };
 
-StashSync::StashSync(const StashSettings& settings) : shared_(std::make_shared<Shared>()) {
-  shared_->settings = settings;
-}
+StashSync::StashSync(const StashSettings& settings) { shared_->settings = settings; }
 
-StashSync::~StashSync() {
-  stop();
-  if (worker_.joinable()) worker_.join();
-}
+StashSync::~StashSync() = default;
 
-void StashSync::stop() {
-  {
-    std::lock_guard<std::mutex> lock(shared_->mutex);
-    shared_->stop = true;
-    if (shared_->client) shared_->client->cancel();
-  }
-  shared_->wake.notify_one();
-}
+void StashSync::stop() { shared_.stop(); }
 
 void StashSync::start(StashLibraryFormats library) {
-  {
-    std::lock_guard<std::mutex> lock(shared_->mutex);
+  shared_.hand([&] {
     shared_->library = std::move(library);
     shared_->load = shared_->sync = true;
-  }
-  if (!worker_.joinable()) worker_ = std::thread(work, shared_);
-  shared_->wake.notify_one();
+  });
+  shared_.start(work);
 }
 
 void StashSync::syncNow(StashLibraryFormats library) {
-  {
-    std::lock_guard<std::mutex> lock(shared_->mutex);
+  shared_.hand([&] {
     shared_->library = std::move(library);
     shared_->sync = true;
-  }
-  if (!worker_.joinable()) worker_ = std::thread(work, shared_);
-  shared_->wake.notify_one();
+  });
+  shared_.start(work);
 }
 
 bool StashSync::poll() {

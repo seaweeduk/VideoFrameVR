@@ -128,6 +128,8 @@ struct StashSettings {
   // Whether the server's certificate is accepted without being verified:
   // `url` names unverifiedHost.
   bool unverified() const;
+  bool operator==(const StashSettings& o) const;
+  bool operator!=(const StashSettings& o) const { return !(*this == o); }
 };
 
 // `kind`'s setup made the one in use, the one it replaces put with the

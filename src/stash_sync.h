@@ -3,13 +3,11 @@
 #include "stash_catalog.h"
 #include "stash_http.h"
 #include "stash_settings.h"
+#include "stash_worker.h"
 
-#include <condition_variable>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 
 // How the last load or sync went, for the Settings page.
 struct StashStatus {
@@ -72,11 +70,10 @@ class StashSync {
   struct Shared;
   static void work(std::shared_ptr<Shared> shared);
 
-  std::shared_ptr<Shared> shared_;
-  std::thread worker_;
   std::shared_ptr<const StashCatalog> catalog_;
   StashStatus status_;
   double receivedAt_ = 0;  // when status_.received was last taken (steady seconds)
+  StashWorker<Shared> shared_;  // last: stopped and waited for first
 };
 
 // One sync without the worker, as --stash-sync runs it: blocks. Fills in

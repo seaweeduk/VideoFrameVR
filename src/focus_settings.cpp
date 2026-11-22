@@ -1,5 +1,7 @@
 #include "focus_settings.h"
 
+#include "value_ranges.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -11,15 +13,14 @@ namespace {
 
 // Each button changes one stored unit, matching the slider's precision.
 struct Range {
-  int lo, hi;
-  int clamp(int value) const { return std::clamp(value, lo, hi); }
+  ValueRange range;
+  int clamp(int value) const { return std::clamp(value, range.least, range.most); }
   int next(int value, int direction) const { return clamp(value + direction); }
 };
-constexpr Range kDistance{10, 1000}, kRange{5, 100000}, kSpeed{10, 1000},
-    kSensitivity{50, 200}, kAccuracy{1, 128};
-constexpr int kMinBaselineMm = 10, kMaxBaselineMm = 120;
-constexpr int kMaxOffsetDeg = 45;
-constexpr int kMinIpd = 400, kMaxIpd = 900;  // tenths of a mm (4 to 9 cm)
+constexpr Range kDistance{value_range::kFocusDistance}, kRange{value_range::kFocusRange},
+    kSpeed{value_range::kFocusSpeed}, kSensitivity{value_range::kFocusSensitivity},
+    kAccuracy{value_range::kFocusAccuracy}, kBaseline{value_range::kFocusBaseline},
+    kOffset{value_range::kFocusOffset}, kIpd{value_range::kIpd};
 
 const char* modeName(FocusMode m) {
   return m == FocusMode::Manual ? "manual" : m == FocusMode::Automatic ? "auto" : "off";
@@ -34,7 +35,7 @@ FocusSettings sanitized(FocusSettings f) {
   f.mode = static_cast<FocusMode>(
       std::clamp(static_cast<int>(f.mode), 0, static_cast<int>(FocusMode::kCount) - 1));
   f.distanceCm = kDistance.clamp(f.distanceCm);
-  f.baselineMm = std::clamp(f.baselineMm, kMinBaselineMm, kMaxBaselineMm);
+  f.baselineMm = kBaseline.clamp(f.baselineMm);
   f.minCm = kRange.clamp(f.minCm);
   f.maxCm = kRange.clamp(f.maxCm);
   if (f.minCm >= f.maxCm) f.maxCm = kRange.next(f.minCm, 1);
@@ -42,8 +43,8 @@ FocusSettings sanitized(FocusSettings f) {
   f.speed = kSpeed.clamp(f.speed);
   f.sensitivity = kSensitivity.clamp(f.sensitivity);
   f.accuracy = kAccuracy.clamp(f.accuracy);
-  f.pitchDeg = std::clamp(f.pitchDeg, -kMaxOffsetDeg, kMaxOffsetDeg);
-  f.yawDeg = std::clamp(f.yawDeg, -kMaxOffsetDeg, kMaxOffsetDeg);
+  f.pitchDeg = kOffset.clamp(f.pitchDeg);
+  f.yawDeg = kOffset.clamp(f.yawDeg);
   return f;
 }
 
@@ -93,11 +94,11 @@ int nextFocusStep(FocusControl control, int value, int direction) {
     case FocusControl::Transition: return kSpeed.next(value, direction);
     case FocusControl::Sensitivity: return kSensitivity.next(value, direction);
     case FocusControl::Accuracy: return kAccuracy.next(value, direction);
-    case FocusControl::Ipd: return std::clamp(value + direction, kMinIpd, kMaxIpd);
+    case FocusControl::Ipd: return kIpd.next(value, direction);
     case FocusControl::Baseline:
-      return std::clamp(value + direction, kMinBaselineMm, kMaxBaselineMm);
+      return kBaseline.next(value, direction);
     case FocusControl::Pitch:
-    case FocusControl::Yaw: return std::clamp(value + direction, -kMaxOffsetDeg, kMaxOffsetDeg);
+    case FocusControl::Yaw: return kOffset.next(value, direction);
     default: return value + direction;
   }
 }
@@ -129,7 +130,7 @@ bool applyFocusControl(FocusControl control, double value, bool& videoOwn, Focus
       preferences.autoIpd = v != 0;
       return true;
     case FocusControl::Ipd:  // a value of its own: no longer the headset's
-      preferences.ipdTenthMm = std::clamp(v, kMinIpd, kMaxIpd);
+      preferences.ipdTenthMm = kIpd.clamp(v);
       preferences.autoIpd = false;
       return true;
     default:
@@ -218,7 +219,7 @@ bool FocusSettingsReader::read(const std::string& key, const std::string& value)
     return true;
   }
   if (key == "user_ipd_tenth_mm") {
-    preferences_.ipdTenthMm = std::clamp(v, kMinIpd, kMaxIpd);
+    preferences_.ipdTenthMm = kIpd.clamp(v);
     return true;
   }
   if (key.rfind("focus2_", 0) == 0) {

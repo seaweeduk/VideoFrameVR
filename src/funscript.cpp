@@ -1,5 +1,6 @@
 #include "funscript.h"
 
+#include "location.h"
 #include "remote.h"
 #include "server_json.h"
 #include "stash_stream.h"
@@ -69,7 +70,7 @@ bool parseFunscript(const std::string& text, Funscript& script) {
 std::string funscriptBeside(const std::string& location) {
   if (location.empty() || isStashScene(location)) return {};
   // Links (http and the like) have no file beside them.
-  if (location.find("://") != std::string::npos && !remote::isRemote(location)) return {};
+  if (isStream(location)) return {};
   const size_t slash = location.find_last_of('/');
   const size_t dot = location.find_last_of('.');
   const size_t name = slash == std::string::npos ? 0 : slash + 1;

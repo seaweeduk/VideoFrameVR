@@ -2,6 +2,7 @@
 
 #include "platform.h"
 #include "settings.h"
+#include "value_ranges.h"
 
 #include <vector>
 
@@ -24,11 +25,7 @@ constexpr int kDefaultVideoResolution = kStandaloneHeadset ? 175 : 100;
 // 3760 comparison; desktop: 1× is already SteamVR's 1:1 estimate there.
 constexpr int kInstantResolution = kStandaloneHeadset ? 175 : 125;
 
-// What may be kept in settings.conf (a converted render_scale may fall
-// outside the menu's range).
-constexpr int kMinResolution = 25, kMaxResolution = 600;
-// The desktop menu's range and step: its slider and its − and +.
-constexpr int kResolutionLow = 50, kResolutionHigh = 300, kResolutionStep = 1;
+// Their ranges in settings.conf and the menu are in value_ranges.h.
 
 // The next multiple of the step up (direction > 0) or down, within the
 // menu's range; a value already outside it stays.

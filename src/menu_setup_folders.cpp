@@ -353,7 +353,7 @@ void SetupPages::layoutPick(Menu& m) {
     Menu::Button b = m.textButton(label, icon, std::move(action));
     b.nav = true;
     b.on = on;
-    b.listLook = static_cast<int>(ListLook::NavSection);
+    b.part = PartKind::List, b.look = static_cast<int>(ListLook::NavSection);
     b.fontSize = kit::kNavSize;
     b.radius = kit::kCorner;
     Menu::Button& added = add(m, b, kNavX, y, kNavW, kNavH);
@@ -1062,7 +1062,7 @@ void SetupPages::layoutSftp(Menu& m) {
                             SetupMenu& s = *m.setup_;
                             const std::string root = m.network_.form.root;
                             if (!s.holdWrites)
-                              remote::remember(root);
+                              m.services_.rememberLogin(root);
                             else if (std::find(s.logins.begin(), s.logins.end(), root) == s.logins.end())
                               s.logins.push_back(root);
                             m.network_.form = {};

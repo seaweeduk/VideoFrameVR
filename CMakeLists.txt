@@ -79,6 +79,7 @@ add_executable(videoframevr
   src/video_check.cpp
   src/library.cpp
   src/library_index.cpp
+  src/location.cpp
   src/accent.cpp
   src/mask_probe.cpp
   src/media_client.cpp
@@ -102,6 +103,7 @@ add_executable(videoframevr
   src/menu_player.cpp
   src/menu_presets.cpp
   src/menu_rating.cpp
+  src/menu_services.cpp
   src/menu_scripts.cpp
   src/menu_search.cpp
   src/menu_settings.cpp
@@ -184,6 +186,7 @@ add_executable(videoframevr
   src/stash_stream.cpp
   src/stash_sync.cpp
   src/stash_text.cpp
+  src/stash_worker.cpp
   src/stash_write_back.cpp
   src/stereo_correction.cpp
   src/stick_seek.cpp

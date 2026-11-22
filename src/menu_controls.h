@@ -20,7 +20,7 @@ struct ControlsPage {
   setup_places::Async<std::shared_ptr<const ControllerArt>> loading;
   uint32_t held[2] = {0, 0};  // each hand's controlBit()s
 
-  // What the page draws itself, or a button draws (Menu::Button::controlPart).
+  // What the page draws itself, or a button draws (Menu::Button::look of a PartKind::Control).
   struct Part {
     enum Kind : uint8_t {
       Label,    // a button's: raised, its glyph and job

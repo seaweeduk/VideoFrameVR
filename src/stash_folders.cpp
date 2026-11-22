@@ -6,11 +6,9 @@
 
 #include <algorithm>
 #include <atomic>
-#include <condition_variable>
 #include <cstdlib>
 #include <mutex>
 #include <set>
-#include <thread>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
@@ -270,28 +268,14 @@ struct Search {
 
 }  // namespace
 
-struct StashFolderFinder::State {
-  std::mutex mutex;
-  std::condition_variable wake;
+struct StashFolderFinder::State : StashWorkerShared {
   std::atomic<uint64_t> generation{0};
   std::atomic<bool> busy{false};
   std::atomic<int> jobCount{0}, jobsDone{0};
-  bool stop = false, pending = false, ready = false;
+  bool pending = false, ready = false;
   std::vector<Job> jobs;
   std::vector<std::string> folders, also;
   std::vector<Result> result;
-  std::thread worker;
-
-  State() : worker([this] { run(); }) {}
-  ~State() {
-    {
-      std::lock_guard lock(mutex);
-      stop = true;
-      ++generation;
-    }
-    wake.notify_one();
-    worker.join();
-  }
 
   void run() {
     std::unique_lock lock(mutex);
@@ -325,13 +309,22 @@ struct StashFolderFinder::State {
   }
 };
 
-StashFolderFinder::StashFolderFinder() : state_(std::make_shared<State>()) {}
-StashFolderFinder::~StashFolderFinder() = default;
+StashFolderFinder::StashFolderFinder() {
+  state_.start([](std::shared_ptr<State> state) { state->run(); });
+}
+
+StashFolderFinder::~StashFolderFinder() {
+  // Stops the worker and the search under way together, so it can't take
+  // up a pending job first.
+  state_.hand([this] {
+    state_->halt();
+    ++state_->generation;
+  });
+}
 
 void StashFolderFinder::find(std::vector<Job> jobs, std::vector<std::string> folders,
                              std::vector<std::string> also) {
-  {
-    std::lock_guard lock(state_->mutex);
+  state_.hand([&] {
     ++state_->generation;
     state_->jobCount = static_cast<int>(jobs.size());
     state_->jobsDone = 0;
@@ -341,9 +334,8 @@ void StashFolderFinder::find(std::vector<Job> jobs, std::vector<std::string> fol
     state_->pending = true;
     state_->ready = false;
     state_->busy = true;
-  }
+  });
   found_.clear();
-  state_->wake.notify_one();
 }
 
 bool StashFolderFinder::poll() {
