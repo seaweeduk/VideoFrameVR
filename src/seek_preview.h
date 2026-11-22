@@ -7,7 +7,6 @@
 #include "subtitle_overlay.h"
 #include "video_format.h"
 #include "xmath.h"
-#include "xr_context.h"
 
 #include <chrono>
 #include <string>

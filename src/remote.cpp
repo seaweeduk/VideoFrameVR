@@ -3,7 +3,7 @@
 #include "file_util.h"
 #include "remote_connection.h"
 #include "run_log.h"
-#include "settings.h"
+#include "app_dirs.h"
 
 #include <mpv/stream_cb.h>
 #include <nlohmann/json.hpp>

@@ -3,7 +3,7 @@
 #include "library.h"
 #include "offline.h"
 #include "run_log.h"
-#include "settings.h"  // cacheDir
+#include "app_dirs.h"
 #include "stash_store.h"
 #include "stash_stream.h"
 #include "strings.h"

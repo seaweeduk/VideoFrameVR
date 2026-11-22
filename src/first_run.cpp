@@ -1,7 +1,7 @@
 #include "first_run.h"
 
 #include "file_util.h"
-#include "settings.h"
+#include "app_dirs.h"
 
 #include <filesystem>
 #include <fstream>

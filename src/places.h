@@ -39,6 +39,8 @@ class Places {
   // In the user's order, hidden ones too.
   const std::vector<Place>& places() const { return places_; }
   bool ready() const { return loaded_; }
+  // A look started by refresh() hasn't been taken by poll() yet.
+  bool looking() const { return pending_ != nullptr; }
   bool pinned(const std::string& path) const;
   void togglePin(const std::string& path);
   // Edit places: moved by one among those shown in the editor (-1 up, 1 down),

@@ -1,5 +1,6 @@
 #include "notices.h"
 
+#include "menu.h"
 #include "menu_geometry.h"
 
 #include <cairo.h>

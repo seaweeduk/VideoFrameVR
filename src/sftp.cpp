@@ -3,7 +3,7 @@
 #include "file_util.h"
 #include "remote_connection.h"
 #include "run_log.h"
-#include "settings.h"
+#include "app_dirs.h"
 
 #include <libssh/libssh.h>
 #include <libssh/sftp.h>

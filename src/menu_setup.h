@@ -265,10 +265,10 @@ struct SetupPages {
   // none): SteamVR's, else its letter or the trigger.
   static PillGlyph pillGlyph(const ControllerArt* art, const std::vector<ControllerBindings::Source>& sources,
                              ControlAction action, bool upDown, const std::string& fallback);
-
- private:
   static void layout(Menu& m);
   static void draw(Menu& m, cairo_t* cr);
+
+ private:
   static void setStep(Menu& m, SetupMenu::Step step);
   // The step's title and what to do.
   static void drawHead(Menu& m, cairo_t* cr, const std::string& title, const std::string& line,

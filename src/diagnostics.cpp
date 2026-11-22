@@ -3,6 +3,7 @@
 #include "media_server.h"
 #include "platform.h"
 #include "run_log.h"
+#include "app_dirs.h"
 #include "settings.h"
 
 #include <algorithm>

@@ -1,7 +1,7 @@
 #include "menu_parts.h"
 
 #include "eye_resolution.h"
-#include "foveation.h"
+#include "foveation_level.h"
 #include "refresh_rate.h"
 
 #include <cmath>

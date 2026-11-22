@@ -1,9 +1,9 @@
 #pragma once
 
 #include "autofocus.h"
+#include "eye_state.h"
 #include "gaze_correction.h"
 #include "xmath.h"
-#include "xr_context.h"
 
 // What the automatic focus is aimed by, as the menu tells it.
 enum class TargetStatus {

@@ -3,6 +3,7 @@
 #include "colour_balance.h"
 #include "flat_screen.h"
 #include "focus_settings.h"
+#include "value_ranges.h"
 #include "video_format.h"
 
 #include <cstdint>
@@ -80,12 +81,14 @@ struct VideoSettings {
   ColourBalance balance;
   float zoom = 1.0f;  // 180°/360° video: magnification
   // Its range, and the menu's step, in percent.
-  static constexpr int kMinZoomPercent = 50, kMaxZoomPercent = 250, kZoomStepPercent = 1;
+  static constexpr int kMinZoomPercent = value_range::kMinZoomPercent,
+                       kMaxZoomPercent = value_range::kMaxZoomPercent,
+                       kZoomStepPercent = value_range::kZoomStepPercent;
   float originForward = 0;  // surround viewpoint, in sphere radii toward the picture
   int opacity = 100;  // percent, over the room (where the runtime blends)
   // Persisted control range. The combined origin and head motion are eased
   // inside the sphere by stereo_correction.cpp, not clamped at this value.
-  static constexpr float kMaxOriginForward = 0.8f;
+  static constexpr float kMaxOriginForward = value_range::kMaxOriginForward;
   bool passthrough = false;
   // Passthrough was set by hand for this video, on or off: it is then never
   // switched automatically (autoPassthrough(), see_through.h).

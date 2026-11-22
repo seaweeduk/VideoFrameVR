@@ -1,6 +1,6 @@
 #include "gpu_context.h"
 
-#include "settings.h"
+#include "app_dirs.h"
 
 #include <unistd.h>
 

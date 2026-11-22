@@ -80,10 +80,10 @@ bool Menu::startSetup(bool holdWrites, const std::vector<std::string>& places) {
   m.places = places;
   // The desktop window's card is a third of these pixels, at its own size.
   // Scrolling (Choose a folder's list moves on the GPU): a spare image.
-  if (!m.canvas.init(*uploader_, kSetupWidth, kSetupHeight + kSetupKeyboardHeight, s, true) ||
-      !m.arrow.init(*uploader_, kArrowSize, kArrowSize, s) ||
-      !m.label.init(*uploader_, kLabelW, kLabelH, s) || !m.hint.init(*uploader_, kHintW, kHintH, s) ||
-      (!kStandaloneHeadset && !m.mirror.init(*uploader_, kMirrorW, kMirrorH)))
+  if (!initCanvas(m.canvas, kSetupWidth, kSetupHeight + kSetupKeyboardHeight, s, true) ||
+      !initCanvas(m.arrow, kArrowSize, kArrowSize, s) ||
+      !initCanvas(m.label, kLabelW, kLabelH, s) || !initCanvas(m.hint, kHintW, kHintH, s) ||
+      (!kStandaloneHeadset && !initCanvas(m.mirror, kMirrorW, kMirrorH)))
     return false;
   SetupPages::loadControls(*this);  // Welcome's trigger glyph
   dropdown_ = Dropdown::None;
@@ -154,9 +154,9 @@ Menu::IntroPiece Menu::setupIntroPiece(IntroLayer layer) {
     // width so that it is centred on whole pixels as the page centres it.
     const int word = static_cast<int>(std::ceil(textWidth(kAppTitle, kNameSize, true)));
     in.nameW = std::max(kNameW, (word + 2 * kCellGap + 1) / 2 * 2);
-    if (!in.backdrop->init(*uploader_, kSetupWidth, kSetupHeight) ||
-        !in.pieces->init(*uploader_, std::max(kPiecesW, in.nameW), kPiecesH, menu_geometry::kRasterScale) ||
-        !in.black->init(*uploader_, 4, 4)) {
+    if (!initCanvas(*in.backdrop, kSetupWidth, kSetupHeight) ||
+        !initCanvas(*in.pieces, std::max(kPiecesW, in.nameW), kPiecesH, menu_geometry::kRasterScale) ||
+        !initCanvas(*in.black, 4, 4)) {
       dropSetupIntro();
       return p;
     }

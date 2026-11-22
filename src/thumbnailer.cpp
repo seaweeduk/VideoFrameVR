@@ -2,7 +2,7 @@
 
 #include "file_util.h"
 #include "platform.h"
-#include "settings.h"  // cacheDir
+#include "app_dirs.h"
 #include "remote_avio.h"
 #include "stash_images.h"  // encodeJpeg, decodeJpeg
 #include "stash_stream.h"

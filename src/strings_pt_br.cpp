@@ -159,8 +159,6 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.tvGamma = "Gama de TV";
   s.tvGammaHint = "Sombras de TV, BT.1886. Todos os vídeos. Desligado: valores originais.";
   s.eyeResolution = "Resolução";
-  s.resolutionHint = "1× = %d pixels do painel. Marca alta: padrão. Acima de %d: troca lenta, sem ganho em 8K.";
-  s.resolutionSteamVr = "1× = resolução por olho sugerida pelo SteamVR. Maior usa mais GPU.";
   s.resolutionOverride = "Opção de inicialização: %d pixels por olho. Altere aqui para substituir.";
   s.resolutionLimited = "Limitado a %.2f× pelo SteamVR ou pela GPU";
   s.resolutionChanged = "1× agora = %d pixels do painel. Tamanho mais próximo: %.2f×.";
@@ -177,7 +175,6 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.showFoveationHint = "Verde: detalhe total. Amarelo: metade por eixo. Sem cor: um quarto. Cruz: olhar.";
   s.frameReuse = "Pular quadros repetidos";
   s.frameReuseHint = "Desenha uma imagem nova só quando o vídeo ou o seu ponto de vista muda. Gasta menos energia e mantém o headset mais frio. Desative se o movimento parecer irregular.";
-  s.foveationFrameOnly = "Só no Steam Frame";
   s.sharpArea = "Área nítida";
   s.sharpBins[0] = "1 bin";
   s.sharpBins[1] = "3 bins";
@@ -584,7 +581,6 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.stashScene.similarHint = "Tags em comum ponderadas e tamanho do elenco; bônus menores para estúdio e artistas. Apenas o mesmo formato.";
   s.stashScene.noSimilar = "Nenhuma outra cena é parecida o bastante";
   s.stashScene.with = "Com %s";
-  s.stashScene.sameStudio = "Mesmo estúdio · %s";
   s.stashScene.tagsInCommon = "%d tags em comum";
   s.stashScene.oneTagInCommon = "1 tag em comum";
   s.stashScene.notInStash = "O Stash não conhece este vídeo";
@@ -710,7 +706,6 @@ Strings brazilianPortugueseStrings(const Strings& english) {
 
   s.tipAdvanced = "Mostra os ajustes finos nas páginas de configurações.";
   s.tipSubtitleRaise = "Mover legendas flutuantes para cima ou para baixo.";
-  s.tipPictureReset = "Redefinir brilho, contraste, saturação, zoom e ponto de vista deste vídeo.";
   s.tipMipmaps = "Suavizar vídeos reduzidos com cópias menores de cada quadro.";
   s.tipMipmapsFrame = "Suavizar vídeos reduzidos. Usa GPU no Frame.";
   s.tipSharpen = "Realçar bordas em todos os vídeos.";
@@ -744,13 +739,6 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.automaticLanguage = "Auto";
   s.languageName = "Português (Brasil)";
   s.languageHint = "Aplica na hora. Automático usa o idioma do sistema.";
-  s.focusStatus.reasons[0] = "área com pouca textura";
-  s.focusStatus.reasons[1] = "padrão repetido";
-  s.focusStatus.reasons[2] = "imagens dos olhos divergem";
-  s.focusStatus.reasons[3] = "fora da imagem";
-  s.focusStatus.reasons[4] = "transparente";
-  s.focusStatus.reasons[5] = "amostras divergem";
-  s.focusStatus.reasons[6] = "mais perto que a distância mínima";
   s.focusStatus.targets[0] = "Alvo segue a direção da cabeça";
   s.focusStatus.targets[1] = "Eye tracking ativo";
   s.focusStatus.targets[2] = "Eye tracking: mantendo durante breve pausa";

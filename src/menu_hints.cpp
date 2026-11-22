@@ -32,7 +32,7 @@ const Texture* Menu::drawHint(Hint hint, int& width, int& height) {
   if (!hints_) hints_ = std::make_unique<MenuHints>();
   MenuHints& h = *hints_;
   if (h.loading.running()) h.loading.take(h.art);
-  if (!h.ready && !h.canvas.init(*uploader_, kHintW, kHintH, menu_geometry::kRasterScale))
+  if (!h.ready && !initCanvas(h.canvas, kHintW, kHintH, menu_geometry::kRasterScale))
     return nullptr;
   h.ready = true;
   const ControllerStrings& t = text().controls;

@@ -159,8 +159,6 @@ Strings germanStrings(const Strings& english) {
   s.tvGamma = "TV-Gamma";
   s.tvGammaHint = "TV-Schatten, BT.1886. Alle Videos. Aus: Originalwerte bleiben.";
   s.eyeResolution = "Auflösung";
-  s.resolutionHint = "1× = %d Panelpixel. Hohe Marke: Standard. Über %d: langsamerer Wechsel, kein 8K-Detailgewinn.";
-  s.resolutionSteamVr = "1× = SteamVR-Empfehlung pro Auge. Höher braucht mehr GPU-Zeit.";
   s.resolutionOverride = "Startoption: %d Pixel pro Auge. Hier ändern, um sie zu ersetzen.";
   s.resolutionLimited = "Auf %.2f× begrenzt durch SteamVR oder GPU";
   s.resolutionChanged = "1× jetzt = %d Panelpixel. Nächste verfügbare Größe: %.2f×.";
@@ -177,7 +175,6 @@ Strings germanStrings(const Strings& english) {
   s.showFoveationHint = "Grün: volle Details. Gelb: halb je Achse. Ungefärbt: Viertel. Kreuz: Blick.";
   s.frameReuse = "Wiederholte Bilder überspringen";
   s.frameReuseHint = "Zeichnet nur dann ein neues Bild, wenn sich Video oder Blickrichtung ändern. Braucht weniger Strom und hält das Headset kühler. Ausschalten, wenn Bewegungen ungleichmäßig wirken.";
-  s.foveationFrameOnly = "Nur Steam Frame";
   s.sharpArea = "Scharfer Bereich";
   s.sharpBins[0] = "1 Bin";
   s.sharpBins[1] = "3 Bins";
@@ -584,7 +581,6 @@ Strings germanStrings(const Strings& english) {
   s.stashScene.similarHint = "Gewichtete gemeinsame Tags und Besetzungsgröße; kleinere Boni für Studio und Darsteller. Nur gleiches Format.";
   s.stashScene.noSimilar = "Keine andere Szene ist ähnlich genug";
   s.stashScene.with = "Mit %s";
-  s.stashScene.sameStudio = "Selbes Studio · %s";
   s.stashScene.tagsInCommon = "%d gemeinsame Tags";
   s.stashScene.oneTagInCommon = "1 gemeinsamer Tag";
   s.stashScene.notInStash = "Stash kennt dieses Video nicht";
@@ -710,7 +706,6 @@ Strings germanStrings(const Strings& english) {
 
   s.tipAdvanced = "Zeigt Feineinstellungen auf den Einstellungsseiten.";
   s.tipSubtitleRaise = "Schwebende Untertitel nach oben oder unten verschieben.";
-  s.tipPictureReset = "Helligkeit, Kontrast, Sättigung, Zoom und Blickpunkt dieses Videos zurücksetzen.";
   s.tipMipmaps = "Verkleinerte Videos mit kleineren Kopien jedes Bildes glätten.";
   s.tipMipmapsFrame = "Verkleinerte Videos glätten. Braucht GPU-Zeit auf dem Frame.";
   s.tipSharpen = "Kanten in allen Videos betonen.";
@@ -744,13 +739,6 @@ Strings germanStrings(const Strings& english) {
   s.automaticLanguage = "Automatisch";
   s.languageName = "Deutsch";
   s.languageHint = "Gilt sofort. Automatisch nutzt die Systemsprache.";
-  s.focusStatus.reasons[0] = "strukturarmer Bereich";
-  s.focusStatus.reasons[1] = "wiederholtes Muster";
-  s.focusStatus.reasons[2] = "Augenbilder widersprechen sich";
-  s.focusStatus.reasons[3] = "außerhalb des Bildes";
-  s.focusStatus.reasons[4] = "durchsichtig";
-  s.focusStatus.reasons[5] = "Messproben widersprechen sich";
-  s.focusStatus.reasons[6] = "näher als der Mindestabstand";
   s.focusStatus.targets[0] = "Ziel folgt der Kopfrichtung";
   s.focusStatus.targets[1] = "Eye Tracking aktiv";
   s.focusStatus.targets[2] = "Eye Tracking: kurze Lücke wird überbrückt";

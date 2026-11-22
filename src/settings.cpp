@@ -1,5 +1,7 @@
 #include "settings.h"
 
+#include "app_dirs.h"
+#include "controls.h"
 #include "eye_resolution.h"
 #include "file_util.h"
 #include "motion.h"

@@ -1,7 +1,7 @@
 #pragma once
 
+#include "eye_state.h"
 #include "scene_renderer.h"
-#include "xr_context.h"
 
 #include <vulkan/vulkan.h>
 

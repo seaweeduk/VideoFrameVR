@@ -1,5 +1,6 @@
 #pragma once
 
+#include "value_ranges.h"
 #include "xmath.h"
 
 #include <array>
@@ -10,9 +11,11 @@
 // Screen distance, height and curve, with their defaults and limits.
 // The width follows from the picture's shape.
 struct ScreenSize {
-  static constexpr float kMinDistance = 0.1f, kMaxDistance = 11.0f;  // meters
-  static constexpr float kMinHeight = 0.1f, kMaxHeight = 11.0f;      // meters
-  static constexpr float kMaxCurve = 1.0f;
+  static constexpr float kMinDistance = value_range::kMinScreenDistance,
+                         kMaxDistance = value_range::kMaxScreenDistance;  // meters
+  static constexpr float kMinHeight = value_range::kMinScreenHeight,
+                         kMaxHeight = value_range::kMaxScreenHeight;  // meters
+  static constexpr float kMaxCurve = value_range::kMaxScreenCurve;
 
   float distance = 3.0f;  // meters from the viewer to the screen's centre
   float height = 3.0f;    // meters

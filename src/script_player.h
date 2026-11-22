@@ -1,5 +1,7 @@
 #pragma once
 
+#include "value_ranges.h"
+
 #include <memory>
 #include <string>
 
@@ -35,7 +37,6 @@ struct ScriptSettings {
   }
   bool operator!=(const ScriptSettings& o) const { return !(*this == o); }
 };
-constexpr int kScriptOffsetLimit = 1000;  // offsetMs is within this of 0
 constexpr int kScriptRangeGap = 10;       // rangeHigh is at least this above rangeLow
 
 // The address Intiface is looked for at: the one set, else this computer's

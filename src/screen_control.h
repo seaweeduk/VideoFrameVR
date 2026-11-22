@@ -1,8 +1,8 @@
 #pragma once
 
-#include "controls.h"
+#include "controller_state.h"
+#include "control_map.h"
 #include "flat_screen.h"
-#include "xr_context.h"
 
 #include <vector>
 

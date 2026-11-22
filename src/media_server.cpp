@@ -25,12 +25,6 @@ const MediaServer& mediaServer(ServerKind kind) {
   return *mediaServers().front();
 }
 
-ServerKind serverKindOf(std::string_view id) {
-  for (const MediaServer* server : mediaServers())
-    if (id == server->id()) return server->kind();
-  return mediaServers().front()->kind();
-}
-
 std::string mediaServerNames(const std::string& between) {
   std::string names;
   for (const MediaServer* server : mediaServers()) {

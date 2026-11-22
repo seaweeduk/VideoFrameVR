@@ -54,10 +54,46 @@ Menu::~Menu() {
 
 bool Menu::init(Uploader& uploader) {
   uploader_ = &uploader;
+  return init();
+}
+
+bool Menu::init() {
   refreshPlaces();
-  return canvases_[kMain].init(uploader, kMainWidth, kMainHeight, menu_geometry::kRasterScale) &&
-         canvases_[kBrowser].init(uploader, kBrowserWidth, kBrowserHeight,
-                                  menu_geometry::kRasterScale, true);
+  return initCanvas(canvases_[kMain], kMainWidth, kMainHeight, menu_geometry::kRasterScale) &&
+         initCanvas(canvases_[kBrowser], kBrowserWidth, kBrowserHeight, menu_geometry::kRasterScale, true);
+}
+
+bool Menu::initCanvas(CairoCanvas& canvas, int width, int height, float scale, bool scrolls) {
+  return uploader_ ? canvas.init(*uploader_, width, height, scale, scrolls) : canvas.init(width, height, scale);
+}
+
+void Menu::draw(PanelId panel, cairo_t* cr) {
+  if (panel == kSetup)
+    SetupPages::draw(*this, cr);
+  else if (panel == kMain)
+    drawMain(cr);
+  else
+    drawBrowser(cr);
+}
+
+const std::vector<Menu::Button>& Menu::layOut() {
+  if (setup_)
+    SetupPages::layout(*this);
+  else
+    layout(true);
+  return buttons_;
+}
+
+bool Menu::working() const {
+  if (!places_.ready() || places_.looking() || listing_.reading() || discovery_.scanning()) return true;
+  if ((controls_ && controls_->loading.running()) || (hints_ && hints_->loading.running())) return true;
+  if (!setup_) return false;
+  if (setup_->controls.loading.running()) return true;
+  if (!setup_->folders) return false;
+  if (setup_->folders->finding.running()) return true;
+  for (const auto& [path, folder] : setup_->folders->folders)
+    if (folder.reading.running()) return true;
+  return false;
 }
 
 bool Menu::hoverRect(PanelId panel, float rect[4], float& radius, bool& danger, float clip[4]) const {
@@ -122,15 +158,6 @@ bool Menu::pointedButton() const {
   return pointerPanel_ >= 0 &&
          hoverRect(static_cast<PanelId>(pointerPanel_), rect, radius, danger, clip) &&
          buttons_[hovered_].ratingPath.empty();
-}
-
-std::array<float, 3> Menu::linearAccent(const AccentColours& accent) {
-  std::array<float, 3> rgb;
-  for (int i = 0; i < 3; ++i) {
-    const double c = accent.fill[i];
-    rgb[i] = static_cast<float>(c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4));
-  }
-  return rgb;
 }
 
 void Menu::languageChanged() {
@@ -302,7 +329,6 @@ void Menu::update(const MenuView& view) {
   if (view.appFps != view_.appFps) stripDirty_ = true;
   if (accent != view_.accent) {
     accent_ = accentColours(accent);
-    accentLinear_ = linearAccent(accent_);
     finishes_.setAccent(accent_);
   }
   view_ = view;

@@ -159,8 +159,6 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.tvGamma = "电视伽马";
   s.tvGammaHint = "按 BT.1886 呈现电视暗部，适用于所有视频。关闭则保留原始值。";
   s.eyeResolution = "分辨率";
-  s.resolutionHint = "1× = %d 面板像素。长刻度为默认值。超过 %d：切换更慢，8K 细节不增加。";
-  s.resolutionSteamVr = "1× 为 SteamVR 推荐的单眼分辨率。越高越占用 GPU 时间。";
   s.resolutionOverride = "启动参数指定了单眼 %d 像素。在此调整可覆盖该值。";
   s.resolutionLimited = "受 SteamVR 或 GPU 限制，最高 %.2f×";
   s.resolutionChanged = "1× 现为 %d 面板像素。最接近的可用尺寸：%.2f×。";
@@ -177,7 +175,6 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.showFoveationHint = "绿色：完整细节。黄色：各轴减半。无色：各轴四分之一。十字：视线。";
   s.frameReuse = "跳过重复帧";
   s.frameReuseHint = "仅在视频或视角变化时绘制新画面。更省电，头显也更凉爽。如果运动看起来不流畅，请关闭。";
-  s.foveationFrameOnly = "仅限 Steam Frame";
   s.sharpArea = "清晰区域";
   s.sharpBins[0] = "1 分块";
   s.sharpBins[1] = "3 分块";
@@ -584,7 +581,6 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.stashScene.similarHint = "按加权共同标签和演员人数匹配，片商和演员相同仅少量加分。仅限相同格式。";
   s.stashScene.noSimilar = "没有足够相似的其他场景";
   s.stashScene.with = "演员：%s";
-  s.stashScene.sameStudio = "同一片商 · %s";
   s.stashScene.tagsInCommon = "%d 个共同标签";
   s.stashScene.oneTagInCommon = "1 个共同标签";
   s.stashScene.notInStash = "Stash 中没有此视频";
@@ -710,7 +706,6 @@ Strings simplifiedChineseStrings(const Strings& english) {
 
   s.tipAdvanced = "在设置页面显示微调选项。";
   s.tipSubtitleRaise = "上下移动悬浮字幕。";
-  s.tipPictureReset = "重置此视频的亮度、对比度、饱和度、缩放和视点。";
   s.tipMipmaps = "用每帧的较小副本平滑缩小后的视频。";
   s.tipMipmapsFrame = "平滑缩小后的视频，在 Frame 上占用 GPU 时间。";
   s.tipSharpen = "强化所有视频的边缘。";
@@ -744,13 +739,6 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.automaticLanguage = "自动";
   s.languageName = "简体中文";
   s.languageHint = "立即生效。自动模式使用系统语言。";
-  s.focusStatus.reasons[0] = "纹理不足";
-  s.focusStatus.reasons[1] = "重复图案";
-  s.focusStatus.reasons[2] = "左右眼不一致";
-  s.focusStatus.reasons[3] = "画面之外";
-  s.focusStatus.reasons[4] = "透明区域";
-  s.focusStatus.reasons[5] = "采样不一致";
-  s.focusStatus.reasons[6] = "近于最近距离";
   s.focusStatus.targets[0] = "按头部朝向指向";
   s.focusStatus.targets[1] = "眼动追踪已启用";
   s.focusStatus.targets[2] = "眼动追踪短暂中断，保持目标";

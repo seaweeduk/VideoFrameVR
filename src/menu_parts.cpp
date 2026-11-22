@@ -380,37 +380,6 @@ void Menu::addValue(double x, double y, double w, double labelW, double h, const
   buttons_.push_back(field);
 }
 
-// The rows before the parts, kSettingRowH high at x, y: drawn as the parts'.
-
-Menu::Button& Menu::addToggleRow(double x, double y, double w, const std::string& label, bool on,
-                                 std::function<MenuCommand()> action, bool disabled) {
-  Button& b = addSwitch(x, y, w, kSettingRowH, label, on, std::move(action));
-  b.disabled = disabled;
-  return b;
-}
-
-void Menu::addValueRow(double x, double y, double w, double labelW, const std::string& label,
-                       const std::string& value, int now, int lo, int hi,
-                       std::function<MenuCommand()> less, std::function<MenuCommand()> more,
-                       bool disabled, bool logarithmic, const char* tooltip) {
-  const MenuCommand c = less();
-  const size_t first = buttons_.size();
-  addValue(x, y, w, labelW, kSettingRowH, label, c.type, now, lo, hi, value, 1, std::move(less),
-           std::move(more));
-  Row row(*this, first, x + w);
-  row.option(c.option).tip(tooltip).disable(disabled);
-  if (logarithmic) row.logarithmic();
-}
-
-void Menu::addChoiceRow(double x, double y, double w, double labelW, const std::string& label,
-                        const std::vector<std::string>& options, int chosen,
-                        const std::function<MenuCommand(int)>& choose, bool disabled,
-                        const char* tooltip) {
-  const size_t first = buttons_.size();
-  addChoice(x, y, w, labelW, kSettingRowH, label, options, chosen, choose);
-  Row(*this, first, x + w).tip(tooltip).disable(disabled);
-}
-
 Menu::Row Menu::GroupLayout::tiles(int columns, double height, const std::vector<Tile>& tiles) {
   Menu& m = menu();
   const size_t first = m.buttons_.size();

@@ -2,7 +2,7 @@
 
 #include "file_util.h"
 #include "removable_drives.h"
-#include "settings.h"
+#include "app_dirs.h"
 #include "remote.h"
 
 #include <glib.h>

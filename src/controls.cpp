@@ -938,12 +938,6 @@ void GestureMap::reset(ControllerType type) {
   if (type != ControllerType::Count) lists_[static_cast<int>(type)] = defaultList(type);
 }
 
-bool GestureMap::hasGesture(ControllerType type, int hand, Control control) const {
-  for (const Gesture& g : list(type))
-    if ((g.hands >> hand & 1) && g.has(control)) return true;
-  return false;
-}
-
 const Gesture* GestureMap::find(ControllerType type, int hand, Control a, Control b,
                                 Movement movement) const {
   const uint32_t bits = controlBit(a) | (b == Control::Count ? 0u : controlBit(b));

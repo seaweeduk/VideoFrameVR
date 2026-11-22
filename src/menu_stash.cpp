@@ -1,9 +1,9 @@
 #include "menu_style.h"
 
 #include "file_util.h"
+#include "media_client.h"
 #include "menu_stash.h"
 #include "stash.h"
-#include "stash_client.h"
 
 #include <algorithm>
 #include <ctime>

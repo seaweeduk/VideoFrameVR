@@ -677,25 +677,6 @@ bool StashImages::State::makeJob(const Request& r, bool prefetch, Job& job) cons
 
 // ---- GL thread ----
 
-StashImages::DiskUsage StashImages::diskUsage(const fs::path& root) {
-  DiskUsage usage;
-  for (const char* part : {"originals", "copies"}) {
-    std::error_code ec;
-    for (fs::recursive_directory_iterator it(root / part, ec), end; !ec && it != end; it.increment(ec)) {
-      if (!it->is_regular_file(ec)) continue;
-      const uint64_t size = it->file_size(ec);
-      if (part[0] == 'o') {
-        ++usage.originals;
-        usage.originalBytes += size;
-      } else {
-        ++usage.copies;
-        usage.copyBytes += size;
-      }
-    }
-  }
-  return usage;
-}
-
 StashImages::StashImages(fs::path root, ServerKind kind, const std::string& url,
                          std::string apiKey, bool unverified)
     : state_(std::make_unique<State>()) {
