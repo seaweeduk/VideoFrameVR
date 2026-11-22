@@ -19,8 +19,9 @@
 // A frame is shown again only while all of this holds, so that it cannot be
 // told from a drawn one:
 //  - what it shows is what the last drawn frame showed: the same picture,
-//    drawn the same way, and nothing over it (menus, the pointer, subtitles,
-//    messages and the rest are drawn every frame);
+//    drawn the same way, with the same picture subtitles on a flat screen,
+//    and nothing else over it (menus, the pointer, text subtitles, messages
+//    and the rest are drawn every frame);
 //  - the head has turned so little since that frame was drawn that
 //    reprojection covers it (the view's edge moves by a few pixels at most),
 //    and what reprojection does not follow (a flat screen as the eyes move,
@@ -45,6 +46,7 @@ class FrameReuse {
   struct Frame {
     const FrameScene* scene = nullptr;
     uint64_t picture = 0;      // VideoPlayer::pictureVersion()
+    uint64_t onPicture = 0;    // what FrameScene::onPicture shows (PictureSubtitles::version())
     bool alphaBlend = false;   // XrContext::setAlphaBlend
     double displayTime = 0;    // XrContext::displayTime()
     int eyeCount = 0;
@@ -63,7 +65,7 @@ class FrameReuse {
     Same,
     Off,       // not enabled, or no drawn frame to show again (none yet, or one with overlays)
     Overlays,  // something is drawn over the picture (or it is a photo, or the foveation view)
-    Picture,   // another video frame
+    Picture,   // another video frame, or other picture subtitles on it
     Scene,     // the picture is drawn another way, or onto other eye images
     Focus,     // the stereo correction moved the picture (the focus distance, the eyes' places)
     View,      // the eyes' fields of view changed
@@ -93,6 +95,7 @@ class FrameReuse {
   bool sky_ = false;
   std::optional<VideoDraw> video_;
   uint64_t picture_ = 0;
+  uint64_t onPicture_ = 0;
   bool alphaBlend_ = false;
   double displayTime_ = 0;
   int eyeCount_ = 0;

@@ -33,7 +33,7 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.on = "Ligado";
   s.track = "Faixa";
   s.subtitles3d = "Flutuar em 2D";
-  s.subtitles3dHint = "2D: flutuar à frente ou ficar na imagem. Em 3D e 180°/360°, sempre flutuam.";
+  s.subtitles3dHint = "2D: flutuar à frente ou ficar na imagem. Em 3D e 180°/360°, sempre flutuam. Os de Blu-ray e DVD ficam onde o disco os coloca.";
   s.subtitleFromFile = "Legenda de arquivo";
   s.space = "Espaço";
   s.paste = "Colar";

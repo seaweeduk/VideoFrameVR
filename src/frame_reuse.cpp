@@ -121,7 +121,7 @@ FrameReuse::Reason FrameReuse::compare(const Frame& f) const {
   if (!enabled_ || !valid_ || !f.scene || !f.mapsKnown) return Off;
   const FrameScene& scene = *f.scene;
   if (!plain(scene)) return Overlays;
-  if (f.picture != picture_) return Picture;
+  if (f.picture != picture_ || f.onPicture != onPicture_) return Picture;
   if (scene.clear != clear_ || scene.sky != sky_ || scene.video.has_value() != video_.has_value() ||
       f.alphaBlend != alphaBlend_ || f.eyeCount != eyeCount_ || f.targets != targets_ || f.maps != maps_)
     return Scene;
@@ -163,6 +163,7 @@ void FrameReuse::drawn(const Frame& f) {
   sky_ = f.scene->sky;
   video_ = f.scene->video;
   picture_ = f.picture;
+  onPicture_ = f.onPicture;
   alphaBlend_ = f.alphaBlend;
   displayTime_ = f.displayTime;
   eyeCount_ = f.eyeCount;

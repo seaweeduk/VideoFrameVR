@@ -204,6 +204,8 @@ add_executable(videoframevr
   src/strings_zh_cn.cpp
   src/strings_ja.cpp
   src/subtitle_overlay.cpp
+  src/subtitle_picture.cpp
+  src/picture_subtitles.cpp
   src/thread_priority.cpp
   src/thumbnailer.cpp
   src/tile_grid.cpp

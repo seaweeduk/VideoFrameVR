@@ -33,7 +33,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.on = "开启";
   s.track = "轨道";
   s.subtitles3d = "2D 字幕悬浮";
-  s.subtitles3dHint = "2D 字幕可悬浮或嵌入画面。3D 和 180°/360° 字幕始终悬浮。";
+  s.subtitles3dHint = "2D 字幕可悬浮或嵌入画面。3D 和 180°/360° 字幕始终悬浮。蓝光和 DVD 字幕显示在光盘指定的位置。";
   s.subtitleFromFile = "加载字幕文件";
   s.space = "空格";
   s.paste = "粘贴";

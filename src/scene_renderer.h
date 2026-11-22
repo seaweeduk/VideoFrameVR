@@ -81,6 +81,7 @@ struct PanelItem {
   std::optional<CurvedPanel> curved;  // instead of model
   std::optional<PanelHover> hover;
   float opacity = 1;  // faded out toward 0
+  float uv[4] = {0, 1, 0, 1};  // flat: the part of the texture shown, u0, u1, v0, v1
 };
 // The pointer's colour, and the flat screen's corner handles', unlit
 // (premultiplied, linear).
@@ -112,6 +113,10 @@ struct FrameScene {
   ClearMode clear = ClearMode::Dark;
   bool sky = false;  // the room-fixed night sky behind a flat screen
   std::optional<VideoDraw> video;
+  // Over the video and part of its picture, fixed to the flat screen
+  // (picture subtitles): FrameReuse compares their version with the picture's.
+  // Drawn only with a video picture.
+  std::vector<OverlayDraw> onPicture;
   std::vector<OverlayDraw> overlays;  // over the video, in drawing order
   bool showFoveation = false;
   FoveationDebug foveation[2];
@@ -295,7 +300,7 @@ class SceneRenderer {
   void drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const VideoDraw& video,
                  ClearMode clear, float sharpen);
   void drawOverlays(VkCommandBuffer cmd, const EyeData& eye, const EyeMatrices& matrices,
-                    const FrameScene& scene);
+                    const std::vector<OverlayDraw>& items);
   void drawPanel(VkCommandBuffer cmd, const PanelItem& panel);
   VkPipeline pipeline(Pipelines::Id id) const { return pipelines_.get(id, plainEye_); }
   // color: premultiplied, linear (kPointerOrange).

@@ -33,7 +33,7 @@ Strings japaneseStrings(const Strings& english) {
   s.on = "オン";
   s.track = "トラック";
   s.subtitles3d = "2Dでも立体表示";
-  s.subtitles3dHint = "2Dでは手前か画面内に表示。3D・180°・360°では常に立体表示。";
+  s.subtitles3dHint = "2Dでは手前か画面内に表示。3D・180°・360°では常に立体表示。ブルーレイとDVDの字幕はディスクどおりの位置に表示。";
   s.subtitleFromFile = "字幕ファイルを開く";
   s.space = "空白";
   s.paste = "貼り付け";
