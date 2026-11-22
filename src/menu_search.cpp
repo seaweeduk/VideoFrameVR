@@ -157,44 +157,63 @@ void Menu::moveCursor(int chars) {
     dirty_ = true;
 }
 
-// The folder's (or the library's) search words. Its results start over at
-// the very top.
+const std::string& Menu::filterText() const {
+  switch (textTarget()) {
+    case TextTarget::Setup:
+      return *setupText();
+    case TextTarget::SmbForm:
+      return smbForm_.text[smbForm_.field];
+    case TextTarget::PlaceName:
+      return placeRename_.text;
+    case TextTarget::PresetName:
+      return presetName_.text;
+    case TextTarget::ScriptAddress:
+      return scriptAddress_.text;
+    case TextTarget::Stash:
+      return stashText();
+    case TextTarget::Search:
+      break;
+  }
+  return page_ == Page::Library ? libraryFilter_ : fileFilter_;
+}
+
 void Menu::setFilter(const std::string& text) {
-  if (setup_ && setupText()) {
-    SetupPages::setText(*this, text);
-    return;
-  }
-  if (smbForm_.kind != SmbForm::Kind::None) {
-    typedIntoSmbForm(text);
-    return;
-  }
-  if (page_ == Page::Places) {
-    placeRename_.text = text;
-    typedChanged();
-    return;
-  }
-  if (page_ == Page::Settings && scriptAddress_.open) {
-    scriptAddress_.text = text.substr(0, 200);
-    typedChanged();
-    return;
-  }
-  if (page_ == Page::VideoSettings && presetName_.open) {
-    // Whether Save turns into Replace, or is refused, shows with each key.
-    // At most 40 characters.
-    if (!g_utf8_validate(text.data(), static_cast<gssize>(text.size()), nullptr)) return;
-    const glong chars = std::min<glong>(40, g_utf8_strlen(text.c_str(), -1));
-    const PresetNameCheck before = checkPresetName();
-    presetName_.text = text.substr(0, g_utf8_offset_to_pointer(text.c_str(), chars) - text.c_str());
-    if (checkPresetName() == before)
+  switch (textTarget()) {
+    case TextTarget::Setup:
+      SetupPages::setText(*this, text);
+      return;
+    case TextTarget::SmbForm:
+      typedIntoSmbForm(text);
+      return;
+    case TextTarget::PlaceName:
+      placeRename_.text = text;
       typedChanged();
-    else
-      browserChanged(0, kKeyboardY - 12);
-    return;
+      return;
+    case TextTarget::ScriptAddress:
+      scriptAddress_.text = text.substr(0, 200);
+      typedChanged();
+      return;
+    case TextTarget::PresetName: {
+      // Whether Save turns into Replace, or is refused, shows with each key.
+      // At most 40 characters.
+      if (!g_utf8_validate(text.data(), static_cast<gssize>(text.size()), nullptr)) return;
+      const glong chars = std::min<glong>(40, g_utf8_strlen(text.c_str(), -1));
+      const PresetNameCheck before = checkPresetName();
+      presetName_.text = text.substr(0, g_utf8_offset_to_pointer(text.c_str(), chars) - text.c_str());
+      if (checkPresetName() == before)
+        typedChanged();
+      else
+        browserChanged(0, kKeyboardY - 12);
+      return;
+    }
+    case TextTarget::Stash:
+      StashPages::setText(*this, text);
+      return;
+    case TextTarget::Search:
+      break;
   }
-  if (stashTextPage()) {
-    StashPages::setText(*this, text);
-    return;
-  }
+  // The folder's (or the library's) search words. Its results start over at
+  // the very top.
   std::string& filter = page_ == Page::Library ? libraryFilter_ : fileFilter_;
   if (text == filter) return;
   filter = text;
@@ -204,24 +223,36 @@ void Menu::setFilter(const std::string& text) {
   dirty_ = true;
 }
 
+// Enter (or Done). Setup's panel decides for all its fields.
 MenuCommand Menu::submitText() {
   if (setup_) return SetupPages::submit(*this);
-  if (smbForm_.kind != SmbForm::Kind::None) return submitSmbForm();
-  if (page_ == Page::Places && !placeRename_.path.empty()) {
-    savePlaceName();
-    return {};
+  switch (textTarget()) {
+    case TextTarget::SmbForm:
+      return submitSmbForm();
+    case TextTarget::PlaceName:
+      if (placeRename_.path.empty()) break;
+      savePlaceName();
+      return {};
+    case TextTarget::PresetName:
+      return submitPresetName();
+    case TextTarget::ScriptAddress:
+      return submitScriptAddress();
+    case TextTarget::Stash:
+      if (editingFilter()) return StashPages::submitText(*this);
+      break;
+    case TextTarget::Setup:
+    case TextTarget::Search:
+      break;
   }
-  if (page_ == Page::VideoSettings && presetName_.open) return submitPresetName();
-  if (page_ == Page::Settings && scriptAddress_.open) return submitScriptAddress();
-  if (editingFilter() && stashTextPage()) return StashPages::submitText(*this);
-  if (editingFilter()) stopEditing();
+  stopEditing();
   return {};
 }
 
 void Menu::stopEditing() {
-  if (editingFilter() && stashTextPage() && !scriptAddress_.open) {
+  if (!editingFilter()) return;
+  if (textTarget() == TextTarget::Stash) {
     StashPages::stopEditing(*this);
-  } else if (editingFilter()) {
+  } else {
     // The keyboard goes; the words and what they found stay.
     editing_ = false;
     dirty_ = true;

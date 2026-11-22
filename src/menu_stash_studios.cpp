@@ -304,15 +304,11 @@ void StashPages::layoutStudios(Menu& m) {
   m.listTop_ = kGridTop;
   m.listBottom_ = bottomY;
   if (c) {
-    const double cardW = (m.listRight_ - 30 - x0 - (kColumns - 1) * kCardGap) / kColumns;
+    const double cardW = m.gridCellWidth(x0, kColumns, kCardGap);
     const double rowH = cardHeight(cardW) + kCardGap;
     const int count = static_cast<int>(p.cards.size());
-    m.rowHeight_ = rowH;
-    m.visibleRows_ = std::max(1, static_cast<int>((bottomY - kGridTop) / rowH));
-    m.listCount_ = (count + kColumns - 1) / kColumns;
-    int firstRow, endRow;
-    m.clampScroll(m.listCount_, m.visibleRows_, firstRow, endRow);
-    const int first = firstRow * kColumns, last = std::min(count, endRow * kColumns);
+    int first, last;
+    m.gridRows(count, kColumns, rowH, first, last);
     for (int i = first; i < last; ++i) {
       const int k = p.cards[i], cell = i - first;
       const StashStudio& studio = c->studios()[k];

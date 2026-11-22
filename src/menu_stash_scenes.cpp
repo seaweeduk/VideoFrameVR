@@ -114,7 +114,7 @@ int64_t unixNow() { return static_cast<int64_t>(std::time(nullptr)); }
 
 // The grid's tiles across, from x0 to the list's right: about 400 wide.
 int gridColumns(double x0, double right) {
-  return std::max(1, static_cast<int>((right - 30 - x0 + kTileGap) / (400 + kTileGap)));
+  return std::max(1, static_cast<int>((right - kScrollbarRoom - x0 + kTileGap) / (400 + kTileGap)));
 }
 
 // An active filter above the results; tapping it takes it away.
@@ -1712,17 +1712,13 @@ void StashPages::layoutGrid(Menu& m, double x0, double top) {
   StashMenu& st = state(m);
   const StashCatalog& c = *catalog(m);
   const int columns = gridColumns(x0, m.listRight_);
-  const double cardW = (m.listRight_ - 30 - x0 - (columns - 1) * kTileGap) / columns;
+  const double cardW = m.gridCellWidth(x0, columns, kTileGap);
   const double rowH = cardHeight(cardW) + kTileGap;
   const std::vector<int>& scenes = st.result.scenes;
   const int count = static_cast<int>(scenes.size());
   m.listTop_ = top;
-  m.rowHeight_ = rowH;
-  m.visibleRows_ = std::max(1, static_cast<int>((m.listBottom_ - top) / rowH));
-  m.listCount_ = (count + columns - 1) / columns;
-  int firstRow, endRow;
-  m.clampScroll(m.listCount_, m.visibleRows_, firstRow, endRow);
-  const int first = firstRow * columns, end = std::min(count, endRow * columns);
+  int first, end;
+  m.gridRows(count, columns, rowH, first, end);
   const bool history = st.history.size() == c.scenes().size();
   for (int i = first; i < end; ++i) {
     const int cell = i - first, index = scenes[i];
@@ -1776,7 +1772,7 @@ void StashPages::layoutList(Menu& m, double x0, double top) {
   StashMenu& st = state(m);
   const StashStrings& t = strings().stash;
   const StashCatalog& c = *catalog(m);
-  const double rowW = m.listRight_ - x0 - 30;
+  const double rowW = m.listRight_ - x0 - kScrollbarRoom;
   const SceneColumns cols = sceneColumns(m, x0 + rowW);
   auto heading = [&](int column, double x, double w, bool rightAligned, int sort) {
     const bool on = sort >= 0 && static_cast<int>(st.list.sort) == sort;
@@ -2052,14 +2048,10 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
 
   const std::vector<StashMenu::FullRow>& rows = st.fullRows;
   m.listTop_ = listTop;
-  m.rowHeight_ = kRowStep;
-  m.visibleRows_ = std::max(1, static_cast<int>((m.listBottom_ - listTop) / kRowStep));
-  m.listCount_ = (static_cast<int>(rows.size()) + columns - 1) / columns;
-  int firstRow, endRow;
-  m.clampScroll(m.listCount_, m.visibleRows_, firstRow, endRow);
-  const double cellW = (m.listRight_ - 30 - x0 - kit::kSpace) / columns;
-  const int end = std::min(static_cast<int>(rows.size()), endRow * columns);
-  for (int i = firstRow * columns; i < end; ++i) {
+  int first, end;
+  m.gridRows(static_cast<int>(rows.size()), columns, kRowStep, first, end);
+  const double cellW = m.gridCellWidth(x0, columns, kit::kSpace);
+  for (int i = first; i < end; ++i) {
     const StashMenu::FullRow& r = rows[i];
     const double cx = x0 + (i % columns) * (cellW + kit::kSpace);
     const double cy = listTop + (i / columns - m.scrollOffset_ - m.scrollFraction_) * kRowStep;

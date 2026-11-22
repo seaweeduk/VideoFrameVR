@@ -23,1394 +23,1493 @@ Strings japaneseStrings(const Strings& english);
 
 namespace {
 
-const Strings kEnglish = {
-    "No video – choose a file",
-    "Loading …",
-    "Can't play this video. Try another file.",
-    "This disc image is encrypted and can't be played.",
-    "Format",
-    {"Screen", "180°", "360°", "Fisheye 190°", "Fisheye 200°", "360° cubemap (EAC)",
-     "Fisheye 180°"},
-    {"Mono", "3D side-by-side", "3D top-bottom"},
-    "Curved",
-    "Passthrough for this video",
-    "Show the room through this video. Saved for this video.",
-    "Recenter",
-    "Settings",
-    "Files",
-    "Back",
-    "No videos in this folder",
-    "No subtitle files in this folder",
-    "Choose subtitle file",
-    "No audio track",
-    "Subtitles",
-    "Off",
-    "On",
-    "Track",
-    "Floating for 2D",
-    "2D: float in front, or stay in-picture. 3D and 180°/360° always float.",
-    "Subtitle from file",
-    "Space",
-    "Paste",
-    "Delete video?",
-    "Deleting failed",
-    "Cancel",
-    "OK",
-    "Quit the player?",
-    "Quit",
-    "Picture",
-    "Brightness",
-    "Contrast",
-    "Saturation",
-    "Zoom (180°/360°)",
-    "Reset",
-    {"Screen", "180°", "360°", "F 190°", "F 200°", "Cube", "F 180°"},
-    {"Mono", "3D ⇆", "3D ⇅"},
-    "Delete video",
-    "Previous video",
-    "Next video",
-    "Back 10 s",
-    "Forward 10 s",
-    "Play",
-    "Pause",
-    "Stop",
-    "Mute / unmute",
-    "Slideshow",
-    "Delete photo?",
-    "Delete photo",
-    {"Name: A–Z", "Name: Z–A", "Date modified: newest", "Date modified: oldest", "Size: largest",
-     "Rating: highest", "Rating: lowest", "Plays: most", "Plays: fewest", "Last played: newest",
-     "Last played: oldest", "Date added: newest", "Date added: oldest", "Size: smallest"},
-    {"Name", "Date modified", "Size", "Rating", "Plays", "Last played", "Date added"},
-    "To the top",
-    "To the end",
-    "Thumbnails",
-    "List",
-    "Pin · shows it in the navigation and adds its videos to the Library",
-    "Unpin · its videos leave the Library; ratings and plays stay",
-    "Folder unavailable",
-    "Previous places",
-    "More places",
-    "Night sky around the screen",
-    "Recentering in %d …",
-    "Size",
-    "Height",
-    "Distance (180°/360°)",
-    "Chapter",
-    "Search this folder",
-    "Clear",
-    "Nothing in this folder matches “%s”",
-    "%s of %s in this folder",
-    "Green screen",
-    "Remove the video's background using the settings below.",
-    "This video has its own mask.",
-    "Passthrough",
-    "Opacity",
-    "How solid the video is over the room. A gesture can change it too: see Settings → Controls. "
-    "Saved for this video.",
-    "Opacity: %d %%",
-    "Mask in the video",
-    "For videos that carry their own mask (DeoVR alpha). Follows “_ALPHA” in the file name unless "
-    "set here. Saved for this video.",
-    "Mask's second layer",
-    "This video's mask has a second layer that you can hide. Saved for this video.",
-    "Strength",
-    "Edges",
-    "Spill",
-    "Shrink",
-    "Restore the sliders' defaults.",
-    "Background",
-    "The circle shows the colour removed from this video. A crossed-out circle means nothing was "
-    "detected, so nothing is removed: choose Green screen or Solid colour. Saved for this video.",
-    {"Automatic", "Green screen", "Solid colour …"},
-    {"Check the video: remove the solid colour or green screen it finds; nothing if it finds "
-     "neither.",
-     "For videos filmed in front of a real green screen: remove its green, lit or in shadow.",
-     "For a flat background of exactly one colour, any colour including green. Point at it and "
-     "pull the trigger."},
-    "Solid colour",
-    "Checking …",
-    "Point at the background and pull the trigger",
-    "Its colour is removed from this video.",
-    "That spot isn't one colour. Point at a plain area of the background.",
-    "A colour can't be picked from this video. Cancel, then choose Automatic or Green screen.",
-    "Half SBS",
-    "Half TB",
-    "Stretch half-size eyes to their original proportions. Flat 3D only.",
-    "Display",
-    "Video mipmaps",
-    "Anti-shimmer",
-    {"Off", "On", "Strong"},
-    "Smooths fine lines when downscaled. Strong is smoother but softer.",
-    "Smooths downscaled lines. Strong is softer and costs more Frame GPU time.",
-    "Video mipmaps already smooth fine lines; anti-shimmer is bypassed.",
-    "Sharpen",
-    "Tone look",
-    "Brighter mid-tones, more contrast and a soft vignette.",
-    "TV gamma",
-    "TV-like shadows, BT.1886. All videos. Off keeps the video's values.",
-    "Resolution",
-    "Command-line override: %d pixels per eye. Change this setting to replace it.",
-    "Limited to %.2f× by SteamVR or the GPU",
-    "1× now = %d panel pixels. Nearest available size: %.2f×.",
-    "Refresh rate",
-    "%d Hz",
-    "Foveation",
-    {"Off", "Low", "Medium", "High", "Custom"},
-    "Higher levels save GPU time by reducing detail outside your gaze.",
-    "Show foveation",
-    "Green: full detail. Yellow: half per axis. Untinted: quarter. Cross: gaze.",
-    "Skip repeated frames",
-    "Draws a new picture only when the video or your view changes. Uses less power and keeps "
-    "the headset cooler. Turn off if movement looks uneven.",
-    "Sharp area",
-    {"1 bin", "3 bins"},
-    "%s · about %d×%d°",
-    "Ring",
-    "Outside",
-    {"2×2", "4×4"},
-    "Same as %s at this resolution",
-    "Advanced settings",
-    "--sharp-bins: choose 1 or 3",
-    "--ring: choose on or off",
-    "--timing lists OpenXR display refresh rates at session start. --refresh-rate=HZ requests a rate\n"
-    "for this run only through XR_FB_display_refresh_rate; 0 means no preference. The runtime may\n"
-    "decline the request. Use --timing to measure the resulting frame rate.",
-    "--refresh-rate: give a finite rate in Hz, at least 0; 0 means no preference",
-    "[refresh-rate] XR_FB_display_refresh_rate is not offered; no rate can be queried or requested",
-    "[refresh-rate] XR_FB_display_refresh_rate offered Hz:",
-    "[refresh-rate] current Hz: %g\n",
-    "[refresh-rate] request %g Hz: %s (%d); acceptance does not guarantee a rate change\n",
-    "[refresh-rate] changed Hz: %g -> %g\n",
-    "Unknown option: %s\n",
-    "Parent folder",
-    "Done",
-    "Reading this folder …",
-    "Menu",
-    "View",
-    "General",
-    "Stereo focus",
-    "Screen",
-    "Image",
-    "This video",
-    "Play a video to change its settings.",
-    "Performance",
-    "Remove background",
-    "Video settings",
-    "Main menu",
-    "Quit",
-    "File explorer",
-    "Home",
-    "Videos",
-    "File system",
-    "Sort by",
-    "Backspace",
-    "Shift",
-    "Symbols",
-    "Letters",
-    "Hide",
-    "Playback",
-    "Resume where I left off",
-    "Continue where you stopped; near the end, restart instead.",
-    "Timeline preview",
-    "Point at the timeline to preview. File thumbnails: under Menu.",
-    "Show performance",
-    "Frame rates and drops at bottom left, even with menus closed.",
-    "Controller vibration",
-    "A short buzz on clicks, seeks, turns and grabs.",
-    "Headset %.1f of %.0f fps",
-    "Video %.1f of %.2f fps",
-    "Video %.1f fps",
-    "No video",
-    "Video paused",
-    "Video loading …",
-    "Dropped %lld in %d s · %lld since %s",
-    "opening",
-    "seeking",
-    "%d px",
-    "GPU %.1f ms",
-    " · ~%.0f×%.0f° sharp",
-    "software",
-    "direct",
-    "mpv",
-    "File thumbnails",
-    "Off: film icons; no frames read from video files.",
-    "Library",
-    "Search the library",
-    "No videos in your pinned folders yet",
-    "Stash's scenes show here once it has synced.",
-    "Nothing in the library matches “%s”",
-    "No videos to show",
-    "Length",
-    "%s videos",
-    "1 video",
-    "%s of %s videos",
-    "%s videos so far",
-    {"All", "Not played", "Played", "Rated"},
-    "Up to date · looked %s",
-    "Looking for new videos · %d %%",
-    "Looking for new videos …",
-    "Looks for new videos when no video is open",
-    "Look for new videos now",
-    "Looking now",
-    "Look for new videos · starts when no video is open",
-    "Pin folders to fill your Library",
-    "The Library lists every video in your pinned folders in one place, played or not. "
-    "Open a folder in the File explorer and press the pin at the top right.",
-    "Stash's scenes show here once it has synced. You can also pin folders: open one in the "
-    "File explorer and press the pin at the top right.",
-    "Open File explorer",
-    "Distance",
-    "Height",
-    "Curve",
-    "Stick: distance; grip+stick: height. "
-    "Trigger on a corner: resize.",
-    "Defaults: 300 cm high, 300 cm away, curve 1",
-    {
-        "Stash",
-        "Browse Stash by performer, tag or studio. Off: nothing sent or stored.",
-        "Set a server to start syncing.",
-        "Server",
-        "API key",
-        "None",
-        "Set",
-        "Play from a folder",
-        "Optional. Videos you also have here seek faster.",
-        "Stash covers as thumbnails",
-        "Stash titles instead of file names",
-        "Show male performers",
-        "%s scenes, %s of them here · %s of your %s library videos matched",
-        "%s scenes: %s here, %s play from Stash · %s of your %s library videos matched",
-        "Synced %s · Stash %s",
-        "Syncing with Stash …",
-        "Loading the local copy …",
-        "Not synced yet",
-        "Sync now",
-        "just now",
-        "%d min ago",
-        "%d h ago",
-        "%d days ago",
-        "1 day ago",
-        "Stash server",
-        {"Server", "API key (only if Stash has one)"},
-        "Save and sync",
-        "Home",
-        "Scenes",
-        "Performers",
-        "Studios",
-        "All pinned lists (%d)",
-        "Home",
-        "Performers",
-        "Studios",
-        "Scenes",
-        "%s scenes",
-        "%s of %s scenes",
-        "Filters",
-        "Show or hide the filters",
-        "Shuffle play",
-        "Pin this list",
-        "Rename",
-        "Unpin",
-        {"All", "VR", "2D"},
-        "Search titles, performers, studios",
-        {"Release date", "Added to Stash", "Title", "Duration", "Resolution", "Rating", "Plays",
-         "Last played", "Cast size", "Random", "Date modified", "Size"},
-        "Turn the order around",
-        "Undo",
-        "Clear all",
-        "All scenes. Use filters to narrow them down.",
-        "+%d more",
-        "Loading your Stash …",
-        "No copy of your Stash yet – Settings shows why",
-        "No scenes match these filters",
-        {"Performers", "Tags", "Studios", "Cast", "Looks", "Release date", "Format", "Your history"},
-        "All of",
-        "Any of",
-        {"All performers …", "All tags …", "All studios …", "All years …"},
-        "Women",
-        "Men credited",
-        {"1 woman", "2 women", "3 or more women"},
-        {"No men", "1 man", "2 or more men", "4 or more men"},
-        "Hair",
-        "Cup",
-        "Natural or augmented",
-        "Her age then",
-        {"A–B", "C", "D", "DD and up"},
-        {"Natural", "Augmented"},
-        {"18–22", "23–29", "30–39", "40 and up"},
-        "Ethnicity",
-        "Country",
-        "Height",
-        "Eye colour",
-        "Body shape",
-        "Tattoos",
-        {"Under 160 cm", "160–169 cm", "170–179 cm", "180 cm and up"},
-        {"Hourglass", "Pear", "Top-heavy", "Straight", "Unclassified"},
-        {"Tattoos", "No tattoos recorded"},
-        "Age in her scenes",
-        "Added to Stash",
-        {"Last 7 days", "Last 30 days", "Last 90 days", "Last year"},
-        "Released",
-        "Resolution",
-        {"8K", "7K", "6K", "5K", "4K", "3K or less", "4K", "1080p", "720p", "SD"},
-        "Duration",
-        {"Under 20 min", "20–40 min", "40–60 min", "Over an hour"},
-        "Frame rate",
-        {"55 fps or more", "45 to 54 fps", "Under 45 fps"},
-        "Codec",
-        {"HEVC", "H.264", "Other codecs"},
-        "File size",
-        {"Under 5 GB", "5–10 GB", "10–20 GB", "20 GB and up"},
-        {"Not played yet", "Played", "Rated 4 or more", "Not rated", "Not played for 3 months"},
-        "Nothing more to narrow down by",
-        "Edit filters",
-        "Filters shown",
-        "Reset to default",
-        "Done",
-        "Move up",
-        "Move down",
-        "%s hair",
-        "Cup %s",
-        "Age %s",
-        "Released %d",
-        "no %s",
-        "Back to the scenes",
-        "%s · %s in these scenes",
-        "Most first",
-        "A–Z",
-        {"Find a performer", "Find a tag", "Find a studio", "Find a year"},
-        {"All hair colours …", "All ethnicities …", "All countries …", "All eye colours …"},
-        {"Find a hair colour", "Find an ethnicity", "Find a country", "Find an eye colour"},
-        "%s · %s among these performers",
-        "Back to the performers",
-        "Pinned lists",
-        "Nothing here matches “%s”",
-        {"Title", "Rating", "Plays", "Released", "Length"},
-        "Leave these out",
-        "VR",
-        "2D",
-        "%s performers",
-        "1 performer",
-        "%s of %s performers",
-        "Search names and aliases",
-        {"Scene count", "Name", "Plays", "Average rating", "Newest scene"},
-        {"Played", "Not played yet", "Rated 4 or more on average"},
-        "Their scenes",
-        "The scenes with these looks",
-        "No performers match these filters",
-        "This performer is no longer in your Stash",
-        "1 scene",
-        "%s plays",
-        "%d years old",
-        "born %s",
-        "%s eyes",
-        "%d cm",
-        "Also known as %s",
-        "Active since %s",
-        "Active %s–%s",
-        "scenes here",
-        "played",
-        "average of %d rated",
-        "none rated",
-        "Last played %s",
-        "Not played yet",
-        "Often with",
-        "%s with %s",
-        " and ",
-        "Include scenes with this co-star; select again to remove.",
-        "%s studios",
-        "1 studio",
-        {"Your plays", "Scenes", "Newest release", "Name", "Your rating"},
-        "1 play",
-        "Newest %s",
-        "newest %s",
-        "Part of %s",
-        "★ %.1f average",
-        "No studios have scenes here",
-        "★ %.1f",
-        {"New in Stash", "Top rated", "Top performers", "Random picks"},
-        {"%s added in the last 30 days", "rated 4 or more by you", "by your plays and ratings",
-         "a new handful each visit"},
-        "See all %s",
-        "Pin from Scenes",
-        "Lists pinned on the Scenes page appear here.",
-        "Search Stash",
-        "Browse scenes from your Stash server.",
-        {"Stash's address, like server.example.com or 192.168.1.20:9999.",
-         "API key, only if your Stash server requires one."},
-        "Refresh the local catalog from Stash.",
-        "Save these filters as a pinned list.",
-        "Play these scenes in random order.",
-        "Toggle this filter.",
-        "Remove filter: %s",
-        {"Match any selected item in this group.", "Match every selected item in this group."},
-        "Jump to names starting with this letter.",
-        {"Sort by count, highest first.", "Sort names alphabetically."},
-        "Tap to reverse the order.",
-        {"Newest first", "Oldest first"},
-    },
-    {
-        "Scene",
-        "Your rating",
-        "Played %d×",
-        "last %s",
-        "Not played yet",
-        "dir. %s",
-        "%d then",
-        "Stash lists no performers for this scene",
-        "Stash lists only men here – Settings → Stash can show them",
-        "More",
-        "Less",
-        "Tags",
-        {"Common first", "Specific first", "A–Z"},
-        "Pick tags to find scenes with them",
-        "+%d more",
-        "Show fewer",
-        "Scenes with %s",
-        "Scenes with these %d tags",
-        "More with %s",
-        "More from %s",
-        "Similar scenes",
-        "Back to details",
-        "Weighted tag overlap and cast size, with smaller studio and performer bonuses. Same format only.",
-        "No other scene shares enough with this one",
-        "With %s",
-        "%d tags in common",
-        "1 tag in common",
-        "Stash doesn't know this video",
-        "Outside Stash's folders (%s); no cast, studio or tags available.",
-        "No Stash scene for this file. Scan it in Stash, then sync.",
-        "Only videos on this computer can be in Stash.",
-        "Last sync: %s · %s",
-        "Nothing is playing",
-        "From Stash",
-        {"Show tags shared by the most scenes first.",
-         "Show rarer tags first; tags on fewer than four scenes last.",
-         "Sort tags alphabetically."},
-        "Edit tags",
-        "Add or remove this scene's tags in Stash.",
-        "Tap a tag to remove it, again to keep it",
-        "Add tags",
-        "Back to tags",
-        "Find a tag among %s",
-        "On this scene",
-        "No tag with “%s”. New tags are made on Stash's web page.",
-        "Save to Stash",
-        "Saving to Stash …",
-        "No changes yet",
-        "%d added",
-        "%d removed",
-        "Discard 1 change",
-        "Discard %d changes",
-        "Keep editing",
-        "Nothing was sent to Stash.",
-        "Only these changes are sent; anything else changed in Stash meanwhile stays.",
-        "Removes both: %s",
-        "Removes all %d: %s",
-        "Couldn't reach Stash. Your changes are kept.",
-        "Try again",
-        "Saved: %s",
-    },
-    {
-        "Send ratings, plays and tags to Stash",
-        "Send new ratings, plays and tag edits, and delete in Stash the files you delete here; nothing "
-        "comes back. Before sending, stop Stash, back up "
-        "~/.stash/stash-go.sqlite and its -wal/-shm files, then restart Stash.",
-        "%d ratings and %d plays wait to be sent",
-        "Sent %d ratings and %d plays since VideoFrameVR started",
-        "Send my ratings and plays …",
-        "Send my ratings and plays to Stash",
-        "Comparing your library with Stash …",
-        "%s ratings and %s plays to send, for %s scenes.",
-        "%s plays Stash has already are left out.",
-        "%s changes made while Stash couldn't be reached are sent too.",
-        "Existing Stash ratings stay unchanged. Earlier plays use the last play's timestamp; "
-        "only that time is stored locally. Your local library stays unchanged.",
-        "Stash has all your ratings and plays already: nothing to send.",
-        "Sending …",
-        "Sent %s ratings and %s plays.",
-        "Not everything was sent: %s",
-        "Back up Stash's database first (see Settings → Stash).",
-        "Dry run",
-        "Hide the list",
-        "Send",
-        "Close",
-        "★ %s (Stash: %s)",
-        "none",
-        "1 play",
-        "%d plays",
-        "… and %s more",
-        "Send new ratings, plays and tag edits to Stash, and delete there the files you delete here. "
-        "Back up Stash first.",
-        "Review existing ratings and plays before sending them to Stash.",
-        "Preview what would be sent without sending it.",
-        "Send to Stash",
-        "Send ratings and plays to Stash",
-        "Plays mark a scene as watched. Back up Stash first.",
-        "Existing Stash ratings stay unchanged. Scenes you have played are marked as watched in "
-        "Stash, which keeps no time for a play. Your local library stays unchanged.",
-        "Send new ratings to Stash and mark the scenes you play as watched there. Back up Stash "
-        "first.",
-    },
-    {
-        "Focus (all videos)", "Focus (this video)", "Stereo focus",
-        "Off: every video keeps its original stereo.",
-        "Mode", {"Off", "Manual", "Automatic"},
-        {"Keep this video's original stereo.", "Align stereo at a fixed distance.",
-         "Align stereo at the measured distance where you look."},
-        "Aim with", {"Head direction", "Eye tracking"}, "Choose what aims automatic focus.",
-        "Focal distance", "Distance where the stereo images align.",
-        "Show focus target", "Show the focus target and measured distance.",
-        "Use learned eye tracking",
-        "Use corrections learned from menu clicks for stereo focus. "
-        "Off uses the runtime's gaze. Learning continues in the background.",
-        "Camera separation", "Distance between the cameras that recorded this video.",
-        "Automatic IPD", "Use the headset's measured distance between your eyes.",
-        "Motion (all videos)", "Motion emulation", "Motion distance",
-        "Head movement simulates parallax at this distance.",
-        "IPD", "Distance between your pupils. Setting it overrides Automatic IPD.",
-        "Use for all videos", "Use these settings for videos without their own focus settings.",
-        "Back to the default", "Clear this video's focus settings and follow the default.",
-        "Set for this video", "Following the default",
-        "Needs 3D 180° or fisheye video. 2D, flat and 360° stay unchanged.",
-        {"Minimum distance", "Maximum distance", "Transition speed", "Sensitivity", "Accuracy",
-         "Focus pitch", "Focus yaw"},
-        {"Nearest distance automatic focus accepts.",
-         "Farthest distance automatic focus uses. Anything farther focuses here.",
-         "How quickly focus moves to a new distance.",
-         "Higher values keep focus probes closer to your aim.",
-         "Higher values check more candidate depths and take longer.",
-         "Offset automatic focus aim vertically.", "Offset automatic focus aim horizontally."},
-    },
-    "Show fine-tuning rows on the settings pages.",
-    "Move floating subtitles up or down.",
-    "Smooth downscaled video using smaller copies of each frame.",
-    "Smooth downscaled video. Costs GPU time on the Frame.",
-    "Emphasize edges in all videos.",
-    "Emphasize edges. Costs GPU time on the Frame.",
-    "Smooth fine lines. Costs GPU time on the Frame.",
-    "Change pixels per eye for video and menus.",
-    "Above default: costs GPU time on the Frame.",
-    "Higher is smoother and uses more battery. 120 Hz suits 60 fps video.",
-    "Keep full detail everywhere. Costs GPU time on the Frame.",
-    "Size of the full-detail area around your gaze.",
-    "Add a half-detail ring around the sharp area.",
-    "Pixels sharing one shading sample outside the sharp area.",
-    {"How much of the background to remove.", "Shrink the visible foreground's edges.",
-     "Soften the cutout's edges.", "Remove the background's tint from foreground edges."},
-    "Change the screen's size, measured from bottom to top.",
-    "Bend the screen around you. Zero is flat.",
-    "Rate in half-stars; select the saved rating again to clear.",
-    "Playback volume.",
-    "Sort by this column; select again to reverse.",
-    "Hide the keyboard and keep the entered text.",
-    "Hide the keyboard and discard unsaved server edits.",
-    "Language",
-    "Automatic",
-    "English",
-    "Applies now. Automatic uses your system language.",
-    {
-        {"Aimed by head direction", "Eye tracking active", "Eye tracking: holding through a short gap",
-         "Eye tracking lost: using head direction until it is back",
-         "Eye tracking not delivering (permission or tracker off): using head direction",
-         "Eye tracking unsupported by this runtime or headset: using head direction"},
-        "far",
-        "Automatic is unavailable (the depth estimator could not start)",
-    },
-    {
-        "%s is available. The app restarts to finish updating.",
-        "Downloading %s …",
-        "Restarting with %s …",
-        "Restart the app to use %s",
-        "Can't install the update. Check your connection and free space.",
-        "Update now",
-        "Not now",
-        "Try again",
-        "Update available",
-    },
-    {
-        "Help",
-        "Save diagnostics",
-        "Saving …",
-        "For a bug report: your logs and settings in one file in Downloads. Anonymised: no file names, folders, server addresses or user names.",
-        "Saved to Downloads: %s. Attach it to your report.",
-        "Couldn't save. Check that Downloads has free space.",
-        "Closed unexpectedly",
-        "The app closed unexpectedly last time. To report it, save diagnostics and attach the file.",
-    },
-    {
-        "Network",
-        "Looking for servers …",
-        "No servers found",
-        "Add one by its name or address.",
-        "Look again",
-        "Add server",
-        "Forget this server and its password",
-        "Add a server",
-        "Sign in to %s",
-        {"Server", "User name", "Password"},
-        "Name or address, e.g. 192.168.1.20",
-        "Empty for guest",
-        "Show",
-        "Remember password",
-        "Saved on this device, unencrypted.",
-        "Sign in",
-        "Signing in …",
-        "Wrong user name or password.",
-        "Can't reach the server.",
-        "The server refused the sign-in.",
-        "Open a share",
-        "This server doesn't list its shares. Type a share's name.",
-        "Share",
-        "Open",
-        "Type",
-        {"SMB", "SFTP"},
-        "SMB: Windows computers and most NAS drives. SFTP: computers you sign in to with SSH.",
-        "Port",
-        "Name or address, e.g. nas.local",
-        "Your account on the server",
-        "Connect",
-        "Connecting …",
-        "Can't reach %s on port %d. Check the address and port.",
-        "Sign in with",
-        {"This device's key", "Password"},
-        "Recommended. Your password is used once, to add this device's key to %s's account. It isn't saved.",
-        "Saved on this device if you remember it.",
-        "Setting up key sign-in …",
-        "Accounts that also ask for a one-time code can't sign in here.",
-        "%s signed in, but can't use SFTP on %s.",
-        "Turn SFTP on for this account in the server's settings.",
-        "%s only accepts keys. Add this device's key to %s's account, then try again.",
-        "This device's key",
-        "On %s, add it as one line to ~/.ssh/authorized_keys in %s's home folder.",
-        "Try again",
-        "%s still doesn't accept this device's key for %s.",
-        "Check the user name, and that the key is on one line, whole.",
-        "%s only accepts keys.",
-        "On %s, signed in as %s, run:",
-        "Waiting for %s …",
-        "Key fetched. Signing in …",
-        "SFTP · %s",
-        "Forget this server",
-        "%s has a different key",
-        "It was reinstalled, or another computer is answering in its place. Don't connect unless you know why it changed.",
-        "Trusted",
-        "Now",
-        "Don't connect",
-        "Trust the new key",
-        "Signed in with your password",
-        "%s didn't accept this device's key, so it needs your password next time. Remember the password on this device?",
-        "Saved unencrypted. Not now keeps you signed in until the app closes.",
-        "Not now",
-        "Forget %s?",
-        "This device's key is on %s's account there. Remove it too, so this device can't sign in to it any more.",
-        "Forget only",
-        "Remove key and forget",
-        "Removing key …",
-        "Can't reach %s, so the key can't be removed now.",
-        "Forget anyway",
-    },
-    {
-        "Choose…",
-        "Change…",
-        "Find the folder with Stash's videos in the file browser. For a shared drive, add its "
-        "computer under Network first.",
-        "Looking for Stash's videos …",
-        "Stash's videos are on this device in %s.",
-        "Stash's videos are also on this device in %s. Use plays them from there.",
-        "Use",
-        "Play Stash's videos from %s",
-        "Stash's videos weren't found here. Choose their folder.",
-        "Choose the folder with Stash's videos:",
-        "Stash's videos aren't in this folder:",
-        "Use this folder",
-        "Checking …",
-        "Plays from Stash",
-        "Play from Stash",
-        "Its videos weren't found in %s.",
-        "Not found on this device. Choose its folder.",
-        "Its other scenes play from Stash.",
-        "Looking for Stash's videos … (folder %d of %d)",
-        "Videos outside Stash's library folders",
-    },
-    {
-        "Caps lock",
-        "Tap twice for caps lock.",
-        "Keyboard layout. Tap for %s, hold for all layouts.",
-        "Keyboard layout. Tap to choose one.",
-        "Cursor left",
-        "Cursor right",
-    },
-    {
-        "Viewpoint",
-        "%d %% closer",
-        "%d %% back",
-        "Centered",
-        "Viewpoint: %s",
-        "Hold either stick forward or back to move toward or away from the picture. Saved for "
-        "this video; Recenter or Reset puts it back in the middle.",
-    },
-    {
-        "Automatic passthrough",
-        "Passthrough switches itself on for videos made for it: with a mask, a green screen or a "
-        "solid background. Turned off for a video, it stays off.",
-        "Unavailable. This runtime or headset doesn't let apps show the room.",
-        "Passthrough on: this video has a mask",
-        "Passthrough on: green screen video",
-        "Passthrough on: solid background",
-        "Video settings → Passthrough turns it off",
-        "Draw the room in green",
-        "For streaming software that replaces a colour with the room on the headset, such as "
-        "ALVR's chroma key. With passthrough on, the room is drawn in pure green.",
-    },
-    {
-        "microSD card",
-        "USB drive",
-        "Drive",
-        "Now in the file explorer",
-        "Couldn't open the microSD card",
-        "Couldn't open the USB drive",
-    },
-    {
-        "Offline",
-        "To go",
-        "On this device",
-        "%s to go · %s left",
-        "%s to go · %s left · about %s",
-        "%s on this device · %s",
-        "Nothing downloaded yet",
-        "Point at a video in the file explorer, the Library or Stash and choose Download to keep "
-        "a copy on this device.",
-        "Point at a video in the file explorer or the Library and choose Download to keep a copy "
-        "on this device.",
-        "Pause all",
-        "Resume all",
-        "Pause",
-        "Resume",
-        "Try again",
-        "New downloads",
-        "Offline videos %s",
-        "%s free of %s",
-        "Internal storage",
-        "In the headset",
-        "On this computer",
-        "Queued · %s",
-        "%d %% · %s of %s · %s/s · %s left · to %s",
-        "%d %% · %s of %s · to %s",
-        "Paused · %d %% · %s of %s",
-        "Paused while a video plays · %d %% · %s of %s",
-        "Waiting for the server",
-        "Waiting for the drive",
-        "The copy didn't match; starting again",
-        "The video isn't there any more",
-        "Not enough room on the drive",
-        "Not on the drive now",
-        {"Queued", "Waiting", "Failed"},
-        "%d min",
-        "%d h %02d min",
-        "under a minute",
-        "Download",
-        "Downloaded to %s",
-        "Show in Offline",
-        "Cancel the download",
-        "Remove from this device…",
-        "Save downloads to",
-        "Asked once. Change it later under Settings or in Offline.",
-        "Won't fit on %s",
-        "Needs %s, %s free.",
-        "Remove downloads in Offline to make room, or save this one to %s.",
-        "Remove downloads in Offline to make room.",
-        "%s instead · %s free",
-        "Remove the download?",
-        "%s · %s on %s",
-        "Deletes it from this device. The original on %s stays.",
-        "Deletes it from this device. The original stays.",
-        "Remove",
-        "Download",
-        "Downloaded to %s",
-        "Save downloads to",
-        "Where new downloads go. Offline shows every drive and what is on it.",
-        "Not answering: away from home, or switched off",
-    },
-    {
-        "Software decoding",
-        "This headset has no hardware decoder for %s. High-resolution video may stutter.",
-        "Hardware decoding isn't available for this video. High-resolution video may stutter.",
-    },
-    {
-        "Edit places",
-        "Places",
-        "Their order in the navigation, and which show there. Select a name to rename it.",
-        "Show",
-        "Rename",
-        "Move up",
-        "Move down",
-        "Reset to default",
-        "Default order, all shown. Names stay.",
-        "Rename %s",
-        "Leave it empty for its own name.",
-        "Save",
-    },
-    {
-        "Appearance",
-        {"Blue", "Teal", "Green", "Orange", "Red", "Pink", "Purple", "Custom"},
-        "Hue",
-        "Brightness",
-        "Brighter colours make the white text on them harder to read",
-        "Saturation",
-    },
-    {
-        "Preset",
-        {"Low", "Balanced", "High"},
-        "Custom",
-        "Changed by hand. Choose a preset to put its settings back.",
-        "My presets",
-        "None yet.",
-        "Save as preset…",
-        "Move up",
-        "Move down",
-        "Rename",
-        "Delete",
-        "Delete “%s”?",
-        "Delete",
-        "Save as preset",
-        "Rename “%s”",
-        "Name",
-        "Save",
-        "Replace",
-        "Rename",
-        "Saves this: %s.",
-        "Its settings: %s.",
-        "Saved as a file in the presets folder; copy it to another device to use it there.",
-        "Renames its file in the presets folder.",
-        "“%s” is a built-in preset's name. Choose another.",
-        "You have a preset called “%s”. Choose another name.",
-        "You have a preset called “%s”. Replace saves over it.",
-        "%s: %s",
-        ", ",
-    },
-    {
-        "Stash has a login? Sign in with it instead of typing the API key. The key is fetched "
-        "for you; the password isn't kept.",
-        "Stash didn't accept that user name and password.",
-        "Connecting to Stash …",
-        "Downloading your Stash … %s MB",
-        "Downloading your Stash …",
-        "Keeping a copy on this device …",
-        "Finding Stash's videos on this device …",
-        "This first sync runs in the background: you can leave this page or play something. "
-        "Stash's pages fill in when it's done.",
-        "Like server.example.com or 192.168.1.20:9999",
-        "This Stash is too old for VideoFrameVR. Update it to 0.31 or newer.",
-        "This Stash needs a sign-in.",
-        "Stash refused the API key. Sign in again to get the current one.",
-        "Stash stopped answering: it was reached from outside its network without a login. "
-        "Stash's log says how to turn it back on; then set a login in its Security settings.",
-        "Stash refused access.",
-        "Nothing answers at this address. Check that Stash is running and the port is right.",
-        "No server has this name. Check the address.",
-        "Stash didn't answer in time.",
-        "Stash's certificate isn't trusted.",
-        "No secure connection. If this Stash doesn't use https, try http://.",
-        "This address can't be used. Type it like http://192.168.1.20:9999.",
-        "Stash couldn't be reached.",
-        "This Stash uses https. Try https://.",
-        "Something answers at this address, but it isn't Stash. Check the address and port.",
-        "Stash answered with an error (HTTP %d).",
-        "This address forwards to another server. Type that server's address instead.",
-        "Stash: %s",
-        "Can't verify %s",
-        "Its certificate isn't trusted. That's fine for your own server with a self-signed certificate.",
-        "Anyone posing as this server could get your Stash login.",
-        "Connect without verification",
-        "The certificate of %s isn't verified.",
-        "Verify certificate",
-        "Untrusted certificate",
-        "Stash's certificate isn't trusted. Choose whether to connect anyway.",
-        "%s answers at this address, so that's what was set up.",
-        " or ",
-    },
-    {
-        "Put on your headset",
-        "Setup starts as soon as you're wearing it.",
-        "Set up later",
-        "Back",
-        "Continue",
-        "Let's find your videos. It takes about a minute.",
-        "Get started",
-        "Point at it and pull the trigger",
-        "Turn on a controller to start",
-        "Press its Steam button.",
-        "Hold its power or system button until it lights up.",
-        "Your controllers",
-        "Press any button to see what it does.",
-        "Turn on your controllers",
-        "Do you use Stash?",
-        "Everything Stash knows about your videos, in the headset.",
-        {"Covers and real titles", "Not file names",
-         "Moving previews", "A scene plays when you point at it",
-         "Performers and studios", "With portraits and logos",
-         "Find scenes by what's in them", "Tags, length, VR or 2D",
-         "Ratings and plays", "Sent back to Stash, if you want",
-         "Works with Stash off", "What it knows is kept on this headset"},
-        "What it knows is kept on this computer",
-        "For scenes you download",
-        "Don't use Stash? You're all set with your folders.",
-        "Don't use Stash? Add folders any time in Settings.",
-        "Not now",
-        "Connect Stash",
-        "Connected to %s.",
-        "Change",
-        "The address you open Stash at in your browser.",
-        "Address",
-        "Connect",
-        "Connecting …",
-        "Unable to reach Stash at this address. Check it, and that this headset is on the same "
-        "network.",
-        "Unable to reach Stash at this address. Check it, and that this computer is on the same "
-        "network.",
-        "Sign in to Stash",
-        "This Stash has a login. VideoFrameVR signs in once to get its API key, and doesn't keep "
-        "your password.",
-        "Where are your videos?",
-        "Tick the folders to add. You can add more later.",
-        "Use Stash?",
-        "Don't ask again",
-        "Setup",
-        "Press %s to bring setup here",
-        "B",
-        "This headset",
-        "This computer",
-        "Add a computer…",
-        "Looking …",
-        "Home",
-        "File system",
-        "The whole card",
-        "The whole drive",
-        "Opening …",
-        "1 video in this folder too",
-        "%s videos in this folder too",
-        "1 video",
-        "%s videos",
-        "Empty",
-        "Can't open it",
-        "Add a computer",
-        "Its name or address",
-        "Add 1 folder",
-        "Add %d folders",
-        "Skip",
-        "1 folder added",
-        "%d folders added",
-        "Your videos appear in the Library as they're found.",
-        "Add more folders",
-        "You're all set. Quality is High, the best picture on Steam Frame.",
-        "You're all set. Quality is Balanced and follows your SteamVR resolution.",
-        "You're all set. Quality is %s.",
-        "Change it any time in",
-        "Dismiss",
-        "Getting your Stash scenes …",
-        "They show here when it's done. You can browse your files meanwhile.",
-        "Getting your Stash scenes · %s · they join the Library when it's done",
-        "Couldn't get your Stash scenes",
-        "Couldn't get your Stash scenes: %s",
-        "Stash stopped answering during its first sync. Check it's running, then try again.",
-        "Stash stopped answering.",
-        "Try again",
-        "Stash settings",
-        "SMB: Windows and most NAS drives. SFTP: computers you sign in to with SSH.",
-        "Your account on it",
-        {"This headset's key", "This computer's key"},
-        {"Recommended. Nothing is saved but the headset's own key.",
-         "Recommended. Nothing is saved but this computer's own key."},
-        {"Saved on this headset, unencrypted.", "Saved on this computer, unencrypted."},
-        {"Used once, to add this headset's key to %s's account. It isn't saved.",
-         "Used once, to add this computer's key to %s's account. It isn't saved."},
-        {"%s only accepts keys. Add this headset's key to %s's account, then try again.",
-         "%s only accepts keys. Add this computer's key to %s's account, then try again."},
-        {"This headset's key", "This computer's key"},
-        {"%s still doesn't accept this headset's key for %s.",
-         "%s still doesn't accept this computer's key for %s."},
-        {"%s didn't accept this headset's key, so it needs your password next time. Remember the "
-         "password on this headset?",
-         "%s didn't accept this computer's key, so it needs your password next time. Remember the "
-         "password on this computer?"},
-    },
-    {
-        "Choose",
-        "%s. Hold it to drag a list, the picture or the screen.",
-        "Move",
-        "Hold %s on the menu to move it.",
-        "Menu",
-        "Play or pause",
-        "Recenter",
-        "Seek",
-        "%s left or right",
-        "Scroll",
-        "%s up or down",
-        "Left controller",
-        "Right controller",
-        "Either controller",
-        "trigger",
-        "bumper",
-        "grip",
-        "stick",
-        "click the stick",
-        "trackpad",
-        "Menu",
-        "View",
-        "Select",
-        "D-pad %s",
-        {"up", "down", "left", "right"},
-        ", ",
-        " or ",
-        "Press %s to bring the menu back",
-        "Push the stick up or down to scroll",
-        "Click the right stick to bring the video in front of you",
-        "Click the left stick to bring the video in front of you",
-        "Press %s to bring the video in front of you",
-        "Hold %s and %s, then twist your wrist",
-        "Hold grip and press %s to bring the video in front of you",
-        "Change what the buttons do in %s → %s.",
-    },
-    {
-        "On this device",
-        "On %s",
-        "This deletes it for good.",
-        "Delete",
-        "Remove download",
-        "Delete everywhere",
-        "The source changed since it was downloaded: only the download can go.",
-        "Deleting …",
-        "The file changed. Nothing was deleted.",
-        "The file isn't there any more.",
-        "It isn't a plain file. Nothing was deleted.",
-        "Not allowed to delete it.",
-        "Another device has it open.",
-        "The server isn't answering.",
-        "In Stash",
-        "Stash moves it to its trash folder.",
-        "Also removed from Stash.",
-        "Stash keeps the scene's other file.",
-        "Stash keeps the scene's other %d files.",
-        "Stash lists it until you run Clean in Stash.",
-        "Stash wasn't sure which file this is; it lists it until Clean.",
-        "Stash deleted its file; this one was kept.",
-        "Deleted",
-        "Turn on Send to Stash in Settings to delete scenes played from Stash",
-        "Stash isn't answering",
-    },
-    {
-        {"Stop at the end", "Repeat this video", "Play the next video", "Shuffle"},
-        {"The video stops on its last frame and the menu opens.",
-         "The video starts over each time it ends. Not kept when you quit the player.",
-         "Goes on with the next video of the folder or list this one was opened from.",
-         "Goes on through the folder or list in a random order. Previous and Next follow it "
-         "too. Not kept when you quit the player."},
-    },
-    {
-        "Warmth",
-        "Tint",
-        "Exposure",
-        "Cooler (blue) or warmer (orange) light.",
-        "Greener or more magenta light.",
-        "Less or more light: dark parts change least, black stays black.",
-        "Reset brightness, contrast, saturation, zoom and viewpoint for this video, and warmth, tint "
-        "and exposure.",
-        "Match the room",
-        "Reading the room …",
-        "Couldn't read the room",
-        "Sets warmth, tint and exposure so the video looks lit like the room, as the cameras "
-        "show it. Not saved: off puts back the video's own. The first time, the picture "
-        "disappears for a moment while it looks. Grey cameras: exposure only.",
-        "Shows when the room does: with passthrough on, or Opacity below 100 %.",
-        "Read the room again, for when the light has changed",
-        "Match colour",
-        "Match brightness",
-        "How much of the room's warmth and tint Match the room applies. For all videos.",
-        "How much of the room's brightness Match the room applies. For all videos.",
-    },
-    {
-        "What's new",
-        "Close",
-        "Show after updates",
-        "Updated from %s to %s",
-    },
-    "Move the sharp area using the correction learned from menu clicks. Off uses the runtime's gaze. Independent of stereo focus.",
-    {
-        "Funscripts",
-        "Play funscripts on a device",
-        "Moves a stroker in time with videos that have a funscript beside them or in Stash. Needs "
-        "Intiface Central.",
-        "Intiface address",
-        "This computer",
-        "Not set",
-        "The name or IP address of the computer or phone running Intiface Central, with its port if "
-        "it isn't 12345. There, switch on \"Listen on all network interfaces\" and start the server.",
-        "Leave it empty if Intiface Central runs on this computer.",
-        "Save",
-        "Connecting to Intiface …",
-        "Enter the address of the device running Intiface Central.",
-        "Intiface isn't answering. Check that its server is started.",
-        "Intiface has no stroker connected. Switch yours on.",
-        "Connected: %s",
-        "Connected: %s and %d more",
-        "Timing",
-        "Above 0 the device moves earlier, below 0 later.",
-        "Stroke from",
-        "Stroke to",
-        "The part of the device's stroke that is used.",
-        "Motion",
-        "Funscript",
-        "Playing this video's funscript on %s.",
-        "This video has a funscript, but no device is connected.",
-    },
-    {
-        "Nothing",
-        "Back %s",
-        "Forward %s",
-        "Previous chapter",
-        "Next chapter",
-        "From the start",
-        "Funscripts on or off",
-        "Rating up",
-        "Rating down",
-        "Volume up",
-        "Volume down",
-        "Next audio track",
-        "Subtitles on or off",
-        "Zoom in",
-        "Zoom out",
-        "Reset screen",
-        "Videos",
-        "Sound",
-        "Opens and closes the menu.",
-        "Brings the video in front of you.",
-        "The same as the trigger.",
-        "Back to 0:00.",
-        "Funscripts played on a device, on or off.",
-        "Half a star more for the video playing.",
-        "Half a star less for the video playing.",
-        "Asks first: “Delete video?”",
-        "Goes to the video's next audio track.",
-        "Switches the video between see-through, at its last value, and solid.",
-        "A step of Zoom (180°/360°), the Video setting; held, it goes on. Not the stick's "
-        "Closer, which moves your viewpoint.",
-        "The flat screen back to its first size, distance and curve.",
-        "Menu",
-        "Recenter",
-        "Choose",
-        "Play or pause",
-        "Stop",
-        "Previous video",
-        "Next video",
-        "Delete video",
-        "Mute / unmute",
-        "Passthrough",
-        "See-through on or off",
-        "Match the room",
-        "Remove background",
-        "Tone look",
-        "Stereo focus",
-        "Show focus target",
-        "Frame back",
-        "Frame forward",
-        "After video",
-        "Peek at the room",
-        "Motion on or off",
-        "Reset picture",
-        "One frame back, paused. It can take a moment: the video is decoded again from the "
-        "keyframe before.",
-        "One frame on, paused.",
-        "Goes on to the next of what happens when a video ends: stop, repeat, next video or "
-        "shuffle.",
-        "While held, the video goes and the room shows. Only where the headset shows the room.",
-        "Motion emulation, for all videos: in 180° and 360° video, moving your head shows "
-        "parallax.",
-        "%s: %s",
-        "★ %s",
-        "Not rated",
-        "Volume %d%%",
-        "Audio: %s",
-        "No other audio track",
-        "No subtitles",
-        "No chapters",
-        "Nothing is playing",
-        "Not for photos",
-        "Not for streams",
-        "This headset doesn't show the room",
-        "Turn on passthrough first",
-        "This video has its own mask",
-        "Not for flat video",
-        "Only for the flat screen",
-        "Turn on stereo focus first",
-        "Ratings can't be saved right now",
-        "This is the first video",
-        "This is the last video",
-        "This is the first chapter",
-        "This is the last chapter",
-        "Not available on this headset",
-        "Turn on Send to Stash first",
-        "This server doesn't delete files",
-        "Not while setting up",
-        "Picture reset",
-    },
-    {
-        "Controls",
-        "Steam Frame controllers",
-        "Index controllers",
-        "Touch controllers (Quest)",
-        "Controllers",
-        "Every button and gesture goes back to what it did at first.",
-        "Reset the buttons?",
-        "Menu's only button. Give Menu another button first.",
-        "This button does nothing.",
-        "%s now does %s, not %s",
-        "%s no longer does %s",
-        "Put it back as it was.",
-        "the left %s",
-        "the right %s",
-        "the Menu button",
-        "the View button",
-        "stick click",
-        "L",
-        "R",
-        "move the video",
-        "In the menu: chooses; hold on a list to drag it. Off the menu: hold and move to drag the "
-        "picture around you, or to carry the flat screen (on its corner, to resize it). With "
-        "180°/360° video, twist your wrist while dragging to level the horizon.",
-        "hold",
-        "Hold grip on the menu to move it. Held with another button, it gives that button's grip "
-        "job or a gesture.",
-        "left or right",
-        "A tap skips; held, the video glides on, faster the further you push. On a value pointed "
-        "at in the menu, steps it as − and + do.",
-        "Closer",
-        "up or down",
-        "180°/360°: held a moment, moves you toward or away from the picture "
-        "(Viewpoint). Flat screen: its distance. On a list in the menu: scrolls it.",
-        "Gestures",
-        "Volume",
-        "twist",
-        "flat screen",
-        "Grip and the stick up or down: the flat screen's height; the width follows.",
-        "screen corner",
-        "Hold the trigger on a corner of the flat screen to resize it.",
-        "Horizon",
-        "Level the horizon: while dragging the picture with the trigger, twist your wrist.",
-        "Clear rating",
-        "on the stars",
-        "Hold grip and click the stick while pointing at the stars in the menu: clears the video's "
-        "rating.",
-        "Skip",
-        "How far Back and Forward jump, and a tap of the stick.",
-        "Big skip",
-        "How far the longer Back and Forward jump.",
-        "%d s",
-        "%d min",
-        "Buttons",
-        "With grip held",
-        "Grip + %s",
-        "%s, with grip held",
-        "With grip held, %s",
-        "With grip held, this button does nothing.",
-        "Every button, alone and with grip held, and every gesture goes back to what it did at first.",
-        "This button chooses, like the trigger, also with grip held.",
-        "Trigger",
-        "Bumper",
-        "Stick click",
-        "Grip",
-        "Stick",
-        "bumper",
-        "Same as without grip",
-        "With grip held, this button does what it does alone.",
-        "Grip + %s: the same as without grip",
-        "D-pad up",
-        "D-pad down",
-        "D-pad left",
-        "D-pad right",
-        "Move the menu",
-        "Seek",
-        "Height",
-    },
-    {
-        "Room",
-        "Place",
-        "Screen distance",
-        "Screen height",
-        "Screen curve",
-        "Scrub",
-        "Rating",
-        "%s: %s",
-        "Background",
-        "Turn on Match the room first",
-        "Turn on Remove background first",
-        "No background found: choose Green screen or Solid colour",
-    },
-    {
-        "Add gesture",
-        "Hold a button, or two on one controller, then pick what twisting your wrist changes.",
-        "%d gestures is the most for one kind of controller. Remove one first.",
-        "Hold %s and twist your wrist: %s.",
-        "Hold %s and twist your wrist: %s. A tap still does %s.",
-        "It does nothing while %s chooses, like the trigger.",
-        "Remove this gesture",
-        "%s + twist: %s",
-        "%s + twist now does %s, not %s",
-        "%s + twist no longer does %s",
-        "%s It can't be changed.",
-        "Resize",
-        "drag",
-        "move",
-        "click",
-        "180°/360°",
-        "on the menu",
-        "Right %s",
-        "Left %s",
-        "right %s",
-        "left %s",
-        "Hold grip while pointing at the menu, then move your hand.",
-        "Add a gesture",
-        "Hold a button, or two on one controller, then let go.",
-        "No buttons held",
-        "Use buttons on one controller",
-        "Use two buttons at most",
-        "The trigger alone drags the picture",
-        "This button chooses, like the trigger",
-        "No room for more on the left controller",
-        "No room for more on the right controller",
-        "No room for more on either controller",
-        "Both controllers",
-        "Keep the buttons it had.",
-        "Change button",
-        "Hold another button, or two, for this gesture.",
-        "Which controller this gesture is on.",
-        "Remove",
-        "This gesture does nothing any more.",
-        "Only with 180° and 360° video.",
-        "Only for the flat screen.",
-        "Only where the headset shows the room.",
-        "Only with Match the room on.",
-        "Only with Remove background on.",
-        "Only for videos, not photos.",
-        "Only for videos you can rate, not streams.",
-        "Hold grip, then the trigger, and twist your wrist: %s. Change it in Gestures.",
-        "With grip held, the trigger only chooses in the menu.",
-        "Hold grip, then the trigger, and twist your wrist: %s with the left controller, %s with the "
-        "right. Change them in Gestures.",
-        "Add the trigger and twist: %s.",
-        "Hold %s, then twist your wrist",
-    },
-    {
-        "Steam is using the video decoder",
-        "Freeing it closes a Steam background process, which Steam restarts by itself.",
-        "Free and play",
-        "Freeing the video decoder …",
-        "The video decoder is busy. Restart Steam or the headset.",
-        "Always free",
-        "Always free the video decoder",
-        "Free it without asking when Steam is using it. Steam restarts its background process by itself.",
-    },
-};
+constexpr Strings englishStrings() {
+  Strings s{};
+  s.noVideo = "No video – choose a file";
+  s.loading = "Loading …";
+  s.playbackFailed = "Can't play this video. Try another file.";
+  s.discEncrypted = "This disc image is encrypted and can't be played.";
+  s.format = "Format";
+  s.projections[0] = "Screen";
+  s.projections[1] = "180°";
+  s.projections[2] = "360°";
+  s.projections[3] = "Fisheye 190°";
+  s.projections[4] = "Fisheye 200°";
+  s.projections[5] = "360° cubemap (EAC)";
+  s.projections[6] = "Fisheye 180°";
+  s.stereo[0] = "Mono";
+  s.stereo[1] = "3D side-by-side";
+  s.stereo[2] = "3D top-bottom";
+  s.curved = "Curved";
+  s.passthrough = "Passthrough for this video";
+  s.passthroughHint = "Show the room through this video. Saved for this video.";
+  s.recenter = "Recenter";
+  s.settings = "Settings";
+  s.files = "Files";
+  s.back = "Back";
+  s.noVideos = "No videos in this folder";
+  s.noSubtitleFiles = "No subtitle files in this folder";
+  s.chooseSubtitleFile = "Choose subtitle file";
+  s.noAudio = "No audio track";
+  s.subtitles = "Subtitles";
+  s.off = "Off";
+  s.on = "On";
+  s.track = "Track";
+  s.subtitles3d = "Floating for 2D";
+  s.subtitles3dHint = "2D: float in front, or stay in-picture. 3D and 180°/360° always float.";
+  s.subtitleFromFile = "Subtitle from file";
+  s.space = "Space";
+  s.paste = "Paste";
+  s.deleteTitle = "Delete video?";
+  s.deleteFailed = "Deleting failed";
+  s.cancel = "Cancel";
+  s.ok = "OK";
+  s.quitTitle = "Quit the player?";
+  s.quit = "Quit";
+  s.picture = "Picture";
+  s.brightness = "Brightness";
+  s.contrast = "Contrast";
+  s.saturation = "Saturation";
+  s.zoom = "Zoom (180°/360°)";
+  s.reset = "Reset";
+  s.projectionShort[0] = "Screen";
+  s.projectionShort[1] = "180°";
+  s.projectionShort[2] = "360°";
+  s.projectionShort[3] = "F 190°";
+  s.projectionShort[4] = "F 200°";
+  s.projectionShort[5] = "Cube";
+  s.projectionShort[6] = "F 180°";
+  s.stereoShort[0] = "Mono";
+  s.stereoShort[1] = "3D ⇆";
+  s.stereoShort[2] = "3D ⇅";
+  s.tipDelete = "Delete video";
+  s.tipPrevious = "Previous video";
+  s.tipNext = "Next video";
+  s.tipBack10 = "Back 10 s";
+  s.tipForward10 = "Forward 10 s";
+  s.tipPlay = "Play";
+  s.tipPause = "Pause";
+  s.tipStop = "Stop";
+  s.tipMute = "Mute / unmute";
+  s.tipSlideshow = "Slideshow";
+  s.deletePhotoTitle = "Delete photo?";
+  s.tipDeletePhoto = "Delete photo";
+  s.sortModes[0] = "Name: A–Z";
+  s.sortModes[1] = "Name: Z–A";
+  s.sortModes[2] = "Date modified: newest";
+  s.sortModes[3] = "Date modified: oldest";
+  s.sortModes[4] = "Size: largest";
+  s.sortModes[5] = "Rating: highest";
+  s.sortModes[6] = "Rating: lowest";
+  s.sortModes[7] = "Plays: most";
+  s.sortModes[8] = "Plays: fewest";
+  s.sortModes[9] = "Last played: newest";
+  s.sortModes[10] = "Last played: oldest";
+  s.sortModes[11] = "Date added: newest";
+  s.sortModes[12] = "Date added: oldest";
+  s.sortModes[13] = "Size: smallest";
+  s.sortFields[0] = "Name";
+  s.sortFields[1] = "Date modified";
+  s.sortFields[2] = "Size";
+  s.sortFields[3] = "Rating";
+  s.sortFields[4] = "Plays";
+  s.sortFields[5] = "Last played";
+  s.sortFields[6] = "Date added";
+  s.tipTop = "To the top";
+  s.tipBottom = "To the end";
+  s.tipGallery = "Thumbnails";
+  s.tipList = "List";
+  s.pinFolder = "Pin · shows it in the navigation and adds its videos to the Library";
+  s.unpinFolder = "Unpin · its videos leave the Library; ratings and plays stay";
+  s.folderUnavailable = "Folder unavailable";
+  s.previousPlaces = "Previous places";
+  s.morePlaces = "More places";
+  s.background = "Night sky around the screen";
+  s.recenterIn = "Recentering in %d …";
+  s.subtitleSize = "Size";
+  s.subtitleRaise = "Height";
+  s.subtitleDistance = "Distance (180°/360°)";
+  s.chapter = "Chapter";
+  s.tipSearchFolder = "Search this folder";
+  s.clear = "Clear";
+  s.noMatches = "Nothing in this folder matches “%s”";
+  s.matches = "%s of %s in this folder";
+  s.greenScreen = "Green screen";
+  s.greenScreenHint = "Remove the video's background using the settings below.";
+  s.greenScreenOwnMask = "This video has its own mask.";
+  s.passthroughGroup = "Passthrough";
+  s.opacity = "Opacity";
+  s.opacityHint = "How solid the video is over the room. A gesture can change it too: see Settings → Controls. Saved for this video.";
+  s.opacityOverlay = "Opacity: %d %%";
+  s.packedMask = "Mask in the video";
+  s.packedMaskHint = "For videos that carry their own mask (DeoVR alpha). Follows “_ALPHA” in the file name unless set here. Saved for this video.";
+  s.secondLayer = "Mask's second layer";
+  s.secondLayerHint = "This video's mask has a second layer that you can hide. Saved for this video.";
+  s.keyStrength = "Strength";
+  s.keySoftness = "Edges";
+  s.keySpill = "Spill";
+  s.keyShrink = "Shrink";
+  s.greenScreenResetHint = "Restore the sliders' defaults.";
+  s.keyBackground = "Background";
+  s.keyBackgroundHint = "The circle shows the colour removed from this video. A crossed-out circle means nothing was detected, so nothing is removed: choose Green screen or Solid colour. Saved for this video.";
+  s.keySources[0] = "Automatic";
+  s.keySources[1] = "Green screen";
+  s.keySources[2] = "Solid colour …";
+  s.keySourceHints[0] = "Check the video: remove the solid colour or green screen it finds; nothing if it finds neither.";
+  s.keySourceHints[1] = "For videos filmed in front of a real green screen: remove its green, lit or in shadow.";
+  s.keySourceHints[2] = "For a flat background of exactly one colour, any colour including green. Point at it and pull the trigger.";
+  s.keyPicked = "Solid colour";
+  s.keyChecking = "Checking …";
+  s.keyPick = "Point at the background and pull the trigger";
+  s.keyPickDetail = "Its colour is removed from this video.";
+  s.keyPickUneven = "That spot isn't one colour. Point at a plain area of the background.";
+  s.keyPickUnreadable = "A colour can't be picked from this video. Cancel, then choose Automatic or Green screen.";
+  s.halfSbs = "Half SBS";
+  s.halfTb = "Half TB";
+  s.halfPackedHint = "Stretch half-size eyes to their original proportions. Flat 3D only.";
+  s.display = "Display";
+  s.videoMipmaps = "Video mipmaps";
+  s.antiShimmer = "Anti-shimmer";
+  s.antiShimmerLevels[0] = "Off";
+  s.antiShimmerLevels[1] = "On";
+  s.antiShimmerLevels[2] = "Strong";
+  s.antiShimmerHint = "Smooths fine lines when downscaled. Strong is smoother but softer.";
+  s.antiShimmerFrameHint = "Smooths downscaled lines. Strong is softer and costs more Frame GPU time.";
+  s.antiShimmerMipmaps = "Video mipmaps already smooth fine lines; anti-shimmer is bypassed.";
+  s.sharpen = "Sharpen";
+  s.toneLook = "Tone look";
+  s.toneLookHint = "Brighter mid-tones, more contrast and a soft vignette.";
+  s.tvGamma = "TV gamma";
+  s.tvGammaHint = "TV-like shadows, BT.1886. All videos. Off keeps the video's values.";
+  s.eyeResolution = "Resolution";
+  s.resolutionOverride = "Command-line override: %d pixels per eye. Change this setting to replace it.";
+  s.resolutionLimited = "Limited to %.2f× by SteamVR or the GPU";
+  s.resolutionChanged = "1× now = %d panel pixels. Nearest available size: %.2f×.";
+  s.refreshRate = "Refresh rate";
+  s.refreshRateChoice = "%d Hz";
+  s.foveation = "Foveation";
+  s.foveationLevels[0] = "Off";
+  s.foveationLevels[1] = "Low";
+  s.foveationLevels[2] = "Medium";
+  s.foveationLevels[3] = "High";
+  s.foveationLevels[4] = "Custom";
+  s.foveationHint = "Higher levels save GPU time by reducing detail outside your gaze.";
+  s.showFoveation = "Show foveation";
+  s.showFoveationHint = "Green: full detail. Yellow: half per axis. Untinted: quarter. Cross: gaze.";
+  s.frameReuse = "Skip repeated frames";
+  s.frameReuseHint = "Draws a new picture only when the video or your view changes. Uses less power and keeps the headset cooler. Turn off if movement looks uneven.";
+  s.sharpArea = "Sharp area";
+  s.sharpBins[0] = "1 bin";
+  s.sharpBins[1] = "3 bins";
+  s.sharpSizeHint = "%s · about %d×%d°";
+  s.foveationRing = "Ring";
+  s.foveationOutside = "Outside";
+  s.foveationRates[0] = "2×2";
+  s.foveationRates[1] = "4×4";
+  s.foveationSame = "Same as %s at this resolution";
+  s.advancedSettings = "Advanced settings";
+  s.sharpBinsUsage = "--sharp-bins: choose 1 or 3";
+  s.foveationRingUsage = "--ring: choose on or off";
+  s.refreshRateHelp = "--timing lists OpenXR display refresh rates at session start. --refresh-rate=HZ requests a rate\nfor this run only through XR_FB_display_refresh_rate; 0 means no preference. The runtime may\ndecline the request. Use --timing to measure the resulting frame rate.";
+  s.refreshRateUsage = "--refresh-rate: give a finite rate in Hz, at least 0; 0 means no preference";
+  s.refreshRateUnavailable = "[refresh-rate] XR_FB_display_refresh_rate is not offered; no rate can be queried or requested";
+  s.refreshRateOffered = "[refresh-rate] XR_FB_display_refresh_rate offered Hz:";
+  s.refreshRateCurrent = "[refresh-rate] current Hz: %g\n";
+  s.refreshRateRequested = "[refresh-rate] request %g Hz: %s (%d); acceptance does not guarantee a rate change\n";
+  s.refreshRateChanged = "[refresh-rate] changed Hz: %g -> %g\n";
+  s.unknownOption = "Unknown option: %s\n";
+  s.tipParent = "Parent folder";
+  s.done = "Done";
+  s.readingFolder = "Reading this folder …";
+  s.groupMenu = "Menu";
+  s.groupView = "View";
+  s.general = "General";
+  s.stereoFocus = "Stereo focus";
+  s.groupScreen = "Screen";
+  s.image = "Image";
+  s.thisVideo = "This video";
+  s.thisVideoClosed = "Play a video to change its settings.";
+  s.performance = "Performance";
+  s.greenScreenOn = "Remove background";
+  s.videoSettings = "Video settings";
+  s.tabMainMenu = "Main menu";
+  s.quitApp = "Quit";
+  s.fileExplorer = "File explorer";
+  s.placeHome = "Home";
+  s.placeVideos = "Videos";
+  s.placeFileSystem = "File system";
+  s.sortBy = "Sort by";
+  s.backspace = "Backspace";
+  s.shift = "Shift";
+  s.symbolKeys = "Symbols";
+  s.letterKeys = "Letters";
+  s.hide = "Hide";
+  s.groupPlayback = "Playback";
+  s.resume = "Resume where I left off";
+  s.resumeHint = "Continue where you stopped; near the end, restart instead.";
+  s.seekPreview = "Timeline preview";
+  s.seekPreviewHint = "Point at the timeline to preview. File thumbnails: under Menu.";
+  s.showPerformance = "Show performance";
+  s.showPerformanceHint = "Frame rates and drops at bottom left, even with menus closed.";
+  s.vibration = "Controller vibration";
+  s.vibrationHint = "A short buzz on clicks, seeks, turns and grabs.";
+  s.perfHeadset = "Headset %.1f of %.0f fps";
+  s.perfVideo = "Video %.1f of %.2f fps";
+  s.perfVideoUnknown = "Video %.1f fps";
+  s.perfNoVideo = "No video";
+  s.perfPaused = "Video paused";
+  s.perfWaiting = "Video loading …";
+  s.perfDropped = "Dropped %lld in %d s · %lld since %s";
+  s.perfSinceOpen = "opening";
+  s.perfSinceSeek = "seeking";
+  s.perfSize = "%d px";
+  s.perfGpu = "GPU %.1f ms";
+  s.perfSharp = " · ~%.0f×%.0f° sharp";
+  s.perfSoftware = "software";
+  s.perfDirect = "direct";
+  s.perfMpv = "mpv";
+  s.thumbnails = "File thumbnails";
+  s.thumbnailsHint = "Off: film icons; no frames read from video files.";
+  s.library = "Library";
+  s.tipSearchLibrary = "Search the library";
+  s.libraryEmpty = "No videos in your pinned folders yet";
+  s.libraryEmptyStash = "Stash's scenes show here once it has synced.";
+  s.libraryNoMatches = "Nothing in the library matches “%s”";
+  s.libraryShowsNone = "No videos to show";
+  s.lengthColumn = "Length";
+  s.libraryCount = "%s videos";
+  s.libraryCountOne = "1 video";
+  s.libraryMatches = "%s of %s videos";
+  s.libraryCountSoFar = "%s videos so far";
+  s.libraryShows[0] = "All";
+  s.libraryShows[1] = "Not played";
+  s.libraryShows[2] = "Played";
+  s.libraryShows[3] = "Rated";
+  s.libraryUpToDate = "Up to date · looked %s";
+  s.libraryLooking = "Looking for new videos · %d %%";
+  s.libraryLookingUnknown = "Looking for new videos …";
+  s.libraryLookWaits = "Looks for new videos when no video is open";
+  s.tipLookAgain = "Look for new videos now";
+  s.tipLookingNow = "Looking now";
+  s.tipLookWaits = "Look for new videos · starts when no video is open";
+  s.libraryNoPinsTitle = "Pin folders to fill your Library";
+  s.libraryNoPinsText = "The Library lists every video in your pinned folders in one place, played or not. Open a folder in the File explorer and press the pin at the top right.";
+  s.libraryNoPinsStash = "Stash's scenes show here once it has synced. You can also pin folders: open one in the File explorer and press the pin at the top right.";
+  s.openFileExplorer = "Open File explorer";
+  s.screenDistance = "Distance";
+  s.screenHeight = "Height";
+  s.screenCurve = "Curve";
+  s.screenHint = "Stick: distance; grip+stick: height. Trigger on a corner: resize.";
+  s.screenResetHint = "Defaults: 300 cm high, 300 cm away, curve 1";
+  s.stash.group = "Stash";
+  s.stash.offHint = "Browse Stash by performer, tag or studio. Off: nothing sent or stored.";
+  s.stash.setupHint = "Set a server to start syncing.";
+  s.stash.server = "Server";
+  s.stash.apiKey = "API key";
+  s.stash.apiKeyNone = "None";
+  s.stash.apiKeySet = "Set";
+  s.stash.folders = "Play from a folder";
+  s.stash.foldersHint = "Optional. Videos you also have here seek faster.";
+  s.stash.covers = "Stash covers as thumbnails";
+  s.stash.titles = "Stash titles instead of file names";
+  s.stash.malePerformers = "Show male performers";
+  s.stash.status = "%s scenes, %s of them here · %s of your %s library videos matched";
+  s.stash.statusStreamed = "%s scenes: %s here, %s play from Stash · %s of your %s library videos matched";
+  s.stash.synced = "Synced %s · Stash %s";
+  s.stash.syncing = "Syncing with Stash …";
+  s.stash.loadingCopy = "Loading the local copy …";
+  s.stash.notSynced = "Not synced yet";
+  s.stash.syncNow = "Sync now";
+  s.stash.justNow = "just now";
+  s.stash.minutesAgo = "%d min ago";
+  s.stash.hoursAgo = "%d h ago";
+  s.stash.daysAgo = "%d days ago";
+  s.stash.oneDayAgo = "1 day ago";
+  s.stash.editTitle = "Stash server";
+  s.stash.fieldNames[0] = "Server";
+  s.stash.fieldNames[1] = "API key (only if Stash has one)";
+  s.stash.save = "Save and sync";
+  s.stash.navHome = "Home";
+  s.stash.navScenes = "Scenes";
+  s.stash.navPerformers = "Performers";
+  s.stash.navStudios = "Studios";
+  s.stash.allPins = "All pinned lists (%d)";
+  s.stash.home = "Home";
+  s.stash.performers = "Performers";
+  s.stash.studios = "Studios";
+  s.stash.scenes = "Scenes";
+  s.stash.count = "%s scenes";
+  s.stash.countOf = "%s of %s scenes";
+  s.stash.filters = "Filters";
+  s.stash.tipFilters = "Show or hide the filters";
+  s.stash.shuffle = "Shuffle play";
+  s.stash.pin = "Pin this list";
+  s.stash.rename = "Rename";
+  s.stash.unpin = "Unpin";
+  s.stash.formats[0] = "All";
+  s.stash.formats[1] = "VR";
+  s.stash.formats[2] = "2D";
+  s.stash.searchScenes = "Search titles, performers, studios";
+  s.stash.sortFields[0] = "Release date";
+  s.stash.sortFields[1] = "Added to Stash";
+  s.stash.sortFields[2] = "Title";
+  s.stash.sortFields[3] = "Duration";
+  s.stash.sortFields[4] = "Resolution";
+  s.stash.sortFields[5] = "Rating";
+  s.stash.sortFields[6] = "Plays";
+  s.stash.sortFields[7] = "Last played";
+  s.stash.sortFields[8] = "Cast size";
+  s.stash.sortFields[9] = "Random";
+  s.stash.sortFields[10] = "Date modified";
+  s.stash.sortFields[11] = "Size";
+  s.stash.tipTurnOrder = "Turn the order around";
+  s.stash.undo = "Undo";
+  s.stash.clearAll = "Clear all";
+  s.stash.noFilters = "All scenes. Use filters to narrow them down.";
+  s.stash.moreChips = "+%d more";
+  s.stash.loading = "Loading your Stash …";
+  s.stash.noCatalog = "No copy of your Stash yet – Settings shows why";
+  s.stash.noScenes = "No scenes match these filters";
+  s.stash.sections[0] = "Performers";
+  s.stash.sections[1] = "Tags";
+  s.stash.sections[2] = "Studios";
+  s.stash.sections[3] = "Cast";
+  s.stash.sections[4] = "Looks";
+  s.stash.sections[5] = "Release date";
+  s.stash.sections[6] = "Format";
+  s.stash.sections[7] = "Your history";
+  s.stash.allOf = "All of";
+  s.stash.anyOf = "Any of";
+  s.stash.more[0] = "All performers …";
+  s.stash.more[1] = "All tags …";
+  s.stash.more[2] = "All studios …";
+  s.stash.more[3] = "All years …";
+  s.stash.women = "Women";
+  s.stash.men = "Men credited";
+  s.stash.womenCounts[0] = "1 woman";
+  s.stash.womenCounts[1] = "2 women";
+  s.stash.womenCounts[2] = "3 or more women";
+  s.stash.menCounts[0] = "No men";
+  s.stash.menCounts[1] = "1 man";
+  s.stash.menCounts[2] = "2 or more men";
+  s.stash.menCounts[3] = "4 or more men";
+  s.stash.hair = "Hair";
+  s.stash.cup = "Cup";
+  s.stash.breasts = "Natural or augmented";
+  s.stash.age = "Her age then";
+  s.stash.cups[0] = "A–B";
+  s.stash.cups[1] = "C";
+  s.stash.cups[2] = "D";
+  s.stash.cups[3] = "DD and up";
+  s.stash.breastKinds[0] = "Natural";
+  s.stash.breastKinds[1] = "Augmented";
+  s.stash.ages[0] = "18–22";
+  s.stash.ages[1] = "23–29";
+  s.stash.ages[2] = "30–39";
+  s.stash.ages[3] = "40 and up";
+  s.stash.ethnicity = "Ethnicity";
+  s.stash.country = "Country";
+  s.stash.height = "Height";
+  s.stash.eyeColour = "Eye colour";
+  s.stash.shape = "Body shape";
+  s.stash.tattoos = "Tattoos";
+  s.stash.heights[0] = "Under 160 cm";
+  s.stash.heights[1] = "160–169 cm";
+  s.stash.heights[2] = "170–179 cm";
+  s.stash.heights[3] = "180 cm and up";
+  s.stash.shapes[0] = "Hourglass";
+  s.stash.shapes[1] = "Pear";
+  s.stash.shapes[2] = "Top-heavy";
+  s.stash.shapes[3] = "Straight";
+  s.stash.shapes[4] = "Unclassified";
+  s.stash.tattooKinds[0] = "Tattoos";
+  s.stash.tattooKinds[1] = "No tattoos recorded";
+  s.stash.ageInScenes = "Age in her scenes";
+  s.stash.added = "Added to Stash";
+  s.stash.addedSpans[0] = "Last 7 days";
+  s.stash.addedSpans[1] = "Last 30 days";
+  s.stash.addedSpans[2] = "Last 90 days";
+  s.stash.addedSpans[3] = "Last year";
+  s.stash.released = "Released";
+  s.stash.resolution = "Resolution";
+  s.stash.resolutions[0] = "8K";
+  s.stash.resolutions[1] = "7K";
+  s.stash.resolutions[2] = "6K";
+  s.stash.resolutions[3] = "5K";
+  s.stash.resolutions[4] = "4K";
+  s.stash.resolutions[5] = "3K or less";
+  s.stash.resolutions[6] = "4K";
+  s.stash.resolutions[7] = "1080p";
+  s.stash.resolutions[8] = "720p";
+  s.stash.resolutions[9] = "SD";
+  s.stash.duration = "Duration";
+  s.stash.durations[0] = "Under 20 min";
+  s.stash.durations[1] = "20–40 min";
+  s.stash.durations[2] = "40–60 min";
+  s.stash.durations[3] = "Over an hour";
+  s.stash.frameRate = "Frame rate";
+  s.stash.frameRates[0] = "55 fps or more";
+  s.stash.frameRates[1] = "45 to 54 fps";
+  s.stash.frameRates[2] = "Under 45 fps";
+  s.stash.codec = "Codec";
+  s.stash.codecs[0] = "HEVC";
+  s.stash.codecs[1] = "H.264";
+  s.stash.codecs[2] = "Other codecs";
+  s.stash.fileSize = "File size";
+  s.stash.fileSizes[0] = "Under 5 GB";
+  s.stash.fileSizes[1] = "5–10 GB";
+  s.stash.fileSizes[2] = "10–20 GB";
+  s.stash.fileSizes[3] = "20 GB and up";
+  s.stash.history[0] = "Not played yet";
+  s.stash.history[1] = "Played";
+  s.stash.history[2] = "Rated 4 or more";
+  s.stash.history[3] = "Not rated";
+  s.stash.history[4] = "Not played for 3 months";
+  s.stash.nothingToNarrow = "Nothing more to narrow down by";
+  s.stash.editFilters = "Edit filters";
+  s.stash.filtersShown = "Filters shown";
+  s.stash.resetFilters = "Reset to default";
+  s.stash.doneFilters = "Done";
+  s.stash.tipMoveUp = "Move up";
+  s.stash.tipMoveDown = "Move down";
+  s.stash.hairChip = "%s hair";
+  s.stash.cupChip = "Cup %s";
+  s.stash.ageChip = "Age %s";
+  s.stash.releasedChip = "Released %d";
+  s.stash.without = "no %s";
+  s.stash.back = "Back to the scenes";
+  s.stash.fullTitle = "%s · %s in these scenes";
+  s.stash.byCount = "Most first";
+  s.stash.alphabetical = "A–Z";
+  s.stash.find[0] = "Find a performer";
+  s.stash.find[1] = "Find a tag";
+  s.stash.find[2] = "Find a studio";
+  s.stash.find[3] = "Find a year";
+  s.stash.moreLooks[0] = "All hair colours …";
+  s.stash.moreLooks[1] = "All ethnicities …";
+  s.stash.moreLooks[2] = "All countries …";
+  s.stash.moreLooks[3] = "All eye colours …";
+  s.stash.findLooks[0] = "Find a hair colour";
+  s.stash.findLooks[1] = "Find an ethnicity";
+  s.stash.findLooks[2] = "Find a country";
+  s.stash.findLooks[3] = "Find an eye colour";
+  s.stash.fullTitlePerformers = "%s · %s among these performers";
+  s.stash.backToPerformers = "Back to the performers";
+  s.stash.pins = "Pinned lists";
+  s.stash.noMatches = "Nothing here matches “%s”";
+  s.stash.columns[0] = "Title";
+  s.stash.columns[1] = "Rating";
+  s.stash.columns[2] = "Plays";
+  s.stash.columns[3] = "Released";
+  s.stash.columns[4] = "Length";
+  s.stash.tipExclude = "Leave these out";
+  s.stash.vr = "VR";
+  s.stash.flat = "2D";
+  s.stash.performersCount = "%s performers";
+  s.stash.onePerformer = "1 performer";
+  s.stash.performersCountOf = "%s of %s performers";
+  s.stash.searchPerformers = "Search names and aliases";
+  s.stash.performerSorts[0] = "Scene count";
+  s.stash.performerSorts[1] = "Name";
+  s.stash.performerSorts[2] = "Plays";
+  s.stash.performerSorts[3] = "Average rating";
+  s.stash.performerSorts[4] = "Newest scene";
+  s.stash.performerHistory[0] = "Played";
+  s.stash.performerHistory[1] = "Not played yet";
+  s.stash.performerHistory[2] = "Rated 4 or more on average";
+  s.stash.theirScenes = "Their scenes";
+  s.stash.tipTheirScenes = "The scenes with these looks";
+  s.stash.noPerformers = "No performers match these filters";
+  s.stash.performerGone = "This performer is no longer in your Stash";
+  s.stash.oneScene = "1 scene";
+  s.stash.playsCount = "%s plays";
+  s.stash.yearsOld = "%d years old";
+  s.stash.born = "born %s";
+  s.stash.eyes = "%s eyes";
+  s.stash.centimeters = "%d cm";
+  s.stash.alsoKnownAs = "Also known as %s";
+  s.stash.activeSince = "Active since %s";
+  s.stash.activeFromTo = "Active %s–%s";
+  s.stash.scenesHere = "scenes here";
+  s.stash.played = "played";
+  s.stash.averageOf = "average of %d rated";
+  s.stash.noneRated = "none rated";
+  s.stash.lastPlayed = "Last played %s";
+  s.stash.neverPlayed = "Not played yet";
+  s.stash.oftenWith = "Often with";
+  s.stash.titleWith = "%s with %s";
+  s.stash.and_ = " and ";
+  s.stash.tipCoStar = "Include scenes with this co-star; select again to remove.";
+  s.stash.studiosCount = "%s studios";
+  s.stash.oneStudio = "1 studio";
+  s.stash.studioSorts[0] = "Your plays";
+  s.stash.studioSorts[1] = "Scenes";
+  s.stash.studioSorts[2] = "Newest release";
+  s.stash.studioSorts[3] = "Name";
+  s.stash.studioSorts[4] = "Your rating";
+  s.stash.onePlay = "1 play";
+  s.stash.newest = "Newest %s";
+  s.stash.newestIn = "newest %s";
+  s.stash.partOf = "Part of %s";
+  s.stash.average = "★ %.1f average";
+  s.stash.noStudios = "No studios have scenes here";
+  s.stash.stars = "★ %.1f";
+  s.stash.shelves[0] = "New in Stash";
+  s.stash.shelves[1] = "Top rated";
+  s.stash.shelves[2] = "Top performers";
+  s.stash.shelves[3] = "Random picks";
+  s.stash.shelfNotes[0] = "%s added in the last 30 days";
+  s.stash.shelfNotes[1] = "rated 4 or more by you";
+  s.stash.shelfNotes[2] = "by your plays and ratings";
+  s.stash.shelfNotes[3] = "a new handful each visit";
+  s.stash.seeAll = "See all %s";
+  s.stash.pinFromScenes = "Pin from Scenes";
+  s.stash.noPins = "Lists pinned on the Scenes page appear here.";
+  s.stash.searchStash = "Search Stash";
+  s.stash.tipUse = "Browse scenes from your Stash server.";
+  s.stash.tipFields[0] = "Stash's address, like server.example.com or 192.168.1.20:9999.";
+  s.stash.tipFields[1] = "API key, only if your Stash server requires one.";
+  s.stash.tipSync = "Refresh the local catalog from Stash.";
+  s.stash.tipPin = "Save these filters as a pinned list.";
+  s.stash.tipShuffle = "Play these scenes in random order.";
+  s.stash.tipFilter = "Toggle this filter.";
+  s.stash.tipRemoveFilter = "Remove filter: %s";
+  s.stash.tipMatch[0] = "Match any selected item in this group.";
+  s.stash.tipMatch[1] = "Match every selected item in this group.";
+  s.stash.tipJumpLetter = "Jump to names starting with this letter.";
+  s.stash.tipFullSort[0] = "Sort by count, highest first.";
+  s.stash.tipFullSort[1] = "Sort names alphabetically.";
+  s.stash.tipYearSort = "Tap to reverse the order.";
+  s.stash.yearOrder[0] = "Newest first";
+  s.stash.yearOrder[1] = "Oldest first";
+  s.stashScene.tab = "Scene";
+  s.stashScene.yourRating = "Your rating";
+  s.stashScene.played = "Played %d×";
+  s.stashScene.lastPlayed = "last %s";
+  s.stashScene.notPlayed = "Not played yet";
+  s.stashScene.director = "dir. %s";
+  s.stashScene.ageThen = "%d then";
+  s.stashScene.noPerformers = "Stash lists no performers for this scene";
+  s.stashScene.onlyMen = "Stash lists only men here – Settings → Stash can show them";
+  s.stashScene.moreText = "More";
+  s.stashScene.lessText = "Less";
+  s.stashScene.tags = "Tags";
+  s.stashScene.tagOrders[0] = "Common first";
+  s.stashScene.tagOrders[1] = "Specific first";
+  s.stashScene.tagOrders[2] = "A–Z";
+  s.stashScene.pickTags = "Pick tags to find scenes with them";
+  s.stashScene.moreTags = "+%d more";
+  s.stashScene.fewerTags = "Show fewer";
+  s.stashScene.scenesWithTag = "Scenes with %s";
+  s.stashScene.scenesWithTags = "Scenes with these %d tags";
+  s.stashScene.moreWith = "More with %s";
+  s.stashScene.moreFrom = "More from %s";
+  s.stashScene.similar = "Similar scenes";
+  s.stashScene.backToDetails = "Back to details";
+  s.stashScene.similarHint = "Weighted tag overlap and cast size, with smaller studio and performer bonuses. Same format only.";
+  s.stashScene.noSimilar = "No other scene shares enough with this one";
+  s.stashScene.with = "With %s";
+  s.stashScene.tagsInCommon = "%d tags in common";
+  s.stashScene.oneTagInCommon = "1 tag in common";
+  s.stashScene.notInStash = "Stash doesn't know this video";
+  s.stashScene.outsideFolders = "Outside Stash's folders (%s); no cast, studio or tags available.";
+  s.stashScene.notScanned = "No Stash scene for this file. Scan it in Stash, then sync.";
+  s.stashScene.notLocal = "Only videos on this computer can be in Stash.";
+  s.stashScene.lastSync = "Last sync: %s · %s";
+  s.stashScene.nothingPlaying = "Nothing is playing";
+  s.stashScene.fromStash = "From Stash";
+  s.stashScene.tipTagOrders[0] = "Show tags shared by the most scenes first.";
+  s.stashScene.tipTagOrders[1] = "Show rarer tags first; tags on fewer than four scenes last.";
+  s.stashScene.tipTagOrders[2] = "Sort tags alphabetically.";
+  s.stashScene.editTags = "Edit tags";
+  s.stashScene.tipEditTags = "Add or remove this scene's tags in Stash.";
+  s.stashScene.editHint = "Tap a tag to remove it, again to keep it";
+  s.stashScene.addTags = "Add tags";
+  s.stashScene.backToTags = "Back to tags";
+  s.stashScene.findTag = "Find a tag among %s";
+  s.stashScene.onScene = "On this scene";
+  s.stashScene.noTagFound = "No tag with “%s”. New tags are made on Stash's web page.";
+  s.stashScene.saveToStash = "Save to Stash";
+  s.stashScene.saving = "Saving to Stash …";
+  s.stashScene.noChanges = "No changes yet";
+  s.stashScene.added = "%d added";
+  s.stashScene.removed = "%d removed";
+  s.stashScene.discardOne = "Discard 1 change";
+  s.stashScene.discard = "Discard %d changes";
+  s.stashScene.keepEditing = "Keep editing";
+  s.stashScene.nothingSent = "Nothing was sent to Stash.";
+  s.stashScene.onlyChanges = "Only these changes are sent; anything else changed in Stash meanwhile stays.";
+  s.stashScene.removesBoth = "Removes both: %s";
+  s.stashScene.removesAll = "Removes all %d: %s";
+  s.stashScene.saveFailed = "Couldn't reach Stash. Your changes are kept.";
+  s.stashScene.tryAgain = "Try again";
+  s.stashScene.saved = "Saved: %s";
+  s.stashWriteBack.toggle = "Send ratings, plays and tags to Stash";
+  s.stashWriteBack.hint = "Send new ratings, plays and tag edits, and delete in Stash the files you delete here; nothing comes back. Before sending, stop Stash, back up ~/.stash/stash-go.sqlite and its -wal/-shm files, then restart Stash.";
+  s.stashWriteBack.waiting = "%d ratings and %d plays wait to be sent";
+  s.stashWriteBack.sent = "Sent %d ratings and %d plays since VideoFrameVR started";
+  s.stashWriteBack.sendAll = "Send my ratings and plays …";
+  s.stashWriteBack.title = "Send my ratings and plays to Stash";
+  s.stashWriteBack.checking = "Comparing your library with Stash …";
+  s.stashWriteBack.ready = "%s ratings and %s plays to send, for %s scenes.";
+  s.stashWriteBack.found = "%s plays Stash has already are left out.";
+  s.stashWriteBack.waitingToo = "%s changes made while Stash couldn't be reached are sent too.";
+  s.stashWriteBack.rules = "Existing Stash ratings stay unchanged. Earlier plays use the last play's timestamp; only that time is stored locally. Your local library stays unchanged.";
+  s.stashWriteBack.nothing = "Stash has all your ratings and plays already: nothing to send.";
+  s.stashWriteBack.sending = "Sending …";
+  s.stashWriteBack.done = "Sent %s ratings and %s plays.";
+  s.stashWriteBack.failed = "Not everything was sent: %s";
+  s.stashWriteBack.backup = "Back up Stash's database first (see Settings → Stash).";
+  s.stashWriteBack.dryRun = "Dry run";
+  s.stashWriteBack.hideList = "Hide the list";
+  s.stashWriteBack.send = "Send";
+  s.stashWriteBack.close = "Close";
+  s.stashWriteBack.rating = "★ %s (Stash: %s)";
+  s.stashWriteBack.none = "none";
+  s.stashWriteBack.play = "1 play";
+  s.stashWriteBack.plays = "%d plays";
+  s.stashWriteBack.more = "… and %s more";
+  s.stashWriteBack.tipToggle = "Send new ratings, plays and tag edits to Stash, and delete there the files you delete here. Back up Stash first.";
+  s.stashWriteBack.tipSendAll = "Review existing ratings and plays before sending them to Stash.";
+  s.stashWriteBack.tipDryRun = "Preview what would be sent without sending it.";
+  s.stashWriteBack.group = "Send to Stash";
+  s.stashWriteBack.toggleBasic = "Send ratings and plays to Stash";
+  s.stashWriteBack.hintBasic = "Plays mark a scene as watched. Back up Stash first.";
+  s.stashWriteBack.rulesBasic = "Existing Stash ratings stay unchanged. Scenes you have played are marked as watched in Stash, which keeps no time for a play. Your local library stays unchanged.";
+  s.stashWriteBack.tipToggleBasic = "Send new ratings to Stash and mark the scenes you play as watched there. Back up Stash first.";
+  s.focus.allTitle = "Focus (all videos)";
+  s.focus.videoTitle = "Focus (this video)";
+  s.focus.enabled = "Stereo focus";
+  s.focus.enabledHint = "Off: every video keeps its original stereo.";
+  s.focus.mode = "Mode";
+  s.focus.modes[0] = "Off";
+  s.focus.modes[1] = "Manual";
+  s.focus.modes[2] = "Automatic";
+  s.focus.modeTips[0] = "Keep this video's original stereo.";
+  s.focus.modeTips[1] = "Align stereo at a fixed distance.";
+  s.focus.modeTips[2] = "Align stereo at the measured distance where you look.";
+  s.focus.target = "Aim with";
+  s.focus.targets[0] = "Head direction";
+  s.focus.targets[1] = "Eye tracking";
+  s.focus.targetHint = "Choose what aims automatic focus.";
+  s.focus.distance = "Focal distance";
+  s.focus.distanceHint = "Distance where the stereo images align.";
+  s.focus.showTarget = "Show focus target";
+  s.focus.showTargetHint = "Show the focus target and measured distance.";
+  s.focus.gazeCorrect = "Use learned eye tracking";
+  s.focus.gazeCorrectHint = "Use corrections learned from menu clicks for stereo focus. Off uses the runtime's gaze. Learning continues in the background.";
+  s.focus.baseline = "Camera separation";
+  s.focus.baselineHint = "Distance between the cameras that recorded this video.";
+  s.focus.autoIpd = "Automatic IPD";
+  s.focus.autoIpdHint = "Use the headset's measured distance between your eyes.";
+  s.focus.motionTitle = "Motion (all videos)";
+  s.focus.motion = "Motion emulation";
+  s.focus.motionDistance = "Motion distance";
+  s.focus.motionHint = "Head movement simulates parallax at this distance.";
+  s.focus.ipd = "IPD";
+  s.focus.ipdHint = "Distance between your pupils. Setting it overrides Automatic IPD.";
+  s.focus.makeDefault = "Use for all videos";
+  s.focus.makeDefaultHint = "Use these settings for videos without their own focus settings.";
+  s.focus.useDefault = "Back to the default";
+  s.focus.useDefaultHint = "Clear this video's focus settings and follow the default.";
+  s.focus.ownHint = "Set for this video";
+  s.focus.defaultHint = "Following the default";
+  s.focus.unsupported = "Needs 3D 180° or fisheye video. 2D, flat and 360° stay unchanged.";
+  s.focus.tuningLabels[0] = "Minimum distance";
+  s.focus.tuningLabels[1] = "Maximum distance";
+  s.focus.tuningLabels[2] = "Transition speed";
+  s.focus.tuningLabels[3] = "Sensitivity";
+  s.focus.tuningLabels[4] = "Accuracy";
+  s.focus.tuningLabels[5] = "Focus pitch";
+  s.focus.tuningLabels[6] = "Focus yaw";
+  s.focus.tuningHints[0] = "Nearest distance automatic focus accepts.";
+  s.focus.tuningHints[1] = "Farthest distance automatic focus uses. Anything farther focuses here.";
+  s.focus.tuningHints[2] = "How quickly focus moves to a new distance.";
+  s.focus.tuningHints[3] = "Higher values keep focus probes closer to your aim.";
+  s.focus.tuningHints[4] = "Higher values check more candidate depths and take longer.";
+  s.focus.tuningHints[5] = "Offset automatic focus aim vertically.";
+  s.focus.tuningHints[6] = "Offset automatic focus aim horizontally.";
+  s.tipAdvanced = "Show fine-tuning rows on the settings pages.";
+  s.tipSubtitleRaise = "Move floating subtitles up or down.";
+  s.tipMipmaps = "Smooth downscaled video using smaller copies of each frame.";
+  s.tipMipmapsFrame = "Smooth downscaled video. Costs GPU time on the Frame.";
+  s.tipSharpen = "Emphasize edges in all videos.";
+  s.tipSharpenFrame = "Emphasize edges. Costs GPU time on the Frame.";
+  s.tipAntiShimmerFrame = "Smooth fine lines. Costs GPU time on the Frame.";
+  s.tipResolution = "Change pixels per eye for video and menus.";
+  s.tipResolutionFrame = "Above default: costs GPU time on the Frame.";
+  s.tipRefreshRate = "Higher is smoother and uses more battery. 120 Hz suits 60 fps video.";
+  s.tipFoveationOffFrame = "Keep full detail everywhere. Costs GPU time on the Frame.";
+  s.tipSharpArea = "Size of the full-detail area around your gaze.";
+  s.tipFoveationRing = "Add a half-detail ring around the sharp area.";
+  s.tipFoveationOutside = "Pixels sharing one shading sample outside the sharp area.";
+  s.tipKey[0] = "How much of the background to remove.";
+  s.tipKey[1] = "Shrink the visible foreground's edges.";
+  s.tipKey[2] = "Soften the cutout's edges.";
+  s.tipKey[3] = "Remove the background's tint from foreground edges.";
+  s.tipScreenHeight = "Change the screen's size, measured from bottom to top.";
+  s.tipScreenCurve = "Bend the screen around you. Zero is flat.";
+  s.tipRating = "Rate in half-stars; select the saved rating again to clear.";
+  s.tipVolume = "Playback volume.";
+  s.tipSortColumn = "Sort by this column; select again to reverse.";
+  s.tipHideKeyboard = "Hide the keyboard and keep the entered text.";
+  s.tipHideServerKeyboard = "Hide the keyboard and discard unsaved server edits.";
+  s.language = "Language";
+  s.automaticLanguage = "Automatic";
+  s.languageName = "English";
+  s.languageHint = "Applies now. Automatic uses your system language.";
+  s.focusStatus.targets[0] = "Aimed by head direction";
+  s.focusStatus.targets[1] = "Eye tracking active";
+  s.focusStatus.targets[2] = "Eye tracking: holding through a short gap";
+  s.focusStatus.targets[3] = "Eye tracking lost: using head direction until it is back";
+  s.focusStatus.targets[4] = "Eye tracking not delivering (permission or tracker off): using head direction";
+  s.focusStatus.targets[5] = "Eye tracking unsupported by this runtime or headset: using head direction";
+  s.focusStatus.far = "far";
+  s.focusStatus.unavailable = "Automatic is unavailable (the depth estimator could not start)";
+  s.releaseUpdate.offer = "%s is available. The app restarts to finish updating.";
+  s.releaseUpdate.downloading = "Downloading %s …";
+  s.releaseUpdate.restarting = "Restarting with %s …";
+  s.releaseUpdate.ready = "Restart the app to use %s";
+  s.releaseUpdate.downloadFailed = "Can't install the update. Check your connection and free space.";
+  s.releaseUpdate.updateNow = "Update now";
+  s.releaseUpdate.notNow = "Not now";
+  s.releaseUpdate.tryAgain = "Try again";
+  s.releaseUpdate.notice = "Update available";
+  s.diagnostics.group = "Help";
+  s.diagnostics.save = "Save diagnostics";
+  s.diagnostics.saving = "Saving …";
+  s.diagnostics.hint = "For a bug report: your logs and settings in one file in Downloads. Anonymised: no file names, folders, server addresses or user names.";
+  s.diagnostics.saved = "Saved to Downloads: %s. Attach it to your report.";
+  s.diagnostics.failed = "Couldn't save. Check that Downloads has free space.";
+  s.diagnostics.crashed = "Closed unexpectedly";
+  s.diagnostics.crashedHint = "The app closed unexpectedly last time. To report it, save diagnostics and attach the file.";
+  s.network.nav = "Network";
+  s.network.looking = "Looking for servers …";
+  s.network.none = "No servers found";
+  s.network.noneHint = "Add one by its name or address.";
+  s.network.lookAgain = "Look again";
+  s.network.addServer = "Add server";
+  s.network.forget = "Forget this server and its password";
+  s.network.addTitle = "Add a server";
+  s.network.signInTitle = "Sign in to %s";
+  s.network.fields[0] = "Server";
+  s.network.fields[1] = "User name";
+  s.network.fields[2] = "Password";
+  s.network.serverHint = "Name or address, e.g. 192.168.1.20";
+  s.network.userHint = "Empty for guest";
+  s.network.show = "Show";
+  s.network.remember = "Remember password";
+  s.network.rememberHint = "Saved on this device, unencrypted.";
+  s.network.signIn = "Sign in";
+  s.network.signingIn = "Signing in …";
+  s.network.wrongLogin = "Wrong user name or password.";
+  s.network.offline = "Can't reach the server.";
+  s.network.denied = "The server refused the sign-in.";
+  s.network.shareTitle = "Open a share";
+  s.network.sharesRefused = "This server doesn't list its shares. Type a share's name.";
+  s.network.shareField = "Share";
+  s.network.open = "Open";
+  s.network.type = "Type";
+  s.network.types[0] = "SMB";
+  s.network.types[1] = "SFTP";
+  s.network.typeHint = "SMB: Windows computers and most NAS drives. SFTP: computers you sign in to with SSH.";
+  s.network.port = "Port";
+  s.network.sftpServerHint = "Name or address, e.g. nas.local";
+  s.network.sftpUserHint = "Your account on the server";
+  s.network.connect = "Connect";
+  s.network.connecting = "Connecting …";
+  s.network.offlinePort = "Can't reach %s on port %d. Check the address and port.";
+  s.network.signInWith = "Sign in with";
+  s.network.methods[0] = "This device's key";
+  s.network.methods[1] = "Password";
+  s.network.keyHint = "Recommended. Your password is used once, to add this device's key to %s's account. It isn't saved.";
+  s.network.passwordHint = "Saved on this device if you remember it.";
+  s.network.settingUpKey = "Setting up key sign-in …";
+  s.network.oneTimeCode = "Accounts that also ask for a one-time code can't sign in here.";
+  s.network.noSftp = "%s signed in, but can't use SFTP on %s.";
+  s.network.noSftpHint = "Turn SFTP on for this account in the server's settings.";
+  s.network.keyOnly = "%s only accepts keys. Add this device's key to %s's account, then try again.";
+  s.network.deviceKey = "This device's key";
+  s.network.addKeyLine = "On %s, add it as one line to ~/.ssh/authorized_keys in %s's home folder.";
+  s.network.tryAgain = "Try again";
+  s.network.keyStillRefused = "%s still doesn't accept this device's key for %s.";
+  s.network.keyStillRefusedHint = "Check the user name, and that the key is on one line, whole.";
+  s.network.keysOnly = "%s only accepts keys.";
+  s.network.runCommand = "On %s, signed in as %s, run:";
+  s.network.waitingForKey = "Waiting for %s …";
+  s.network.keyFetched = "Key fetched. Signing in …";
+  s.network.byline = "SFTP · %s";
+  s.network.forgetKeyTip = "Forget this server";
+  s.network.changedTitle = "%s has a different key";
+  s.network.changedText = "It was reinstalled, or another computer is answering in its place. Don't connect unless you know why it changed.";
+  s.network.trustedKey = "Trusted";
+  s.network.nowKey = "Now";
+  s.network.dontConnect = "Don't connect";
+  s.network.trustNewKey = "Trust the new key";
+  s.network.keyRefusedTitle = "Signed in with your password";
+  s.network.keyRefusedText = "%s didn't accept this device's key, so it needs your password next time. Remember the password on this device?";
+  s.network.keyRefusedHint = "Saved unencrypted. Not now keeps you signed in until the app closes.";
+  s.network.notNow = "Not now";
+  s.network.forgetTitle = "Forget %s?";
+  s.network.forgetKeyText = "This device's key is on %s's account there. Remove it too, so this device can't sign in to it any more.";
+  s.network.forgetOnly = "Forget only";
+  s.network.removeKeyForget = "Remove key and forget";
+  s.network.removingKey = "Removing key …";
+  s.network.forgetOffline = "Can't reach %s, so the key can't be removed now.";
+  s.network.forgetAnyway = "Forget anyway";
+  s.stashFolders.choose = "Choose…";
+  s.stashFolders.change = "Change…";
+  s.stashFolders.tipChoose = "Find the folder with Stash's videos in the file browser. For a shared drive, add its computer under Network first.";
+  s.stashFolders.looking = "Looking for Stash's videos …";
+  s.stashFolders.foundIn = "Stash's videos are on this device in %s.";
+  s.stashFolders.alsoIn = "Stash's videos are also on this device in %s. Use plays them from there.";
+  s.stashFolders.use = "Use";
+  s.stashFolders.tipUse = "Play Stash's videos from %s";
+  s.stashFolders.notFound = "Stash's videos weren't found here. Choose their folder.";
+  s.stashFolders.pickTitle = "Choose the folder with Stash's videos:";
+  s.stashFolders.notInFolder = "Stash's videos aren't in this folder:";
+  s.stashFolders.useFolder = "Use this folder";
+  s.stashFolders.checking = "Checking …";
+  s.stashFolders.fromServer = "Plays from Stash";
+  s.stashFolders.playFromServer = "Play from Stash";
+  s.stashFolders.notIn = "Its videos weren't found in %s.";
+  s.stashFolders.folderNotHere = "Not found on this device. Choose its folder.";
+  s.stashFolders.folderRest = "Its other scenes play from Stash.";
+  s.stashFolders.lookingFolders = "Looking for Stash's videos … (folder %d of %d)";
+  s.stashFolders.otherFiles = "Videos outside Stash's library folders";
+  s.keyboard.capsLock = "Caps lock";
+  s.keyboard.tipShift = "Tap twice for caps lock.";
+  s.keyboard.tipLayout = "Keyboard layout. Tap for %s, hold for all layouts.";
+  s.keyboard.tipLayouts = "Keyboard layout. Tap to choose one.";
+  s.keyboard.tipLeft = "Cursor left";
+  s.keyboard.tipRight = "Cursor right";
+  s.viewpoint.label = "Viewpoint";
+  s.viewpoint.closer = "%d %% closer";
+  s.viewpoint.back = "%d %% back";
+  s.viewpoint.centered = "Centered";
+  s.viewpoint.overlay = "Viewpoint: %s";
+  s.viewpoint.tip = "Hold either stick forward or back to move toward or away from the picture. Saved for this video; Recenter or Reset puts it back in the middle.";
+  s.autoPassthrough.setting = "Automatic passthrough";
+  s.autoPassthrough.hint = "Passthrough switches itself on for videos made for it: with a mask, a green screen or a solid background. Turned off for a video, it stays off.";
+  s.autoPassthrough.unavailable = "Unavailable. This runtime or headset doesn't let apps show the room.";
+  s.autoPassthrough.mask = "Passthrough on: this video has a mask";
+  s.autoPassthrough.greenScreen = "Passthrough on: green screen video";
+  s.autoPassthrough.fill = "Passthrough on: solid background";
+  s.autoPassthrough.undo = "Video settings → Passthrough turns it off";
+  s.autoPassthrough.keyGreen = "Draw the room in green";
+  s.autoPassthrough.keyGreenHint = "For streaming software that replaces a colour with the room on the headset, such as ALVR's chroma key. With passthrough on, the room is drawn in pure green.";
+  s.drives.card = "microSD card";
+  s.drives.usbDrive = "USB drive";
+  s.drives.drive = "Drive";
+  s.drives.inExplorer = "Now in the file explorer";
+  s.drives.cardFailed = "Couldn't open the microSD card";
+  s.drives.usbFailed = "Couldn't open the USB drive";
+  s.offline.nav = "Offline";
+  s.offline.toGo = "To go";
+  s.offline.onDevice = "On this device";
+  s.offline.summary = "%s to go · %s left";
+  s.offline.summaryTime = "%s to go · %s left · about %s";
+  s.offline.summaryDone = "%s on this device · %s";
+  s.offline.empty = "Nothing downloaded yet";
+  s.offline.emptyHint = "Point at a video in the file explorer, the Library or Stash and choose Download to keep a copy on this device.";
+  s.offline.emptyHintNoStash = "Point at a video in the file explorer or the Library and choose Download to keep a copy on this device.";
+  s.offline.pauseAll = "Pause all";
+  s.offline.resumeAll = "Resume all";
+  s.offline.pause = "Pause";
+  s.offline.resume = "Resume";
+  s.offline.tryAgain = "Try again";
+  s.offline.newDownloads = "New downloads";
+  s.offline.offlineVideos = "Offline videos %s";
+  s.offline.freeOf = "%s free of %s";
+  s.offline.internal = "Internal storage";
+  s.offline.internalHeadset = "In the headset";
+  s.offline.internalComputer = "On this computer";
+  s.offline.queuedSize = "Queued · %s";
+  s.offline.copying = "%d %% · %s of %s · %s/s · %s left · to %s";
+  s.offline.copyingStart = "%d %% · %s of %s · to %s";
+  s.offline.paused = "Paused · %d %% · %s of %s";
+  s.offline.pausedPlaying = "Paused while a video plays · %d %% · %s of %s";
+  s.offline.waitingServer = "Waiting for the server";
+  s.offline.waitingDrive = "Waiting for the drive";
+  s.offline.restarting = "The copy didn't match; starting again";
+  s.offline.failedGone = "The video isn't there any more";
+  s.offline.failedNoRoom = "Not enough room on the drive";
+  s.offline.missing = "Not on the drive now";
+  s.offline.shortStates[0] = "Queued";
+  s.offline.shortStates[1] = "Waiting";
+  s.offline.shortStates[2] = "Failed";
+  s.offline.minutes = "%d min";
+  s.offline.hours = "%d h %02d min";
+  s.offline.underMinute = "under a minute";
+  s.offline.tipDownload = "Download";
+  s.offline.tipDownloaded = "Downloaded to %s";
+  s.offline.tipShow = "Show in Offline";
+  s.offline.tipCancel = "Cancel the download";
+  s.offline.tipRemove = "Remove from this device…";
+  s.offline.saveToTitle = "Save downloads to";
+  s.offline.saveToHint = "Asked once. Change it later under Settings or in Offline.";
+  s.offline.noRoomTitle = "Won't fit on %s";
+  s.offline.needs = "Needs %s, %s free.";
+  s.offline.noRoomHint = "Remove downloads in Offline to make room, or save this one to %s.";
+  s.offline.noRoomHintOnly = "Remove downloads in Offline to make room.";
+  s.offline.instead = "%s instead · %s free";
+  s.offline.removeTitle = "Remove the download?";
+  s.offline.removeWhat = "%s · %s on %s";
+  s.offline.removeWarning = "Deletes it from this device. The original on %s stays.";
+  s.offline.removeWarningLocal = "Deletes it from this device. The original stays.";
+  s.offline.remove = "Remove";
+  s.offline.download = "Download";
+  s.offline.downloaded = "Downloaded to %s";
+  s.offline.setting = "Save downloads to";
+  s.offline.settingHint = "Where new downloads go. Offline shows every drive and what is on it.";
+  s.offline.serverDown = "Not answering: away from home, or switched off";
+  s.softwareDecoding.label = "Software decoding";
+  s.softwareDecoding.noHardware = "This headset has no hardware decoder for %s. High-resolution video may stutter.";
+  s.softwareDecoding.unavailable = "Hardware decoding isn't available for this video. High-resolution video may stutter.";
+  s.places.edit = "Edit places";
+  s.places.title = "Places";
+  s.places.hint = "Their order in the navigation, and which show there. Select a name to rename it.";
+  s.places.show = "Show";
+  s.places.tipRename = "Rename";
+  s.places.tipMoveUp = "Move up";
+  s.places.tipMoveDown = "Move down";
+  s.places.reset = "Reset to default";
+  s.places.tipReset = "Default order, all shown. Names stay.";
+  s.places.renameTitle = "Rename %s";
+  s.places.renameHint = "Leave it empty for its own name.";
+  s.places.save = "Save";
+  s.accent.group = "Appearance";
+  s.accent.names[0] = "Blue";
+  s.accent.names[1] = "Teal";
+  s.accent.names[2] = "Green";
+  s.accent.names[3] = "Orange";
+  s.accent.names[4] = "Red";
+  s.accent.names[5] = "Pink";
+  s.accent.names[6] = "Purple";
+  s.accent.names[7] = "Custom";
+  s.accent.hue = "Hue";
+  s.accent.brightness = "Brightness";
+  s.accent.brightnessHint = "Brighter colours make the white text on them harder to read";
+  s.accent.saturation = "Saturation";
+  s.presets.label = "Preset";
+  s.presets.names[0] = "Low";
+  s.presets.names[1] = "Balanced";
+  s.presets.names[2] = "High";
+  s.presets.custom = "Custom";
+  s.presets.tipCustom = "Changed by hand. Choose a preset to put its settings back.";
+  s.presets.myPresets = "My presets";
+  s.presets.none = "None yet.";
+  s.presets.saveAs = "Save as preset…";
+  s.presets.tipMoveUp = "Move up";
+  s.presets.tipMoveDown = "Move down";
+  s.presets.tipRename = "Rename";
+  s.presets.tipDelete = "Delete";
+  s.presets.deleteAsk = "Delete “%s”?";
+  s.presets.deleteButton = "Delete";
+  s.presets.saveTitle = "Save as preset";
+  s.presets.renameTitle = "Rename “%s”";
+  s.presets.name = "Name";
+  s.presets.save = "Save";
+  s.presets.replace = "Replace";
+  s.presets.rename = "Rename";
+  s.presets.savesThis = "Saves this: %s.";
+  s.presets.itsSettings = "Its settings: %s.";
+  s.presets.saveHint = "Saved as a file in the presets folder; copy it to another device to use it there.";
+  s.presets.renameHint = "Renames its file in the presets folder.";
+  s.presets.builtInName = "“%s” is a built-in preset's name. Choose another.";
+  s.presets.nameTaken = "You have a preset called “%s”. Choose another name.";
+  s.presets.replaceWarning = "You have a preset called “%s”. Replace saves over it.";
+  s.presets.item = "%s: %s";
+  s.presets.separator = ", ";
+  s.stashSetup.signInHint = "Stash has a login? Sign in with it instead of typing the API key. The key is fetched for you; the password isn't kept.";
+  s.stashSetup.wrongLogin = "Stash didn't accept that user name and password.";
+  s.stashSetup.connecting = "Connecting to Stash …";
+  s.stashSetup.downloading = "Downloading your Stash … %s MB";
+  s.stashSetup.downloadingStart = "Downloading your Stash …";
+  s.stashSetup.saving = "Keeping a copy on this device …";
+  s.stashSetup.building = "Finding Stash's videos on this device …";
+  s.stashSetup.firstSync = "This first sync runs in the background: you can leave this page or play something. Stash's pages fill in when it's done.";
+  s.stashSetup.serverHint = "Like server.example.com or 192.168.1.20:9999";
+  s.stashSetup.tooOld = "This Stash is too old for VideoFrameVR. Update it to 0.31 or newer.";
+  s.stashSetup.needsSignIn = "This Stash needs a sign-in.";
+  s.stashSetup.keyRefused = "Stash refused the API key. Sign in again to get the current one.";
+  s.stashSetup.publicRefused = "Stash stopped answering: it was reached from outside its network without a login. Stash's log says how to turn it back on; then set a login in its Security settings.";
+  s.stashSetup.forbidden = "Stash refused access.";
+  s.stashSetup.refused = "Nothing answers at this address. Check that Stash is running and the port is right.";
+  s.stashSetup.noHost = "No server has this name. Check the address.";
+  s.stashSetup.timeout = "Stash didn't answer in time.";
+  s.stashSetup.certificate = "Stash's certificate isn't trusted.";
+  s.stashSetup.noSecure = "No secure connection. If this Stash doesn't use https, try http://.";
+  s.stashSetup.badAddress = "This address can't be used. Type it like http://192.168.1.20:9999.";
+  s.stashSetup.unreachable = "Stash couldn't be reached.";
+  s.stashSetup.tryHttps = "This Stash uses https. Try https://.";
+  s.stashSetup.notStash = "Something answers at this address, but it isn't Stash. Check the address and port.";
+  s.stashSetup.httpError = "Stash answered with an error (HTTP %d).";
+  s.stashSetup.elsewhere = "This address forwards to another server. Type that server's address instead.";
+  s.stashSetup.stashSaid = "Stash: %s";
+  s.stashSetup.untrustedTitle = "Can't verify %s";
+  s.stashSetup.untrusted = "Its certificate isn't trusted. That's fine for your own server with a self-signed certificate.";
+  s.stashSetup.untrustedRisk = "Anyone posing as this server could get your Stash login.";
+  s.stashSetup.connectUnverified = "Connect without verification";
+  s.stashSetup.unverified = "The certificate of %s isn't verified.";
+  s.stashSetup.verify = "Verify certificate";
+  s.stashSetup.untrustedStatus = "Untrusted certificate";
+  s.stashSetup.untrustedTip = "Stash's certificate isn't trusted. Choose whether to connect anyway.";
+  s.stashSetup.foundOther = "%s answers at this address, so that's what was set up.";
+  s.stashSetup.orKind = " or ";
+  s.setup.putOnHeadset = "Put on your headset";
+  s.setup.startsWhenWorn = "Setup starts as soon as you're wearing it.";
+  s.setup.setUpLater = "Set up later";
+  s.setup.back = "Back";
+  s.setup.next = "Continue";
+  s.setup.welcome = "Let's find your videos. It takes about a minute.";
+  s.setup.getStarted = "Get started";
+  s.setup.pointAndPull = "Point at it and pull the trigger";
+  s.setup.turnOnController = "Turn on a controller to start";
+  s.setup.pressSteamButton = "Press its Steam button.";
+  s.setup.holdPowerButton = "Hold its power or system button until it lights up.";
+  s.setup.controlsTitle = "Your controllers";
+  s.setup.controlsText = "Press any button to see what it does.";
+  s.setup.turnOnControllers = "Turn on your controllers";
+  s.setup.stashTitle = "Do you use Stash?";
+  s.setup.stashText = "Everything Stash knows about your videos, in the headset.";
+  s.setup.stashFeatures[0] = "Covers and real titles";
+  s.setup.stashFeatures[1] = "Not file names";
+  s.setup.stashFeatures[2] = "Moving previews";
+  s.setup.stashFeatures[3] = "A scene plays when you point at it";
+  s.setup.stashFeatures[4] = "Performers and studios";
+  s.setup.stashFeatures[5] = "With portraits and logos";
+  s.setup.stashFeatures[6] = "Find scenes by what's in them";
+  s.setup.stashFeatures[7] = "Tags, length, VR or 2D";
+  s.setup.stashFeatures[8] = "Ratings and plays";
+  s.setup.stashFeatures[9] = "Sent back to Stash, if you want";
+  s.setup.stashFeatures[10] = "Works with Stash off";
+  s.setup.stashFeatures[11] = "What it knows is kept on this headset";
+  s.setup.keptOnComputer = "What it knows is kept on this computer";
+  s.setup.forDownloads = "For scenes you download";
+  s.setup.stashFree = "Don't use Stash? You're all set with your folders.";
+  s.setup.stashFreeNoFolders = "Don't use Stash? Add folders any time in Settings.";
+  s.setup.notNow = "Not now";
+  s.setup.connectStash = "Connect Stash";
+  s.setup.stashConnected = "Connected to %s.";
+  s.setup.change = "Change";
+  s.setup.addressText = "The address you open Stash at in your browser.";
+  s.setup.address = "Address";
+  s.setup.connect = "Connect";
+  s.setup.connecting = "Connecting …";
+  s.setup.unreachableHeadset = "Unable to reach Stash at this address. Check it, and that this headset is on the same network.";
+  s.setup.unreachableComputer = "Unable to reach Stash at this address. Check it, and that this computer is on the same network.";
+  s.setup.stashSignInTitle = "Sign in to Stash";
+  s.setup.stashSignInText = "This Stash has a login. VideoFrameVR signs in once to get its API key, and doesn't keep your password.";
+  s.setup.videosTitle = "Where are your videos?";
+  s.setup.videosText = "Tick the folders to add. You can add more later.";
+  s.setup.useStash = "Use Stash?";
+  s.setup.dontAsk = "Don't ask again";
+  s.setup.cue = "Setup";
+  s.setup.bringHere = "Press %s to bring setup here";
+  s.setup.buttonB = "B";
+  s.setup.thisHeadset = "This headset";
+  s.setup.thisComputer = "This computer";
+  s.setup.addComputer = "Add a computer…";
+  s.setup.looking = "Looking …";
+  s.setup.home = "Home";
+  s.setup.fileSystem = "File system";
+  s.setup.wholeCard = "The whole card";
+  s.setup.wholeDrive = "The whole drive";
+  s.setup.opening = "Opening …";
+  s.setup.oneVideoToo = "1 video in this folder too";
+  s.setup.videosToo = "%s videos in this folder too";
+  s.setup.oneVideo = "1 video";
+  s.setup.videos = "%s videos";
+  s.setup.empty = "Empty";
+  s.setup.cantOpen = "Can't open it";
+  s.setup.addComputerTitle = "Add a computer";
+  s.setup.computerField = "Its name or address";
+  s.setup.addOneFolder = "Add 1 folder";
+  s.setup.addFolders = "Add %d folders";
+  s.setup.skip = "Skip";
+  s.setup.oneFolderAdded = "1 folder added";
+  s.setup.foldersAdded = "%d folders added";
+  s.setup.appearAsFound = "Your videos appear in the Library as they're found.";
+  s.setup.addMore = "Add more folders";
+  s.setup.allSetFrame = "You're all set. Quality is High, the best picture on Steam Frame.";
+  s.setup.allSetDesktop = "You're all set. Quality is Balanced and follows your SteamVR resolution.";
+  s.setup.allSet = "You're all set. Quality is %s.";
+  s.setup.changeItIn = "Change it any time in";
+  s.setup.dismiss = "Dismiss";
+  s.setup.gettingScenes = "Getting your Stash scenes …";
+  s.setup.gettingScenesText = "They show here when it's done. You can browse your files meanwhile.";
+  s.setup.gettingScenesLine = "Getting your Stash scenes · %s · they join the Library when it's done";
+  s.setup.couldntGetScenes = "Couldn't get your Stash scenes";
+  s.setup.couldntGetLine = "Couldn't get your Stash scenes: %s";
+  s.setup.stoppedAnswering = "Stash stopped answering during its first sync. Check it's running, then try again.";
+  s.setup.stoppedAnsweringShort = "Stash stopped answering.";
+  s.setup.tryAgain = "Try again";
+  s.setup.stashSettings = "Stash settings";
+  s.setup.typeHint = "SMB: Windows and most NAS drives. SFTP: computers you sign in to with SSH.";
+  s.setup.userHint = "Your account on it";
+  s.setup.methodKey[0] = "This headset's key";
+  s.setup.methodKey[1] = "This computer's key";
+  s.setup.keyChoiceHint[0] = "Recommended. Nothing is saved but the headset's own key.";
+  s.setup.keyChoiceHint[1] = "Recommended. Nothing is saved but this computer's own key.";
+  s.setup.passwordChoiceHint[0] = "Saved on this headset, unencrypted.";
+  s.setup.passwordChoiceHint[1] = "Saved on this computer, unencrypted.";
+  s.setup.keyOnce[0] = "Used once, to add this headset's key to %s's account. It isn't saved.";
+  s.setup.keyOnce[1] = "Used once, to add this computer's key to %s's account. It isn't saved.";
+  s.setup.keyOnly[0] = "%s only accepts keys. Add this headset's key to %s's account, then try again.";
+  s.setup.keyOnly[1] = "%s only accepts keys. Add this computer's key to %s's account, then try again.";
+  s.setup.ownKey[0] = "This headset's key";
+  s.setup.ownKey[1] = "This computer's key";
+  s.setup.keyStillRefused[0] = "%s still doesn't accept this headset's key for %s.";
+  s.setup.keyStillRefused[1] = "%s still doesn't accept this computer's key for %s.";
+  s.setup.keyRefusedText[0] = "%s didn't accept this headset's key, so it needs your password next time. Remember the password on this headset?";
+  s.setup.keyRefusedText[1] = "%s didn't accept this computer's key, so it needs your password next time. Remember the password on this computer?";
+  s.controls.choose = "Choose";
+  s.controls.chooseLine = "%s. Hold it to drag a list, the picture or the screen.";
+  s.controls.move = "Move";
+  s.controls.moveLine = "Hold %s on the menu to move it.";
+  s.controls.menu = "Menu";
+  s.controls.playPause = "Play or pause";
+  s.controls.recenter = "Recenter";
+  s.controls.seek = "Seek";
+  s.controls.sideways = "%s left or right";
+  s.controls.scroll = "Scroll";
+  s.controls.upDown = "%s up or down";
+  s.controls.left = "Left controller";
+  s.controls.right = "Right controller";
+  s.controls.either = "Either controller";
+  s.controls.trigger = "trigger";
+  s.controls.bumper = "bumper";
+  s.controls.grip = "grip";
+  s.controls.stick = "stick";
+  s.controls.stickClick = "click the stick";
+  s.controls.trackpad = "trackpad";
+  s.controls.menuButton = "Menu";
+  s.controls.viewButton = "View";
+  s.controls.selectButton = "Select";
+  s.controls.dpad = "D-pad %s";
+  s.controls.directions[0] = "up";
+  s.controls.directions[1] = "down";
+  s.controls.directions[2] = "left";
+  s.controls.directions[3] = "right";
+  s.controls.comma = ", ";
+  s.controls.orLast = " or ";
+  s.controls.menuHint = "Press %s to bring the menu back";
+  s.controls.scrollHint = "Push the stick up or down to scroll";
+  s.controls.recenterRightHint = "Click the right stick to bring the video in front of you";
+  s.controls.recenterLeftHint = "Click the left stick to bring the video in front of you";
+  s.controls.recenterHint = "Press %s to bring the video in front of you";
+  s.controls.volumeHint = "Hold %s and %s, then twist your wrist";
+  s.controls.recenterGripHint = "Hold grip and press %s to bring the video in front of you";
+  s.controls.changeInSettings = "Change what the buttons do in %s → %s.";
+  s.deletion.onDevice = "On this device";
+  s.deletion.onServer = "On %s";
+  s.deletion.forGood = "This deletes it for good.";
+  s.deletion.deleteButton = "Delete";
+  s.deletion.removeDownload = "Remove download";
+  s.deletion.everywhere = "Delete everywhere";
+  s.deletion.sourceChanged = "The source changed since it was downloaded: only the download can go.";
+  s.deletion.deleting = "Deleting …";
+  s.deletion.changed = "The file changed. Nothing was deleted.";
+  s.deletion.gone = "The file isn't there any more.";
+  s.deletion.notAFile = "It isn't a plain file. Nothing was deleted.";
+  s.deletion.denied = "Not allowed to delete it.";
+  s.deletion.inUse = "Another device has it open.";
+  s.deletion.offline = "The server isn't answering.";
+  s.deletion.inStash = "In Stash";
+  s.deletion.stashTrash = "Stash moves it to its trash folder.";
+  s.deletion.stashAlso = "Also removed from Stash.";
+  s.deletion.stashKeepsOther = "Stash keeps the scene's other file.";
+  s.deletion.stashKeepsOthers = "Stash keeps the scene's other %d files.";
+  s.deletion.stashLists = "Stash lists it until you run Clean in Stash.";
+  s.deletion.stashUnsure = "Stash wasn't sure which file this is; it lists it until Clean.";
+  s.deletion.stashKeptHere = "Stash deleted its file; this one was kept.";
+  s.deletion.deletedTitle = "Deleted";
+  s.deletion.tipNeedsSendToStash = "Turn on Send to Stash in Settings to delete scenes played from Stash";
+  s.deletion.tipStashDown = "Stash isn't answering";
+  s.afterVideo.choices[0] = "Stop at the end";
+  s.afterVideo.choices[1] = "Repeat this video";
+  s.afterVideo.choices[2] = "Play the next video";
+  s.afterVideo.choices[3] = "Shuffle";
+  s.afterVideo.tips[0] = "The video stops on its last frame and the menu opens.";
+  s.afterVideo.tips[1] = "The video starts over each time it ends. Not kept when you quit the player.";
+  s.afterVideo.tips[2] = "Goes on with the next video of the folder or list this one was opened from.";
+  s.afterVideo.tips[3] = "Goes on through the folder or list in a random order. Previous and Next follow it too. Not kept when you quit the player.";
+  s.colourBalance.warmth = "Warmth";
+  s.colourBalance.tint = "Tint";
+  s.colourBalance.exposure = "Exposure";
+  s.colourBalance.tipWarmth = "Cooler (blue) or warmer (orange) light.";
+  s.colourBalance.tipTint = "Greener or more magenta light.";
+  s.colourBalance.tipExposure = "Less or more light: dark parts change least, black stays black.";
+  s.colourBalance.tipReset = "Reset brightness, contrast, saturation, zoom and viewpoint for this video, and warmth, tint and exposure.";
+  s.colourBalance.matchRoom = "Match the room";
+  s.colourBalance.reading = "Reading the room …";
+  s.colourBalance.failed = "Couldn't read the room";
+  s.colourBalance.tipMatchRoom = "Sets warmth, tint and exposure so the video looks lit like the room, as the cameras show it. Not saved: off puts back the video's own. The first time, the picture disappears for a moment while it looks. Grey cameras: exposure only.";
+  s.colourBalance.tipMatchRoomHidden = "Shows when the room does: with passthrough on, or Opacity below 100 %.";
+  s.colourBalance.readAgain = "Read the room again, for when the light has changed";
+  s.colourBalance.matchColour = "Match colour";
+  s.colourBalance.matchBrightness = "Match brightness";
+  s.colourBalance.tipMatchColour = "How much of the room's warmth and tint Match the room applies. For all videos.";
+  s.colourBalance.tipMatchBrightness = "How much of the room's brightness Match the room applies. For all videos.";
+  s.whatsNew.title = "What's new";
+  s.whatsNew.close = "Close";
+  s.whatsNew.showAfterUpdates = "Show after updates";
+  s.whatsNew.updatedFrom = "Updated from %s to %s";
+  s.foveationLearnedHint = "Move the sharp area using the correction learned from menu clicks. Off uses the runtime's gaze. Independent of stereo focus.";
+  s.scripts.group = "Funscripts";
+  s.scripts.use = "Play funscripts on a device";
+  s.scripts.offHint = "Moves a stroker in time with videos that have a funscript beside them or in Stash. Needs Intiface Central.";
+  s.scripts.address = "Intiface address";
+  s.scripts.thisComputer = "This computer";
+  s.scripts.notSet = "Not set";
+  s.scripts.addressHint = "The name or IP address of the computer or phone running Intiface Central, with its port if it isn't 12345. There, switch on \"Listen on all network interfaces\" and start the server.";
+  s.scripts.addressLocal = "Leave it empty if Intiface Central runs on this computer.";
+  s.scripts.save = "Save";
+  s.scripts.connecting = "Connecting to Intiface …";
+  s.scripts.noAddress = "Enter the address of the device running Intiface Central.";
+  s.scripts.noServer = "Intiface isn't answering. Check that its server is started.";
+  s.scripts.noDevice = "Intiface has no stroker connected. Switch yours on.";
+  s.scripts.ready = "Connected: %s";
+  s.scripts.readyMore = "Connected: %s and %d more";
+  s.scripts.offset = "Timing";
+  s.scripts.offsetHint = "Above 0 the device moves earlier, below 0 later.";
+  s.scripts.rangeLow = "Stroke from";
+  s.scripts.rangeHigh = "Stroke to";
+  s.scripts.rangeHint = "The part of the device's stroke that is used.";
+  s.scripts.motion = "Motion";
+  s.scripts.label = "Funscript";
+  s.scripts.tipPlaying = "Playing this video's funscript on %s.";
+  s.scripts.tipNoDevice = "This video has a funscript, but no device is connected.";
+  s.jobs.nothing = "Nothing";
+  s.jobs.back = "Back %s";
+  s.jobs.forward = "Forward %s";
+  s.jobs.previousChapter = "Previous chapter";
+  s.jobs.nextChapter = "Next chapter";
+  s.jobs.fromStart = "From the start";
+  s.jobs.scripts = "Funscripts on or off";
+  s.jobs.ratingUp = "Rating up";
+  s.jobs.ratingDown = "Rating down";
+  s.jobs.volumeUp = "Volume up";
+  s.jobs.volumeDown = "Volume down";
+  s.jobs.nextAudioTrack = "Next audio track";
+  s.jobs.subtitles = "Subtitles on or off";
+  s.jobs.zoomIn = "Zoom in";
+  s.jobs.zoomOut = "Zoom out";
+  s.jobs.resetScreen = "Reset screen";
+  s.jobs.videos = "Videos";
+  s.jobs.sound = "Sound";
+  s.jobs.menuTip = "Opens and closes the menu.";
+  s.jobs.recenterTip = "Brings the video in front of you.";
+  s.jobs.chooseTip = "The same as the trigger.";
+  s.jobs.fromStartTip = "Back to 0:00.";
+  s.jobs.scriptsTip = "Funscripts played on a device, on or off.";
+  s.jobs.ratingUpTip = "Half a star more for the video playing.";
+  s.jobs.ratingDownTip = "Half a star less for the video playing.";
+  s.jobs.deleteTip = "Asks first: “Delete video?”";
+  s.jobs.nextAudioTrackTip = "Goes to the video's next audio track.";
+  s.jobs.opacityTip = "Switches the video between see-through, at its last value, and solid.";
+  s.jobs.zoomTip = "A step of Zoom (180°/360°), the Video setting; held, it goes on. Not the stick's Closer, which moves your viewpoint.";
+  s.jobs.resetScreenTip = "The flat screen back to its first size, distance and curve.";
+  s.jobs.menu = "Menu";
+  s.jobs.recenter = "Recenter";
+  s.jobs.choose = "Choose";
+  s.jobs.playPause = "Play or pause";
+  s.jobs.stop = "Stop";
+  s.jobs.previousVideo = "Previous video";
+  s.jobs.nextVideo = "Next video";
+  s.jobs.deleteVideo = "Delete video";
+  s.jobs.mute = "Mute / unmute";
+  s.jobs.passthrough = "Passthrough";
+  s.jobs.opacity = "See-through on or off";
+  s.jobs.matchRoom = "Match the room";
+  s.jobs.removeBackground = "Remove background";
+  s.jobs.toneLook = "Tone look";
+  s.jobs.stereoFocus = "Stereo focus";
+  s.jobs.showFocusTarget = "Show focus target";
+  s.jobs.frameBack = "Frame back";
+  s.jobs.frameForward = "Frame forward";
+  s.jobs.afterVideo = "After video";
+  s.jobs.peekRoom = "Peek at the room";
+  s.jobs.motion = "Motion on or off";
+  s.jobs.resetPicture = "Reset picture";
+  s.jobs.frameBackTip = "One frame back, paused. It can take a moment: the video is decoded again from the keyframe before.";
+  s.jobs.frameForwardTip = "One frame on, paused.";
+  s.jobs.afterVideoTip = "Goes on to the next of what happens when a video ends: stop, repeat, next video or shuffle.";
+  s.jobs.peekRoomTip = "While held, the video goes and the room shows. Only where the headset shows the room.";
+  s.jobs.motionTip = "Motion emulation, for all videos: in 180° and 360° video, moving your head shows parallax.";
+  s.jobs.switched = "%s: %s";
+  s.jobs.rating = "★ %s";
+  s.jobs.notRated = "Not rated";
+  s.jobs.volume = "Volume %d%%";
+  s.jobs.audioTrack = "Audio: %s";
+  s.jobs.noOtherAudio = "No other audio track";
+  s.jobs.noSubtitles = "No subtitles";
+  s.jobs.noChapters = "No chapters";
+  s.jobs.nothingOpen = "Nothing is playing";
+  s.jobs.notForPhotos = "Not for photos";
+  s.jobs.notForStreams = "Not for streams";
+  s.jobs.noRoom = "This headset doesn't show the room";
+  s.jobs.needsPassthrough = "Turn on passthrough first";
+  s.jobs.ownMask = "This video has its own mask";
+  s.jobs.notForFlat = "Not for flat video";
+  s.jobs.flatOnly = "Only for the flat screen";
+  s.jobs.needsFocus = "Turn on stereo focus first";
+  s.jobs.ratingsLocked = "Ratings can't be saved right now";
+  s.jobs.firstVideo = "This is the first video";
+  s.jobs.lastVideo = "This is the last video";
+  s.jobs.firstChapter = "This is the first chapter";
+  s.jobs.lastChapter = "This is the last chapter";
+  s.jobs.notOnHeadset = "Not available on this headset";
+  s.jobs.deleteNeedsStash = "Turn on Send to Stash first";
+  s.jobs.serverKeeps = "This server doesn't delete files";
+  s.jobs.notInSetup = "Not while setting up";
+  s.jobs.pictureReset = "Picture reset";
+  s.controlsPage.section = "Controls";
+  s.controlsPage.frame = "Steam Frame controllers";
+  s.controlsPage.index = "Index controllers";
+  s.controlsPage.touch = "Touch controllers (Quest)";
+  s.controlsPage.simple = "Controllers";
+  s.controlsPage.resetTip = "Every button and gesture goes back to what it did at first.";
+  s.controlsPage.resetTitle = "Reset the buttons?";
+  s.controlsPage.kept = "Menu's only button. Give Menu another button first.";
+  s.controlsPage.nothingTip = "This button does nothing.";
+  s.controlsPage.nowDoes = "%s now does %s, not %s";
+  s.controlsPage.noLonger = "%s no longer does %s";
+  s.controlsPage.undoTip = "Put it back as it was.";
+  s.controlsPage.leftOne = "the left %s";
+  s.controlsPage.rightOne = "the right %s";
+  s.controlsPage.menuButton = "the Menu button";
+  s.controlsPage.viewButton = "the View button";
+  s.controlsPage.stickClick = "stick click";
+  s.controlsPage.leftTag = "L";
+  s.controlsPage.rightTag = "R";
+  s.controlsPage.chooseHow = "move the video";
+  s.controlsPage.chooseTip = "In the menu: chooses; hold on a list to drag it. Off the menu: hold and move to drag the picture around you, or to carry the flat screen (on its corner, to resize it). With 180°/360° video, twist your wrist while dragging to level the horizon.";
+  s.controlsPage.moveHow = "hold";
+  s.controlsPage.moveTip = "Hold grip on the menu to move it. Held with another button, it gives that button's grip job or a gesture.";
+  s.controlsPage.seekHow = "left or right";
+  s.controlsPage.seekTip = "A tap skips; held, the video glides on, faster the further you push. On a value pointed at in the menu, steps it as − and + do.";
+  s.controlsPage.closer = "Closer";
+  s.controlsPage.closerHow = "up or down";
+  s.controlsPage.closerTip = "180°/360°: held a moment, moves you toward or away from the picture (Viewpoint). Flat screen: its distance. On a list in the menu: scrolls it.";
+  s.controlsPage.gestures = "Gestures";
+  s.controlsPage.volume = "Volume";
+  s.controlsPage.twist = "twist";
+  s.controlsPage.heightHow = "flat screen";
+  s.controlsPage.heightTip = "Grip and the stick up or down: the flat screen's height; the width follows.";
+  s.controlsPage.sizeHow = "screen corner";
+  s.controlsPage.sizeTip = "Hold the trigger on a corner of the flat screen to resize it.";
+  s.controlsPage.horizon = "Horizon";
+  s.controlsPage.horizonTip = "Level the horizon: while dragging the picture with the trigger, twist your wrist.";
+  s.controlsPage.clearRating = "Clear rating";
+  s.controlsPage.clearRatingHow = "on the stars";
+  s.controlsPage.clearRatingTip = "Hold grip and click the stick while pointing at the stars in the menu: clears the video's rating.";
+  s.controlsPage.skip = "Skip";
+  s.controlsPage.skipTip = "How far Back and Forward jump, and a tap of the stick.";
+  s.controlsPage.bigSkip = "Big skip";
+  s.controlsPage.bigSkipTip = "How far the longer Back and Forward jump.";
+  s.controlsPage.seconds = "%d s";
+  s.controlsPage.minutes = "%d min";
+  s.controlsPage.buttons = "Buttons";
+  s.controlsPage.withGripHeld = "With grip held";
+  s.controlsPage.gripPlus = "Grip + %s";
+  s.controlsPage.handWithGrip = "%s, with grip held";
+  s.controlsPage.withGrip = "With grip held, %s";
+  s.controlsPage.gripNothingTip = "With grip held, this button does nothing.";
+  s.controlsPage.resetGripTip = "Every button, alone and with grip held, and every gesture goes back to what it did at first.";
+  s.controlsPage.chooserVolumeTip = "This button chooses, like the trigger, also with grip held.";
+  s.controlsPage.triggerName = "Trigger";
+  s.controlsPage.bumperName = "Bumper";
+  s.controlsPage.stickClickName = "Stick click";
+  s.controlsPage.gripName = "Grip";
+  s.controlsPage.stickName = "Stick";
+  s.controlsPage.bumperTag = "bumper";
+  s.controlsPage.sameAsAlone = "Same as without grip";
+  s.controlsPage.sameAsAloneTip = "With grip held, this button does what it does alone.";
+  s.controlsPage.gripInheritsTip = "Grip + %s: the same as without grip";
+  s.controlsPage.dpadUpName = "D-pad up";
+  s.controlsPage.dpadDownName = "D-pad down";
+  s.controlsPage.dpadLeftName = "D-pad left";
+  s.controlsPage.dpadRightName = "D-pad right";
+  s.controlsPage.move = "Move the menu";
+  s.controlsPage.seek = "Seek";
+  s.controlsPage.height = "Height";
+  s.gestures.room = "Room";
+  s.gestures.place = "Place";
+  s.gestures.screenDistance = "Screen distance";
+  s.gestures.screenHeight = "Screen height";
+  s.gestures.screenCurve = "Screen curve";
+  s.gestures.scrub = "Scrub";
+  s.gestures.rating = "Rating";
+  s.gestures.grouped = "%s: %s";
+  s.gestures.background = "Background";
+  s.gestures.needsMatchRoom = "Turn on Match the room first";
+  s.gestures.needsRemoveBackground = "Turn on Remove background first";
+  s.gestures.nothingRemoved = "No background found: choose Green screen or Solid colour";
+  s.gesturePage.add = "Add gesture";
+  s.gesturePage.addTip = "Hold a button, or two on one controller, then pick what twisting your wrist changes.";
+  s.gesturePage.fullTip = "%d gestures is the most for one kind of controller. Remove one first.";
+  s.gesturePage.rowTip = "Hold %s and twist your wrist: %s.";
+  s.gesturePage.rowTapTip = "Hold %s and twist your wrist: %s. A tap still does %s.";
+  s.gesturePage.choosesTip = "It does nothing while %s chooses, like the trigger.";
+  s.gesturePage.removeTip = "Remove this gesture";
+  s.gesturePage.labelTip = "%s + twist: %s";
+  s.gesturePage.nowDoes = "%s + twist now does %s, not %s";
+  s.gesturePage.noLonger = "%s + twist no longer does %s";
+  s.gesturePage.fixedTip = "%s It can't be changed.";
+  s.gesturePage.resize = "Resize";
+  s.gesturePage.drag = "drag";
+  s.gesturePage.move = "move";
+  s.gesturePage.click = "click";
+  s.gesturePage.surround = "180°/360°";
+  s.gesturePage.onMenu = "on the menu";
+  s.gesturePage.rightName = "Right %s";
+  s.gesturePage.leftName = "Left %s";
+  s.gesturePage.rightNext = "right %s";
+  s.gesturePage.leftNext = "left %s";
+  s.gesturePage.moveMenuTip = "Hold grip while pointing at the menu, then move your hand.";
+  s.gesturePage.addTitle = "Add a gesture";
+  s.gesturePage.hold = "Hold a button, or two on one controller, then let go.";
+  s.gesturePage.noneHeld = "No buttons held";
+  s.gesturePage.oneController = "Use buttons on one controller";
+  s.gesturePage.twoAtMost = "Use two buttons at most";
+  s.gesturePage.triggerAlone = "The trigger alone drags the picture";
+  s.gesturePage.chooses = "This button chooses, like the trigger";
+  s.gesturePage.noRoomLeft = "No room for more on the left controller";
+  s.gesturePage.noRoomRight = "No room for more on the right controller";
+  s.gesturePage.noRoomEither = "No room for more on either controller";
+  s.gesturePage.bothControllers = "Both controllers";
+  s.gesturePage.backTip = "Keep the buttons it had.";
+  s.gesturePage.changeButton = "Change button";
+  s.gesturePage.changeButtonTip = "Hold another button, or two, for this gesture.";
+  s.gesturePage.handTip = "Which controller this gesture is on.";
+  s.gesturePage.remove = "Remove";
+  s.gesturePage.removeGestureTip = "This gesture does nothing any more.";
+  s.gesturePage.onlySurround = "Only with 180° and 360° video.";
+  s.gesturePage.onlyFlat = "Only for the flat screen.";
+  s.gesturePage.onlyRoom = "Only where the headset shows the room.";
+  s.gesturePage.onlyMatchRoom = "Only with Match the room on.";
+  s.gesturePage.onlyRemoveBackground = "Only with Remove background on.";
+  s.gesturePage.onlyVideo = "Only for videos, not photos.";
+  s.gesturePage.onlyRated = "Only for videos you can rate, not streams.";
+  s.gesturePage.gripTriggerTip = "Hold grip, then the trigger, and twist your wrist: %s. Change it in Gestures.";
+  s.gesturePage.gripTriggerNothingTip = "With grip held, the trigger only chooses in the menu.";
+  s.gesturePage.gripTriggerHandsTip = "Hold grip, then the trigger, and twist your wrist: %s with the left controller, %s with the right. Change them in Gestures.";
+  s.gesturePage.moveTwist = "Add the trigger and twist: %s.";
+  s.gesturePage.volumeOneHint = "Hold %s, then twist your wrist";
+  s.decoderBusy.title = "Steam is using the video decoder";
+  s.decoderBusy.explain = "Freeing it closes a Steam background process, which Steam restarts by itself.";
+  s.decoderBusy.free = "Free and play";
+  s.decoderBusy.freeing = "Freeing the video decoder …";
+  s.decoderBusy.busy = "The video decoder is busy. Restart Steam or the headset.";
+  s.decoderBusy.always = "Always free";
+  s.decoderBusy.setting = "Always free the video decoder";
+  s.decoderBusy.settingHint = "Free it without asking when Steam is using it. Steam restarts its background process by itself.";
+  return s;
+}
+
+constexpr Strings kEnglish = englishStrings();
 
 const Strings kGerman = germanStrings(kEnglish);
 const Strings kSpanish = spanishStrings(kEnglish);
@@ -1440,6 +1539,18 @@ static_assert(std::is_standard_layout<Strings>::value &&
                   sizeof(Strings) % sizeof(const char*) == 0,
               "Strings holds only const char*: setServerName() reads it as an array of them");
 constexpr size_t kStringCount = sizeof(Strings) / sizeof(const char*);
+
+// A string englishStrings() leaves out would be drawn as a null pointer.
+const bool kEnglishComplete = [] {
+  const char* text[kStringCount];
+  std::memcpy(text, &kEnglish, sizeof(text));
+  for (size_t i = 0; i < kStringCount; ++i)
+    if (!text[i]) {
+      std::fprintf(stderr, "English string %zu of %zu is missing\n", i, kStringCount);
+      std::abort();
+    }
+  return true;
+}();
 
 // From any thread: a server's worker asks for its own kind's (stringsNamed()).
 const Strings* named(const Strings* table, const std::string& name) {

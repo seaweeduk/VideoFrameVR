@@ -124,6 +124,7 @@ add_executable(videoframevr
   src/mpv_gl_context.cpp
   src/notices.cpp
   src/offline.cpp
+  src/options.cpp
   src/oshash.cpp
   src/performance_readout.cpp
   src/photo_preloader.cpp
@@ -146,6 +147,7 @@ add_executable(videoframevr
   src/script_player.cpp
   src/see_through.cpp
   src/seek_preview.cpp
+  src/setting_commands.cpp
   src/settings.cpp
   src/setup_intro.cpp
   src/setup_placement.cpp

@@ -639,7 +639,7 @@ void Menu::layoutLibraryPage() {
     listColumns_ = true;
     addList(libraryListItems(), listLeft_, kFileRowH,
             static_cast<int>((listBottom_ - listTop_) / kFileRowH));
-    if (listCount_ > 0) layoutListHeader(listLeft_, listRight_ - listLeft_ - 30);
+    if (listCount_ > 0) layoutListHeader(listLeft_, listRight_ - listLeft_ - kScrollbarRoom);
   }
   if (editing) layoutKeyboard();
   layoutFileTools();
