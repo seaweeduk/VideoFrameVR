@@ -1,7 +1,7 @@
 // First-run setup's Your controllers (docs/alpha/first-run.md, step 2):
 // SteamVR's drawings of both controllers, every control the app uses
 // labelled beside them, lit while held. Without drawings, the same labels
-// as a list.
+// as a list. Under them, a line on where to change what the buttons do.
 
 #include "menu_setup.h"
 
@@ -17,16 +17,20 @@ using Source = ControllerBindings::Source;
 
 constexpr double kW = Menu::kSetupWidth;
 constexpr double kTop = setup::kTop, kBottom = setup::kBottom;  // under the head, over the footer
+// The line under the controllers, and the bottom of what is above it.
+constexpr double kNoteH = 30, kAbove = kBottom - kNoteH - kit::kSpaceTight;
+constexpr int kNoteSize = 22;
 // With the drawings: a column of labels for each controller outside them,
 // one for what either does between them.
 constexpr double kLabelsX[3] = {setup::kTextLeft, 544, 1068}, kLabelsW[3] = {252, 272, 252};
 constexpr double kDrawingX[2] = {302, 828}, kDrawingW = 230, kDrawingTop = kTop + kit::kSpace,
-                 kDrawingH = kBottom - kit::kSpace - kDrawingTop;
+                 kDrawingH = kAbove - kit::kSpace - kDrawingTop;
 // Without: the columns side by side, each under its heading.
 constexpr double kListW = 400, kListGap = 40, kRowsTop = kTop + 6 + kit::kGroupTitle + kit::kSpaceTight;
-// A label: the glyph, its title beside it, the line under the title.
-constexpr double kTextX = kSetupGlyph + 12, kTitleH = 38, kLabelGap = 22;
-constexpr int kTitleSize = 28, kLineSize = 23, kLineLines = 4;
+// A label: the glyph, its title beside it, the line under the title (in a
+// crowded column, the labels closer together).
+constexpr double kTextX = kSetupGlyph + 12, kTitleH = 38, kLabelGap = 16, kCrowdedGap = kit::kSpaceTight;
+constexpr int kTitleSize = 28, kLineSize = 23, kLineLines = 12;
 // A held control's ring, and how far its glow reaches.
 constexpr double kRingR = 16, kRing = kRingR + 11;
 
@@ -43,18 +47,9 @@ const Role kRoles[] = {
     {ControlAction::Menu, -1, false, &ControllerStrings::menu, nullptr},
     {ControlAction::PlayPause, -1, false, &ControllerStrings::playPause, nullptr},
     {ControlAction::Recenter, -1, false, &ControllerStrings::recenter, nullptr},
-    {ControlAction::Stick, 0, false, &ControllerStrings::turn, &ControllerStrings::sideways},
-    {ControlAction::Stick, 1, false, &ControllerStrings::seek, &ControllerStrings::sideways},
+    {ControlAction::Stick, -1, false, &ControllerStrings::seek, &ControllerStrings::sideways},
     {ControlAction::Stick, -1, true, &ControllerStrings::scroll, &ControllerStrings::upDown},
 };
-
-// A line starting with a control's name, as a sentence: "Trigger or bumper".
-std::string capitalized(const std::string& line) {
-  if (line.empty() || !g_utf8_validate(line.c_str(), -1, nullptr)) return line;
-  char first[6];
-  const int n = g_unichar_to_utf8(g_unichar_toupper(g_utf8_get_char(line.c_str())), first);
-  return std::string(first, n) + (g_utf8_next_char(line.c_str()));
-}
 
 void paintImage(cairo_t* cr, cairo_surface_t* image, double x, double y, double alpha = 1) {
   constexpr double s = menu_geometry::kRasterScale;
@@ -76,7 +71,7 @@ void anchor(const Label& l, double x, double& ax, double& ay) {
 // Stacks a column's labels (in the order of their wanted heights) without
 // overlaps, each run of touching ones placed where its labels are on
 // average as far above as below where they want to be, within the page.
-void stack(const std::vector<Label*>& column) {
+void stack(const std::vector<Label*>& column, double gap) {
   struct Run {
     size_t first, end;
     double top, height, wanted;  // wanted: the sum of the tops each label would give the run
@@ -87,11 +82,11 @@ void stack(const std::vector<Label*>& column) {
     runs.push_back({i, i + 1, top, column[i]->h, top});
     while (true) {
       Run& r = runs.back();
-      r.top = std::max(kTop, std::min(r.wanted / (r.end - r.first), kBottom - r.height));
+      r.top = std::max(kTop, std::min(r.wanted / (r.end - r.first), kAbove - r.height));
       if (runs.size() < 2) break;
       Run& before = runs[runs.size() - 2];
-      if (before.top + before.height + kLabelGap <= r.top) break;
-      const double offset = before.height + kLabelGap;  // r's labels sit this much lower in it
+      if (before.top + before.height + gap <= r.top) break;
+      const double offset = before.height + gap;  // r's labels sit this much lower in it
       before.wanted += r.wanted - offset * (r.end - r.first);
       before.height = offset + r.height;
       before.end = r.end;
@@ -102,7 +97,7 @@ void stack(const std::vector<Label*>& column) {
     double y = r.top;
     for (size_t i = r.first; i < r.end; ++i) {
       column[i]->y = y;
-      y += column[i]->h + kLabelGap;
+      y += column[i]->h + gap;
     }
   }
 }
@@ -125,7 +120,7 @@ void Menu::setSetupHeld(uint32_t held) {
   // hand's controls, all of them in one box.
   for (const Label& l : c.labels) {
     if (SetupPages::lit(l, held) != SetupPages::lit(l, was))
-      SetupPages::damaged(*this, l.y, l.y + kTitleH, l.x + kTextX, l.x + l.w);
+      SetupPages::damaged(*this, l.y, l.y + l.titleH, l.x + kTextX, l.x + l.w);
     for (int h = 0; h < 2; ++h) {
       if (!((held ^ was) & heldBit(h, l.control))) continue;
       double box[4] = {1e9, 1e9, -1e9, -1e9};
@@ -183,41 +178,67 @@ void SetupPages::layoutControls(Menu& m) {
     c.drawY[h] = kDrawingTop + (kDrawingH - art.hands[h].height) / 2;
   }
   // Each role: one label for both hands where they are bound alike, else one
-  // for each hand bound.
+  // for each hand bound, alone or with grip held.
   for (const Role& role : kRoles) {
-    std::vector<Source> hands[2];
+    std::vector<Source> hands[2], grips[2];
     for (const Source& s : art.bindings.sources[static_cast<int>(role.action)])
       if (role.hand < 0 || s.hand == role.hand) hands[s.hand].push_back(s);
+    for (const Source& s : art.bindings.gripSources[static_cast<int>(role.action)])
+      if (role.hand < 0 || s.hand == role.hand) grips[s.hand].push_back(s);
     auto inputs = [](const std::vector<Source>& sources) {
       std::set<std::string> out;
       for (const Source& s : sources) out.insert(controlOf(s.input));
       return out;
     };
-    const bool alike = !hands[0].empty() && !hands[1].empty() && inputs(hands[0]) == inputs(hands[1]);
+    // The grip's: each hand's gesture with the trigger (-1: none), alike too.
+    int twist[2] = {-1, -1};
+    if (role.action == ControlAction::Grab)
+      for (const ControllerBindings::Twist& w : art.bindings.twists)
+        if (w.controls.size() == 2 && controlOf(w.controls[0].input) == "squeeze" &&
+            controlOf(w.controls[1].input) == "trigger")
+          twist[w.controls[0].hand] = w.value;
+    const bool alike = (!hands[0].empty() || !grips[0].empty()) && (!hands[1].empty() || !grips[1].empty()) &&
+                       inputs(hands[0]) == inputs(hands[1]) && inputs(grips[0]) == inputs(grips[1]) &&
+                       twist[0] == twist[1];
     for (int h = alike ? 1 : 0; h < 2; ++h) {
-      if (hands[h].empty()) continue;
+      if (hands[h].empty() && grips[h].empty()) continue;
       Label l;
       l.hands = alike ? 3 : 1 << h;
       l.control = role.upDown ? kStickUpDown : static_cast<int>(role.action);
       l.column = alike ? 1 : 2 * h;
       sortSources(hands[h]);
-      for (const Source& s : hands[h]) {
-        l.glyph = controlGlyph(s.input, role.action, role.upDown);
-        if (art.glyphs.count(l.glyph)) break;
-      }
+      sortSources(grips[h]);
+      for (const std::vector<Source>* sources : {&hands[h], &grips[h]})
+        for (const Source& s : *sources) {
+          if (art.glyphs.count(l.glyph)) break;
+          l.glyph = controlGlyph(s.input, role.action, role.upDown);
+        }
       l.title = t.*role.title;
       const std::string names = controlNames(hands[h], t);
-      if (role.line) {
+      // With grip held: "Grip + B", after the others.
+      const std::string withGrip = grips[h].empty() ? std::string()
+                                                    : capitalized(t.grip) + " + " + controlNames(grips[h], t);
+      if (hands[h].empty()) {
+        l.line = withGrip;
+      } else if (role.line) {
         char line[512];
         std::snprintf(line, sizeof(line), t.*role.line, names.c_str());
         l.line = capitalized(line);
+        // The grip's: its gesture with the trigger, if any.
+        if (twist[h] >= 0) {
+          std::snprintf(line, sizeof(line), m.text().gesturePage.moveTwist,
+                        gestureValueLabel(static_cast<GestureValue>(twist[h]), m.text()).c_str());
+          l.line += std::string(" ") + line;
+        }
       } else {
         l.line = capitalized(names);
       }
+      if (!hands[h].empty() && !withGrip.empty()) l.line += " · " + withGrip;
       // Its points: each hand's controls it is bound to, on that hand's drawing.
       for (int p = 0; p < 2 && c.picture; ++p) {
         if (!(l.hands >> p & 1)) continue;
-        const std::vector<Source>& on = alike ? hands[p] : hands[h];
+        std::vector<Source> on = alike ? hands[p] : hands[h];
+        for (const Source& s : alike ? grips[p] : grips[h]) on.push_back(s);
         for (const Source& s : on) {
           const auto at = art.hands[p].points.find(controlOf(s.input));
           if (at == art.hands[p].points.end()) continue;
@@ -233,46 +254,127 @@ void SetupPages::layoutControls(Menu& m) {
     }
   }
 
+  cairo_t* cr = m.setup_->canvas.cr();
+  auto height = [&](const PangoLayout* layout) {
+    int w = 0, h = 0;
+    pango_layout_get_pixel_size(const_cast<PangoLayout*>(layout), &w, &h);
+    return static_cast<double>(h);
+  };
+  // A label's height as its title, line and column's width have it.
+  auto shape = [&](Label& l, double textW) {
+    const double title = height(m.textLayout(cr, l.title, kTitleSize, true, textW, l.titleLines, false));
+    l.titleH = kTitleH + title - height(m.textLayout(cr, l.title, kTitleSize, true, textW, 1, false));
+    const double line = l.beside ? 0 : height(m.textLayout(cr, l.line, kLineSize, false, textW, l.lines, false));
+    l.h = std::max<double>(art.glyphs.count(l.glyph) ? kSetupGlyph : 0, l.titleH + line);
+  };
+  // As tall as all of it takes.
+  auto whole = [&](Label& l, double textW) {
+    l.titleLines = pango_layout_get_line_count(m.textLayout(cr, l.title, kTitleSize, true, textW, 2, false));
+    l.lines = pango_layout_get_line_count(m.textLayout(cr, l.line, kLineSize, false, textW, kLineLines, false));
+    l.beside = false;
+    shape(l, textW);
+  };
+  const double room = c.picture ? kAbove - kTop : kAbove - kRowsTop;
+  auto columnW = [&](int column) { return c.picture ? kLabelsW[column] : kListW; };
+  auto columnH = [&](int column, double gap) {
+    double sum = -gap;
+    for (const Label& l : c.labels)
+      if (l.column == column) sum += l.h + gap;
+    return sum;
+  };
+  for (Label& l : c.labels) whole(l, columnW(l.column) - kTextX);
+  // Where what both hands do is too much for its column, its tallest labels
+  // go to each hand's instead, one for each, while those have room for them.
+  while (columnH(1, kLabelGap) > room) {
+    std::vector<size_t> both;
+    for (size_t i = 0; i < c.labels.size(); ++i)
+      if (c.labels[i].column == 1) both.push_back(i);
+    std::stable_sort(both.begin(), both.end(), [&](size_t a, size_t b) { return c.labels[a].h > c.labels[b].h; });
+    bool moved = false;
+    for (size_t i : both) {
+      Label hands[2] = {c.labels[i], c.labels[i]};
+      for (int h = 0; h < 2; ++h) {
+        Label& l = hands[h];
+        l.hands = 1 << h, l.column = 2 * h;
+        l.points.erase(std::remove_if(l.points.begin(), l.points.end(),
+                                      [&](const SetupControls::Point& p) { return p.hand != h; }),
+                       l.points.end());
+        l.lit = lit(l, c.held);
+        whole(l, columnW(l.column) - kTextX);
+      }
+      if (columnH(0, kLabelGap) + kLabelGap + hands[0].h > room ||
+          columnH(2, kLabelGap) + kLabelGap + hands[1].h > room)
+        continue;
+      c.labels[i] = std::move(hands[0]);
+      c.labels.insert(c.labels.begin() + i + 1, std::move(hands[1]));
+      moved = true;
+      break;
+    }
+    if (!moved) break;
+  }
+
   // The columns: beside the drawings, or side by side as a list (those with
   // labels, centred).
   int used[3] = {0, 0, 0};
   for (const Label& l : c.labels) used[l.column] = 1;
   const int columns = used[0] + used[1] + used[2];
   double listX = (kW - columns * kListW - (columns - 1) * kListGap) / 2;
-  cairo_t* cr = m.setup_->canvas.cr();
   for (int column = 0; column < 3; ++column) {
     if (!used[column]) continue;
     const double x = c.picture ? kLabelsX[column] : listX;
-    const double w = c.picture ? kLabelsW[column] : kListW;
+    const double w = columnW(column), textW = w - kTextX;
     listX += kListW + kListGap;
-    std::vector<Label*> stacked;
-    double rowY = kRowsTop;
-    for (Label& l : c.labels) {
-      if (l.column != column) continue;
-      l.x = x, l.w = w;
-      int lineW = 0, lineH = 0;
-      PangoLayout* layout = m.textLayout(cr, l.line, kLineSize, false, w - kTextX, kLineLines, false);
-      pango_layout_get_pixel_size(layout, &lineW, &lineH);
-      l.h = std::max<double>(kSetupGlyph, kTitleH + lineH);
-      if (!c.picture) {  // in the list, one under another
-        l.y = rowY;
-        rowY += l.h + kLabelGap;
+    std::vector<Label*> labels;
+    for (Label& l : c.labels)
+      if (l.column == column) l.x = x, l.w = w, labels.push_back(&l);
+    // Every label in the column, never under the line: one too tall for its
+    // room is made to fit, in turn, by its labels closer together, short
+    // lines beside their titles, the longest line cut a line shorter at a
+    // time, and titles kept to one line.
+    double gap = kLabelGap;
+    auto tall = [&] {
+      for (Label* l : labels) shape(*l, textW);
+      return columnH(column, gap) > room;
+    };
+    if (tall()) gap = kCrowdedGap;
+    if (tall())
+      for (Label* l : labels)
+        l->beside = l->titleLines == 1 && l->lines == 1 &&
+                    m.textWidth(l->title, kTitleSize, true) + kit::kSpace + m.textWidth(l->line, kLineSize, false) <=
+                        textW;
+    while (tall()) {
+      Label* most = nullptr;
+      for (Label* l : labels)
+        if (!l->beside && l->lines > 1 && (!most || l->lines > most->lines)) most = l;
+      if (most) {
+        --most->lines;
         continue;
       }
-      // Beside its points; without any, last.
-      l.want = l.points.empty() ? 1e9 : 0;
-      for (const SetupControls::Point& p : l.points) l.want += p.y / l.points.size();
-      stacked.push_back(&l);
+      for (Label* l : labels)
+        if (l->titleLines > 1) {
+          most = l;
+          break;
+        }
+      if (!most) break;
+      most->titleLines = 1;
     }
-    std::stable_sort(stacked.begin(), stacked.end(),
-                     [](const Label* a, const Label* b) { return a->want < b->want; });
-    stack(stacked);
+
+    if (!c.picture) {  // in the list, one under another
+      double y = kRowsTop;
+      for (Label* l : labels) {
+        l->y = y;
+        y += l->h + gap;
+      }
+      continue;
+    }
+    // Beside its points; without any, last.
+    for (Label* l : labels) {
+      l->want = l->points.empty() ? 1e9 : 0;
+      for (const SetupControls::Point& p : l->points) l->want += p.y / l->points.size();
+    }
+    std::stable_sort(labels.begin(), labels.end(), [](const Label* a, const Label* b) { return a->want < b->want; });
+    stack(labels, gap);
   }
-  // Never under the footer: what doesn't fit (rebound to many controls) is
-  // left out.
-  c.labels.erase(std::remove_if(c.labels.begin(), c.labels.end(),
-                                [](const Label& l) { return l.y + l.h > kBottom; }),
-                 c.labels.end());
 }
 
 void SetupPages::drawControls(Menu& m, cairo_t* cr) {
@@ -356,9 +458,27 @@ void SetupPages::drawControls(Menu& m, cairo_t* cr) {
   for (const Label& l : c.labels) {
     drawGlyph(m, cr, l.glyph, l.x + kSetupGlyph / 2.0, l.y + kTitleH / 2);
     const Rgba& ink = l.lit ? pal.textAccent : pal.text;
-    m.drawText(cr, l.title, l.x + kTextX, l.y, l.w - kTextX, kTitleH, kTitleSize, true, false, ink.r,
-               ink.g, ink.b);
-    m.drawTextLines(cr, l.line, l.x + kTextX, l.y + kTitleH, l.w - kTextX, kLineSize, kLineLines, dim,
-                    false);
+    const double rgba[4] = {ink.r, ink.g, ink.b, ink.a};
+    // The title's first line centred where one line is.
+    const double textW = l.w - kTextX;
+    PangoLayout* first = m.textLayout(cr, l.title, kTitleSize, true, textW, 1, false);
+    int titleW = 0, firstH = 0;
+    pango_layout_get_pixel_size(first, &titleW, &firstH);
+    const double titleY = l.y + (kTitleH - firstH) / 2;
+    m.drawTextLines(cr, l.title, l.x + kTextX, titleY, textW, kTitleSize, l.titleLines, rgba, false, 0, true);
+    if (l.beside) {  // after the title, on its baseline
+      const double x = l.x + kTextX + titleW + kit::kSpace;
+      const double baseline = titleY + pango_layout_get_baseline(first) / static_cast<double>(PANGO_SCALE);
+      PangoLayout* line = m.textLayout(cr, l.line, kLineSize, false, l.x + l.w - x, 1, false);
+      m.drawTextLines(cr, l.line, x, baseline - pango_layout_get_baseline(line) / static_cast<double>(PANGO_SCALE),
+                      l.x + l.w - x, kLineSize, 1, dim, false);
+    } else {
+      m.drawTextLines(cr, l.line, l.x + kTextX, l.y + l.titleH, textW, kLineSize, l.lines, dim, false);
+    }
   }
+  // Where to change them: Settings' names for itself and the section.
+  char note[512];
+  std::snprintf(note, sizeof(note), t.changeInSettings, m.text().settings, m.text().controlsPage.section);
+  m.drawText(cr, note, setup::kTextLeft, kBottom - kNoteH, kW - 2 * setup::kTextLeft, kNoteH, kNoteSize, false,
+             true, pal.textDim.r, pal.textDim.g, pal.textDim.b);
 }

@@ -743,6 +743,29 @@ void VideoPlayer::seekTo(double seconds, bool exact) {
   requestSeek(r);
 }
 
+bool VideoPlayer::frameStep(bool back) {
+  // A seek starting meanwhile would cancel the step's pause (mpv).
+  if (videoSleep_ != VideoSleep::Awake || path_.empty() || loading_ || !fileLoaded_ || seeking())
+    return false;
+  if (!back) {
+    const char* cmd[] = {"frame-step", nullptr};
+    return mpv_command_async(mpv_, 0, cmd) >= 0;
+  }
+  const char* cmd[] = {"frame-back-step", nullptr};
+  if (mpv_command_async(mpv_, kSeekReply + seekCount_ + 1, cmd) < 0) return false;
+  ++seekCount_;
+  ++counts_.restarts;
+  counts_.seek = true;
+  if (timing_)
+    std::printf("[seek-timing] #%llu frame-back-step from pos=%.2f\n",
+                static_cast<unsigned long long>(seekCount_), playback_.position);
+  seekStage_ = SeekStage::Sent;
+  seekTarget_ = playback_.position;
+  seekExact_ = true;
+  seekSentAt_ = nowSeconds();
+  return true;
+}
+
 void VideoPlayer::requestSeek(const SeekRequest& request) {
   if (videoSleep_ != VideoSleep::Awake) {
     sleepPosition_ = request.absolute ? request.amount : sleepPosition_ + request.amount;

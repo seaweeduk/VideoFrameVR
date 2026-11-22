@@ -67,6 +67,8 @@ void glyphRing(cairo_t* cr, double cx, double cy) {
 
 }  // namespace
 
+bool Menu::setupShowsControls() const { return setup_ && setup_->step == Step::Controls; }
+
 bool Menu::startSetup(bool holdWrites, const std::vector<std::string>& places) {
   // The strip drawn once now: its first drawing takes longer than a frame
   // (17 ms on the Frame), and would come when setup ends.

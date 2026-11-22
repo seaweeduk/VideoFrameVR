@@ -40,6 +40,8 @@ add_executable(videoframevr
   src/cairo_canvas.cpp
   src/colour_balance.cpp
   src/controller_guide.cpp
+  src/controls.cpp
+  src/gesture_input.cpp
   src/density_map.cpp
   src/depth_estimator.cpp
   src/diagnostics.cpp
@@ -78,6 +80,7 @@ add_executable(videoframevr
   src/menu.cpp
   src/menu_adjust.cpp
   src/menu_browser.cpp
+  src/menu_controls.cpp
   src/menu_delete.cpp
   src/menu_feel.cpp
   src/menu_finish.cpp

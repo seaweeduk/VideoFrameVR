@@ -156,6 +156,14 @@ bool Menu::clearRatingAtPointer() {
   return true;
 }
 
+void Menu::stepRating(const std::string& file, int halves) {
+  if (file.empty() || isPhotoFile(file) || !library_ || !library_->available()) return;
+  // Not before the library knows the video: its rating would read as none.
+  if (!library_->known(file)) return;
+  ratingDrag_.active = false;
+  rate(file, 0, std::clamp(library_->record(file).rating + 0.5f * halves, 0.0f, 5.0f));
+}
+
 // Into the library; the strip and the browser show it from there at once.
 void Menu::rate(const std::string& path, int64_t video, float rating) {
   if (!library_ || (path.empty() && !video)) return;

@@ -79,6 +79,8 @@ struct VideoSettings {
   // stored here.
   ColourBalance balance;
   float zoom = 1.0f;  // 180°/360° video: magnification
+  // Its range, and the menu's step, in percent.
+  static constexpr int kMinZoomPercent = 50, kMaxZoomPercent = 250, kZoomStepPercent = 1;
   float originForward = 0;  // surround viewpoint, in sphere radii toward the picture
   int opacity = 100;  // percent, over the room (where the runtime blends)
   // Persisted control range. The combined origin and head motion are eased

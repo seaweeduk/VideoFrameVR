@@ -2,12 +2,15 @@
 
 #include "accent.h"
 #include "anti_shimmer.h"
+#include "controls.h"
 #include "flat_screen.h"
 #include "focus_settings.h"
 #include "foveation.h"
 #include "script_player.h"
 #include "stash_settings.h"
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <iosfwd>
 #include <string>
@@ -114,6 +117,14 @@ struct Settings {
   StashSettings stash;
   std::vector<StashSettings> otherServers;
   ScriptSettings scripts;  // funscripts played on a device through Intiface (script_player.h)
+  ControlMap controls;     // what each controller type's buttons do (controls.h)
+  GestureMap gestures;     // ... and its gestures
+  // How far Skip and Big skip go, in seconds; a tap of the stick sideways
+  // goes Skip's.
+  int skipSeconds = 10, bigSkipSeconds = 60;
+  // The controller type last in use: Settings' Controls shows it while
+  // none is on (Count: none yet).
+  ControllerType controllersSeen = ControllerType::Count;
 };
 
 // The defaults; on the Frame (platform.h) what suits its hardware.
@@ -125,6 +136,18 @@ void saveSettings(const Settings& settings);
 // Stash's sync keeps no local copy (stash_sync.cpp).
 void holdSettings(bool hold);
 bool settingsHeld();
+// Skip's and Big skip's lengths, in seconds: their ranges and steps
+// (Settings → Controls), and a length on one of those steps.
+struct SkipRange {
+  int least, most, step;
+  int snap(double seconds) const {
+    // Into the range first, so no length overflows the steps (not a number:
+    // the least).
+    seconds = seconds >= most ? most : seconds >= least ? seconds : least;
+    return std::clamp(static_cast<int>(std::lround(seconds / step)) * step, least, most);
+  }
+};
+constexpr SkipRange kSkipRange{5, 60, 5}, kBigSkipRange{30, 600, 30};
 
 // settings.conf's lines of only `keys`, and such lines read into `settings`,
 // other keys ignored (presets.h).

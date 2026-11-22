@@ -11,6 +11,7 @@
 #include "focus_marker.h"
 #include "focus_target.h"
 #include "gaze_correction.h"
+#include "gesture_input.h"
 #include "foveation.h"
 #include "frame_reuse.h"
 #include "frame_timer.h"
@@ -92,6 +93,7 @@
 #include <system_error>
 #include <utility>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -103,7 +105,12 @@ constexpr float kLaserDotRadius = 10 * menu_geometry::kUnit;
 constexpr float kSurroundSubtitleDistance = 2.5f;
 constexpr float kSurroundSubtitleWidth = 2.0f;
 constexpr float kSurroundSubtitleDrop = 0.55f;
-constexpr float kTurnStep = kPi / 6;  // 30 degrees per stick flick
+constexpr float kTurnStep = kPi / 6;  // 30 degrees per A or D press
+// The buttons' Zoom in and out: a press steps the Zoom (180°/360°) setting
+// as the menu's slider does; held past kZoomDelay, it goes on at kZoomRate
+// until let go.
+constexpr double kZoomDelay = 0.4;  // seconds
+constexpr double kZoomRate = 40;    // percent a second
 // The viewpoint's and opacity's overlay stays this long after its gesture lets go.
 constexpr double kValueShown = 1.5;
 // ... and the seek bar a held seek shows with the menu closed.
@@ -125,14 +132,6 @@ constexpr double kDriveNoticeShown = 5.0;
 // which calms hand jitter. Frame gaps longer than kDragMaxStep count as that long.
 constexpr float kDragResponse = 4.0f;
 constexpr double kDragMaxStep = 0.1;  // seconds
-// The volume gesture changes one of mpv's 0..100 per degree of wrist twist.
-constexpr double kVolumePerDegree = 1.0;
-// The opacity gesture: past its dead zone, a quarter turn takes it from 100 % to 50 %.
-constexpr double kOpacityPerDegree = 50.0 / 90.0;
-// Reaching 100 % (unblended) or 0 %, it stays there until the wrist turns
-// back as far as the dead zone again, so the hand relaxing as it lets go
-// doesn't take it off.
-constexpr double kOpacityHold = GripTwist::kDeadZone * kOpacityPerDegree;
 
 struct App {
   VideoPlayer* player = nullptr;
@@ -247,18 +246,22 @@ void printControls() {
   std::printf(
       "\nControllers:\n"
       "  Trigger        click in menu, hold on a list to drag it; elsewhere hold and\n"
-      "                 move to drag the picture\n"
-      "                 (sideways, up/down; twist the wrist to level the horizon)\n"
-      "  Left menu / B  open or close menu (Frame: right B, X or Y)\n"
-      "  A              play / pause\n"
-      "  Stick click    recenter (right stick; also left Y)\n"
-      "  Right stick    left/right: seek (hold to go faster)\n"
-      "  Left stick     left/right: turn the view by 30 degrees\n"
+      "                 move to drag the picture (sideways, up/down; twist the wrist to\n"
+      "                 level the horizon), or the flat screen; on its corner: resize it\n"
+      "  Menu / B       open or close menu (Frame: right Menu and B, left View and\n"
+      "                 D-pad right; Touch: left Menu, right B; Index: B)\n"
+      "  A              play / pause (Touch: also left X; Frame: also left D-pad down)\n"
+      "  X              Frame: stop (also left D-pad left)\n"
+      "  Y              Frame: next video (also left D-pad up); Touch: left Y, passthrough\n"
+      "  Stick click    recenter\n"
+      "                 (change what each button does in Settings > Controls)\n"
+      "  Stick          left/right: seek (hold to go faster)\n"
       "  Stick up/down  scroll lists; flat screen: distance (with a grip held: height);\n"
       "                 180°/360°: move toward or away from the picture (also while dragging)\n"
-      "  Grip           hold to move the screen or the menu; on a screen corner: resize it;\n"
-      "                 180°/360° over the room: hold one and twist that wrist: opacity\n"
-      "  Grip + trigger hold both and twist the wrist: volume\n"
+      "  Grip           hold on the menu to move it\n"
+      "  Gestures       hold and twist the wrist (change them in Settings > Controls):\n"
+      "                 opacity: Frame right Y or left D-pad up, Touch left Y, Index A;\n"
+      "                 volume: grip, then the trigger\n"
       "\nKeyboard (the desktop window must have focus):\n"
       "  Tab          open or close menu\n"
       "  Space        play / pause\n"
@@ -795,7 +798,8 @@ int run(Options opts) {
       !seekPreview.init(interop, opts.previewHwdec, uploader, glContext))
     return 1;
   // "Recentering in 2 …"; "Viewpoint: 15 % closer" while the stick moves it,
-  // or "Opacity: 70 %" while a twist changes it, whichever changed last;
+  // a gesture's value in its ring while a twist changes it, or what a
+  // button's job said, whichever changed last;
   // "Passthrough on: green screen video"; "microSD card: HOLIDAY", "Now in
   // the file explorer".
   Notices notices;
@@ -808,7 +812,20 @@ int run(Options opts) {
   NoticeIcon driveIcon = NoticeIcon::Drive;
   double driveShownUntil = 0;
   double viewpointShownUntil = 0;  // glfwGetTime() it goes away
-  double opacityShownUntil = 0;    // ... and the opacity's
+  double opacityShownUntil = 0;    // ... and the opacity See-through on or off set
+  // A button's job saying what it did, where that doesn't show by itself, or
+  // why it did nothing; the newest of it, the viewpoint and the opacity shows.
+  struct JobSaid {
+    std::string text;
+    double until = 0;
+  } jobSaid;
+  auto say = [&](std::string text) { jobSaid = {std::move(text), glfwGetTime() + kValueShown}; };
+  auto sayf = [&](const char* format, auto... args) {
+    std::string text(std::max(std::snprintf(nullptr, 0, format, args...), 0), '\0');
+    std::snprintf(text.data(), text.size() + 1, format, args...);
+    say(std::move(text));
+  };
+  bool peeking = false;  // Peek at the room is held: the room shows instead of the video
   double softwareSince = -1;       // the video has played in software decoding since
   // Passthrough switching itself on for videos made for it (see_through.h):
   // once per video, when its size and settings are known.
@@ -1009,7 +1026,7 @@ int run(Options opts) {
     bool resume = false;  // the video played when the button was pressed
     int64_t copy = 0;     // the download whose copy plays
   } deletion;
-  // Holding the grip on the menu moves it with the hand; elsewhere the grip
+  // Holding the grip on the menu moves it with the hand; the trigger off it
   // holds the flat screen (screenControl).
   struct MenuGrab {
     int hand = -1;  // -1 = not held
@@ -1017,12 +1034,16 @@ int run(Options opts) {
     Vec3 startPoint;    // the menu's front at the grab
   } menuGrab;
   ScreenControl screenControl;
-  WristRoll volumeRoll;
-  double rolledVolume = -1;  // the volume the wrist has set so far, -1 = not rolling
-  GripTwist opacityTwist;
-  // The opacity the wrist has set so far, beyond 0..100 by up to
-  // kOpacityHold at a limit; none while not twisting.
-  std::optional<double> twistedOpacity;
+  // The gestures (gesture_input.h), and what the app does for them (set up
+  // below, before the frames).
+  GestureInput gestureInput;
+  GestureInput::Host gestureHost;
+  // Scrub: where it takes the video, and the last picture shown on the way
+  // there (its target, when sent), as the stick's held seek.
+  struct Scrub {
+    bool on = false, sent = false;  // ... a picture on the way
+    double from = 0, target = 0, picture = 0, pictureAt = 0;
+  } scrub;
   // Holding the trigger away from the menu turns the picture with the hand
   // (sideways, up/down and roll), for fine centring.
   struct TurnDrag {
@@ -1050,7 +1071,7 @@ int run(Options opts) {
   // run's once its setup ends.
   Hints hints;
   hints.load(setupForced ? std::string() : settings.hints, !setupForced);
-  uint64_t hintBindingsSeen = 0;  // xr.bindingsVersion() the menu's hints have
+  uint64_t hintBindingsSeen = 0;  // controlsVersion the menu's hints have
   const Texture* hintTexture = nullptr;
   int hintW = 0, hintH = 0;
   bool stashInSetup = false;  // Stash was connected in setup (MenuCommand::SetupStash)
@@ -1064,7 +1085,7 @@ int run(Options opts) {
     saveSettings(settings);
   };
   double controllerSeen = -10;  // glfwGetTime() a controller was last tracked
-  uint64_t bindingsSeen = 0;    // xr.bindingsVersion() setup has
+  uint64_t bindingsSeen = 0;    // controlsVersion setup has
   StartMenu startMenu = opts.startMenu;  // ... or on this page, then
   int activeHand = 1;  // the hand whose pointer drives the menu
   float laserLength = kLaserStartLength;
@@ -1082,11 +1103,62 @@ int run(Options opts) {
   bool heldSeekBar = false;  // the strip placed for it, the menu closed
   double heldSeekPicture = 0, heldSeekPictureAt = 0;  // the last picture's target, when sent
   double heldSeekBarUntil = 0;  // ... shown after the stick let go
-  // Driven by the stick (not the arrow keys), it buzzes: a tick each 10 s
-  // it goes, at most 8 a second, and a bump at the start or the end.
+  // Driven by a stick (not the arrow keys), it buzzes that hand: a tick each
+  // 10 s it goes, at most 8 a second, and a bump at the start or the end.
   bool heldSeekStick = false, heldSeekAtLimit = false;
+  int heldSeekHand = 1;  // the stick's
+  // The buttons' Subtitles and Opacity jobs: what they turn back on; the
+  // opacity, each video's last see-through value however it was set, for
+  // this run (by its library id, else where it is).
+  int64_t lastSubtitle = 0;
+  std::unordered_map<std::string, int> lastSeeThrough;
+  std::string seeThroughFile;
+  int seeThroughSeen = 100;
+  auto seeThroughKey = [&] {
+    const VideoRecord r = library.record(app.currentFile);
+    return r.known() ? "#" + std::to_string(r.id) : app.currentFile;
+  };
+  // Zoom in or out held: by which hand (-1 none), since when, and how far
+  // it has gone, on which file. It is stored once, when let go.
+  struct ZoomHold {
+    Job job = Job::None;
+    int hand = -1;
+    double start = 0, at = 0;
+    std::string file;
+  } zoomHold;
+  auto zoomBy = [&](double percent) {
+    app.video.zoom = std::clamp(app.video.zoom + static_cast<float>(percent / 100),
+                                VideoSettings::kMinZoomPercent / 100.0f,
+                                VideoSettings::kMaxZoomPercent / 100.0f);
+    app.screen.zoom = app.video.zoom;
+    app.unsavedParts |= VideoSettings::kZoom;  // stored with the rest if the video changes first
+  };
   double heldSeekTens = 0, heldSeekTickAt = 0;
-  HoldRepeat turnLeft(0.5, 0.35), turnRight(0.5, 0.35);
+  HoldRepeat turnLeft(0.5, 0.35), turnRight(0.5, 0.35);  // A and D
+  // The controllers' buttons as jobs (controls.h), by each hand's type; the
+  // bindings Your controllers and the hints show, made again when the
+  // profiles change (controlsVersion).
+  ControlInput controlInput;
+  ControllerType controllerTypes[2] = {ControllerType::Count, ControllerType::Count};
+  uint64_t profilesSeen = 0, controlsVersion = 1;
+  ControllerBindings shownBindings;
+  // The type Settings' Controls shows: the right hand's, else the left's;
+  // with neither known, the Frame's on the Frame, else the last one seen.
+  auto shownControllerType = [&] {
+    for (int h : {1, 0})
+      if (controllerTypes[h] != ControllerType::Count) return controllerTypes[h];
+    if (kStandaloneHeadset) return ControllerType::Frame;
+    return settings.controllersSeen != ControllerType::Count ? settings.controllersSeen : ControllerType::Touch;
+  };
+  auto describeBindings = [&] {
+    std::string profiles[2];
+    xr.pairedProfiles(profiles);
+    ControllerBindings bindings = describeControls(profiles, settings.controls, settings.gestures);
+    if (bindings == shownBindings) return;
+    shownBindings = std::move(bindings);
+    ++controlsVersion;
+    logControls(shownBindings);
+  };
   HoldRepeat cursorLeft(0.5, 0.07), cursorRight(0.5, 0.07);  // as the keyboard's keys repeat
   // A pointed value stepped by either stick (value_adjust.h), which is its
   // until both sticks are let go.
@@ -1197,6 +1269,11 @@ int run(Options opts) {
   };
   // Stores what storeVideoSoon() still holds back.
   auto saveUnsaved = [&] {
+    // A zoom being held: in whole percents, as when let go.
+    if (app.unsavedParts & VideoSettings::kZoom) {
+      app.video.zoom = std::round(app.video.zoom * 100) / 100;
+      app.screen.zoom = app.video.zoom;
+    }
     // The screen's size is a setting for all videos (kScreen only marks it).
     if (const unsigned parts = app.unsavedParts & ~VideoSettings::kScreen) storeVideo(parts);
     if (app.unsavedParts & VideoSettings::kScreen) saveSettings(settings);  // settings.screen
@@ -1302,7 +1379,9 @@ int run(Options opts) {
     fillCheckPending = false;
     videoCheckAt = 0;
     passthroughShownUntil = 0;
-    opacityTwist.cancel();  // a twist under way was the last video's
+    gestureInput.cancel(gestureHost);  // a twist under way was the last video's
+    gestureInput.hide();
+    controlInput.dropFileTaps();  // ... and a press waiting to skip or stop it
     opacityShownUntil = 0;
     applyVideoSettings();
     knownWidth = knownHeight = 0;  // re-detect the format once the size is known
@@ -1353,7 +1432,9 @@ int run(Options opts) {
     scripts.open({});
     app.video.passthrough = false;
     app.video.opacity = 100;  // the empty scene isn't blended; the video keeps its saved value
-    opacityTwist.cancel();
+    gestureInput.cancel(gestureHost);
+    gestureInput.hide();
+    controlInput.dropFileTaps();
     opacityShownUntil = 0;
     neighbor = {};
     nextPhoto = {};
@@ -1386,7 +1467,11 @@ int run(Options opts) {
   auto stepVideo = [&](int step, bool atEnd = false) {
     const bool replaced = endStep;  // Previous or Next pressed while an end's step is under way
     endStep = false;
-    if (app.currentFile.empty() || isStream(app.currentFile)) return;
+    if (app.currentFile.empty()) return;
+    if (isStream(app.currentFile)) {
+      say(strings().jobs.notForStreams);
+      return;
+    }
     const bool shuffle = afterVideo() == AfterVideo::Shuffle && !isPhotoFile(app.currentFile);
     // Opened from a list in the menu (Stash's scenes): through that list.
     std::string next;
@@ -1404,6 +1489,7 @@ int run(Options opts) {
     } else {
       std::printf("No %s video in this list\n", step > 0 ? "next" : "previous");
       if (atEnd) menuAtEnd = true;
+      else say(step > 0 ? strings().jobs.lastVideo : strings().jobs.firstVideo);
     }
   };
 
@@ -1427,6 +1513,15 @@ int run(Options opts) {
   auto matchPreset = [&] {
     settings.performancePreset = presets.matching(settings);
     userPresetShown = presets.shownUserPreset(userPresets, settings, pickedUserPreset);
+  };
+  // Sharpen changed in a run of steps (its slider, a twist): matched and
+  // saved half a second after the first, at most twice a second. 0 = none.
+  double sharpenSaveAt = 0;
+  auto keepSharpen = [&] {
+    if (sharpenSaveAt == 0) return;
+    sharpenSaveAt = 0;
+    matchPreset();
+    saveSettings(settings);
   };
   auto applyPendingResolution = [&] {
     const int value = pendingResolution;
@@ -1587,6 +1682,7 @@ int run(Options opts) {
       case MenuCommand::ToggleMute: player.command("cycle mute"); break;
       case MenuCommand::SetVolume:
         player.command(("set volume " + std::to_string(static_cast<int>(c.value))).c_str());
+        if (player.playback().muted) player.command("set mute no");  // a volume set is heard
         break;
       case MenuCommand::PreviousVideo: stepVideo(-1); break;
       case MenuCommand::NextVideo: stepVideo(1); break;
@@ -1923,8 +2019,7 @@ int run(Options opts) {
       case MenuCommand::SetSharpen:
         settings.sharpen = std::clamp(static_cast<int>(c.value), 0, 300);
         player.setSharpened(settings.sharpen > 0);
-        matchPreset();
-        saveSettings(settings);
+        if (sharpenSaveAt == 0) sharpenSaveAt = glfwGetTime() + 0.5;
         break;
       case MenuCommand::ToggleToneLook:
         settings.toneLook = !settings.toneLook;
@@ -1959,6 +2054,69 @@ int run(Options opts) {
         settings.showPerformance = !showPerformance;
         saveSettings(settings);
         switchReadout(settings.showPerformance);
+        break;
+      case MenuCommand::SetButtonJob: {
+        const ControlSlot slot = ControlSlot::unpack(c.option);
+        const int job = static_cast<int>(std::lround(c.value));  // -1 with grip held: none of its own
+        if (slot.type == ControllerType::Count || slot.hand > 1 || job >= kJobs) break;
+        ControlMap& map = settings.controls;
+        const bool done =
+            job < 0 ? slot.grip && map.clearGrip(slot.type, slot.hand, slot.control)
+                    : (slot.grip || map.allowed(slot.type, slot.hand, slot.control, static_cast<Job>(job))) &&
+                          map.set(slot, static_cast<Job>(job));
+        if (!done) break;
+        saveSettings(settings);
+        describeBindings();
+        break;
+      }
+      case MenuCommand::RestoreButton: {
+        const ControlSlot slot = ControlSlot::unpack(c.option);
+        const int button = static_cast<int>(std::lround(c.value));
+        ControlMap& map = settings.controls;
+        if (slot.type == ControllerType::Count || slot.hand > 1 || button < 0 ||
+            !map.allowed(slot.type, slot.hand, slot.control, static_cast<Job>(button % kJobs)) ||
+            !map.restore(slot.type, slot.hand, slot.control, button))
+          break;
+        saveSettings(settings);
+        describeBindings();
+        break;
+      }
+      case MenuCommand::ResetButtons: {
+        const int type = static_cast<int>(std::lround(c.value));
+        if (type < 0 || type >= kControllerTypes) break;
+        settings.controls.reset(static_cast<ControllerType>(type));
+        settings.gestures.reset(static_cast<ControllerType>(type));
+        saveSettings(settings);
+        describeBindings();
+        break;
+      }
+      case MenuCommand::AddGesture:
+      case MenuCommand::ChangeGesture:
+      case MenuCommand::RemoveGesture:
+      case MenuCommand::RestoreGestures: {
+        const bool packed = c.type == MenuCommand::AddGesture || c.type == MenuCommand::ChangeGesture;
+        const int type = packed ? c.option >> 17 : c.option;
+        if (type < 0 || type >= kControllerTypes) break;
+        const ControllerType t = static_cast<ControllerType>(type);
+        const size_t index = static_cast<size_t>(std::max(0L, std::lround(c.value)));
+        GestureMap& map = settings.gestures;
+        bool done = true;
+        if (c.type == MenuCommand::AddGesture) done = map.add(t, Gesture::unpack(c.option & 0x1ffff));
+        else if (c.type == MenuCommand::ChangeGesture) done = map.replace(t, index, Gesture::unpack(c.option & 0x1ffff));
+        else if (c.type == MenuCommand::RemoveGesture) done = map.remove(t, index);
+        else map.read(t, c.path);
+        if (!done) break;
+        saveSettings(settings);
+        describeBindings();
+        break;
+      }
+      case MenuCommand::SetSkipSeconds:
+        settings.skipSeconds = kSkipRange.snap(c.value);
+        saveSettings(settings);
+        break;
+      case MenuCommand::SetBigSkipSeconds:
+        settings.bigSkipSeconds = kBigSkipRange.snap(c.value);
+        saveSettings(settings);
         break;
       case MenuCommand::ToggleVibration:
         settings.vibration = !settings.vibration;
@@ -2128,7 +2286,11 @@ int run(Options opts) {
         break;
       case MenuCommand::RequestDelete: {
         // The dialog is open; the video pauses meanwhile, a slideshow stops.
-        if (c.path != app.currentFile || deletion.result.valid()) break;
+        if (c.path != app.currentFile) {  // it changed meanwhile
+          menu.cancelDelete();
+          break;
+        }
+        if (deletion.result.valid()) break;
         deletion.info = {};
         deletion.info.file = c.path;
         deletion.info.name = std::filesystem::path(c.path).filename().string();
@@ -2391,6 +2553,134 @@ int run(Options opts) {
     }
   };
 
+  // The gestures' values: read and set as the menu's sliders set them (their
+  // commands), and why one can't change now, as the buttons' jobs say it.
+  gestureHost.why = [&](GestureValue v) -> const char* {
+    using V = GestureValue;
+    const JobStrings& said = strings().jobs;
+    const bool open = !app.currentFile.empty(), photo = isPhotoFile(app.currentFile);
+    switch (gestureValueInfo(v).where) {
+      case GestureWhere::Anywhere: break;
+      case GestureWhere::File:
+        if (!open) return said.nothingOpen;
+        break;
+      case GestureWhere::Video:
+        if (!open) return said.nothingOpen;
+        if (photo) return said.notForPhotos;
+        break;
+      case GestureWhere::Surround:
+        if (!open) return said.nothingOpen;
+        if (app.format.projection == Projection::Flat) return said.notForFlat;
+        break;
+      case GestureWhere::Flat:
+        if (!open) return said.nothingOpen;
+        if (app.format.projection != Projection::Flat) return said.flatOnly;
+        break;
+    }
+    switch (v) {
+      case V::Opacity:
+        if (!xr.alphaBlendSupported()) return said.noRoom;
+        if (peeking) return "";  // the video isn't seen
+        break;
+      case V::MatchBrightness:
+      case V::MatchColour:
+        // Where the menu shows them: Match the room on, the room shown.
+        if (!roomReadable) return said.notOnHeadset;
+        if (!roomShown()) return said.needsPassthrough;
+        if (!roomMatched) return strings().gestures.needsMatchRoom;
+        break;
+      case V::KeyStrength:
+      case V::KeyEdges:
+      case V::KeySpill:
+      case V::KeyShrink:
+        if (!xr.alphaBlendSupported() && !roomKeyed()) return said.noRoom;
+        if (!app.video.passthrough) return said.needsPassthrough;
+        if (packedMask(app.currentFile, app.video) && maskFormat(app.format)) return said.ownMask;
+        if (!app.video.greenScreen.on) return strings().gestures.needsRemoveBackground;
+        // As the menu hides their sliders: Automatic found nothing to remove.
+        if (!app.video.keyRemoves()) return strings().gestures.nothingRemoved;
+        break;
+      case V::Scrub:
+        if (player.loading() || player.playback().duration <= kSeekEndMargin || heldSeek.active()) return "";
+        break;
+      case V::Rating:
+        if (isStream(app.currentFile)) return said.notForStreams;
+        if (!library.available()) return said.ratingsLocked;
+        if (!library.known(app.currentFile)) return "";  // its rating isn't read yet
+        break;
+      default: break;
+    }
+    return nullptr;
+  };
+  gestureHost.read = [&](GestureValue v) -> double {
+    using V = GestureValue;
+    const ColourBalance& balance = roomMatched && roomShown() ? roomBalance : app.video.balance;
+    const KeySliders& key = app.video.keySliders();
+    switch (v) {
+      case V::Volume: return player.playback().volume;
+      case V::Opacity: return app.video.opacity;
+      case V::MatchBrightness: return settings.matchBrightness;
+      case V::MatchColour: return settings.matchColour;
+      case V::KeyStrength: return key.strength;
+      case V::KeyEdges: return key.softness;
+      case V::KeySpill: return key.spill;
+      case V::KeyShrink: return key.shrink;
+      case V::Brightness: return app.video.brightness;
+      case V::Contrast: return app.video.contrast;
+      case V::Saturation: return app.video.saturation;
+      case V::Warmth: return balance.warmth;
+      case V::Tint: return balance.tint;
+      case V::Exposure: return balance.exposure;
+      case V::Sharpen: return settings.sharpen;
+      case V::Zoom: return app.video.zoom * 100.0;
+      case V::Viewpoint: return app.video.originForward * 100.0;
+      case V::ScreenDistance: return app.screen.size.distance * 100.0;
+      case V::ScreenHeight: return app.screen.size.height * 100.0;
+      case V::ScreenCurve: return app.screen.size.curve * 100.0;
+      case V::Scrub: return scrub.on ? scrub.target : player.playback().position;
+      case V::Rating: return library.record(app.currentFile).rating * 2.0;
+      case V::ScriptTiming: return settings.scripts.offsetMs;
+      case V::SubtitleSize: return settings.subtitleSize;
+      case V::SubtitleRaise: return settings.subtitleRaise;
+      case V::SubtitleDistance: return settings.subtitleDistance;
+      case V::Count: break;
+    }
+    return 0;
+  };
+  gestureHost.write = [&](GestureValue v, double value) {
+    if (v == GestureValue::Scrub) {
+      scrub.target = value;
+    } else if (v == GestureValue::Rating) {
+      // As Rating up and down do, by half stars.
+      const int now = static_cast<int>(std::lround(library.record(app.currentFile).rating * 2));
+      menu.stepRating(app.currentFile, static_cast<int>(std::lround(value)) - now);
+    } else {
+      execute({gestureValueInfo(v).command, value});
+    }
+  };
+  gestureHost.range = [&](GestureValue v, double& least, double& most) {
+    if (v != GestureValue::Scrub) return;
+    least = 0;
+    most = std::max(0.0, player.playback().duration - kSeekEndMargin);
+  };
+  gestureHost.began = [&](GestureValue v) {
+    if (v != GestureValue::Scrub) return;
+    scrub.on = true;
+    scrub.sent = false;
+    scrub.from = scrub.target = scrub.picture = player.playback().position;
+    scrub.pictureAt = glfwGetTime();
+    awaitingResume = false;  // a seek of the user's
+  };
+  gestureHost.ended = [&](GestureValue v, bool released) {
+    if (v != GestureValue::Scrub) return;
+    // Let go: exactly there; the video played on meanwhile.
+    if (released && (scrub.sent || std::abs(scrub.target - scrub.from) > 0.01))
+      player.seekTo(scrub.target, true);
+    scrub.on = false;
+  };
+  gestureHost.say = [&](const char* text) { say(text); };
+  gestureHost.buzz = [&](int hand, float amplitude, double seconds) { buzz(hand, amplitude, seconds); };
+
   bool xrQuit = false;
   FrameTimer timer(opts.timing);
   // Frames drawn per second, for the strip: counted over one-second spans of
@@ -2474,13 +2764,20 @@ int run(Options opts) {
       app.videoStep = 0;
     }
 
-    if (app.saveAt > 0 && glfwGetTime() >= app.saveAt) saveUnsaved();
+    if (app.saveAt > 0 && glfwGetTime() >= app.saveAt) {
+      // A zoom still held waits for its letting go.
+      const unsigned held = zoomHold.hand >= 0 ? app.unsavedParts & VideoSettings::kZoom : 0;
+      app.unsavedParts &= ~held;
+      saveUnsaved();
+      app.unsavedParts |= held;
+    }
     if (const int volume = static_cast<int>(std::lround(player.playback().volume));
         !volumeApplied)
       volumeApplied = volume == settings.volume;
     else if (volume != settings.volume && volumeSaveAt == 0)
       volumeSaveAt = glfwGetTime() + 1;
     if (volumeSaveAt > 0 && glfwGetTime() >= volumeSaveAt) keepVolume();
+    if (sharpenSaveAt > 0 && glfwGetTime() >= sharpenSaveAt) keepSharpen();
     // The library's background results; the playing file's record may be
     // among them.
     if (library.poll() && awaitingRecord && library.known(app.currentFile)) {
@@ -2543,6 +2840,8 @@ int run(Options opts) {
         openVideo(next);
       else if (!neighborWrap)
         std::printf("No %s video in this folder\n", neighborStep > 0 ? "next" : "previous");
+      if (next.empty() && !neighborWrap && !endStep)
+        say(neighborStep > 0 ? strings().jobs.lastVideo : strings().jobs.firstVideo);
       if (next.empty() && endStep) menuAtEnd = true;
       endStep = false;
       neighborStep = 0;
@@ -2812,6 +3111,9 @@ int run(Options opts) {
     const bool alphaPassthrough = app.video.passthrough && canBlend;
     const bool keyPassthrough = app.video.passthrough && roomKeyed();
     const bool blended = roomShown();
+    // Peek at the room, held: the video at no opacity over the room, none of
+    // its settings changed.
+    const bool peek = peeking && canBlend;
     // The room's balance, while the switch is on and the room is shown.
     const bool roomMatching = roomMatched && blended;
     // A room reading that ended: kept for the run and matched while the
@@ -2972,7 +3274,59 @@ int run(Options opts) {
       }
 
       // --- Controller and keyboard input ---
-      const ControllerState& input = xr.controllers();
+      if (xr.profilesVersion() != profilesSeen) {
+        profilesSeen = xr.profilesVersion();
+        for (int h = 0; h < 2; ++h) controllerTypes[h] = controllerType(xr.interactionProfile(h));
+        describeBindings();
+        const ControllerType seen =
+            controllerTypes[1] != ControllerType::Count ? controllerTypes[1] : controllerTypes[0];
+        if (seen != ControllerType::Count && seen != settings.controllersSeen) {
+          settings.controllersSeen = seen;
+          saveSettings(settings);
+        }
+      }
+      const ControllerState& raw = xr.controllers();
+      // Presses that do something else, and nothing more: grip held and a
+      // stick's click on the stars clears the rating; any press skips setup's
+      // intro (below).
+      if (panel.open && !menu.setupRunning() && (raw.hands[0].grip || raw.hands[1].grip))
+        for (int h = 0; h < 2; ++h)
+          if ((raw.hands[h].pressed & controlBit(Control::StickClick)) && menu.clearRatingAtPointer())
+            controlInput.consume(h, Control::StickClick);
+      bool introPressed = false;
+      if (menu.setupRunning() && setupIntro.playing(now))
+        for (int h = 0; h < 2; ++h)
+          for (int c = 0; c < kControls; ++c)
+            if (raw.hands[h].pressed & (1u << c)) {
+              controlInput.consume(h, static_cast<Control>(c));
+              introPressed = true;
+            }
+      // While Settings' Controls waits for a new gesture's buttons, a press is
+      // only for that; the trigger alone still chooses on the menu (Cancel),
+      // and does nothing off it. Closing the menu stops waiting.
+      if (!panel.open) menu.stopRecordingGesture();
+      if (panel.open && menu.recordingGesture())
+        for (int h = 0; h < 2; ++h)
+          for (int c = 0; c < kControls; ++c) {
+            const uint32_t bit = 1u << c;
+            const HandState& g = raw.hands[h];
+            if (!(g.pressed & bit)) continue;
+            float u, v, d;
+            if (static_cast<Control>(c) == Control::Trigger && !(g.controls & ~bit) && g.poseValid &&
+                menuHitTest(panel, menu, g.aimPosition, aimDirection(g), u, v, d) >= 0)
+              continue;
+            controlInput.consume(h, static_cast<Control>(c));
+          }
+      // While setup shows what each button does, a press shows at once.
+      const JobInput& jobs = controlInput.update(raw, controllerTypes, settings.controls,
+                                                 menu.setupShowsControls() ? nullptr : &settings.gestures, now);
+      const ControllerState& input = jobs.state;
+      {
+        // As held, also those consumed: recording a gesture consumes them.
+        const uint32_t held[2] = {raw.hands[0].controls, raw.hands[1].controls};
+        menu.setControlsHeld(held, jobs.lost);
+      }
+      const bool menuPressed = jobs.wasPressed(Job::Menu);
       for (int h = 0; h < 2; ++h)
         if (input.hands[h].selectPressed && activeHand != h) {
           activeHand = h;
@@ -2990,15 +3344,16 @@ int run(Options opts) {
         s.headPos = headPos;
         s.headRot = headRot;
         s.presence = xr.userPresence();
-        s.bring = input.menuPressed || input.recenterPressed || app.toggleMenu || app.recenter;
-        s.pressed = s.bring || input.playPausePressed;
+        s.bring = menuPressed || jobs.wasPressed(Job::Recenter) || app.toggleMenu || app.recenter;
+        s.pressed = s.bring;
+        for (const uint8_t hands : jobs.pressed) s.pressed |= hands != 0;
         for (const HandState& h : input.hands) {
           s.pressed |= h.selectPressed || h.gripPressed;
           if (h.poseValid) controllerSeen = now;
         }
         // Welcome's intro plays from when the panel is placed; a press skips
-        // it, and does nothing else.
-        const bool skipped = setupIntro.playing(now) && s.pressed;
+        // it, and does nothing else (consumed above).
+        const bool skipped = setupIntro.playing(now) && (s.pressed || introPressed);
         if (skipped) {
           setupIntro.skip(now);
           s.pressed = s.bring = false;
@@ -3016,20 +3371,19 @@ int run(Options opts) {
         }
         app.recenter = false;
         menu.setSetupController(now - controllerSeen < 1.0);
-        // Your controllers: the bindings when the runtime changed them, and
-        // what is held.
-        if (xr.bindingsVersion() != bindingsSeen) {
-          bindingsSeen = xr.bindingsVersion();
-          menu.setSetupControls(xr.controllerBindings());
+        // Your controllers: the bindings when they changed, and what is held.
+        if (controlsVersion != bindingsSeen) {
+          bindingsSeen = controlsVersion;
+          menu.setSetupControls(shownBindings);
         }
         uint32_t held = 0;
         for (int h = 0; h < 2; ++h) {
           const HandState& g = input.hands[h];
           const bool sideways = std::abs(g.stickX) > 0.5f && std::abs(g.stickX) >= std::abs(g.stickY);
           const bool upDown = std::abs(g.stickY) > 0.5f && std::abs(g.stickY) > std::abs(g.stickX);
-          const bool on[] = {g.select, g.grip, xr.held(ControlAction::Menu, h),
-                             xr.held(ControlAction::PlayPause, h),
-                             xr.held(ControlAction::Recenter, h), sideways, upDown};
+          const bool on[] = {g.select, g.grip, jobs.isHeld(Job::Menu, h),
+                             jobs.isHeld(Job::PlayPause, h), jobs.isHeld(Job::Recenter, h),
+                             sideways, upDown};
           for (int c = 0; c <= kStickUpDown; ++c)
             if (on[c]) held |= heldBit(h, c);
         }
@@ -3057,12 +3411,12 @@ int run(Options opts) {
         if (!panel.open) panel.placeInFrontOf(headPos, menuAt);
         panel.open = true;
         menu.showPlayedFrom();
-      } else if ((input.menuPressed || app.toggleMenu) && !app.keyPickFor.empty()) {
+      } else if ((menuPressed || app.toggleMenu) && !app.keyPickFor.empty()) {
         endKeyPick();  // the menu button cancels picking the key's colour, the menu stays
-      } else if (input.menuPressed || app.toggleMenu) {
+      } else if (menuPressed || app.toggleMenu) {
         panel.open = !panel.open;
         openedNow = panel.open;
-        menuBroughtBack = panel.open && input.menuPressed;
+        menuBroughtBack = panel.open && menuPressed;
         if (panel.open) {
           // Always open on the player page; sub pages (search, files) keep their state.
           menu.showMainPage();
@@ -3070,12 +3424,296 @@ int run(Options opts) {
         }
       }
       app.toggleMenu = false;
-      if (input.playPausePressed) player.command("cycle pause");
-      // Grip held and a stick click on a rating clears it;
-      // otherwise the click recenters.
-      if (input.recenterPressed && !menu.setupRunning() &&
-          !((input.hands[0].grip || input.hands[1].grip) && panel.open &&
-            menu.clearRatingAtPointer())) {
+      if (app.video.opacity < 100 && !app.currentFile.empty() &&
+          (app.video.opacity != seeThroughSeen || app.currentFile != seeThroughFile))
+        lastSeeThrough[seeThroughKey()] = app.video.opacity;
+      seeThroughFile = app.currentFile;
+      seeThroughSeen = app.video.opacity;
+      // The buttons' other jobs, as the menu's or the strip's controls do
+      // them. Menu and Recenter are above and below, Choose is the trigger's.
+      // Not while setup's Your controllers shows what each does.
+      const bool practising = menu.setupShowsControls();
+      for (int j = 0; j < kJobs && !practising; ++j) {
+        const Job job = static_cast<Job>(j);
+        const int hand = jobs.pressedBy(job);
+        if (hand < 0 || job == Job::Recenter || job == Job::Choose) continue;
+        buzz(hand, 0.2f, 0.014);
+        const JobInfo& info = jobInfo(job);
+        const JobStrings& said = strings().jobs;
+        const bool open = !app.currentFile.empty();
+        if ((info.needs == JobNeeds::File || info.needs == JobNeeds::Video) && !open) {
+          say(said.nothingOpen);
+          continue;
+        }
+        if (info.needs == JobNeeds::Video && photo) {
+          say(said.notForPhotos);
+          continue;
+        }
+        MenuCommand c = info.command;
+        if (info.length != JobLength::None)
+          c.value *= info.length == JobLength::Skip ? settings.skipSeconds : settings.bigSkipSeconds;
+        const PlaybackState& p = player.playback();
+        switch (job) {
+          case Job::PlayPause:
+            // A photo's is the slideshow's: it stops one running.
+            if (photo) {
+              c = {};
+              if (app.slideshowSeconds > 0) c = {MenuCommand::SetSlideshow, 0.0};
+              else say(said.notForPhotos);
+            }
+            break;
+          case Job::PreviousChapter:
+          case Job::NextChapter: {
+            if (player.loading()) break;
+            if (p.chapters.empty()) {
+              say(said.noChapters);
+              break;
+            }
+            // Back: to the start of this chapter first, more than 5 s into it.
+            const bool into = job == Job::PreviousChapter && p.chapter >= 0 &&
+                              p.chapter < static_cast<int>(p.chapters.size()) &&
+                              p.position - p.chapters[p.chapter].time > 5;
+            const int to = p.chapter + (job == Job::NextChapter ? 1 : into ? 0 : -1);
+            if (to >= 0 && to < static_cast<int>(p.chapters.size()))
+              c = {MenuCommand::SeekTo, p.chapters[to].time};
+            else
+              say(to < 0 ? said.firstChapter : said.lastChapter);
+            break;
+          }
+          case Job::FrameBack:
+          case Job::FrameForward:
+            // Not while the stick seeks (its release may play on).
+            if (!heldSeek.holding() && !heldSeekLanding && player.frameStep(job == Job::FrameBack))
+              awaitingResume = false;  // a seek of the user's
+            break;
+          case Job::AfterVideo:
+            // As the strip's list, the next choice.
+            c = {MenuCommand::SetAfterVideo, static_cast<double>((static_cast<int>(afterVideo()) + 1) % 4)};
+            break;
+          case Job::RatingUp:
+          case Job::RatingDown:
+            if (isStream(app.currentFile)) {
+              say(said.notForStreams);
+              break;
+            }
+            if (!library.available()) {
+              say(said.ratingsLocked);
+              break;
+            }
+            menu.stepRating(app.currentFile, job == Job::RatingUp ? 1 : -1);
+            if (const float rating = library.record(app.currentFile).rating; rating > 0) {
+              char stars[16];
+              std::snprintf(stars, sizeof(stars), "%g", rating);
+              sayf(said.rating, stars);
+            } else {
+              say(said.notRated);
+            }
+            break;
+          case Job::DeleteVideo:
+            // The file the strip shows (not one opened this frame); the
+            // dialog is the menu's, its page shown first (showing a page
+            // closes dialogs). Setup shows only its own panel; picking the
+            // key's colour hides the dialog's, so it ends.
+            if (menu.setupRunning()) {
+              say(said.notInSetup);
+              break;
+            }
+            if (!menu.canRequestDelete(app.currentFile)) {
+              using D = MenuView::Deletable;
+              const D d = menu.deletable();
+              if (isStream(app.currentFile)) say(said.notForStreams);
+              else if (d == D::NeedsSendToStash) say(said.deleteNeedsStash);
+              else if (d == D::StashDown) say(strings().deletion.tipStashDown);
+              else if (d == D::No) say(said.serverKeeps);
+              break;
+            }
+            if (!panel.open) {
+              panel.open = true;
+              menu.showMainPage();
+              if (headValid) panel.placeInFrontOf(headPos, menuAt);
+            }
+            if (!app.keyPickFor.empty()) endKeyPick();
+            c = menu.requestDelete();
+            break;
+          case Job::VolumeUp:
+          case Job::VolumeDown: {
+            // As + and - do, within the volume gesture's 0..100.
+            const long volume = std::lround(p.volume);
+            const long to = job == Job::VolumeUp ? std::max(volume, std::min(volume + 5, 100L))
+                                                 : std::max(volume - 5, 0L);
+            c = {MenuCommand::SetVolume, static_cast<double>(to)};
+            sayf(said.volume, static_cast<int>(to));
+            break;
+          }
+          case Job::NextAudioTrack:
+          case Job::Subtitles: {
+            if (player.loading()) break;  // the last file's tracks until it opens
+            const char* type = job == Job::Subtitles ? "sub" : "audio";
+            std::vector<const Track*> tracks;
+            int chosen = -1;
+            for (const Track& t : p.tracks)
+              if (t.type == type) {
+                if (t.selected) chosen = static_cast<int>(tracks.size());
+                tracks.push_back(&t);
+              }
+            const Strings& words = strings();
+            if (job == Job::NextAudioTrack) {
+              if (tracks.size() > 1) {
+                const Track& next = *tracks[(chosen + 1) % tracks.size()];
+                c = {MenuCommand::SelectAudio, static_cast<double>(next.id)};
+                sayf(said.audioTrack, trackName(next, words).c_str());
+              } else {
+                say(said.noOtherAudio);
+              }
+            } else if (chosen >= 0) {
+              lastSubtitle = tracks[chosen]->id;
+              c = {MenuCommand::SelectSubtitle, 0};
+              sayf(said.switched, words.subtitles, words.off);
+            } else if (!tracks.empty()) {
+              const Track* on = tracks[0];
+              for (const Track* t : tracks)
+                if (t->id == lastSubtitle) on = t;
+              c = {MenuCommand::SelectSubtitle, static_cast<double>(on->id)};
+              sayf(said.switched, words.subtitles, trackName(*on, words).c_str());
+            } else {
+              say(said.noSubtitles);
+            }
+            break;
+          }
+          case Job::Passthrough:
+            if (!passthroughAvailable) {
+              say(said.noRoom);
+              c = {};
+            }
+            break;
+          case Job::PeekRoom:
+            if (!xr.alphaBlendSupported()) say(said.noRoom);
+            break;
+          case Job::SeeThrough:
+            // Solid, and back to the see-through it had.
+            if (!xr.alphaBlendSupported()) {
+              say(said.noRoom);
+              break;
+            }
+            if (app.video.opacity < 100) {
+              c = {MenuCommand::SetOpacity, 100.0};
+            } else {
+              // (stored before the library knew it: by where it is)
+              auto last = lastSeeThrough.find(seeThroughKey());
+              if (last == lastSeeThrough.end()) last = lastSeeThrough.find(app.currentFile);
+              c = {MenuCommand::SetOpacity, last != lastSeeThrough.end() ? last->second : 50.0};
+            }
+            opacityShownUntil = now + kValueShown;
+            break;
+          case Job::MatchRoom:
+            // Where the menu shows its switch: where the room's light is read.
+            if (!roomReadable) {
+              say(said.notOnHeadset);
+              c = {};
+            } else if (!roomShown()) {
+              say(said.needsPassthrough);
+            }
+            break;
+          case Job::ResetScreen:
+            // As Video settings' Screen group: a flat screen's only.
+            if (app.format.projection != Projection::Flat) {
+              say(said.flatOnly);
+              c = {};
+            }
+            break;
+          case Job::RemoveBackground:
+            // Where its switch shows: passthrough on, without the video's own mask.
+            if (!passthroughAvailable)
+              say(said.noRoom);
+            else if (!app.video.passthrough)
+              say(said.needsPassthrough);
+            else if (packedMask(app.currentFile, app.video) && maskFormat(app.format))
+              say(said.ownMask);
+            else
+              c = {MenuCommand::ToggleGreenScreen};
+            break;
+          case Job::ZoomIn:
+          case Job::ZoomOut:
+            if (app.format.projection == Projection::Flat) {
+              say(said.notForFlat);
+              break;
+            }
+            zoomHold = {job, hand, now, now, app.currentFile};
+            zoomBy(job == Job::ZoomIn ? VideoSettings::kZoomStepPercent : -VideoSettings::kZoomStepPercent);
+            gestureInput.show(GestureValue::Zoom, now);
+            break;
+          case Job::StereoFocus:
+          case Job::ShowFocusTarget: {
+            const bool stereo = job == Job::StereoFocus;
+            if (!stereo && !settings.focusPrefs.enabled) {  // its switch is greyed out
+              say(said.needsFocus);
+              break;
+            }
+            c = {MenuCommand::SetFocus,
+                 (stereo ? settings.focusPrefs.enabled : settings.focusPrefs.showTarget) ? 0.0 : 1.0};
+            c.option = static_cast<int>(stereo ? FocusControl::Enabled : FocusControl::ShowTarget);
+            break;
+          }
+          default: break;
+        }
+        // Mute and passthrough change later (mpv's, and where the settings
+        // are): as they will be.
+        const bool wasMuted = p.muted, hadPassthrough = app.video.passthrough;
+        if (c.type != MenuCommand::None) execute(c);
+        // The switches whose change doesn't show by itself, as they are now.
+        {
+          const Strings& words = strings();
+          const auto switched = [&](const char* name, bool on) {
+            sayf(said.switched, name, on ? words.on : words.off);
+          };
+          switch (job) {
+            // Not where they said why they do nothing.
+            case Job::Mute: switched(words.jobs.sound, wasMuted); break;
+            case Job::Passthrough:
+              if (c.type != MenuCommand::None) switched(words.jobs.passthrough, !hadPassthrough);
+              break;
+            case Job::MatchRoom:
+              if (c.type != MenuCommand::None && roomShown()) switched(words.colourBalance.matchRoom, roomMatched);
+              break;
+            case Job::RemoveBackground:
+              if (c.type != MenuCommand::None) switched(words.greenScreenOn, app.video.greenScreen.on);
+              break;
+            case Job::ResetPicture: say(said.pictureReset); break;
+            case Job::AfterVideo: say(words.afterVideo.choices[static_cast<int>(afterVideo())]); break;
+            case Job::Scripts: switched(words.scripts.group, settings.scripts.enabled); break;
+            case Job::Motion: switched(words.focus.motion, settings.motionEmulation); break;
+            case Job::ToneLook: switched(words.toneLook, settings.toneLook); break;
+            case Job::TvGamma: switched(words.tvGamma, settings.tvGamma); break;
+            case Job::StereoFocus: switched(words.focus.enabled, settings.focusPrefs.enabled); break;
+            default: break;
+          }
+        }
+      }
+      peeking = !practising && jobs.held[static_cast<int>(Job::PeekRoom)] != 0;
+      if (zoomHold.hand >= 0) {
+        if (app.currentFile != zoomHold.file) {
+          zoomHold.hand = -1;  // stored as the video changed
+        } else if (const int other = 1 - zoomHold.hand;
+                   app.format.projection != Projection::Flat && !jobs.isHeld(zoomHold.job, zoomHold.hand) &&
+                   (jobs.isHeld(Job::ZoomIn, other) || jobs.isHeld(Job::ZoomOut, other))) {
+          // Let go while the other hand holds a zoom too: it goes on with that.
+          zoomHold.job = jobs.isHeld(Job::ZoomIn, other) ? Job::ZoomIn : Job::ZoomOut;
+          zoomHold.hand = other;
+          zoomHold.at = now;
+        } else if (app.format.projection == Projection::Flat || !jobs.isHeld(zoomHold.job, zoomHold.hand)) {
+          // In whole percents, as the slider sets it.
+          app.video.zoom = std::round(app.video.zoom * 100) / 100;
+          app.screen.zoom = app.video.zoom;
+          storeVideoSoon(VideoSettings::kZoom);
+          zoomHold.hand = -1;
+        } else if (now > zoomHold.start + kZoomDelay) {
+          const double from = std::max(zoomHold.at, zoomHold.start + kZoomDelay);
+          zoomBy((zoomHold.job == Job::ZoomIn ? kZoomRate : -kZoomRate) * (now - from));
+          zoomHold.at = now;
+          gestureInput.show(GestureValue::Zoom, now);
+        }
+      }
+      if (jobs.wasPressed(Job::Recenter) && !menu.setupRunning()) {
         app.recenter = true;
         recentered = true;
         buzz(-1, 0.3f, 0.020);
@@ -3112,16 +3750,41 @@ int run(Options opts) {
                         headPos, up);
       }
 
-      // Grip elsewhere, a corner's handle and stick up/down: the flat screen.
+      // The gestures: buttons held and a twist of that wrist change a value.
+      {
+        GestureInput::Frame g;
+        g.now = now;
+        g.blocked = practising || (panel.open && menu.recordingGesture());
+        g.lost = jobs.lost;
+        for (int h = 0; h < 2; ++h) {
+          g.types[h] = controllerTypes[h];
+          g.onMenu[h] = onMenu[h] || menuGrab.hand == h;
+        }
+        gestureInput.update(input, settings.gestures, settings.controls, g, controlInput, gestureHost);
+        if (gestureInput.changing() && gestureInput.gesture().value == GestureValue::Volume)
+          volumeTwisted = true;
+        // Scrub: the picture follows as the stick's held seek's does.
+        if (scrub.on && !player.seeking() && now - scrub.pictureAt >= kHeldPictureEvery &&
+            std::abs(scrub.target - scrub.picture) >= kHeldPictureMove) {
+          player.seekTo(scrub.target, false);
+          scrub.picture = scrub.target;
+          scrub.pictureAt = now;
+          scrub.sent = true;
+        }
+      }
+
+      // The trigger off the menu, a corner's handle and stick up/down: the flat screen.
       if (app.format.projection == Projection::Flat && videoImage && headValid) {
         ScreenControl::Frame screenFrame;
         screenFrame.up = up;
         screenFrame.aspect = eyeDisplayAspect(app.format, frameAspect);
         screenFrame.dt = dt;
+        screenFrame.now = now;
         screenFrame.onMenu[0] = onMenu[0];
         screenFrame.onMenu[1] = onMenu[1];
         screenFrame.menuHeld = menuGrab.hand >= 0;
         screenFrame.sticksFree = !listMode;
+        for (int h = 0; h < 2; ++h) screenFrame.triggerTaken[h] = gestureInput.claims(h, Control::Trigger);
         const bool wasHolding = screenControl.holding();
         if (screenControl.update(input, screenFrame, app.screen)) keepScreenSize();
         if (!wasHolding && screenControl.holding()) buzz(screenControl.hand(), 0.25f, 0.012);
@@ -3131,61 +3794,6 @@ int run(Options opts) {
       if (app.screenChanged) {
         app.screenChanged = false;
         keepScreenSize();
-      }
-
-      // A grip held, the trigger held off the menu and a twist of the wrist:
-      // adjust the volume.
-      const float rolled = volumeRoll.update(input, onMenu);
-      if (volumeRoll.hand() < 0) {
-        rolledVolume = -1;
-      } else {
-        if (rolledVolume < 0) {
-          volumeTwisted = true;
-          rolledVolume = player.playback().volume;
-          buzz(volumeRoll.hand(), 0.25f, 0.012);
-        }
-        const double next = std::clamp(rolledVolume + rolled * kVolumePerDegree, 0.0, 100.0);
-        if (std::lround(next) != std::lround(rolledVolume))
-          player.command(("set volume " + std::to_string(std::lround(next))).c_str());
-        if (std::lround(next) / 5 != std::lround(rolledVolume) / 5)  // a detent each 5 steps
-          buzz(volumeRoll.hand(), 0.1f, 0.006);
-        rolledVolume = next;
-      }
-
-      // 180°/360° video the headset blends over the room: a grip held
-      // without the trigger, off the menu, and a twist of that wrist past
-      // its dead zone sets the video's opacity (on the flat screen the grip
-      // moves the screen).
-      const float twisted =
-          opacityTwist.update(input, onMenu,
-                              canBlend && app.format.projection != Projection::Flat &&
-                                  videoImage && menuGrab.hand < 0);
-      if (!opacityTwist.changing()) {
-        twistedOpacity.reset();
-      } else {
-        const auto shown = [](double opacity) {
-          return std::clamp(std::lround(opacity), 0L, 100L);
-        };
-        if (!twistedOpacity) buzz(opacityTwist.hand(), 0.25f, 0.012);
-        // It goes on from the video's opacity, with its fraction and hold
-        // while that still shows it (a late library restore can change it
-        // mid-twist).
-        if (!twistedOpacity || shown(*twistedOpacity) != app.video.opacity)
-          twistedOpacity = app.video.opacity;
-        const double was = *twistedOpacity;
-        double next = was + twisted * kOpacityPerDegree;
-        if (next >= 100) next = was > 100 ? std::min(next, 100 + kOpacityHold) : 100 + kOpacityHold;
-        if (next <= 0) next = was < 0 ? std::max(next, -kOpacityHold) : -kOpacityHold;
-        const long from = shown(was), to = shown(next);
-        if (to != from) {
-          app.video.opacity = static_cast<int>(to);
-          storeVideoSoon(VideoSettings::kOpacity);
-          // A detent at each multiple of 10 it reaches.
-          if (to > from ? to / 10 > from / 10 : (to + 9) / 10 < (from + 9) / 10)
-            buzz(opacityTwist.hand(), 0.1f, 0.006);
-        }
-        twistedOpacity = next;
-        opacityShownUntil = now + kValueShown;
       }
 
       // Picking the key's colour: the trigger away from the menu reads it
@@ -3199,7 +3807,9 @@ int run(Options opts) {
            (packedMask(app.currentFile, app.video) && maskFormat(app.format))))
         endKeyPick();
       const bool keyPicking = !app.keyPickFor.empty();
-      for (int h = 0; h < 2 && keyPicking && !app.keyPickWanted && !keyPicker.busy() && headValid;
+      // Not while the room is peeked at: the video isn't seen.
+      for (int h = 0; h < 2 && keyPicking && !app.keyPickWanted && !keyPicker.busy() && headValid &&
+                      !peeking;
            ++h) {
         const HandState& t = input.hands[h];
         if (h != activeHand || !t.selectPressed || !t.poseValid || onMenu[h]) continue;
@@ -3222,16 +3832,17 @@ int run(Options opts) {
         break;
       }
 
-      // Trigger away from the menu: drag the picture around you.
-      // Releasing stops it where it is shown; what the smoothing had not caught up is dropped.
-      const bool screenHeld = screenControl.holding();
-      if (turnDrag.hand >= 0 && (!input.hands[turnDrag.hand].select || screenHeld ||
+      // Trigger away from the menu: drag the 180°/360° picture around you (the
+      // flat screen's is ScreenControl's). Releasing stops it where it is
+      // shown; what the smoothing had not caught up is dropped.
+      const bool noDrag = screenControl.holding() || app.format.projection == Projection::Flat;
+      if (turnDrag.hand >= 0 && (!input.hands[turnDrag.hand].select || noDrag ||
                                  menuGrab.hand == turnDrag.hand))
         turnDrag.hand = -1;
-      for (int h = 0; h < 2 && turnDrag.hand < 0 && headValid && !screenHeld; ++h) {
+      for (int h = 0; h < 2 && turnDrag.hand < 0 && headValid && !noDrag; ++h) {
         const HandState& t = input.hands[h];
         if (!t.selectPressed || !t.poseValid || menuGrab.hand == h || onMenu[h] ||
-            volumeRoll.hand() == h || keyPicking)
+            gestureInput.claims(h, Control::Trigger) || keyPicking)
           continue;
         turnDrag.hand = h;
         turnDrag.tracking = false;
@@ -3259,10 +3870,9 @@ int run(Options opts) {
         turnDrag.lastTime = time;
       }
 
-      // Left stick sideways turns the view, right stick sideways seeks; up/down
-      // on either scrolls lists, else moves the viewpoint or flat screen. Only
-      // the dominant axis counts. While the keyboard is up, sideways on either
-      // moves the text cursor instead.
+      // Either stick sideways seeks; up/down scrolls lists, else moves the
+      // viewpoint or flat screen. Only the dominant axis counts. While the
+      // keyboard is up, sideways moves the text cursor instead.
       const bool typing = panel.open && menu.textInputActive();
       const StickDirections left = stickDirections(input.hands[0]);
       const StickDirections right = stickDirections(input.hands[1]);
@@ -3272,7 +3882,7 @@ int run(Options opts) {
 
       // A value row pointed (its field, − or +): either stick sideways steps
       // it, as − and + do, and holding repeats. Until both sticks are let go
-      // the stick is the value's: it neither seeks nor turns the view.
+      // the stick is the value's: it doesn't seek.
       {
         float x = 0.0f;
         bool centred = true;
@@ -3292,15 +3902,31 @@ int run(Options opts) {
       {
         const bool seekable = !app.currentFile.empty() && !photo;
         const PlaybackState& p = player.playback();
-        // The right stick counts sideways once it is mostly sideways; then all
-        // of its sideways push, so a thumb drifting up or down keeps the hold.
-        const float x = typing || valueStick ? 0.0f : input.hands[1].stickX;
+        // A stick counts sideways once it is mostly sideways; then all of its
+        // sideways push, so a thumb drifting up or down keeps the hold. Of
+        // the two, the one pushed further sideways seeks, until it lets go.
+        if (!heldSeek.active()) {
+          float most = 0.0f;
+          for (int h = 0; h < 2; ++h) {
+            const HandState& g = input.hands[h];
+            if (std::abs(g.stickX) > std::abs(g.stickY) && std::abs(g.stickX) > most) {
+              most = std::abs(g.stickX);
+              heldSeekHand = h;
+            }
+          }
+        }
+        const HandState& seekStick = input.hands[heldSeekHand];
+        const float x = typing || valueStick ? 0.0f : seekStick.stickX;
         const float sideways =
-            heldSeek.active() || std::abs(x) > std::abs(input.hands[1].stickY) ? x : 0.0f;
+            heldSeek.active() || std::abs(x) > std::abs(seekStick.stickY) ? x : 0.0f;
         const float back = seekable ? std::max(app.seekBackKey ? 1.0f : 0.0f, -sideways) : 0.0f;
         const float forward = seekable ? std::max(app.seekForwardKey ? 1.0f : 0.0f, sideways) : 0.0f;
         // Its limits from where it started: the video plays on until a hold.
         const double from = heldSeek.active() ? heldSeekFrom : p.position;
+        // A tap goes Skip's length by the stick, the keyboard's arrows 10 s:
+        // by the input that starts it.
+        if (!heldSeek.active())
+          heldSeek.setTap(std::abs(sideways) >= HeldSeek::kPress ? settings.skipSeconds : 10);
         const HeldSeek::Step step =
             heldSeek.update(back, forward, now, -from,
                             p.duration > 0 ? p.duration - kSeekEndMargin - from : 1e9, p.duration);
@@ -3310,7 +3936,7 @@ int run(Options opts) {
           heldSeekBar = false;  // a tap shows none
           heldSeekStick = std::abs(sideways) >= HeldSeek::kPress;
           heldSeekAtLimit = false;
-          if (heldSeekStick) buzz(1, 0.15f, 0.010);
+          if (heldSeekStick) buzz(heldSeekHand, 0.15f, 0.010);
         }
         if (step.holdStarted) {
           // The picture waits, and is silent, until the stick lets go; with
@@ -3336,9 +3962,9 @@ int run(Options opts) {
             const bool atLimit = heldSeekTarget <= 0.01 || heldSeekTarget >= end - 0.01;
             const double tens = std::floor(std::abs(heldSeek.distance()) / 10);
             if (atLimit && !heldSeekAtLimit) {
-              buzz(1, 0.3f, 0.020);
+              buzz(heldSeekHand, 0.3f, 0.020);
             } else if (tens != heldSeekTens && now - heldSeekTickAt >= 0.125) {
-              buzz(1, 0.1f, 0.006);
+              buzz(heldSeekHand, 0.1f, 0.006);
               heldSeekTickAt = now;
             }
             heldSeekAtLimit = atLimit;
@@ -3349,7 +3975,7 @@ int run(Options opts) {
           // A tap jumps on from where the video is now; a hold lands on the
           // keyframe before its target, never past it into the end, unless
           // its last picture is already there.
-          if (step.held && heldSeekStick) buzz(1, 0.2f, 0.014);
+          if (step.held && heldSeekStick) buzz(heldSeekHand, 0.2f, 0.014);
           bool sent = step.distance != 0;
           if (step.held) {
             const double target = heldSeekFrom + step.distance;
@@ -3365,14 +3991,8 @@ int run(Options opts) {
         }
         if (heldSeekLanding && !player.seeking()) heldSeekLanding = false;
       }
-      if (turnLeft.update((left.left && !typing && !valueStick) || app.turnLeftKey, now)) {
-        app.screen.turn = wrapAngle(app.screen.turn - kTurnStep);
-        if (left.left) buzz(0, 0.2f, 0.014);
-      }
-      if (turnRight.update((left.right && !typing && !valueStick) || app.turnRightKey, now)) {
-        app.screen.turn = wrapAngle(app.screen.turn + kTurnStep);
-        if (left.right) buzz(0, 0.2f, 0.014);
-      }
+      if (turnLeft.update(app.turnLeftKey, now)) app.screen.turn = wrapAngle(app.screen.turn - kTurnStep);
+      if (turnRight.update(app.turnRightKey, now)) app.screen.turn = wrapAngle(app.screen.turn + kTurnStep);
       if (listMode) {
         // Lists glide: the further the stick is tilted, the faster (up to
         // ~14 rows a second), with a small dead zone around the middle.
@@ -3721,6 +4341,11 @@ int run(Options opts) {
       view.thumbnails = settings.thumbnails;
       view.showPerformance = showPerformance;
       view.vibration = settings.vibration;
+      view.controls.type = shownControllerType();
+      view.controls.map = settings.controls;
+      view.controls.gestures = settings.gestures;
+      view.controls.skipSeconds = settings.skipSeconds;
+      view.controls.bigSkipSeconds = settings.bigSkipSeconds;
       view.showWhatsNew = settings.showWhatsNew;
       view.stash = settings.stash;
       for (const MediaServer* server : mediaServers())
@@ -3803,9 +4428,9 @@ int run(Options opts) {
       // The hints after setup: their situations, and the controls they name
       // used; a hint's line drawn once as it starts.
       if (hints.any()) {
-        if (!menu.setupRunning() && xr.bindingsVersion() != hintBindingsSeen) {
-          hintBindingsSeen = xr.bindingsVersion();
-          menu.setHintBindings(xr.controllerBindings());
+        if (!menu.setupRunning() && controlsVersion != hintBindingsSeen) {
+          hintBindingsSeen = controlsVersion;
+          menu.setHintBindings(shownBindings);
         }
         Hints::Frame f;
         f.now = now;
@@ -3813,11 +4438,21 @@ int run(Options opts) {
         f.menuOpen = panel.open;
         f.menuBroughtBack = menuBroughtBack;
         f.longListPointed = panel.open && menu.pointingAtLongList(f.listPage);
-        f.volumePointed = panel.open && menu.pointingAtVolume();
+        // Only where a gesture sets the volume (the hint names its buttons).
+        f.volumePointed = panel.open &&
+                          std::any_of(shownBindings.twists.begin(), shownBindings.twists.end(),
+                                      [](const ControllerBindings::Twist& twist) {
+                                        return twist.value == static_cast<int>(GestureValue::Volume);
+                                      }) &&
+                          menu.pointingAtVolume();
         if (videoImage && !photo && !player.playback().paused && !panel.open && headValid) {
           const Vec3 ahead = transformDir(rotation(headRot), {0.0f, 0.0f, -1.0f});
           const Vec3 centre = transformDir(app.screen.rotation(), {0.0f, 0.0f, -1.0f});
-          f.videoAway = dot(ahead, centre) < std::cos(70.0f * kPi / 180);
+          // Only where something recenters (a hint names it).
+          const int recenter = static_cast<int>(ControlAction::Recenter);
+          f.videoAway = dot(ahead, centre) < std::cos(70.0f * kPi / 180) &&
+                        (!shownBindings.sources[recenter].empty() ||
+                         !shownBindings.gripSources[recenter].empty());
         }
         f.scrolled = stickScrolled;
         f.recentered = recentered;
@@ -3859,7 +4494,7 @@ int run(Options opts) {
       } else if (panelOn[Menu::kMain] || !panelFades[Menu::kMain].fade.drawn()) {  // it fades with the strip
         seekPreview.hide();
       }
-      scene.clear = blended ? ClearMode::Transparent
+      scene.clear = blended || peek ? ClearMode::Transparent
                     : keyPassthrough ? ClearMode::KeyGreen
                                      : ClearMode::Dark;
       // The night sky around the flat screen (with passthrough: the room).
@@ -3873,7 +4508,7 @@ int run(Options opts) {
       video.screen = app.screen;
       video.photo = photo;
       video.seeThrough = focusIn.seeThrough;
-      video.opacity = app.video.opacity;
+      video.opacity = peek ? 0 : app.video.opacity;
       const std::array<float, 3> gains = (roomMatching ? roomBalance : app.video.balance).gains();
       for (int i = 0; i < 3; ++i) video.balance[i] = gains[i] - 1.0f;
       // Brightness etc. are applied while drawing to photos, and to videos
@@ -4056,18 +4691,65 @@ int run(Options opts) {
       focusMarker.addTo(overlays);
       // Messages in front of the eyes, last, over everything: the recenter
       // countdown, and the viewpoint as the stick moves it (or Recenter puts
-      // it back) or the opacity as a twist changes it, redrawn only as its
-      // percent changes, a few times a second.
+      // it back), the opacity a button's job set, or a gesture's value as a
+      // twist changes it, redrawn only as what they show changes, or what a
+      // button's job said.
       if (app.recenterAt > 0 && headValid) {
         char text[64];
         std::snprintf(text, sizeof(text), strings().recenterIn,
                       static_cast<int>(std::ceil(app.recenterAt - now)));
         notices.show(menu, Notices::Countdown, NoticeIcon::Recenter, text);
       }
-      if (now < std::max(viewpointShownUntil, opacityShownUntil) &&
-          app.format.projection != Projection::Flat && headValid) {
+      // One at a time, the newest: a gesture's value shows on the flat
+      // screen too, as does the screen's distance or height the stick sets.
+      // The flat screen has no viewpoint, but See-through's opacity.
+      const bool flat = app.format.projection == Projection::Flat;
+      const double valueUntil =
+          flat ? opacityShownUntil : std::max(viewpointShownUntil, opacityShownUntil);
+      const bool screenNewer = screenControl.shown() != GestureValue::Count &&
+                               screenControl.shownAt() > gestureInput.shownAt();
+      const GestureValue gestureShown = screenNewer ? screenControl.shown() : gestureInput.shown();
+      const double gestureUntil =
+          gestureShown != GestureValue::Count
+              ? (screenNewer ? screenControl.shownAt() : gestureInput.shownAt()) + kValueShown
+              : 0;
+      if (now < gestureUntil && gestureUntil >= std::max(valueUntil, jobSaid.until) && headValid) {
+        // Its ring, filled to the value along its range.
+        const GestureValueInfo& info = gestureValueInfo(gestureShown);
+        const double value = gestureHost.read(gestureShown);
+        double least = info.range.least, most = info.range.most;
+        gestureHost.range(gestureShown, least, most);
+        const PlaybackState& p = player.playback();
+        if (info.format == GestureFormat::Clock) most = std::max(0.0, p.duration);
+        const auto along = [&](double x) { return most > least ? std::clamp((x - least) / (most - least), 0.0, 1.0) : 0.0; };
+        RingNotice ring;
+        if (info.format == GestureFormat::Stars) {
+          ring.kind = RingNotice::Kind::Stars;
+          ring.halves = static_cast<int>(std::lround(value));
+          ring.name = gestureValueLabel(gestureShown, strings());
+        } else if (info.format == GestureFormat::Clock) {
+          ring.kind = RingNotice::Kind::Position;
+          ring.at = along(value);
+          for (const Chapter& c : p.chapters) ring.ticks.push_back(along(c.time));
+          ring.number = clockTime(value);
+          ring.after = "/ " + clockTime(most);
+        } else {
+          ring.at = along(value);
+          ring.centred = info.centred;
+          ring.from = info.centred ? along(0) : 0;
+          if (info.mark != kNoMark) ring.mark = along(info.mark);
+          // Within float rounding of an end (the screen's 0.1 m is 10.0000001 cm).
+          const double near = (most - least) * 1e-6;
+          ring.limit = value <= least + near || value >= most - near;
+          ring.name = gestureValueLabel(gestureShown, strings());
+          ring.number = gestureValueText(gestureShown, value);
+        }
+        notices.show(menu, Notices::Value, ring);
+      } else if (now < jobSaid.until && jobSaid.until > valueUntil && headValid) {
+        notices.show(menu, Notices::Value, NoticeIcon::None, jobSaid.text);
+      } else if (now < valueUntil && headValid) {
         char text[160];
-        const bool opacity = opacityShownUntil > viewpointShownUntil;
+        const bool opacity = flat || opacityShownUntil > viewpointShownUntil;
         if (opacity) {
           std::snprintf(text, sizeof(text), strings().opacityOverlay, app.video.opacity);
         } else {
@@ -4138,7 +4820,7 @@ int run(Options opts) {
       FrameReuse::Frame shown;
       shown.scene = &scene;
       shown.picture = player.pictureVersion();
-      shown.alphaBlend = blended;
+      shown.alphaBlend = blended || peek;
       shown.displayTime = xr.displayTime();
       shown.eyeCount = xr.eyeCount();
       shown.eyes = shown.eyeCount > 0 ? &xr.eye(0) : nullptr;
@@ -4194,7 +4876,7 @@ int run(Options opts) {
     }
     gpu.collect();
     if (drawn && roomBlank) roomLight.blankSubmitted();
-    xr.setAlphaBlend(blended || roomBlank);
+    xr.setAlphaBlend(blended || peek || roomBlank);
     xr.releaseEyes();
     if (shownAgain) xr.endFrameShownAgain();
     else xr.endFrame(drawn);
@@ -4221,6 +4903,7 @@ int run(Options opts) {
   if (opts.timing) std::printf("Frame reuse: frames %s\n", reuseReport(nullptr).c_str());
   saveUnsaved();
   keepVolume();
+  keepSharpen();
   keepResume();
   gazeCorrection.endSitting();
   if (gazeCorrection.takeChanged()) {

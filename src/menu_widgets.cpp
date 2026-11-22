@@ -115,7 +115,7 @@ double Menu::sliderFraction(const Button& slider, double value) {
 MenuCommand Menu::volumeAtPointer(const Button& slider) const {
   MenuCommand c;
   c.type = MenuCommand::SetVolume;
-  c.value = std::round(std::clamp((pointerX_ - slider.x) / slider.w, 0.0, 1.0) * 100.0);
+  c.value = std::round(std::clamp((pointerX_ - slider.x) / slider.w, 0.0, 1.0) * value_range::kVolume.most);
   return c;
 }
 
@@ -124,7 +124,7 @@ MenuCommand Menu::volumeAtPointer(const Button& slider) const {
 void Menu::drawVolumeSlider(cairo_t* cr, const Button& b) const {
   const Palette& pal = palette();
   const bool muted = view_.playback.muted;
-  const double fraction = std::clamp(view_.playback.volume / 100.0, 0.0, 1.0);
+  const double fraction = std::clamp(view_.playback.volume / value_range::kVolume.most, 0.0, 1.0);
   drawTrack(cr, b.x, b.x + b.w, b.y + b.h / 2, fraction, muted ? 0.4 : 1.0);
   const std::string number = std::to_string(static_cast<int>(std::round(view_.playback.volume)));
   const double right = b.x + b.w + kit::kSpace + strip::kNumberW;
@@ -374,6 +374,17 @@ void Menu::drawText(cairo_t* cr, const std::string& text, double x, double y, do
   pango_cairo_show_layout(cr, layout);
 }
 
+void Menu::drawTextEnd(cairo_t* cr, const std::string& text, double x, double y, double w, double h, int size,
+                       bool bold, double r, double g, double b, double a) const {
+  if (w <= 0 || outsideClip(cr, x, y + (h - std::max(h, size * 2.0)) / 2, w, std::max(h, size * 2.0))) return;
+  PangoLayout* layout = textLayout(cr, text, size, bold, w, 1, false);
+  int textW = 0, textH = 0;
+  pango_layout_get_pixel_size(layout, &textW, &textH);
+  cairo_set_source_rgba(cr, r, g, b, a);
+  cairo_move_to(cr, x, onPixel(y + (h - textH) / 2));
+  pango_cairo_show_layout(cr, layout);
+}
+
 namespace {
 
 // A file's or folder's name as laid out over lines: a break allowed after
@@ -548,7 +559,7 @@ void Menu::drawButtons(cairo_t* cr, int panel, bool popups) {
     } else if (!b.well) {
       drawButtonContent(cr, b, ink, group ? 1 : fade);
     }
-    if (b.popup && b.selected && !b.key && !filled(b)) {  // the chosen entry of an open list: a dot at its end
+    if (b.popup && b.selected && !b.key && !b.piece && !filled(b)) {  // the chosen entry of an open list: a dot at its end
       cairo_arc(cr, b.x + b.w - 20, b.y + b.h / 2, 4, 0, 2 * M_PI);
       setColor(cr, pal.accent);
       cairo_fill(cr);
@@ -653,7 +664,7 @@ void Menu::buttonInk(const Button& b, double ink[4]) const {
   Rgba k = pal.text;
   if (b.piece && !b.selected) {
     k = pal.textDim;  // a piece in a well, not chosen
-  } else if ((b.listRow || b.card || b.popup) && b.selected) {
+  } else if ((b.listRow || b.card || (b.popup && !b.piece)) && b.selected) {
     k = pal.textAccent;  // the playing file, a list's chosen entry (cards also get an outline)
   } else if (b.latched) {
     k = pal.textAccent;
@@ -790,10 +801,10 @@ bool Menu::pointedLooks(PanelId panel, PanelHover& pointed, PanelHover& pressed,
   if (danger) {
     set(pointed, kRed, 1, 0.22, 1);
     pointed.ink = 255;
+  } else if (b.piece && !b.selected) {  // in a well, on a page or a dialog
+    set(pointed, kWhite, 0.06, 0, 0);
   } else if (b.popup && !surface) {
     set(pointed, kWhite, 0.08, 0, 0);
-  } else if (b.piece && !b.selected) {
-    set(pointed, kWhite, 0.06, 0, 0);
   } else if (b.field || b.band) {
     set(pointed, kWhite, 0.10, 0, 0);
     pointed.ring = true;
@@ -835,6 +846,10 @@ void fadedColour(const double rgb[3], double alpha, double out[3]) {
 }  // namespace
 
 void Menu::drawButtonContent(cairo_t* cr, const Button& b, const double ink[4], double alpha) const {
+  if (b.controlPart >= 0) {
+    drawControlPart(cr, b, ink);
+    return;
+  }
   if (b.offlineLook) {
     drawOfflineButton(cr, b, ink);
     return;

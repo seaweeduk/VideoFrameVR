@@ -15,6 +15,8 @@
 // Rows that can't apply are greyed out, or left out where they would only
 // say so; the page never scrolls (the debug fit check says where it would).
 
+using namespace value_range;
+
 namespace {
 
 std::string fixed2(double v) {
@@ -154,19 +156,19 @@ void Menu::layoutVideoSection(VideoSection section) {
           {cb.tint, balance.tint, MenuCommand::SetTint, cb.tipTint},
           {cb.exposure, balance.exposure, MenuCommand::SetExposure, cb.tipExposure}};
       for (const Value& v : values)
-        picture.value(v.label, v.type, v.now, -100, 100, std::to_string(v.now), kPictureStep)
+        picture.value(v.label, v.type, v.now, kPicture.least, kPicture.most, std::to_string(v.now), kPicture.step)
             .tip(v.tooltip);
       const int zoom = static_cast<int>(std::lround(view_.zoom * 100));
       picture
-          .value(t.zoom, MenuCommand::SetZoom, zoom, 50, 250, std::to_string(zoom) + " %",
-                 kZoomStepPercent)
+          .value(t.zoom, MenuCommand::SetZoom, zoom, kZoom.least, kZoom.most,
+                 std::to_string(zoom) + " %", kZoom.step)
           .format(withUnit(" %"))
           .mark(100)
           .disable(flat);
-      const int limit = kMaxViewpointPercent;
       picture
-          .value(t.viewpoint.label, MenuCommand::SetOriginForward, view_.originForward, -limit,
-                 limit, viewpointText(view_.originForward), kViewpointStepPercent)
+          .value(t.viewpoint.label, MenuCommand::SetOriginForward, view_.originForward,
+                 kViewpoint.least, kViewpoint.most, viewpointText(view_.originForward),
+                 kViewpoint.step)
           .format([](int v, bool tick) { return tick ? std::to_string(v) : viewpointText(v); })
           .tip(t.viewpoint.tip)
           .disable(flat);
@@ -184,25 +186,23 @@ void Menu::layoutVideoSection(VideoSection section) {
         0, t.groupScreen,
         {t.reset, t.screenResetHint, command(MenuCommand::ResetScreen),
          !flat || s == ScreenView::of(ScreenSize{})});
-    auto hundredths = [](float v) { return static_cast<int>(std::lround(v * 100)); };
     // Height and distance in centimetres, and the curve from 0 (flat) to 1
     // (bent around you).
     screen
-        .value(t.screenHeight, MenuCommand::SetScreenHeight, s.heightCm,
-               hundredths(ScreenSize::kMinHeight), hundredths(ScreenSize::kMaxHeight),
-               std::to_string(s.heightCm) + " cm", kScreenStepCm)
+        .value(t.screenHeight, MenuCommand::SetScreenHeight, s.heightCm, kScreenHeight.least,
+               kScreenHeight.most, std::to_string(s.heightCm) + " cm", kScreenHeight.step)
         .format(withUnit(" cm"))
         .tip(t.tipScreenHeight)
         .disable(!flat);
     screen
         .value(t.screenDistance, MenuCommand::SetScreenDistance, s.distanceCm,
-               hundredths(ScreenSize::kMinDistance), hundredths(ScreenSize::kMaxDistance),
-               std::to_string(s.distanceCm) + " cm", kScreenStepCm)
+               kScreenDistance.least, kScreenDistance.most, std::to_string(s.distanceCm) + " cm",
+               kScreenDistance.step)
         .format(withUnit(" cm"))
         .disable(!flat);
     screen
-        .value(t.screenCurve, MenuCommand::SetScreenCurve, s.curvePercent, 0,
-               hundredths(ScreenSize::kMaxCurve), fixed2(s.curvePercent / 100.0), kCurveStepPercent)
+        .value(t.screenCurve, MenuCommand::SetScreenCurve, s.curvePercent, kScreenCurve.least,
+               kScreenCurve.most, fixed2(s.curvePercent / 100.0), kScreenCurve.step)
         .format([](int v, bool) { return fixed2(v / 100.0); })
         .tip(t.tipScreenCurve)
         .disable(!flat);
@@ -229,8 +229,8 @@ void Menu::layoutVideoSection(VideoSection section) {
                : kStandaloneHeadset ? t.antiShimmerFrameHint
                                     : t.antiShimmerHint);
     image
-        .value(t.sharpen, MenuCommand::SetSharpen, view_.sharpen, 0, 300,
-               view_.sharpen > 0 ? fixed2(view_.sharpen / 100.0) : t.off, kSharpenStep)
+        .value(t.sharpen, MenuCommand::SetSharpen, view_.sharpen, kSharpen.least, kSharpen.most,
+               view_.sharpen > 0 ? fixed2(view_.sharpen / 100.0) : t.off, kSharpen.step)
         .format([off = std::string(t.off)](int v, bool tick) {
           return v > 0 || tick ? fixed2(v / 100.0) : off;
         })
@@ -415,7 +415,8 @@ void Menu::layoutPassthroughGroup(PageLayout& page, int column) {
   // 0..100, with − and + a step of 1.
   auto slider = [&](const char* label, MenuCommand::Type type, int value, const char* tooltip,
                     const char* unit = "") {
-    group.value(label, type, value, 0, 100, std::to_string(value) + unit)
+    group.value(label, type, value, kPercent.least, kPercent.most, std::to_string(value) + unit,
+                kPercent.step)
         .format(withUnit(unit))
         .tip(tooltip);
   };

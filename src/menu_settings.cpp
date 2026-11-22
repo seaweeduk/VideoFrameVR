@@ -1,11 +1,13 @@
 #include "menu_parts.h"
 
+#include "menu_controls.h"
 #include "menu_stash.h"
 
 #include <cstdio>
 
-// Settings: a page in three sections, built from the menu's parts.
+// Settings: a page in four sections, built from the menu's parts.
 //   General: the menu and its colour, the view, playback, subtitles, Help.
+//   Controls: what the controllers' buttons do (menu_controls.cpp).
 //   Stash / XBVR: which media server is used, its server and folders, how
 //   it syncs, and sending to it (menu_stash_settings.cpp).
 //   Funscripts: played on a device through Intiface (menu_scripts.cpp).
@@ -49,13 +51,20 @@ void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsSho
   const Strings& t = text();
   PageLayout page(*this, t.settings);
   // The servers' section is named for every kind, whichever is in use.
-  page.sections({t.general, mediaServerNames(), t.scripts.group}, static_cast<int>(section),
+  // By SettingsSection, in its order.
+  page.sections({t.general, t.controlsPage.section, mediaServerNames(), t.scripts.group},
+                static_cast<int>(section),
                 [this](int i) {
                   StashPages::leaveSettings(*this);
+                  if (controls_) controls_->noticeShown = false;
                   settingsSection_ = static_cast<SettingsSection>(i);
                   dropdown_ = Dropdown::None;
                   dirty_ = true;
                 });
+  if (section == SettingsSection::Controls) {
+    layoutControls(page);
+    return;
+  }
   if (section == SettingsSection::Stash) {
     StashPages::layoutSettings(*this, page, stash ? *stash : StashPages::settingsShown(*this));
     return;
@@ -198,17 +207,20 @@ void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsSho
     const int distance = view_.subtitleDistance;
     static const Settings defaults;
     subtitles
-        .value(t.subtitleSize, MenuCommand::SetSubtitleSize, size, 50, 200,
-               std::to_string(size) + " %")
+        .value(t.subtitleSize, MenuCommand::SetSubtitleSize, size, value_range::kSubtitleSize.least,
+               value_range::kSubtitleSize.most, std::to_string(size) + " %",
+               value_range::kSubtitleSize.step)
         .format(withUnit(" %"))
         .mark(defaults.subtitleSize);
     subtitles
-        .value(t.subtitleRaise, MenuCommand::SetSubtitleRaise, raise, -100, 100,
-               std::to_string(raise))
+        .value(t.subtitleRaise, MenuCommand::SetSubtitleRaise, raise,
+               value_range::kSubtitleRaise.least, value_range::kSubtitleRaise.most,
+               std::to_string(raise), value_range::kSubtitleRaise.step)
         .tip(t.tipSubtitleRaise);
     subtitles
-        .value(t.subtitleDistance, MenuCommand::SetSubtitleDistance, distance, 25, 600,
-               metres(distance))
+        .value(t.subtitleDistance, MenuCommand::SetSubtitleDistance, distance,
+               value_range::kSubtitleDistance.least, value_range::kSubtitleDistance.most,
+               metres(distance), value_range::kSubtitleDistance.step)
         .format([](int v, bool tick) { return metres(v, !tick); })
         .mark(defaults.subtitleDistance);
   }
@@ -275,6 +287,41 @@ void Menu::checkSettingsFit() {
   v.scriptStatus.link = ScriptLink::NoDevice;
   fitCase_ = " (Funscripts, every row)";
   layoutSettingsSection(SettingsSection::Scripts);
+  // Controls: every controller type as a list (its longest), with the
+  // notice, on a page of its own so the one shown keeps its state.
+  std::unique_ptr<ControlsPage> controls = std::move(controls_);
+  controls_ = std::make_unique<ControlsPage>();
+  for (int type = 0; type < kControllerTypes; ++type)
+    for (bool grip : {false, true}) {
+      v.controls.type = static_cast<ControllerType>(type);
+      const LayoutControl& first = controllerLayout(v.controls.type).controls.front();
+      controls_->type = v.controls.type;
+      controls_->gripView = grip;
+      controls_->noticeShown = true;
+      controls_->notice = {{v.controls.type, first.hand, first.control, grip}, Job::Menu, Job::None, 0};
+      fitCase_ = grip ? " (Controls, every type, with grip held)" : " (Controls, every type)";
+      layoutSettingsSection(SettingsSection::Controls);
+    }
+  // ... and each type's gestures, as many as there can be, with a notice.
+  for (int type = 0; type < kControllerTypes; ++type)
+    for (const bool eitherFirst : {false, true}) {
+      v.controls.type = static_cast<ControllerType>(type);
+      v.controls.gestures = fullestGestures(v.controls.type, eitherFirst);
+      const std::vector<Gesture>& list = v.controls.gestures.list(v.controls.type);
+      controls_->type = v.controls.type;
+      controls_->gripView = false;
+      controls_->gestureView = true;
+      controls_->noticeShown = !list.empty();
+      controls_->notice = {};
+      if (!list.empty()) {
+        controls_->notice.gesture = true;
+        controls_->notice.changed = list.back();
+        controls_->notice.wasValue = controls_->notice.nowValue = list.back().value;
+      }
+      fitCase_ = eitherFirst ? " (Controls, every type, gestures, Either first)" : " (Controls, every type, gestures)";
+      layoutSettingsSection(SettingsSection::Controls);
+    }
+  controls_ = std::move(controls);
   fitCase_ = nullptr;
 
   buttons_.erase(buttons_.begin() + static_cast<std::ptrdiff_t>(buttons), buttons_.end());

@@ -8,6 +8,23 @@
 // looked the file up in the background, then "Deleting …" until the
 // deletion ends.
 
+bool Menu::canRequestDelete(const std::string& file) const {
+  return view_.deletable == MenuView::Deletable::Yes && !view_.currentFile.empty() && file == view_.currentFile;
+}
+
+MenuCommand Menu::requestDelete() {
+  if (!canRequestDelete(view_.currentFile) || dialog_ != Dialog::None) return {};
+  deleteInfo_ = {};
+  deleteInfo_.file = view_.currentFile;
+  deleteInfo_.name = view_.currentFile.substr(view_.currentFile.find_last_of('/') + 1);
+  deleteInfo_.photo = view_.photo;
+  openDialog(Dialog::ConfirmDelete, view_.currentFile);
+  MenuCommand c;
+  c.type = MenuCommand::RequestDelete;
+  c.path = view_.currentFile;
+  return c;
+}
+
 void Menu::askDelete(const DeleteInfo& info) {
   if (dialog_ != Dialog::ConfirmDelete || dialogPath_ != info.file) return;
   deleteInfo_ = info;

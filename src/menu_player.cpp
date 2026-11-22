@@ -239,17 +239,8 @@ void Menu::layoutMain() {
                       : view_.deletable == MenuView::Deletable::StashDown ? t.deletion.tipStashDown
                       : view_.photo                                       ? t.tipDeletePhoto
                                                                           : t.tipDelete;
-    Button& trash = strip.round(afterX + kButton + kCluster, Icon::Trash, tip, [this] {
-      deleteInfo_ = {};
-      deleteInfo_.file = view_.currentFile;
-      deleteInfo_.name = view_.currentFile.substr(view_.currentFile.find_last_of('/') + 1);
-      deleteInfo_.photo = view_.photo;
-      openDialog(Dialog::ConfirmDelete, view_.currentFile);
-      MenuCommand c;
-      c.type = MenuCommand::RequestDelete;
-      c.path = view_.currentFile;
-      return c;
-    });
+    Button& trash = strip.round(afterX + kButton + kCluster, Icon::Trash, tip,
+                                [this] { return requestDelete(); });
     trash.dangerHover = can;
     trash.disabled = !can;
   }
@@ -439,14 +430,15 @@ bool Menu::showListPage(Page page) {
   }
 }
 
-// "English (eng)", "eng" or "Track 2".
-std::string Menu::trackName(const Track& track) const {
+std::string trackName(const Track& track, const Strings& t) {
   std::string s = !track.title.empty() ? track.title
                   : !track.lang.empty() ? track.lang
-                                        : std::string(text().track) + " " + std::to_string(track.id);
+                                        : std::string(t.track) + " " + std::to_string(track.id);
   if (!track.title.empty() && !track.lang.empty()) s += " (" + track.lang + ")";
   return s;
 }
+
+std::string Menu::trackName(const Track& track) const { return ::trackName(track, text()); }
 
 double Menu::seekLineY() const { return strip::kBandY + strip::kBandH / 2; }
 

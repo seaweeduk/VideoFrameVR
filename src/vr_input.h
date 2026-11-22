@@ -58,7 +58,7 @@ inline StickDirections stickDirections(const HandState& hand) {
 
 // A thumbstick held forward or back, to move the surround viewpoint: only
 // once it has been held there a moment, and not after it went sideways (a
-// seek or a turn) until it is let go, so that a thumb sweeping round to seek
+// seek) until it is let go, so that a thumb sweeping round to seek
 // or brushing past doesn't move the picture.
 class ForwardStick {
  public:
@@ -96,106 +96,11 @@ inline float wristTwist(const Quat& from, const HandState& hand) {
   return degrees;
 }
 
-// The volume gesture: with one grip held, hold the trigger (pointer off the
-// menu) and twist that wrist. Both grips together disable this gesture.
-// Only the trigger hand's twist counts, so
-// the other hand can't change the volume by moving.
-class WristRoll {
- public:
-  // Each frame. Returns how far the twisting hand turned about its pointer
-  // since the last frame, in degrees, clockwise as the user sees it
-  // positive; 0 while there is no such hand.
-  float update(const ControllerState& input, const bool onMenu[2]) {
-    if (hand_ >= 0 && (!input.hands[hand_].select || !oneGrip(input))) hand_ = -1;
-    for (int i = 0; i < 2 && hand_ < 0; ++i) {
-      const HandState& h = input.hands[i];
-      if (h.selectPressed && h.poseValid && !onMenu[i] && oneGrip(input)) {
-        hand_ = i;
-        last_ = h.aimOrientation;
-        return 0;
-      }
-    }
-    if (hand_ < 0 || !input.hands[hand_].poseValid) return 0;
-    const float degrees = wristTwist(last_, input.hands[hand_]);
-    last_ = input.hands[hand_].aimOrientation;
-    return degrees;
-  }
-  int hand() const { return hand_; }  // -1 = none
-
- private:
-  static bool oneGrip(const ControllerState& input) {
-    return input.hands[0].grip != input.hands[1].grip;
-  }
-  int hand_ = -1;
-  Quat last_;
-};
-
-// The opacity gesture: hold one grip, its pointer off the menu as it goes
-// down and no trigger held, and twist that wrist. The first kDeadZone of
-// twist from how the hand was as the grip went down counts for nothing, so
-// a hand resting on the grip or moving a little changes nothing; past it,
-// every degree counts. A trigger going down (the volume gesture takes over),
-// the other grip or letting go ends it until the grip goes down again.
-class GripTwist {
- public:
-  static constexpr float kDeadZone = 20.0f;  // degrees
-
-  // Each frame; allowed: the gesture can apply now, else it ends. Returns
-  // how far the hand turned about its pointer since the last frame beyond
-  // the dead zone, in degrees, clockwise as the user sees it positive; 0
-  // while there is no such hand or it is still within the dead zone.
-  float update(const ControllerState& input, const bool onMenu[2], bool allowed) {
-    const bool trigger = input.hands[0].select || input.hands[1].select;
-    if (hand_ >= 0 && (!allowed || trigger || !input.hands[hand_].grip ||
-                       input.hands[1 - hand_].grip))
-      cancel();
-    for (int i = 0; i < 2 && hand_ < 0 && allowed && !trigger; ++i) {
-      const HandState& h = input.hands[i];
-      if (h.gripPressed && h.poseValid && !onMenu[i] && !input.hands[1 - i].grip) {
-        hand_ = i;
-        last_ = h.aimOrientation;
-        tracked_ = true;
-        twist_ = 0;
-        changing_ = false;
-        return 0;
-      }
-    }
-    if (hand_ < 0) return 0;
-    const HandState& h = input.hands[hand_];
-    if (!h.poseValid) {
-      tracked_ = false;
-      return 0;
-    }
-    if (!tracked_) {  // tracked again: it goes on from here, not with the jump
-      tracked_ = true;
-      last_ = h.aimOrientation;
-      return 0;
-    }
-    const float degrees = wristTwist(last_, h);
-    last_ = h.aimOrientation;
-    if (changing_) return degrees;
-    twist_ += degrees;
-    if (std::abs(twist_) <= kDeadZone) return 0;
-    changing_ = true;
-    return twist_ - std::copysign(kDeadZone, twist_);
-  }
-  int hand() const { return hand_; }  // -1 = none
-  bool changing() const { return hand_ >= 0 && changing_; }  // twisted past the dead zone
-  // Ends it (another video opened) until the grip goes down again.
-  void cancel() { hand_ = -1; }
-
- private:
-  int hand_ = -1;
-  Quat last_;
-  bool tracked_ = false;
-  float twist_ = 0;        // degrees since the grip went down, until past the dead zone
-  bool changing_ = false;  // past it
-};
-
-// Seeking with the right stick sideways (or an arrow key): the video jumps
-// once, when the input is let go. A tap jumps kTap. Held past kDelay, the
-// caller pauses the video and shows the seek bar while the target glides on,
-// as far as the video goes, and the video jumps there on letting go. How far
+// Seeking with a stick sideways (or an arrow key): the video jumps once,
+// when the input is let go. A tap jumps tap() (Skip's length). Held past
+// kDelay, the caller pauses the video and shows the seek bar while the
+// target glides on, as far as the video goes, and the video jumps there on
+// letting go. How far
 // the stick is pushed sets the speed: a little creeps (kCreep), all the way
 // goes a fifth of the top speed and, kept there, speeds up to the top, at
 // which the whole video passes in kCross. A hold starts at kPress and lasts
@@ -204,7 +109,6 @@ class GripTwist {
 // second and flashed each new picture.
 class HeldSeek {
  public:
-  static constexpr double kTap = 10;        // seconds
   static constexpr double kDelay = 0.4;     // seconds down before a hold
   static constexpr float kPress = 0.6f;     // stick deflection that starts it
   static constexpr float kKeep = 0.25f;     // ... and keeps it going
@@ -219,6 +123,9 @@ class HeldSeek {
     bool held = false;         // ... after holdStarted
     double distance = 0;       // seconds
   };
+
+  void setTap(double seconds) { tap_ = seconds; }
+  double tap() const { return tap_; }
 
   // back and forward: how far the input is pushed each way (0..1; a key 1).
   // least and most: how far the video goes back and on from where it is;
@@ -236,7 +143,7 @@ class HeldSeek {
       direction_ = forward >= kPress ? 1 : -1;
       s.pressed = true;
       since_ = last_ = now;
-      distance_ = std::clamp(direction_ * kTap, least, most);
+      distance_ = std::clamp(direction_ * tap_, least, most);
       return s;
     }
     const float push = direction_ > 0 ? forward : back;
@@ -283,6 +190,7 @@ class HeldSeek {
     distance_ = fullFor_ = 0;
   }
 
+  double tap_ = 10;    // seconds
   int direction_ = 0;  // -1 back, 1 forward, 0 not down
   bool holding_ = false;
   bool ignore_ = false;

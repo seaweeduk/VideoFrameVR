@@ -178,7 +178,8 @@ void moveOntoFrame(ControllerBindings& b, const json& remapping) {
           if (!from.empty() && !target.empty()) to[from] = {target};
         }
   }
-  for (std::vector<Source>& sources : b.sources) {
+  // `one`: each control onto one (a twist's keep their number).
+  auto move = [&](std::vector<Source>& sources, bool one) {
     std::vector<Source> moved;
     for (const Source& s : sources) {
       std::string control = controlOf(s.input);
@@ -195,20 +196,33 @@ void moveOntoFrame(ControllerBindings& b, const json& remapping) {
         std::string c = controlOf(target.substr(handPath(hand).size()));
         for (const auto& [openxr, steamvr] : kSteamvrNames)
           if (c == steamvr && std::string(openxr) != "menu") c = openxr;
-        Source m{hand, "/input/" + c + feature, ""};
-        if (std::find(moved.begin(), moved.end(), m) == moved.end()) moved.push_back(m);
+        Source m{hand, "/input/" + c + feature};
+        if (one || std::find(moved.begin(), moved.end(), m) == moved.end()) moved.push_back(m);
+        if (one) break;
       }
     }
     sources = moved;
+  };
+  for (int i = 0; i < kControlActions; ++i) {
+    move(b.sources[i], false);
+    move(b.gripSources[i], false);
   }
+  for (ControllerBindings::Twist& twist : b.twists) move(twist.controls, true);
 }
 
 }  // namespace
 
+std::string capitalized(const std::string& line) {
+  if (line.empty() || !g_utf8_validate(line.c_str(), -1, nullptr)) return line;
+  char first[6];
+  const int n = g_unichar_to_utf8(g_unichar_toupper(g_utf8_get_char(line.c_str())), first);
+  return std::string(first, n) + (g_utf8_next_char(line.c_str()));
+}
+
 bool ControllerBindings::operator==(const ControllerBindings& o) const {
   for (int i = 0; i < kControlActions; ++i)
-    if (sources[i] != o.sources[i]) return false;
-  return profiles[0] == o.profiles[0] && profiles[1] == o.profiles[1];
+    if (sources[i] != o.sources[i] || gripSources[i] != o.gripSources[i]) return false;
+  return twists == o.twists && profiles[0] == o.profiles[0] && profiles[1] == o.profiles[1];
 }
 
 std::string controlOf(const std::string& input) {
@@ -249,7 +263,7 @@ std::string controlNames(std::vector<Source> sources, const ControllerStrings& t
     else if (c == "menu") name = t.menuButton;
     else if (c == "view") name = t.viewButton;
     else if (c == "select") name = t.selectButton;
-    else name = s.name.empty() ? c : s.name;
+    else name = c;
     if (!name.empty() && std::find(names.begin(), names.end(), name) == names.end())
       names.push_back(name);
   }
@@ -360,11 +374,17 @@ std::shared_ptr<const ControllerArt> loadControllerArt(const ControllerBindings&
 
   std::set<std::string> glyphs{"button_trigger"};
   for (int a = 0; a < kControlActions; ++a)
-    for (const Source& s : art->bindings.sources[a])
-      for (bool upDown : {false, true}) {
-        const std::string name = controlGlyph(s.input, static_cast<ControlAction>(a), upDown);
-        if (!name.empty()) glyphs.insert(name);
-      }
+    for (const auto* sources : {&art->bindings.sources[a], &art->bindings.gripSources[a]})
+      for (const Source& s : *sources)
+        for (bool upDown : {false, true}) {
+          const std::string name = controlGlyph(s.input, static_cast<ControlAction>(a), upDown);
+          if (!name.empty()) glyphs.insert(name);
+        }
+  for (const ControllerBindings::Twist& twist : art->bindings.twists)
+    for (const Source& s : twist.controls) {
+      const std::string name = controlGlyph(s.input, ControlAction::Select, false);
+      if (!name.empty()) glyphs.insert(name);
+    }
   const fs::path callouts = steamvr / "resources/webinterface/dashboard/images/bindingcallouts";
   for (const std::string& name : glyphs) {
     if (reuse && reuse->glyphs.count(name)) {

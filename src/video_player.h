@@ -90,6 +90,11 @@ class VideoPlayer {
   // keyframe before the time, or exactly to it (decoding up to it).
   void seekBy(double seconds);
   void seekTo(double seconds, bool exact);
+  // One frame on or back, then paused. Back decodes again from the keyframe
+  // before, so it goes as an exact seek does: not while a seek is on its
+  // way, and the next seek replaces it. Neither goes while a seek waits or
+  // is on its way. False: nothing was sent.
+  bool frameStep(bool back);
   // Loads an external subtitle file and selects it.
   void addSubtitle(const std::string& path);
   // Whether mpv draws subtitles into the video frame.
