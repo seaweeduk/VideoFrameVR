@@ -7,7 +7,7 @@ Frame build replaces it with the files in `libavcodec/` here. `vp9_v4l2m2m` is
 built too, but the app decodes VP9 in software.
 
 The release recipe (`packaging/release/build-sdk.sh`) copies them over the files
-of the same name in official FFmpeg 9.0.2, then applies `../ffmpeg-v4l2.patch`.
+of the same name in official FFmpeg 9.1, then applies `../ffmpeg-v4l2.patch`.
 That patch adds the extra files to FFmpeg's build and refuses to map Qualcomm
 compressed frames to the CPU. Nothing else in FFmpeg is changed, and the desktop
 build uses FFmpeg unmodified.
@@ -25,7 +25,7 @@ build uses FFmpeg unmodified.
   them the Frame's FFmpeg is GPL-3.0-or-later as a whole.
 
 Until November 2026 the build used the rpi-ffmpeg source tree with those changes
-as seven patches. The files here are that code, updated for FFmpeg 9.0.2.
+as seven patches. The files here are that code, updated for FFmpeg 9.1.
 
 ## What this project changed
 
@@ -66,6 +66,13 @@ All of it works around the Frame's `iris_driver` or fits the decoder to this app
      header itself still goes to Iris with those sets in it;
    - `hevc_mp4toannexb` puts the header's parameter sets before a keyframe's own
      instead of after them.
+
+   For 9.0.2 to 9.1, `hevc_mp4toannexb` leaves out a header parameter set that a
+   keyframe already carries byte for byte, and takes a new header from a packet's
+   side data. It keeps that header after a seek back unless the demuxer sends the
+   earlier one again (MP4 does, FLV and mpv's cache don't), and drops one that
+   arrives on a non-keyframe. FFmpeg's own `v4l2_buffers.c` fixed a reference
+   count these files don't have.
 3. Compare FFmpeg's own `v4l2_*` files with the previous release for fixes worth
    taking.
 4. Play the hardware checks on a headset before release. A build that compiles
