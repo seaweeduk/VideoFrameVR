@@ -2,6 +2,7 @@
 #include "remote.h"
 
 #include "file_util.h"
+#include "location.h"
 #include "library_schema.h"  // kLibrarySchema, made from library_schema.sql at build time
 #include "oshash.h"
 #include "app_dirs.h"
@@ -43,10 +44,6 @@ const std::map<int, const char*> kMigrations = {};
 constexpr int64_t kDay = 24 * 60 * 60;
 
 int64_t now() { return static_cast<int64_t>(std::time(nullptr)); }
-
-bool isStream(const std::string& location) {
-  return location.find("://") != std::string::npos && !remote::isRemote(location);
-}
 
 bool endsWith(const std::string& s, const char* tail) {
   const size_t n = std::char_traits<char>::length(tail);
@@ -451,8 +448,7 @@ struct Library::Writer {
       text(1, op.file.path);
       if (op.kind == Op::PutFile) {
         const File& f = op.file.file;
-        folder = remote::isRemote(op.file.path) ? remote::parent(op.file.path)
-                                        : fs::path(op.file.path).parent_path().string();
+        folder = parentFolder(op.file.path);
         text(2, folder);
         integer(3, f.videoId, false);
         integer(4, static_cast<int64_t>(f.size), false);

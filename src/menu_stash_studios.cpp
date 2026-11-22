@@ -200,8 +200,7 @@ void StashPages::staleStudios(Menu& m) {
 void StashPages::showStudios(Menu& m) {
   const double scroll = pageOf(state(m)).scroll;
   m.showPage(Menu::Page::StashStudios);
-  m.list_.offset = static_cast<int>(std::floor(scroll));
-  m.list_.fraction = scroll - m.list_.offset;
+  m.list_.setPosition(scroll);
 }
 
 void StashPages::leaveStudios(Menu& m) {
@@ -327,7 +326,7 @@ void StashPages::layoutStudios(Menu& m) {
       b.date = stashJoined({s.newestDate.empty() ? "" : stashPrinted(t.newest, s.newestDate),
                             s.rated ? stashPrinted(t.stars, s.average()) : ""});
       b.scrolls = true;
-      b.stashLook = static_cast<int>(StashLook::Studio);
+      b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::Studio);
       b.stashId = studio.id;
       b.action = [&m, id = studio.id] {
         showStudio(m, id);

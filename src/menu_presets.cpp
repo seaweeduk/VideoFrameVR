@@ -235,7 +235,7 @@ void Menu::layoutPresetList(const Button& opener) {
                                    },
                                    i == view_.userPresetShown),
                         x, y, nameW);
-    name->listItem = true;
+    name->part = PartKind::ListItem;
     if (view_.presets) name->tooltip = presetSummary(view_.presets->with(preset, defaultSettings()));
     double bx = x + nameW + gap;
     // Moved off the page shown, the page goes with it.
@@ -267,7 +267,8 @@ void Menu::layoutPresetList(const Button& opener) {
     openPresetName({}, {});
     return MenuCommand{};
   });
-  save.listItem = save.bare = save.on = true;  // in the accent: an action
+  save.part = PartKind::ListItem;
+  save.bare = save.on = true;  // in the accent: an action
   item(save, x0, rowsTop + rows * step, kListW);
   if (!paged) return;
   // The pages, as the places' (layoutNavigation()): beside Save as preset,
@@ -289,7 +290,7 @@ void Menu::layoutPresetList(const Button& opener) {
   Button dots;
   dots.panel = kBrowser;
   dots.popup = true;
-  dots.listLook = static_cast<int>(ListLook::PagerDots);
+  dots.part = PartKind::List, dots.look = static_cast<int>(ListLook::PagerDots);
   dots.x = px + rowH;
   dots.y = py;
   dots.w = kListW - 2 * rowH;

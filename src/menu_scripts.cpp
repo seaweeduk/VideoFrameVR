@@ -81,11 +81,13 @@ void Menu::layoutScriptSettings(PageLayout& page) {
       .mark(0)
       .tip(t.offsetHint);
   motion.note(t.offsetHint);
-  motion.value(t.rangeLow, MenuCommand::SetScriptRangeLow, s.rangeLow, 0, 100 - kScriptRangeGap,
+  motion.value(t.rangeLow, MenuCommand::SetScriptRangeLow, s.rangeLow, value_range::kScriptStroke.least,
+               value_range::kScriptStroke.most - kScriptRangeGap,
                std::to_string(s.rangeLow) + " %")
       .format(withUnit(" %"))
       .tip(t.rangeHint);
-  motion.value(t.rangeHigh, MenuCommand::SetScriptRangeHigh, s.rangeHigh, kScriptRangeGap, 100,
+  motion.value(t.rangeHigh, MenuCommand::SetScriptRangeHigh, s.rangeHigh, kScriptRangeGap,
+               value_range::kScriptStroke.most,
                std::to_string(s.rangeHigh) + " %")
       .format(withUnit(" %"))
       .tip(t.rangeHint);

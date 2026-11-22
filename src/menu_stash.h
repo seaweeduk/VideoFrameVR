@@ -24,10 +24,10 @@
 #include <string>
 #include <vector>
 
-// How a Stash button is drawn (Menu::Button::stashLook).
+// How a Stash button is drawn (Menu::Button::look of a PartKind::Stash).
 enum class StashLook {
   None,
-  // Over a scene's list row (ListLook::Overlay): its plays, studio, release
+  // Over a scene's list row, not clickable: its plays, studio, release
   // date and length (`plays`, `size`, `date`, `caption`) in their columns,
   // and the downloaded tick.
   SceneColumns,
@@ -156,14 +156,7 @@ struct StashMenu : StashBrowse {
   bool showPassword = false;
   // Signing in (StashClient::signIn()) on Save: the result once it's done,
   // and why the last one failed.
-  struct SignIn {
-    bool ok = false, refused = false;
-    bool untrusted = false;  // failed on a certificate that isn't trusted
-    std::string host;        // ... the server's, as Save sent it
-    std::string url;  // where Stash answered, if it did
-    ServerKind kind = ServerKind::Stash;  // ... and as which kind (findServer())
-    std::string apiKey, error;
-  };
+  using SignIn = StashSignIn;
   std::future<SignIn> signingIn;
   std::string signInError;
   // The last Save found another kind at the address than its fields were

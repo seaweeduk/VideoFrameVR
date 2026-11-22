@@ -23,6 +23,7 @@
 #include "key_picker.h"
 #include "library.h"
 #include "library_index.h"
+#include "location.h"
 #include "mask_probe.h"
 #include "menu.h"
 #include "mirror_window.h"
@@ -662,13 +663,12 @@ int run(Options opts) {
   memory.load();
   Library library;
   library.load();
-  menu.setLibrary(&library);
   LibraryIndex libraryIndex;  // the videos in the pinned folders (library_index.h)
   if (!setupForced) libraryIndex.start();  // it writes its own file
   menu.setLibraryIndex(&libraryIndex);
   Offline offline;  // offline downloads (offline.h)
   offline.start();
-  menu.setOffline(&offline);
+  menu.setServices({&library, &offline});
   // Stash (optional, docs/stash.md): none while it is off or not set up.
   std::unique_ptr<Stash> stash;
   // Funscripts on a device (script_player.h): nothing of it runs while off.
@@ -1141,7 +1141,7 @@ int run(Options opts) {
         if (player.loading() || player.playback().duration <= kSeekEndMargin || stickSeek.active()) return "";
         break;
       case V::Rating:
-        if (isStream(running.currentFile)) return said.notForStreams;
+        if (isLink(running.currentFile)) return said.notForStreams;
         if (!library.available()) return said.ratingsLocked;
         if (!library.known(running.currentFile)) return "";  // its rating isn't read yet
         break;
@@ -1694,7 +1694,7 @@ int run(Options opts) {
           break;
         case Job::RatingUp:
         case Job::RatingDown:
-          if (isStream(running.currentFile)) {
+          if (isLink(running.currentFile)) {
             say(said.notForStreams);
             break;
           }
@@ -1723,7 +1723,7 @@ int run(Options opts) {
           if (!menu.canRequestDelete(running.currentFile)) {
             using D = MenuView::Deletable;
             const D d = menu.deletable();
-            if (isStream(running.currentFile)) say(said.notForStreams);
+            if (isLink(running.currentFile)) say(said.notForStreams);
             else if (d == D::NeedsSendToStash) say(said.deleteNeedsStash);
             else if (d == D::StashDown) say(strings().deletion.tipStashDown);
             else if (d == D::No) say(said.serverKeeps);

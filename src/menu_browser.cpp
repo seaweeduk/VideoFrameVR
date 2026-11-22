@@ -3,6 +3,7 @@
 #include "menu_list_parts.h"
 
 #include "file_util.h"
+#include "location.h"
 #include "menu_stash.h"  // stashPrinted
 #include "menu_stash_covers.h"
 #include "thumbnailer.h"
@@ -29,10 +30,8 @@ void Menu::openFiles(FileKind kind) {
   std::vector<std::string> fallbacks;
   if (dir.empty()) {
     if (!files_.startDirectory.empty()) fallbacks.push_back(files_.startDirectory);
-    if (remote::isRemote(view_.currentFile))
-      fallbacks.push_back(remote::parent(view_.currentFile));
-    else if (!view_.currentFile.empty() && view_.currentFile.find("://") == std::string::npos)
-      fallbacks.push_back(fs::path(view_.currentFile).parent_path().string());
+    if (!view_.currentFile.empty() && !isStream(view_.currentFile))
+      fallbacks.push_back(parentFolder(view_.currentFile));
     fallbacks.push_back(std::getenv("HOME") ? std::getenv("HOME") : "/");
     dir = fallbacks.front();
     fallbacks.erase(fallbacks.begin());
@@ -99,7 +98,7 @@ void Menu::folderRead() {
 // Also what makes the library notice moved and changed files in the folder.
 void Menu::lookUpRecords() {
   if (!library_) return;
-  files_.records = library_->lookup(files_.listing.entries());
+  files_.records = services_.lookUp(files_.listing.entries());
   files_.recordsGeneration = library_->generation();
 }
 
@@ -250,8 +249,7 @@ void Menu::scrollToItem(const std::string& path, double rowsFromTop, int index) 
     const double row = i / columns;
     position = std::clamp(row - rowsFromTop, 0.0, std::max(0.0, rows - folderRows() + 0.0));
   }
-  list_.offset = static_cast<int>(std::floor(position));
-  list_.fraction = position - list_.offset;
+  list_.setPosition(position);
 }
 
 // Scrolls as little as needed to show the item whole, if it is listed.
@@ -286,8 +284,7 @@ void Menu::scrollToPlace(const ListPlace& place, const std::vector<std::string>&
   const auto found = std::find(paths.begin(), paths.end(), place.path);
   const int i = found != paths.end() ? static_cast<int>(found - paths.begin()) : place.index;
   const double position = std::max(0.0, i / columns - place.rowsFromTop);
-  list_.offset = static_cast<int>(std::floor(position));
-  list_.fraction = position - list_.offset;
+  list_.setPosition(position);
 }
 
 // A folder row: opens the folder.
@@ -455,7 +452,8 @@ void Menu::addList(const std::vector<ListItem>& items, double x0, double rowH, i
       buttons_.back().ratingVideo = items[i].ratingVideo;
       buttons_.back().scrolls = true;
       buttons_.back().iconSize = kRowStarSize;
-      buttons_.back().listLook = static_cast<int>(ListLook::RowStars);
+      buttons_.back().part = PartKind::List;
+      buttons_.back().look = static_cast<int>(ListLook::RowStars);
     }
   }
   Button row;
@@ -541,7 +539,7 @@ void Menu::addScrollbar() {
   bar.h = list_.bottom - list_.top;
   bar.radius = kScrollTrackW / 2;
   bar.bare = true;
-  bar.scrollbar = true;
+  bar.part = PartKind::Scrollbar;
   bar.action = [] { return MenuCommand{}; };  // handled in click()/drag()
   buttons_.push_back(bar);
 }
@@ -837,9 +835,7 @@ void Menu::layoutFilesPage() {
 
   Button& up = addRound(Icon::FolderUp, t.tipParent,
                         [this] {
-                          const std::string parent =
-                              remote::isRemote(directory()) ? remote::parent(directory())
-                                                      : fs::path(directory()).parent_path().string();
+                          const std::string parent = parentFolder(directory());
                           if (!parent.empty())
                             openDirectory(parent);
                           else if (remote::isRemote(directory()))

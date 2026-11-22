@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <condition_variable>
 #include <cstdio>
 #include <ctime>
 #include <functional>
@@ -228,11 +227,9 @@ bool makePlan(MediaClient& client, StashOutbox& outbox,
 
 }  // namespace
 
-struct StashWriteBack::Shared {
+struct StashWriteBack::Shared : StashWorkerShared {
   StashSettings settings;
-  std::mutex mutex;
-  std::condition_variable wake;
-  bool stop = false, deliver = false;
+  bool deliver = false;
   bool paused = false;  // write-back off: nothing is sent, what waits is kept
   enum class Ask { None, Plan, Send } ask = Ask::None;
   uint64_t ticket = 0;  // the one-off asked for; a closed one's result is dropped
@@ -250,7 +247,6 @@ struct StashWriteBack::Shared {
     int64_t scene = 0;
     std::vector<int64_t> add, remove;
   } tags;
-  MediaClient* client = nullptr;  // the request under way, to stop it
   // What the worker finished, for poll().
   bool changed = false;
   StashWriteBackStatus status;
@@ -260,45 +256,30 @@ struct StashWriteBack::Shared {
   StashTagSave tagSave;
 };
 
-StashWriteBack::StashWriteBack(const StashSettings& settings) : shared_(std::make_shared<Shared>()) {
+StashWriteBack::StashWriteBack(const StashSettings& settings) {
   shared_->settings = settings;
-  worker_ = std::thread(work, shared_);
+  shared_.start(work);
 }
 
-StashWriteBack::~StashWriteBack() {
-  stop();
-  if (worker_.joinable()) worker_.join();
-}
+StashWriteBack::~StashWriteBack() = default;
 
-void StashWriteBack::stop() {
-  {
-    std::lock_guard<std::mutex> lock(shared_->mutex);
-    shared_->stop = true;
-    if (shared_->client) shared_->client->cancel();
-  }
-  shared_->wake.notify_one();
-}
+void StashWriteBack::stop() { shared_.stop(); }
 
 void StashWriteBack::rated(const std::string& oshash, float stars) {
-  {
-    std::lock_guard<std::mutex> lock(shared_->mutex);
+  shared_.hand([&] {
     shared_->events.push_back({oshash, true, stars, 0, 0});
-  }
-  shared_->wake.notify_one();
+  });
 }
 
 void StashWriteBack::played(const std::string& oshash, int64_t at, int count) {
   if (count <= 0 || at <= 0) return;
-  {
-    std::lock_guard<std::mutex> lock(shared_->mutex);
+  shared_.hand([&] {
     shared_->events.push_back({oshash, false, 0, at, count});
-  }
-  shared_->wake.notify_one();
+  });
 }
 
 void StashWriteBack::setEnabled(bool on) {
-  {
-    std::lock_guard<std::mutex> lock(shared_->mutex);
+  shared_.hand([&] {
     shared_->paused = !on;
     shared_->deliver = on;
     if (!on) {
@@ -308,41 +289,34 @@ void StashWriteBack::setEnabled(bool on) {
       shared_->tags.pending = false;  // never sent later, out of sight
       if (shared_->client) shared_->client->cancel();
     }
-  }
+  });
   if (!on) plan_ = StashSendPlan{};
   if (!on && tagSave_.state == StashTagSave::State::Saving) tagSave_.state = StashTagSave::State::Failed;
-  shared_->wake.notify_one();
 }
 
 void StashWriteBack::deliver() {
-  {
-    std::lock_guard<std::mutex> lock(shared_->mutex);
+  shared_.hand([&] {
     shared_->deliver = true;
-  }
-  shared_->wake.notify_one();
+  });
 }
 
 void StashWriteBack::plan(std::vector<StashLibraryEntry> library) {
-  {
-    std::lock_guard<std::mutex> lock(shared_->mutex);
+  shared_.hand([&] {
     shared_->library = std::move(library);
     shared_->ask = Shared::Ask::Plan;
     ++shared_->ticket;
-  }
+  });
   plan_ = StashSendPlan{};
   plan_.state = StashSendPlan::State::Checking;
-  shared_->wake.notify_one();
 }
 
 void StashWriteBack::send(std::vector<StashLibraryEntry> library) {
-  {
-    std::lock_guard<std::mutex> lock(shared_->mutex);
+  shared_.hand([&] {
     shared_->library = std::move(library);
     shared_->ask = Shared::Ask::Send;
     ++shared_->ticket;
-  }
+  });
   plan_.state = StashSendPlan::State::Sending;
-  shared_->wake.notify_one();
 }
 
 void StashWriteBack::closePlan() {
@@ -358,13 +332,11 @@ void StashWriteBack::closePlan() {
 
 void StashWriteBack::saveTags(int64_t scene, std::vector<int64_t> add,
                               std::vector<int64_t> remove) {
-  {
-    std::lock_guard<std::mutex> lock(shared_->mutex);
+  shared_.hand([&] {
     shared_->tags = {true, scene, std::move(add), std::move(remove)};
     shared_->tagsChanged = false;
-  }
+  });
   tagSave_ = {StashTagSave::State::Saving, scene, 0};
-  shared_->wake.notify_one();
 }
 
 bool StashWriteBack::poll() {

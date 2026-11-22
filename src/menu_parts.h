@@ -352,6 +352,10 @@ class Menu::DialogLayout {
   // A part at the left end of the buttons' row (What's new's switch), its x
   // from the box's left edge, centred on the row.
   void beside(Button b);
+  // A button for beside(), `x` from the box's left edge, raised as the
+  // dialog's own are.
+  Button besideButton(const char* label, std::function<MenuCommand()> action,
+                      double x = kEdge) const;
 
  private:
   Menu& menu_;

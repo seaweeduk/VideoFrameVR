@@ -79,7 +79,7 @@ StashBrowse::Sources StashPages::sources(const Menu& m) {
 }
 
 StashBrowse::Page StashPages::listPage(const Menu& m) {
-  return {m.view_.stash, fixedPerformer(m), fixedStudio(m), m.page_ == Menu::Page::StashPerformers};
+  return {*m.view_.stash, fixedPerformer(m), fixedStudio(m), m.page_ == Menu::Page::StashPerformers};
 }
 
 StashBrowse::Host StashPages::browseHost(Menu& m) {
@@ -105,8 +105,7 @@ void StashPages::showScenes(Menu& m) {
   StashMenu& st = state(m);
   m.showPage(Menu::Page::StashScenes);
   st.full = StashFull::None;
-  m.list_.offset = static_cast<int>(std::floor(st.scroll));
-  m.list_.fraction = st.scroll - m.list_.offset;
+  m.list_.setPosition(st.scroll);
   m.side_.position = st.railPosition;
   st.placePending = true;
 }
@@ -182,8 +181,7 @@ bool StashPages::enterList(Menu& m, std::optional<StashSavedList>& scenes,
   st.scroll = scroll;
   st.placePending = kept;
   st.stale = true;
-  m.list_.offset = static_cast<int>(std::floor(scroll));
-  m.list_.fraction = scroll - m.list_.offset;
+  m.list_.setPosition(scroll);
   m.dirty_ = true;
   return kept;
 }
@@ -292,8 +290,7 @@ void StashPages::leavePin(Menu& m) {
   st.stale = true;
   st.placePending = true;
   m.editing_ = false;
-  m.list_.offset = static_cast<int>(std::floor(own.scroll));
-  m.list_.fraction = own.scroll - m.list_.offset;
+  m.list_.setPosition(own.scroll);
   m.side_.position = own.rail;
   m.dirty_ = true;
 }
@@ -352,7 +349,7 @@ StashPages::Button StashPages::facetButton(Menu& m, const std::string& label,
   b.dim = state == 2;  // left out
   b.bare = true;
   b.radius = kit::kCorner;
-  b.stashLook = static_cast<int>(StashLook::Facet);
+  b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::Facet);
   b.action = [include] {
     include();
     return MenuCommand{};
@@ -375,7 +372,7 @@ StashPages::Button StashPages::excludeButton(Menu&, int state, std::function<voi
   b.bare = true;
   b.dangerHover = true;
   b.radius = kit::kCorner;
-  b.stashLook = static_cast<int>(StashLook::Exclude);
+  b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::Exclude);
   b.tooltip = strings().stash.tipExclude;
   b.action = [exclude] {
     exclude();
@@ -397,7 +394,7 @@ StashPages::Button StashPages::actionButton(Menu& m, const std::string& label, S
   b.fontSize = h < 48 ? kHintSize : kit::kRowSize;
   b.w = m.textWidth(label, b.fontSize, false) + 2 * a.pad + (icon != StashIcon::None ? a.icon + a.gap : 0);
   b.radius = kit::kCorner;
-  b.stashLook = static_cast<int>(StashLook::Action);
+  b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::Action);
   b.stashIcon = static_cast<int>(icon);
   b.action = std::move(action);
   return b;
@@ -693,7 +690,7 @@ double StashPages::layoutChips(Menu& m, double x, double right, double y) {
     b.latched = !chip.out;
     b.bare = true;
     b.radius = h / 2;
-    b.stashLook = static_cast<int>(StashLook::Chip);
+    b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::Chip);
     const auto remove = chip.remove;
     b.action = [&m, remove] {
       changeList(m, remove);
@@ -732,7 +729,7 @@ void StashPages::layoutRail(Menu& m, const std::vector<StashRailLine>& rail, dou
         Button b;
         b.panel = Menu::kBrowser;
         b.label = l.label;
-        b.listLook = static_cast<int>(ListLook::Heading);
+        b.part = PartKind::List, b.look = static_cast<int>(ListLook::Heading);
         b.bare = true;
         b.dimInk = true;
         b.x = x + kit::kSpace - 12;
@@ -781,7 +778,7 @@ void StashPages::layoutRail(Menu& m, const std::vector<StashRailLine>& rail, dou
         b.bare = true;
         b.radius = kit::kCorner;
         b.side = true;
-        b.stashLook = static_cast<int>(StashLook::Link);
+        b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::Link);
         const auto include = l.include;
         b.action = l.command ? l.command : [include] {
           include();
@@ -1061,8 +1058,7 @@ void StashPages::layoutList(Menu& m, double x0, double top) {
     columns.y = b.y;
     columns.w = b.w;
     columns.h = b.h;
-    columns.listLook = static_cast<int>(ListLook::Overlay);
-    columns.stashLook = static_cast<int>(StashLook::SceneColumns);
+    columns.part = PartKind::Stash, columns.look = static_cast<int>(StashLook::SceneColumns);
     if (history && st.history[index].plays > 0) columns.plays = stashNumber(st.history[index].plays);
     columns.date = s.date;
     columns.caption = s.duration > 0 ? formatTime(s.duration) : "";
@@ -1074,7 +1070,7 @@ void StashPages::layoutList(Menu& m, double x0, double top) {
                                   cols.rating, b.y + kRowPictureIn, kRowStarW, b.h - 2 * kRowPictureIn);
     stars.scrolls = true;
     stars.iconSize = kRowStarSize;
-    stars.listLook = static_cast<int>(ListLook::RowStars);
+    stars.part = PartKind::List, stars.look = static_cast<int>(ListLook::RowStars);
     m.buttons_.push_back(stars);
   }
   wantThumbnails(m, first, end, m.list_.rows, pw);
@@ -1118,8 +1114,7 @@ void StashPages::layoutFull(Menu& m, double x0, double top) {
         s.full = StashFull::None;
         m.editing_ = false;
         const double scroll = cards ? s.performers.scroll : s.scroll;
-        m.list_.offset = static_cast<int>(std::floor(scroll));
-        m.list_.fraction = scroll - m.list_.offset;
+        m.list_.setPosition(scroll);
         return MenuCommand{};
       },
       x0, top, h);
@@ -1323,7 +1318,7 @@ void StashPages::layoutScenes(Menu& m) {
 }
 
 std::string StashPages::title(const Menu& m, const StashScene& s) {
-  return m.view_.stash.titles ? s.displayTitle() : s.fileName();
+  return m.view_.stash->titles ? s.displayTitle() : s.fileName();
 }
 
 std::string StashPages::performers(const Menu& m, const StashScene& s) {
@@ -1332,7 +1327,7 @@ std::string StashPages::performers(const Menu& m, const StashScene& s) {
   if (!c) return names;
   for (const int p : s.performers) {
     const StashPerformer& performer = c->performers()[p];
-    if (!stashShown(performer.gender, m.view_.stash.malePerformers)) continue;
+    if (!stashShown(performer.gender, m.view_.stash->malePerformers)) continue;
     names += (names.empty() ? "" : ", ") + performer.name;
   }
   return names;

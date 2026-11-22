@@ -34,7 +34,7 @@ double navIconSize(int listLook) {
 }  // namespace
 
 double Menu::navLabelWidth(const Button& b) const {
-  const double textX = b.x + kit::kSpace + navIconSize(b.listLook) + kNavIconGap;
+  const double textX = b.x + kit::kSpace + navIconSize(b.look) + kNavIconGap;
   double right = b.x + b.w - (b.inner > 0 ? b.inner : kit::kSpace);
   if (!b.badge.empty()) right -= 30 + kit::kSpace;
   return right - textX;
@@ -42,12 +42,12 @@ double Menu::navLabelWidth(const Button& b) const {
 
 void Menu::drawListPart(cairo_t* cr, const Button& b, const double ink[4]) const {
   const Palette& pal = palette();
-  switch (static_cast<ListLook>(b.listLook)) {
+  switch (static_cast<ListLook>(b.look)) {
     case ListLook::NavSection:
     case ListLook::NavPlace: {
       // Its icon (dim, in the accent while chosen), then the label; room
       // at its end for a button of its own (`inner`) or its badge.
-      const double iconSize = navIconSize(b.listLook), cy = b.y + b.h / 2;
+      const double iconSize = navIconSize(b.look), cy = b.y + b.h / 2;
       double icon[4];
       iconInk(b, ink, icon);
       const double* text = ink;
@@ -148,7 +148,6 @@ void Menu::drawListPart(cairo_t* cr, const Button& b, const double ink[4]) const
       return;
     }
     case ListLook::RowStars:  // drawRating()'s
-    case ListLook::Overlay:   // its stashLook's
     case ListLook::None:
       return;
   }
@@ -227,7 +226,7 @@ Menu::Button Menu::cardBadge(const Button& card, const std::string& label) const
   Button b;
   b.panel = card.panel;
   b.label = label;
-  b.listLook = static_cast<int>(ListLook::Badge);
+  b.part = PartKind::List, b.look = static_cast<int>(ListLook::Badge);
   b.x = x + kit::kSpaceTight;
   b.y = y + kit::kSpaceTight;
   b.w = textWidth(label, 20, true) + 2 * 12;
@@ -271,7 +270,7 @@ double Menu::toolsWell(double x, double y, const std::vector<ToolPiece>& pieces,
     if (p.icon != Icon::None) {
       b.iconSize = 28;
     } else {
-      b.listLook = static_cast<int>(ListLook::Counted);
+      b.part = PartKind::List, b.look = static_cast<int>(ListLook::Counted);
       b.detail = p.count;
     }
     buttons_.push_back(b);
@@ -294,7 +293,7 @@ double Menu::toolsSort(double x, double y, const std::vector<SortField>& fields,
     return MenuCommand{};
   });
   value.panel = kBrowser;
-  value.select = true;
+  value.part = PartKind::Select;
   value.latched = open;
   value.x = x;
   value.y = y;
@@ -328,7 +327,7 @@ double Menu::toolsSort(double x, double y, const std::vector<SortField>& fields,
                             static_cast<int>(i) == chosen);
       e.panel = kBrowser;
       e.popup = true;
-      e.listItem = true;
+      e.part = PartKind::ListItem;
       e.fontSize = kit::kRowSize;
       e.radius = kit::kCorner;
       e.x = value.x + kPopPad;
@@ -368,7 +367,7 @@ void Menu::toolsSearch(double x, double y, double right, const std::string& word
   constexpr double h = kBrowserToolsH;
   Button search = textButton(words, Icon::Search, std::move(type), false);
   search.panel = kBrowser;
-  search.listLook = static_cast<int>(ListLook::Search);
+  search.part = PartKind::List, search.look = static_cast<int>(ListLook::Search);
   search.x = x;
   search.y = y;
   search.w = right - x;
@@ -411,7 +410,7 @@ void Menu::listHeading(const std::string& label, double x, double w, bool rightA
   b.label = label;
   b.action = std::move(sort);
   b.panel = kBrowser;
-  b.listLook = static_cast<int>(ListLook::Heading);
+  b.part = PartKind::List, b.look = static_cast<int>(ListLook::Heading);
   b.bare = true;
   b.on = sorted;
   b.dimInk = !sorted;
@@ -444,7 +443,7 @@ double Menu::headingsApart(const std::string& left, double leftX, bool leftEnds,
 const ListFit& Menu::listFit() const {
   if (listFit_.strings == &text()) return listFit_.fit;
   const Strings& t = text();
-  constexpr int size = 24;  // the rows' columns (drawButtonContent())
+  constexpr int size = 24;  // the rows' columns (drawPlainButton())
   ListFit& f = listFit_.fit;
   f = {};
   f.length = std::ceil(textWidth("0:00:00", size, false)) + 2;

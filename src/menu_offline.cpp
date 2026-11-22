@@ -21,7 +21,7 @@
 
 namespace {
 
-// How Menu::Button::offlineLook draws a button.
+// How a PartKind::Offline button is drawn (Menu::Button::look).
 enum class OfflineLook { None, Download, Row, Running, Drive, DriveChoice, Box };
 
 // Room a download leaves on its drive, as Offline keeps it.
@@ -72,16 +72,17 @@ void Menu::drawProgressBar(cairo_t* cr, double x, double y, double w, double fra
   cairo_fill(cr);
 }
 
-void Menu::setOffline(Offline* offline) {
-  offline_ = offline;
-  if (stashCovers_) stashCovers_->setOffline(offline);
+void Menu::setServices(const MenuServices& services) {
+  services_ = services;
+  library_ = services.library;
+  offline_ = services.offline;
+  if (stashCovers_) stashCovers_->setOffline(offline_);
 }
 
 void Menu::showOffline() {
   if (!offline_) return;
   showPage(Page::Offline);
-  list_.offset = static_cast<int>(std::floor(downloads_.scroll));
-  list_.fraction = downloads_.scroll - list_.offset;
+  list_.setPosition(downloads_.scroll);
 }
 
 // The library's oshash of a file, else Stash's.
@@ -202,7 +203,7 @@ MenuCommand Menu::downloadTo(const std::string& root) {
     openDialog(Dialog::NoRoom, ask.path);
     return {};
   }
-  offline_->add(ask.path, ask.size, ask.oshash, root);
+  services_.addDownload(ask.path, ask.size, ask.oshash, root);
   dirty_ = true;
   return {};
 }
@@ -232,7 +233,8 @@ void Menu::offlineChanged() {
     if (b.downloadId)
       for (const Offline::Download& x : offline_->downloads())
         if (x.id == b.downloadId) d = &x;
-    if (!d && !b.offlinePath.empty() && b.offlineLook != static_cast<int>(OfflineLook::Drive))
+    if (!d && !b.offlinePath.empty() &&
+        (b.part != PartKind::Offline || b.look != static_cast<int>(OfflineLook::Drive)))
       d = downloadOf(b.offlinePath);
     if (d && d->state == Offline::State::Copying)
       browserChanged(b.y - 2, b.y + b.h + 2, b.x - 2, b.x + b.w + 2);
@@ -255,7 +257,7 @@ void Menu::addOfflineButtons(const Button& item, double statusX, double lastLine
   const Offline::Download* d = downloadOf(path);
   if (!d) {
     if (!downloadable(path)) return;
-    b.offlineLook = static_cast<int>(OfflineLook::Download);
+    b.part = PartKind::Offline, b.look = static_cast<int>(OfflineLook::Download);
     b.hoverOnly = true;  // right after its row: shown while either is pointed at
     b.tooltip = t.tipDownload;
     if (tile) {
@@ -311,7 +313,7 @@ void Menu::drawOfflineState(cairo_t* cr, const Button& b, double x, double y, do
   const OfflineStrings& t = text().offline;
   const Palette& pal = palette();
   const bool tile = b.card;
-  const double radius = tile || !b.stashLook ? kit::kPieceCorner : 5;
+  const double radius = tile || b.part != PartKind::Stash ? kit::kPieceCorner : 5;
   cairo_save(cr);
   roundedRect(cr, x, y, w, h, radius);
   cairo_clip_preserve(cr);
@@ -418,7 +420,7 @@ void Menu::layoutOfflinePage() {
   if (offline_->toGo() > 0) {
     const bool paused = offline_->pausedAll();
     headerButton(right, paused ? t.resumeAll : t.pauseAll, [this, paused] {
-      offline_->pauseAll(!paused);
+      services_.pauseDownloads(!paused);
       return MenuCommand{};
     });
   }
@@ -448,7 +450,7 @@ void Menu::layoutOfflinePage() {
       tile.w = w;
       tile.h = well.h - 2 * in;
       tile.radius = kit::kPieceCorner;
-      tile.offlineLook = static_cast<int>(OfflineLook::Drive);
+      tile.part = PartKind::Offline, tile.look = static_cast<int>(OfflineLook::Drive);
       tile.offlinePath = drives[i].root;
       tile.selected = drives[i].root == chosen;
       tile.action = [root = drives[i].root] {
@@ -533,7 +535,7 @@ void Menu::layoutOfflinePage() {
       heading.w = rowW;
       heading.h = kListHeaderH;
       heading.label = e.heading;
-      heading.listLook = static_cast<int>(ListLook::Section);
+      heading.part = PartKind::List, heading.look = static_cast<int>(ListLook::Section);
       heading.scrolls = true;
       buttons_.push_back(heading);
       continue;
@@ -552,7 +554,8 @@ void Menu::layoutOfflinePage() {
     row.scrolls = true;
     row.fontSize = kit::kRowSize;
     row.downloadId = d.id;
-    row.offlineLook = static_cast<int>(e.units == 2 ? OfflineLook::Running : OfflineLook::Row);
+    row.part = PartKind::Offline;
+    row.look = static_cast<int>(e.units == 2 ? OfflineLook::Running : OfflineLook::Row);
     row.label = baseName(d.source);
     setThumbnailOrIcon(row, items.back());
     const std::string fileName = stashCovers_ ? describeFromStash(row, d.source) : "";
@@ -572,7 +575,7 @@ void Menu::layoutOfflinePage() {
       Button& button = addRound(remove ? Icon::Trash : Icon::Close, remove ? t.tipRemove : t.tipCancel,
                                 [this, id, remove, source = d.source] {
                                   if (!remove) {
-                                    offline_->cancel(id);
+                                    services_.cancelDownload(id);
                                     return MenuCommand{};
                                   }
                                   downloads_.ask = {};
@@ -591,7 +594,7 @@ void Menu::layoutOfflinePage() {
     }
     if (d.state == Offline::State::Failed) {
       Button again = textButton(t.tryAgain, Icon::None, [this, id] {
-        offline_->retry(id);
+        services_.retryDownload(id);
         return MenuCommand{};
       });
       again.panel = kBrowser;
@@ -608,11 +611,11 @@ void Menu::layoutOfflinePage() {
     if (e.units == 2) {  // Pause (all, as one copies at a time) and Cancel
       const bool paused = offline_->pausedAll();
       Button cancel = textButton(base.cancel, Icon::None, [this, id] {
-        offline_->cancel(id);
+        services_.cancelDownload(id);
         return MenuCommand{};
       });
       Button pause = textButton(paused ? t.resume : t.pause, Icon::None, [this, paused] {
-        offline_->pauseAll(!paused);
+        services_.pauseDownloads(!paused);
         return MenuCommand{};
       });
       for (Button* b : {&cancel, &pause}) {
@@ -662,7 +665,7 @@ void Menu::drawDownloadRow(cairo_t* cr, const Button& b, const double ink[4]) co
   listPicture(b, tx, ty, tw, th);
   const double nameX = tx + tw + kRowNameGap;
   double end = b.x + b.w - kit::kSpace - b.inner;  // where the name may reach
-  if (static_cast<OfflineLook>(b.offlineLook) == OfflineLook::Running) {
+  if (static_cast<OfflineLook>(b.look) == OfflineLook::Running) {
     const bool paused = d->state == Offline::State::Paused;
     const std::string drive = driveName(d->root, false);
     const std::string copied = sizeText(d->copied), total = sizeText(d->size);
@@ -773,7 +776,7 @@ void Menu::drawOfflineButton(cairo_t* cr, const Button& b, const double ink[4]) 
   const OfflineStrings& t = base.offline;
   const Palette& pal = palette();
   const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
-  switch (static_cast<OfflineLook>(b.offlineLook)) {
+  switch (static_cast<OfflineLook>(b.look)) {
     case OfflineLook::Download: {
       if (b.w >= 50) {  // on a picture: a dark disc under it
         cairo_arc(cr, b.x + b.w / 2, b.y + b.h / 2, b.w / 2, 0, 2 * M_PI);
@@ -887,7 +890,7 @@ void Menu::addOfflineBox(const std::string& path, double x, double y, double w, 
   b.h = h;
   b.radius = 18;
   b.bare = true;
-  b.offlineLook = static_cast<int>(OfflineLook::Box);
+  b.part = PartKind::Offline, b.look = static_cast<int>(OfflineLook::Box);
   b.offlinePath = path;
   b.action = [this, path] {
     if (!downloadOf(path)) return startDownload(path);
@@ -937,7 +940,7 @@ void Menu::layoutOfflineDialog(DialogLayout& dialog) {
         card.w = each;
         card.h = cardH;
         card.radius = kit::kGroupCorner;
-        card.offlineLook = static_cast<int>(OfflineLook::DriveChoice);
+        card.part = PartKind::Offline, card.look = static_cast<int>(OfflineLook::DriveChoice);
         card.offlinePath = drives[i].root;
         card.action = [this, root = drives[i].root] {
           dialog_ = Dialog::None;
@@ -970,7 +973,7 @@ void Menu::layoutOfflineDialog(DialogLayout& dialog) {
                              driveIcon(*other), [this] {
                                dialog_ = Dialog::None;
                                const OfflineAsk& a = downloads_.ask;
-                               offline_->add(a.path, a.size, a.oshash, a.other);
+                               services_.addDownload(a.path, a.size, a.oshash, a.other);
                                return MenuCommand{};
                              },
                              true));
@@ -989,7 +992,7 @@ void Menu::layoutOfflineDialog(DialogLayout& dialog) {
                 Ink::Warn);
     Button remove = textButton(t.remove, Icon::Trash, [this] {
       dialog_ = Dialog::None;
-      offline_->remove(downloads_.ask.id);
+      services_.removeDownload(downloads_.ask.id);
       return MenuCommand{};
     });
     remove.danger = true;

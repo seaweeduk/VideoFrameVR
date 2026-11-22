@@ -1,13 +1,11 @@
 #include "menu_style.h"
 
 #include "file_util.h"
-#include "media_client.h"
 #include "menu_stash.h"
 #include "stash.h"
 
 #include <algorithm>
 #include <ctime>
-#include <thread>
 
 // What the core menu calls for Stash: setting it, the frame's update, and
 // the text its keyboard types (menu.h's thin hooks).
@@ -84,7 +82,7 @@ void StashPages::update(Menu& m) {
     staleHome(m);
     m.dirty_ = true;
   }
-  const StashSettings& s = m.view_.stash;
+  const StashSettings& s = *m.view_.stash;
   const bool scenes = m.stashListPage(), settings = m.page_ == Menu::Page::Settings;
   const bool performer = m.page_ == Menu::Page::StashPerformer;
   if (!st.settingsTaken) {
@@ -109,7 +107,7 @@ void StashPages::update(Menu& m) {
   }
   if (s.writeBack != st.settings.writeBack && m.page_ == Menu::Page::StashSceneDetails)
     m.dirty_ = true;  // Edit tags
-  st.settings = s;
+  if (st.settings != s) st.settings = s;
   const StashStatus& now = m.stash_->status();
   if (now.syncing != st.status.syncing || now.synced != st.status.synced ||
       now.lastSync != st.status.lastSync || now.error != st.status.error ||
@@ -292,7 +290,7 @@ MenuCommand StashPages::submitText(Menu& m) {
 MenuCommand StashPages::saveServer(Menu& m) {
   StashMenu& st = state(m);
   if (st.signingIn.valid()) return {};
-  const StashSettings& now = m.view_.stash;
+  const StashSettings& now = *m.view_.stash;
   const bool inUse = now.kind == st.draftKind;
   const bool unverified = draftUnverified(m);
   const bool other = m.stash_ && !m.stash_->status().syncing && m.stash_->status().otherAnswered;
@@ -301,31 +299,8 @@ MenuCommand StashPages::saveServer(Menu& m) {
   auto done = std::make_shared<std::promise<StashMenu::SignIn>>();
   st.signingIn = done->get_future();
   st.signInError.clear();
-  // Its own thread, as the SMB sign-in: a server that doesn't answer
-  // mustn't hold up anything else, and Cancel just drops the result. What
-  // it says names the kind asked, which may not be the one in use.
-  std::thread([done, moved, unverified, kind = st.draftKind, url = st.draft[0],
-               user = st.draft[kStashUser], password = st.draft[kStashPassword]] {
-    StashMenu::SignIn r;
-    r.host = stashHost(url);
-    r.kind = kind;
-    if (moved) {
-      const FoundServer found = findServer(url, unverified, kind, true);
-      r.kind = found.kind;
-      r.url = found.url;
-      r.untrusted = found.untrusted;
-    }
-    r.ok = !r.untrusted;
-    if (r.ok && !password.empty() && mediaServer(r.kind).abilities().signIn) {
-      const std::unique_ptr<MediaClient> client =
-          mediaServer(r.kind).client(r.url.empty() ? url : r.url, std::string(), unverified);
-      client->nameOwnKind();
-      r.ok = client->signIn(user, password, r.apiKey, r.refused);
-      r.error = client->error();
-      r.untrusted = !r.ok && client->problem() == StashProblem::Certificate;
-    }
-    done->set_value(std::move(r));
-  }).detach();
+  m.services_.signInStash(done, moved, unverified, st.draftKind, st.draft[0], st.draft[kStashUser],
+                          st.draft[kStashPassword]);
   m.dirty_ = true;
   return {};
 }

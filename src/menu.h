@@ -20,10 +20,10 @@
 #include "menu_finish.h"
 #include "menu_command.h"
 #include "menu_geometry.h"
+#include "menu_services.h"
 #include "menu_view.h"
 #include "settings.h"
 #include "remote.h"
-#include "sftp.h"
 #include "smb_discovery.h"
 #include "stash_folders.h"
 #include "strings.h"
@@ -124,13 +124,14 @@ class Menu {
   void setThumbnailer(Thumbnailer* thumbnailer);
   // Where each folder's order and list/gallery choice is kept (optional, not owned).
   void setFolderMemory(FolderMemory* folders) { folders_ = folders; }
-  // The media library, for the listed files' records (optional, not owned).
-  void setLibrary(Library* library) { library_ = library; }
+  // What the menu changes outside itself (menu_services.h), once at startup,
+  // and what it reads there: the media library, for the listed files'
+  // records, and offline downloads, for the Offline place, the marks and
+  // download buttons on videos and the drive they go to (menu_offline.cpp).
+  // Either may be null (not owned).
+  void setServices(const MenuServices& services);
   // The videos in the pinned folders, for the library view (optional, not owned).
   void setLibraryIndex(LibraryIndex* index) { index_ = index; }
-  // Offline downloads (optional, not owned): the Offline place, the marks
-  // and download buttons on videos, the drive they go to (menu_offline.cpp).
-  void setOffline(Offline* offline);
   // Stash (optional, not owned; null while it is off): the browser's and the
   // library's videos show its covers, titles and studio logos
   // (menu_stash_covers.cpp); its section, Scenes page and settings show
@@ -488,6 +489,30 @@ class Menu {
   using SortMode = FolderListing::Order;
 
  public:
+  // What a button is drawn as (Button::part, drawButtonContent()), and what
+  // its `look` says there.
+  enum class PartKind {
+    Plain,  // its label and icon, as its flags have them (null action: a list heading)
+    Control,  // drawn by drawControlPart() instead (menu_controls.cpp): `look` is its part's index
+    Offline,  // drawn by drawOfflineButton() instead: its OfflineLook
+    // Drawn by drawStashButton() (menu_stash_draw.cpp) instead: its StashLook,
+    // and its StashIcon.
+    Stash,
+    List,  // drawn by drawListPart() instead: its ListLook (menu_list_parts.h)
+    VolumeSlider,  // click/drag sets the volume from the pointer's x
+    Swatch,  // an accent colour to choose (Accent's preset `look`), ringed while `on`
+    Select,  // opens a list: its label from the left, a caret at its right end
+    Scrollbar,  // a list's scroll bar: click or drag scrolls to the pointer
+    Dialog,  // a dialog's button (DialogLayout): its icon and label centred
+    Tab,  // a strip tab: a small icon, then the label
+    // A label on the strip's top row (StripLayout::chip()): `look` 1 a red one
+    // (what went wrong, only its tooltip), 2 one in the accent (a note to follow).
+    Chip,
+    Band,  // the strip's timeline (drawn by drawMainPage()): pointed, ringed
+    ListItem,  // an item of a list opened above its button: its icon, label and
+               // `detail` at its right end
+    Toggle,  // a switch: the label, and a pill that is blue while `on`
+  };
   struct Button {
     int panel = kMain;
     double x = 0, y = 0, w = 0, h = 0;
@@ -495,6 +520,8 @@ class Menu {
     Icon icon = Icon::None;
     bool selected = false;
     std::function<MenuCommand()> action;  // null = not clickable (list heading)
+    PartKind part = PartKind::Plain;
+    int look = 0;
     bool listRow = false;
     std::string detail;    // Stash's cards and rows: a second line
     std::string byline;    // file browser: who and where (Stash), dim after or under the name
@@ -503,7 +530,6 @@ class Menu {
     std::string length;      // ... and its Length column (empty: not known)
     std::string thumbPath; // file browser video row: whose thumbnail to show
     std::string tooltip;   // icon-only button: its name, shown after hovering a while
-    bool volumeSlider = false;  // click/drag sets the volume from the pointer's x
     bool popup = false;         // part of the open dropdown or dialog, drawn on top
     bool raised = false;        // ... a dialog's button: raised as off the dialog (popups are flush)
     bool danger = false;        // destructive action, drawn red
@@ -524,7 +550,6 @@ class Menu {
     int fontSize = 0;           // label size in pixels, 0 = the default
     std::string badge;          // short mark on a bright disc at the top-right corner
     bool scrolls = false;       // part of a smoothly scrolled list: cut off at its edges
-    bool scrollbar = false;     // a list's scroll bar: click or drag scrolls to the pointer
     bool field = false;         // a text field: drawn as one, its label is the text
     int caret = -1;             // ... typed into: its cursor, after this many characters of it
     bool key = false;           // an on-screen key: its action redraws only what it changes
@@ -533,29 +558,19 @@ class Menu {
     int lines = 1;
     double wrapW = 0;           // a switch's label over `lines`: the width they wrap at
     bool dim = false;           // ... in the dimmer text colour
-    bool toggle = false;        // a switch: the label, and a pill that is blue while `on`
     bool on = false;
-    bool tab = false;           // a strip tab: a small icon, then the label
     bool nav = false;           // a navigation row: no background unless `on` (chosen)
-    int swatch = -1;            // an accent colour to choose (Accent's preset), ringed while `on`
     // A background key's colour (0xRRGGBB, kGreenKeySwatch: the green
     // keyer's greens, kNoKeySwatch: nothing removed, a grey circle crossed
     // out, kPendingKeySwatch: none yet, an empty dashed ring) in a
     // swatch before its label.
     int keySwatch = -1;
     bool alignLeft = false;     // its label from the left (a list of names)
-    bool select = false;        // opens a list: its label from the left, a caret at its right end
     bool faint = false;         // a label (staticText) in the faint colour: a note
     bool dimInk = false;        // its text in the dim colour (a flush − or +, a group's Reset)
     double inner = 0;           // a switch row (a field): room left of its switch (at its end) for a button of its own
     int lamp = 0;               // a label: a state's lamp before it (Lamp, menu_parts.h)
     double iconSize = 0;        // an icon-only button's icon, 0 = from its size
-    // A label on the strip's top row (StripLayout::chip()): 1 a red one
-    // (what went wrong, only its tooltip), 2 one in the accent (a note to follow).
-    int chip = 0;
-    bool listItem = false;      // an item of a list opened above its button: its
-                                // icon, label and `detail` at its right end
-    bool band = false;          // the strip's timeline (drawn by drawMainPage()): pointed, ringed
     // A slider (not None): click or drag sets this command's value from the
     // pointer's x, sliderMin..sliderMax in sliderStep steps; it shows
     // sliderText, else the value.
@@ -580,22 +595,16 @@ class Menu {
     int64_t ratingVideo = 0;
     float rating = 0;
     bool side = false;  // in the side column (side_): scrolls with it, cut off at its edges
-    // Drawn by drawStashButton() (menu_stash_draw.cpp) instead: its StashLook
-    // (not None), and its StashIcon.
-    int stashLook = 0, stashIcon = 0;
+    int stashIcon = 0;    // a Stash part's StashIcon
     int64_t stashId = 0;  // ... and the Stash id it shows (a performer's portrait)
     // A video row or tile: the path whose download shows on it (its state on
     // the picture, the tick); a drive's root on a drive's card.
     std::string offlinePath;
-    int offlineLook = 0;  // drawn by drawOfflineButton() instead (OfflineLook, not None)
     int64_t downloadId = 0;   // a download's row in the Offline place
-    int listLook = 0;  // drawn by drawListPart() instead (ListLook, menu_list_parts.h; not None)
     // A field (`field`): its faint example, shown while it is empty, typed
     // into or not. Its own button inside its right end takes `inner` of it.
     std::string example;
     bool keyCap = false;  // a key of the on-screen keyboard: pushed in while keyboard_.keyDown is on it
-    bool dialog = false;  // a dialog's button (DialogLayout): its icon and label centred
-    int controlPart = -1;  // drawn by drawControlPart() instead (menu_controls.cpp): its part
   };
   // Lays the panels out as a redraw does (setup's while it runs): their
   // buttons, in layout pixels.
@@ -876,7 +885,7 @@ class Menu {
   void layoutTools(StripLayout& strip);
   void layoutTransport(StripLayout& strip);
   // Offline downloads (menu_offline.cpp).
-  Offline* offline_ = nullptr;
+  const Offline* offline_ = nullptr;
   // The download a dialog asks about: the video, and the drives.
   struct OfflineAsk {
     std::string path, oshash, root, other;
@@ -1404,6 +1413,7 @@ class Menu {
   void drawHead(cairo_t* cr, double x, double y, double h, double w = 4) const;
   // `alpha`: an icon or a label alone drawn faded (fadesInPlace()).
   void drawButtonContent(cairo_t* cr, const Button& b, const double ink[4], double alpha = 1) const;
+  void drawPlainButton(cairo_t* cr, const Button& b, const double ink[4], double alpha) const;
   // A disabled button that draws in one paint, an icon alone or a label
   // alone on no surface (`surface`: buttonFinish()'s): drawn faded as it is,
   // as it looks faded as a whole in a temporary surface (but for a level at
@@ -1523,6 +1533,7 @@ class Menu {
   int browserRow_ = -1;  // next strip of a complete replacement; -1 when idle
   int browserColumn_ = 0;  // visible page's left edge until its replacement is ready
   MenuView browserView_;
+  MenuViewCopies browserCopies_;  // what browserView_ points at
   int browserOffset_ = 0;
   double browserFraction_ = 0, browserSide_ = 0, browserPage_ = 0, browserWhatsNew_ = 0;
   // Redraws the browser's rows [y0, y1) (all of them by default) at the next texture().
@@ -1536,6 +1547,7 @@ class Menu {
   bool shiftList();
 
   MenuView view_;
+  MenuViewCopies viewCopies_;  // what view_ points at
 
   int pointerPanel_ = -1;
   double pointerX_ = 0, pointerY_ = 0;  // layout pixels of pointerPanel_
@@ -1652,7 +1664,8 @@ class Menu {
   Thumbnailer* thumbnailer_ = nullptr;
   FolderMemory* folders_ = nullptr;
   void rememberFolderView();
-  Library* library_ = nullptr;
+  const Library* library_ = nullptr;
+  MenuServices services_;
   void lookUpRecords();
   void recordsChanged(const std::vector<VideoRecord>& before);
   VideoRecord current_;  // the playing file's record, for the strip's stars ...
@@ -1743,6 +1756,11 @@ class Menu {
     bool moved = false;   // only its position changed since the last redraw
     double drawn = -1;    // where the browser's texture shows the list, -1 = not known
     double remainder = 0; // scrolling of less than a texture pixel, kept for the next
+    // Scrolled `position` rows down: offset whole rows and a fraction of the next.
+    void setPosition(double position) {
+      offset = static_cast<int>(std::floor(position));
+      fraction = position - offset;
+    }
   } list_;
   // Clamps the scroll position to `count` rows of which `rows` fit, and
   // returns the first and last (exclusive) row to lay out.
@@ -1759,16 +1777,6 @@ class Menu {
   void endOnWholeRow();
 
   // The Network page and the SMB and SFTP forms (menu_network.cpp).
-  // A sign-in on a thread of its own, or for SFTP the connect job (probe,
-  // trust a new key, try this device's key), or Forget's key removal.
-  struct RemoteJob {
-    enum class Task { SignIn, Connect, RemoveKey } task = Task::SignIn;
-    std::atomic<bool> done{false};
-    remote::Status status = remote::Status::Ok;
-    sftp::Probe probe;
-    std::string publicKey;  // Connect for a server taking keys only: this device's
-    std::string trusted;    // HostKeyChanged: the key trusted before
-  };
   struct SmbForm {
     // KeyOnly, Changed (in setup; a dialog on the Network page) and
     // KeyRefused (setup's) are an SFTP server's.

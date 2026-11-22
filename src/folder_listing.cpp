@@ -1,6 +1,7 @@
 #include "folder_listing.h"
 
 #include "file_util.h"
+#include "location.h"
 
 #include <algorithm>
 #include <cctype>
@@ -168,8 +169,7 @@ void FolderListing::read(const std::string& dir, bool subtitles, Order order,
         folder = fallbacks[fallback++];
         continue;
       }
-      const std::string parent = remote::isRemote(folder) ? remote::parent(folder)
-                                                   : fs::path(folder).parent_path().string();
+      const std::string parent = parentFolder(folder);
       if (parent == folder || parent.empty()) break;
       folder = parent;
     }

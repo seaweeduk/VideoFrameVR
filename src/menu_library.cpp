@@ -136,7 +136,7 @@ void Menu::libraryFilesChanged(const std::vector<std::string>& changed,
       const LibraryIndex::File& f = index_->files().at(path);
       entries.push_back({fs::path(path).filename().string(), path, false, f.mtime, f.size});
     }
-    library_->lookup(entries);
+    services_.lookUp(entries);
   }
   if (page_ != Page::Library) return;  // showLibrary() reads them all
   const std::vector<ListItem>& before = libraryListItems();
@@ -190,8 +190,7 @@ void Menu::libraryFilesChanged(const std::vector<std::string>& changed,
     for (int i = 0; i < static_cast<int>(after.size()); ++i)
       if (after[i].thumbPath == anchor) {
         const double position = std::max(0.0, i / columns - rowsFromTop);
-        list_.offset = static_cast<int>(std::floor(position));
-        list_.fraction = position - list_.offset;
+        list_.setPosition(position);
         break;
       }
   }

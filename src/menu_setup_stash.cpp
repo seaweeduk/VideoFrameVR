@@ -217,7 +217,7 @@ void SetupPages::layoutStash(Menu& m) {
     // and Continue. Either way on to the Library.
     const bool connected = m.stash_ != nullptr;
     auto open = [&m, connected] {
-      if (connected) m.setup_->stash.text[SetupStash::Address] = m.view_.stash.url;
+      if (connected) m.setup_->stash.text[SetupStash::Address] = m.view_.stash->url;
       openStashPage(m, SetupStash::Page::Address);
       return MenuCommand{};
     };
@@ -349,7 +349,7 @@ void SetupPages::drawStash(Menu& m, cairo_t* cr) {
     if (m.stash_) {
       Menu::drawIcon(cr, Menu::Icon::Check, kLeft + 14, kEndY + 20, 26, accent[0], accent[1], accent[2]);
       char line[512];
-      std::snprintf(line, sizeof(line), t.stashConnected, m.view_.stash.url.c_str());
+      std::snprintf(line, sizeof(line), t.stashConnected, m.view_.stash->url.c_str());
       m.drawText(cr, line, kLeft + 40, kEndY, kInner - 40, 40, 24, false, false, pal.text.r,
                  pal.text.g, pal.text.b);
     } else {

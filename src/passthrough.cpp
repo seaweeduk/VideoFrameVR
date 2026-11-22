@@ -218,12 +218,14 @@ bool Passthrough::handle(const MenuCommand& c) {
       readAgain();
       break;
     case MenuCommand::SetMatchColour:
-      settings.matchColour = std::clamp(static_cast<int>(c.value), 0, 100);
+      settings.matchColour =
+          std::clamp(static_cast<int>(c.value), value_range::kPercent.least, value_range::kPercent.most);
       saveSettings(settings);
       applyRoomMatch();
       break;
     case MenuCommand::SetMatchBrightness:
-      settings.matchBrightness = std::clamp(static_cast<int>(c.value), 0, 100);
+      settings.matchBrightness =
+          std::clamp(static_cast<int>(c.value), value_range::kPercent.least, value_range::kPercent.most);
       saveSettings(settings);
       applyRoomMatch();
       break;

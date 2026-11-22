@@ -5,11 +5,9 @@
 #include "platform.h"
 
 #include "remote.h"
-#include "sftp.h"
 
 #include <algorithm>
 #include <cstring>
-#include <thread>
 
 // The browser's Network page (SMB servers found on the network and the
 // servers signed in to) and the form that signs in to one, adds one by its
@@ -155,7 +153,7 @@ void Menu::layoutNetworkPage() {
         if (key)
           openDialog(Dialog::ForgetServer, root);
         else
-          remote::forget(root);
+          services_.forgetLogin(root);
         dirty_ = true;
         return MenuCommand{};
       };
@@ -452,10 +450,7 @@ MenuCommand Menu::submitSmbForm() {
   f.error.clear();
   // --first-run's setup saves it only when it ends (SetupPages::signedIn()).
   const bool remember = f.remember && !(setup_ && setup_->holdWrites);
-  std::thread([job, root = f.root, login = remote::Login{f.text[1], f.text[2]}, remember] {
-    job->status = remote::signIn(root, login, remember);
-    job->done = true;
-  }).detach();
+  services_.signIn(job, f.root, {f.text[1], f.text[2]}, remember);
   dirty_ = true;
   return {};
 }
@@ -477,29 +472,7 @@ void Menu::connectSftp(const std::string& trust) {
   // A key login keeps no secret; --first-run's setup saves it when it ends
   // (SetupPages::signedIn()).
   const bool remember = !(setup_ && setup_->holdWrites);
-  std::thread([job, root = f.root, user = f.text[1], trust, remember] {
-    using Status = remote::Status;
-    using HostKey = sftp::Probe::HostKey;
-    RemoteJob& j = *job;
-    // Trusting writes sftp-hosts.json at once, under --first-run too: the
-    // sign-ins after it check the server's key against that file.
-    if (!trust.empty()) sftp::trust(root, trust);
-    j.status = sftp::probe(root, user, j.probe);
-    if (j.status == Status::Ok && j.probe.hostKey == HostKey::Changed) {
-      j.status = Status::HostKeyChanged;
-    } else if (j.status == Status::Ok) {
-      if (j.probe.hostKey == HostKey::New) sftp::trust(root, j.probe.fingerprint);
-      j.status = j.probe.key ? remote::signIn(root, {user, "", true}, remember) : Status::NeedsLogin;
-      if (j.status == Status::NeedsLogin && !j.probe.password) j.publicKey = sftp::publicKey();
-      // Changed since the probe: the warning shows the key it has now.
-      if (j.status == Status::HostKeyChanged) {
-        const Status probed = sftp::probe(root, user, j.probe);
-        if (probed != Status::Ok) j.status = probed;
-      }
-    }
-    if (j.status == Status::HostKeyChanged) j.trusted = sftp::trusted(root);
-    j.done = true;
-  }).detach();
+  services_.connectSftp(job, f.root, f.text[1], trust, remember);
   dirty_ = true;
 }
 
@@ -513,27 +486,7 @@ void Menu::signInSftp(const remote::Login& login, bool remember) {
   f.hint.clear();
   network_.sftpUsers[f.root] = login.user;
   remember = remember && !(setup_ && setup_->holdWrites);
-  // With a password and the key, the key is added to the account on the
-  // server at once, under --first-run too: it changes the server's
-  // account, not this profile.
-  std::thread([job, root = f.root, login, remember] {
-    using Status = remote::Status;
-    RemoteJob& j = *job;
-    j.status = remote::signIn(root, login, remember);
-    if (j.status == Status::HostKeyUnknown || j.status == Status::HostKeyChanged) {
-      const Status probed = sftp::probe(root, login.user, j.probe);
-      if (probed != Status::Ok) {
-        j.status = probed;
-      } else if (j.probe.hostKey == sftp::Probe::HostKey::Changed) {
-        j.status = Status::HostKeyChanged;
-        j.trusted = sftp::trusted(root);
-      } else {
-        if (j.probe.hostKey == sftp::Probe::HostKey::New) sftp::trust(root, j.probe.fingerprint);
-        j.status = remote::signIn(root, login, remember);
-      }
-    }
-    j.done = true;
-  }).detach();
+  services_.signInSftp(job, f.root, login, remember);
   dirty_ = true;
 }
 
@@ -541,7 +494,7 @@ void Menu::signInSftp(const remote::Login& login, bool remember) {
 // the Files page; in setup, its tree.
 void Menu::openSignedIn() {
   const std::string where = network_.form.root + (network_.form.then.empty() ? "" : "/" + network_.form.then);
-  remote::setName(network_.form.root, serverName(network_.form.root));
+  services_.setServerName(network_.form.root, serverName(network_.form.root));
   if (setup_) {
     SetupPages::signedIn(*this);
     return;
@@ -670,7 +623,7 @@ void Menu::sftpDone(const RemoteJob& job) {
       return;
     case Status::KeyRefused:
       if (setup_) {
-        remote::setName(root, name);
+        services_.setServerName(root, name);
         f.kind = Kind::KeyRefused;
         SetupPages::showSftp(*this);
       } else {
@@ -793,7 +746,7 @@ void Menu::layoutNetworkDialog(DialogLayout& dialog) {
     return MenuCommand{};
   };
   auto forget = [this, root] {
-    remote::forget(root);
+    services_.forgetLogin(root);
     dialog_ = Dialog::None;
     return MenuCommand{};
   };
@@ -803,7 +756,7 @@ void Menu::layoutNetworkDialog(DialogLayout& dialog) {
     dialog.line(t.keyRefusedHint, Ink::Dim, 2);
     dialog.button(textButton(t.notNow, Icon::None, close));
     dialog.button(textButton(t.remember, Icon::None, [this, root] {
-      remote::remember(root);
+      services_.rememberLogin(root);
       dialog_ = Dialog::None;
       return MenuCommand{};
     }, true));
@@ -846,13 +799,7 @@ void Menu::layoutNetworkDialog(DialogLayout& dialog) {
         auto job = std::make_shared<RemoteJob>();
         job->task = RemoteJob::Task::RemoveKey;
         network_.form.signing = job;
-        // Forgotten here, not when the menu takes the result: closing the
-        // menu meanwhile drops the form, and with it the job.
-        std::thread([job, root] {
-          job->status = sftp::removeKey(root);
-          if (job->status == remote::Status::Ok) remote::forget(root);
-          job->done = true;
-        }).detach();
+        services_.removeKey(job, root);
         return MenuCommand{};
       }, true);
       for (Button* b : {&cancel, &only, &remove}) {

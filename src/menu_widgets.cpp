@@ -259,7 +259,7 @@ void Menu::drawSwatch(cairo_t* cr, const Button& b) const {
   cairo_arc(cr, cx, cy + 1, r + 0.5, 0, 2 * M_PI);
   cairo_set_source_rgba(cr, 0, 0, 0, 0.45);
   cairo_fill(cr);
-  if (b.swatch == kAccentCustom) {
+  if (b.look == kAccentCustom) {
     for (int i = 0; i < kHueSteps; ++i) {
       const AccentColours& c = hueColour(i);
       cairo_move_to(cr, cx, cy);
@@ -269,7 +269,7 @@ void Menu::drawSwatch(cairo_t* cr, const Button& b) const {
       cairo_fill(cr);
     }
   } else {
-    const AccentColours c = accentColours({b.swatch, 0, 50});
+    const AccentColours c = accentColours({b.look, 0, 50});
     cairo_arc(cr, cx, cy, r, 0, 2 * M_PI);
     cairo_set_source_rgb(cr, c.fill[0], c.fill[1], c.fill[2]);
     cairo_fill(cr);
@@ -519,7 +519,7 @@ void Menu::drawButtons(cairo_t* cr, int panel, bool popups) {
       }
       continue;
     }
-    if (!b.action && !b.selected && !b.well && !b.listLook) {  // list heading
+    if (!b.action && !b.selected && !b.well && b.part == PartKind::Plain) {  // list heading
       drawText(cr, b.label, b.x + 8, b.y, b.w - 16, b.h, kTextSize, true, false, pal.textDim.r,
                pal.textDim.g, pal.textDim.b);
       continue;
@@ -586,10 +586,12 @@ void Menu::drawButtons(cairo_t* cr, int panel, bool popups) {
 // canvas. Lists' rows and what draws itself are pressed by the shader.
 bool Menu::pressDrawn(const Button& b) const {
   if (b.keyCap) return !b.disabled;  // on setup's panel too
+  const PartKind k = b.part;
   return (b.panel == kMain || b.panel == kBrowser) && !b.scrolls && !b.side && !b.card &&
-         !b.stashLook && !b.offlineLook && b.ratingPath.empty() && b.swatch < 0 && b.keySwatch < 0 &&
-         b.slider == MenuCommand::None && !b.volumeSlider && !b.band && !b.chip && !b.field &&
-         !b.staticText && !b.disabled && !b.well && b.action;
+         k != PartKind::Stash && k != PartKind::Offline && b.ratingPath.empty() && k != PartKind::Swatch &&
+         b.keySwatch < 0 && b.slider == MenuCommand::None && k != PartKind::VolumeSlider &&
+         k != PartKind::Band && k != PartKind::Chip && !b.field && !b.staticText && !b.disabled &&
+         !b.well && b.action;
 }
 
 bool Menu::drawnPressed(const Button& b) const {
@@ -603,8 +605,8 @@ bool Menu::drawnPressed(const Button& b) const {
 // Buttons and keys shrink a little as they are pushed in; rows, list items,
 // tabs and the pieces of a choice only sink.
 bool Menu::pressShrinks(const Button& b) {
-  return !(b.toggle || b.nav || b.piece || b.listItem || b.listRow || b.tab ||
-           (b.popup && !b.raised));
+  return !(b.part == PartKind::Toggle || b.nav || b.piece || b.part == PartKind::ListItem || b.listRow ||
+           b.part == PartKind::Tab || (b.popup && !b.raised));
 }
 
 // Pushed in: shrunk (pressShrinks()), its surface sunk with a shadow inside
@@ -638,8 +640,9 @@ void Menu::drawPressed(cairo_t* cr, const Button& b, Finish rest, double radius)
 // Which depth a button has at rest (menu_finish.h): flush buttons and those
 // that draw themselves (sliders, stars, swatches) have none.
 bool Menu::buttonFinish(const Button& b, Finish& finish) const {
-  if (b.staticText || b.scrollbar || b.volumeSlider || b.slider != MenuCommand::None ||
-      (b.swatch >= 0 && !b.piece) || !b.ratingPath.empty() || b.chip || b.band)
+  if (b.staticText || b.part == PartKind::Scrollbar || b.part == PartKind::VolumeSlider ||
+      b.slider != MenuCommand::None || (b.part == PartKind::Swatch && !b.piece) ||
+      !b.ratingPath.empty() || b.part == PartKind::Chip || b.part == PartKind::Band)
     return false;
   if (b.well) finish = Finish::Sunk;
   else if (b.danger) finish = Finish::DangerFilled;
@@ -648,9 +651,9 @@ bool Menu::buttonFinish(const Button& b, Finish& finish) const {
   else if (b.piece || b.nav) {
     if (!(b.piece ? b.selected : b.on)) return false;  // flush unless chosen
     finish = Finish::Chosen;
-  } else if ((b.listRow || b.card) && b.selected && !b.stashLook) {
+  } else if ((b.listRow || b.card) && b.selected && b.part != PartKind::Stash) {
     finish = Finish::Chosen;  // the playing video's row or card: raised
-  } else if (b.listRow || b.card || (b.popup && !b.raised) || b.toggle || b.bare)
+  } else if (b.listRow || b.card || (b.popup && !b.raised) || b.part == PartKind::Toggle || b.bare)
     return false;
   else if (b.selected) finish = Finish::Primary;
   else if (b.field) finish = Finish::Sunk;
@@ -668,7 +671,7 @@ void Menu::buttonInk(const Button& b, double ink[4]) const {
     k = pal.textAccent;  // the playing file, a list's chosen entry (cards also get an outline)
   } else if (b.latched) {
     k = pal.textAccent;
-  } else if (b.bare && b.on && !b.nav && !b.toggle) {
+  } else if (b.bare && b.on && !b.nav && b.part != PartKind::Toggle) {
     k = pal.textAccent;  // a chosen icon or heading
   } else if (b.dimInk) {
     k = pal.textDim;
@@ -694,8 +697,9 @@ void Menu::iconInk(const Button& b, const double ink[4], double out[4]) const {
     for (int i = 0; i < 4; ++i) out[i] = ink[i];
     return;
   }
-  if ((b.nav && b.on) || (b.piece && b.selected) || (b.listItem && b.selected)) k = &pal.textAccent;
-  else if (b.nav || b.listItem) k = &pal.textDim;
+  const bool listItem = b.part == PartKind::ListItem;
+  if ((b.nav && b.on) || (b.piece && b.selected) || (listItem && b.selected)) k = &pal.textAccent;
+  else if (b.nav || listItem) k = &pal.textDim;
   if (!k) {
     for (int i = 0; i < 4; ++i) out[i] = ink[i];
     return;
@@ -772,11 +776,12 @@ bool Menu::pointedLooks(PanelId panel, PanelHover& pointed, PanelHover& pressed,
   static constexpr double kRed[3] = {0xe3 / 255.0, 0x4b / 255.0, 0x50 / 255.0};
   static constexpr double kRedDown[3] = {0xc4 / 255.0, 0x35 / 255.0, 0x3a / 255.0};
   // An unrated row's stars (after it, hidden at rest by drawRating()).
-  if (b.listRow && !b.stashLook)
+  if (b.listRow && b.part != PartKind::Stash)
     for (size_t i = hovered_ + 1; i < buttons_.size() && i <= static_cast<size_t>(hovered_) + 4; ++i) {
       const Button& stars = buttons_[i];
       if (stars.listRow || stars.card) break;
-      if (stars.listLook == static_cast<int>(ListLook::RowStars) && stars.rating <= 0 &&
+      if (stars.part == PartKind::List && stars.look == static_cast<int>(ListLook::RowStars) &&
+          stars.rating <= 0 &&
           !ratingDrag_.is(stars)) {
         pointed.stars = static_cast<float>(stars.x);
         break;
@@ -805,7 +810,7 @@ bool Menu::pointedLooks(PanelId panel, PanelHover& pointed, PanelHover& pressed,
     set(pointed, kWhite, 0.06, 0, 0);
   } else if (b.popup && !surface) {
     set(pointed, kWhite, 0.08, 0, 0);
-  } else if (b.field || b.band) {
+  } else if (b.field || b.part == PartKind::Band) {
     set(pointed, kWhite, 0.10, 0, 0);
     pointed.ring = true;
   } else if (!b.ratingPath.empty() && !b.card) {
@@ -846,40 +851,35 @@ void fadedColour(const double rgb[3], double alpha, double out[3]) {
 }  // namespace
 
 void Menu::drawButtonContent(cairo_t* cr, const Button& b, const double ink[4], double alpha) const {
-  if (b.controlPart >= 0) {
-    drawControlPart(cr, b, ink);
+  // Stars and sliders before the parts: a list row's stars are a list part too.
+  if (!b.ratingPath.empty()) {
+    drawRating(cr, b);
     return;
   }
-  if (b.offlineLook) {
-    drawOfflineButton(cr, b, ink);
+  if (b.slider != MenuCommand::None) {
+    drawSlider(cr, b);
     return;
   }
-  if (b.stashLook) {
-    StashPages::drawButton(*this, cr, b, ink);
-    return;
-  }
-  {
-    if (!b.ratingPath.empty()) {
-      drawRating(cr, b);
+  switch (b.part) {
+    case PartKind::Control:
+      drawControlPart(cr, b, ink);
       return;
-    }
-    if (b.listLook) {
+    case PartKind::Offline:
+      drawOfflineButton(cr, b, ink);
+      return;
+    case PartKind::Stash:
+      StashPages::drawButton(*this, cr, b, ink);
+      return;
+    case PartKind::List:
       drawListPart(cr, b, ink);
       return;
-    }
-    if (b.volumeSlider) {
+    case PartKind::VolumeSlider:
       drawVolumeSlider(cr, b);
       return;
-    }
-    if (b.slider != MenuCommand::None) {
-      drawSlider(cr, b);
-      return;
-    }
-    if (b.swatch >= 0) {
+    case PartKind::Swatch:
       drawSwatch(cr, b);
       return;
-    }
-    if (b.select) {  // a list's button: what is chosen, from the left, and a caret
+    case PartKind::Select: {  // a list's button: what is chosen, from the left, and a caret
       constexpr double caret = 24;
       double x = b.x + kit::kSpace;
       const double end = b.x + b.w - kit::kSpace - caret - 12;
@@ -894,60 +894,50 @@ void Menu::drawButtonContent(cairo_t* cr, const Button& b, const double ink[4], 
                ink[1], ink[2]);
       return;
     }
-    if (b.scrollbar) {
+    case PartKind::Scrollbar:
       drawScrollbar(cr, b);
       return;
-    }
-    if (b.dialog) {  // a dialog's button: its icon and label centred
+    case PartKind::Dialog: {  // a dialog's button: its icon and label centred
       constexpr double iconSize = 26, gap = 12;
-      double icon[4];
-      iconInk(b, ink, icon);
       const int size = b.fontSize > 0 ? b.fontSize : kTextSize;
       const double textW = std::min(textWidth(b.label, size, false),
                                     b.w - 2 * kit::kSpace - (b.icon != Icon::None ? iconSize + gap : 0));
       const double iconW = b.icon != Icon::None ? iconSize + gap : 0;
       const double x = b.x + (b.w - iconW - textW) / 2;
+      double icon[4];
+      iconInk(b, ink, icon);
       if (b.icon != Icon::None)
         drawIcon(cr, b.icon, x + iconSize / 2, b.y + b.h / 2, iconSize, icon[0], icon[1], icon[2]);
       drawText(cr, b.label, x + iconW, b.y, textW + 4, b.h, size, false, false, ink[0], ink[1], ink[2]);
       return;
     }
-    if (b.field && b.on) {  // a text field being typed into: an accent ring inside its edge
-      const Palette& pal = palette();
-      const double r = (b.radius >= 0 ? std::min(b.radius, std::min(b.w, b.h) / 2) : kButtonRadius);
-      roundedRect(cr, b.x + 1, b.y + 1, b.w - 2, b.h - 2, std::max(0.0, r - 1));
-      setColor(cr, pal.accent);
-      cairo_set_line_width(cr, 2);
-      cairo_stroke(cr);
-    }
-    if (b.field && b.icon == Icon::None) {  // a form's field: its text from the left
-      drawFieldText(cr, b, ink);
-      return;
-    }
-    double icon[4];
-    iconInk(b, ink, icon);
-    if (b.tab) {  // a strip tab, or Quit: its icon and label
+    case PartKind::Tab: {  // a strip tab, or Quit: its icon and label
       const double iconX = b.x + kit::kSpace, textX = iconX + strip::kTabIcon + strip::kTabIconGap;
+      double icon[4];
+      iconInk(b, ink, icon);
       drawIcon(cr, b.icon, iconX + strip::kTabIcon / 2, b.y + b.h / 2, strip::kTabIcon, icon[0],
                icon[1], icon[2]);
       drawText(cr, b.label, textX, b.y, b.x + b.w - textX - kit::kSpace + 4, b.h, b.fontSize, false,
                false, ink[0], ink[1], ink[2]);
       return;
     }
-    if (b.chip) {  // a label on the strip: red, or in the accent
+    case PartKind::Chip: {  // a label on the strip: red, or in the accent
       const Palette& pal = palette();
       roundedRect(cr, b.x, b.y, b.w, b.h, b.radius);
-      setColor(cr, b.chip == 1 ? pal.danger : pal.accentSoft, b.chip == 1 ? 0.16 : 1);
+      setColor(cr, b.look == 1 ? pal.danger : pal.accentSoft, b.look == 1 ? 0.16 : 1);
       cairo_fill(cr);
-      const Rgba k = b.chip == 1 ? hexColour(0xff8a8d) : pal.textAccent;
+      const Rgba k = b.look == 1 ? hexColour(0xff8a8d) : pal.textAccent;
       drawText(cr, b.label, b.x + strip::kChipPad, b.y, b.w - 2 * strip::kChipPad + 4, b.h,
                b.fontSize, false, false, k.r, k.g, k.b);
       return;
     }
-    if (b.band) return;  // drawn by drawMainPage()
-    if (b.listItem) {  // its icon, label, and the second text at its right end
+    case PartKind::Band:  // drawn by drawMainPage()
+      return;
+    case PartKind::ListItem: {  // its icon, label, and the second text at its right end
       double x = b.x + kit::kSpace;
       if (b.icon != Icon::None) {
+        double icon[4];
+        iconInk(b, ink, icon);
         drawIcon(cr, b.icon, x + strip::kTabIcon / 2, b.y + b.h / 2, strip::kTabIcon, icon[0],
                  icon[1], icon[2]);
         x += strip::kTabIcon + 14;
@@ -963,7 +953,7 @@ void Menu::drawButtonContent(cairo_t* cr, const Button& b, const double ink[4], 
       drawText(cr, b.label, x, b.y, right - x, b.h, b.fontSize, false, false, ink[0], ink[1], ink[2]);
       return;
     }
-    if (b.toggle) {  // the label, and a switch at the right end: a sunk track, a raised knob
+    case PartKind::Toggle: {  // the label, and a switch at the right end: a sunk track, a raised knob
       constexpr double tw = kit::kSwitchW, th = kit::kSwitchH, knob = kit::kSwitchKnob;
       constexpr double in = kit::kSpace;  // the label and the switch from the row's ends
       const double tx = b.x + b.w - tw - in, ty = b.y + (b.h - th) / 2;
@@ -986,145 +976,166 @@ void Menu::drawButtonContent(cairo_t* cr, const Button& b, const double ink[4], 
                  knob / 2);
       return;
     }
-    if (!b.caption.empty()) {  // a tile: its icon over its caption, and a second line
-      constexpr double iconSize = 40, captionH = 28, subH = 24, gap = 6;
-      const bool picture = b.icon != Icon::None, sub = !b.detail.empty();
-      const double h = (picture ? iconSize + gap : 0) + captionH + (sub ? subH : 0);
-      double y = b.y + (b.h - h) / 2;
-      if (picture) {
-        drawIcon(cr, b.icon, b.x + b.w / 2, y + iconSize / 2, iconSize, icon[0], icon[1], icon[2]);
-        y += iconSize + gap;
-      }
-      drawText(cr, b.caption, b.x + 6, y, b.w - 12, captionH, 22, false, true, ink[0], ink[1], ink[2]);
-      if (sub) {
-        const Rgba& k = b.selected ? palette().textDim : palette().faint;
-        drawText(cr, b.detail, b.x + 6, y + captionH, b.w - 12, subH, 19, false, true, k.r, k.g, k.b);
-      }
+    case PartKind::Plain:
+      drawPlainButton(cr, b, ink, alpha);
       return;
-    }
-    if (b.card) {  // file browser grid: picture (or folder), name in two lines, details
-      const Palette& pal = palette();
-      double tx, ty, tw, th;
-      listPicture(b, tx, ty, tw, th);
-      if (!b.thumbPath.empty() &&
-          (previewFrame(b.thumbPath, tx, ty) || pictureOf(cr, b.thumbPath, tx, ty, tw, th))) {
-        drawThumbnail(cr, b.thumbPath, tx, ty, tw, th, kit::kPieceCorner);
-      } else {  // a sunk tile with its icon
-        drawFinish(cr, Finish::Sunk, tx, ty, tw, th, kit::kPieceCorner);
-        const Rgba& k = b.icon == Icon::Folder ? pal.textDim : pal.faint;
-        if (b.icon != Icon::None)
-          drawIcon(cr, b.icon, tx + tw / 2, ty + th / 2, b.icon == Icon::Folder ? 96 : 77, k.r, k.g, k.b);
-      }
-      if (stashCovers_ && !b.thumbPath.empty()) drawStudioMark(cr, b.thumbPath, tx, ty, tw, th);
-      drawCoverStrip(cr, b, tx, ty, tw, th);  // under the stars, and the plays
-      drawOfflineState(cr, b, tx, ty, tw, th);
-      // The name in two lines under the picture (the playing one's after
-      // its mark), the size and date on the last line; a name that would
-      // reach them gets fewer lines. With a byline, the name has one line
-      // and the byline the next.
-      const double detailY = b.y + b.h - kit::kSpace - kCardLine;
-      const double nameY = ty + th + kCardNameGap;  // its first line's box
-      double nameX = b.x + kit::kSpace;
-      if (b.selected) {
-        drawPlayMark(cr, nameX + kPlayMarkSize / 2, nameY + kCardLine / 2);
-        nameX += kPlayMarkW;
-      }
-      const double nameW = b.x + b.w - kit::kSpace - nameX;
-      const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
-      drawLinesIn(cr, b.label, nameX, nameY, nameW, kit::kRowSize, b.byline.empty() ? 2 : 1, kCardLine,
-                  ink, b.fileName);
-      if (!b.byline.empty())
-        drawLinesIn(cr, b.byline, nameX, nameY + kCardLine, nameW, 22, 1, kCardLine, dim);
-      // A downloaded video's tick starts the last line.
-      const double tick = downloadedMark(b.offlinePath) ? 30 : 0;
-      if (tick > 0) drawOfflineTick(cr, b.x + kit::kSpace + 11, detailY + kCardLine / 2, 22);
-      if (!b.detail.empty())
-        drawLinesIn(cr, b.detail, b.x + kit::kSpace + tick, detailY, b.w - 2 * kit::kSpace - tick, 22, 1,
-                    kCardLine, dim);
-      return;
-    }
-    if (b.listRow) {  // a list row: picture or icon, name, columns
-      const Palette& pal = palette();
-      double tx, ty, tw, th;
-      listPicture(b, tx, ty, tw, th);
-      drawRowLead(cr, b, ink, tx + tw + kRowNameGap + listNameWidth(b), b.y, b.h);
-      if (listColumns_) {  // right-aligned numbers, then the date
-        const ListColumns c = listColumns(b.x + b.w, listFit());
-        if (downloadedMark(b.offlinePath))
-          drawOfflineTick(cr, c.status + kStatusColumnW / 2, b.y + b.h / 2, 22);
-        const ListFit& fit = listFit();
-        const double sizeW = textWidth(b.size, 24, false), playsW = textWidth(b.plays, 24, false);
-        const double lengthW = textWidth(b.length, 24, false);
-        drawText(cr, b.plays, c.plays + kPlaysColumnW - playsW, b.y, playsW + 2, b.h, 24, false,
-                 false, pal.textDim.r, pal.textDim.g, pal.textDim.b);
-        drawText(cr, b.length, c.length + fit.length - lengthW, b.y, lengthW + 2, b.h, 24, false,
-                 false, pal.textDim.r, pal.textDim.g, pal.textDim.b);
-        drawText(cr, b.size, c.size + fit.size - sizeW, b.y, sizeW + 2, b.h, 24, false, false,
-                 pal.textDim.r, pal.textDim.g, pal.textDim.b);
-        drawText(cr, b.date, c.date, b.y, fit.date, b.h, 24, false, false, pal.textDim.r,
-                 pal.textDim.g, pal.textDim.b);
-      }
-      return;
-    }
-    if (b.label.empty() && !b.field) {  // icon only: round buttons scale it, slim list rows shrink it
-      const double size = b.iconSize > 0 ? b.iconSize
-                          : b.w == b.h   ? b.w * (b.w >= 72 ? 0.42 : 0.5)
-                                         : std::min(kIconSize, b.h * 0.62);
-      if (alpha < 1) fadedColour(icon, alpha, icon);
-      drawIcon(cr, b.icon, b.x + b.w / 2, b.y + b.h / 2, size, icon[0], icon[1], icon[2], alpha);
-      return;
-    }
-    double textX = b.x + 8, textW = b.w - 16;
-    bool center = true;
-    if (b.alignLeft) {
-      textX = b.x + 22;
-      textW = b.w - 44;
-      center = false;
-    }
-    const Rgba& dim = palette().textDim;
-    const double faded[4] = {dim.r, dim.g, dim.b, dim.a};
-    if (b.crossed) ink = faded;
-    if (b.icon != Icon::None) {
-      const double iconSize = kIconSize * 0.75;
-      const double cx = b.x + 35 + iconSize / 2, cy = b.y + b.h / 2;
-      const double* k = b.crossed ? ink : icon;
-      drawIcon(cr, b.icon, cx, cy, iconSize, k[0], k[1], k[2]);
-      if (b.crossed) {
-        const double r = iconSize * 0.55;
-        cairo_move_to(cr, cx - r, cy - r);
-        cairo_line_to(cr, cx + r, cy + r);
-        cairo_set_source_rgba(cr, ink[0], ink[1], ink[2], 1);
-        cairo_set_line_width(cr, 3);
-        cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-        cairo_stroke(cr);
-      }
-      textX = b.x + 35 + iconSize + 20;
-      textW = b.w - (textX - b.x) - 35;
-      center = false;
-    }
-    if (b.field) {  // a search
-      drawFieldText(cr, b, ink);
-      return;
-    }
-    if (b.keySwatch != -1) {  // a key's colour before the label
-      const double r = b.h * 0.34;
-      drawKeySwatch(cr, b.keySwatch, textX + r, b.y + b.h / 2, r);
-      textX += 2 * r + 14;
-      textW -= 2 * r + 14;
-    }
-    double k[3] = {ink[0], ink[1], ink[2]};
-    if (alpha < 1) fadedColour(k, alpha, k);
-    drawText(cr, b.label, textX, b.y, textW, b.h, b.fontSize > 0 ? b.fontSize : kTextSize, false,
-             center, k[0], k[1], k[2], alpha);
   }
 }
 
+// Its label and icon, as its flags have them: a field, a tile, a card, a
+// list row, an icon alone, a label (after an icon).
+void Menu::drawPlainButton(cairo_t* cr, const Button& b, const double ink[4], double alpha) const {
+  if (b.field && b.on) {  // a text field being typed into: an accent ring inside its edge
+    const Palette& pal = palette();
+    const double r = (b.radius >= 0 ? std::min(b.radius, std::min(b.w, b.h) / 2) : kButtonRadius);
+    roundedRect(cr, b.x + 1, b.y + 1, b.w - 2, b.h - 2, std::max(0.0, r - 1));
+    setColor(cr, pal.accent);
+    cairo_set_line_width(cr, 2);
+    cairo_stroke(cr);
+  }
+  if (b.field && b.icon == Icon::None) {  // a form's field: its text from the left
+    drawFieldText(cr, b, ink);
+    return;
+  }
+  double icon[4];
+  iconInk(b, ink, icon);
+  if (!b.caption.empty()) {  // a tile: its icon over its caption, and a second line
+    constexpr double iconSize = 40, captionH = 28, subH = 24, gap = 6;
+    const bool picture = b.icon != Icon::None, sub = !b.detail.empty();
+    const double h = (picture ? iconSize + gap : 0) + captionH + (sub ? subH : 0);
+    double y = b.y + (b.h - h) / 2;
+    if (picture) {
+      drawIcon(cr, b.icon, b.x + b.w / 2, y + iconSize / 2, iconSize, icon[0], icon[1], icon[2]);
+      y += iconSize + gap;
+    }
+    drawText(cr, b.caption, b.x + 6, y, b.w - 12, captionH, 22, false, true, ink[0], ink[1], ink[2]);
+    if (sub) {
+      const Rgba& k = b.selected ? palette().textDim : palette().faint;
+      drawText(cr, b.detail, b.x + 6, y + captionH, b.w - 12, subH, 19, false, true, k.r, k.g, k.b);
+    }
+    return;
+  }
+  if (b.card) {  // file browser grid: picture (or folder), name in two lines, details
+    const Palette& pal = palette();
+    double tx, ty, tw, th;
+    listPicture(b, tx, ty, tw, th);
+    if (!b.thumbPath.empty() &&
+        (previewFrame(b.thumbPath, tx, ty) || pictureOf(cr, b.thumbPath, tx, ty, tw, th))) {
+      drawThumbnail(cr, b.thumbPath, tx, ty, tw, th, kit::kPieceCorner);
+    } else {  // a sunk tile with its icon
+      drawFinish(cr, Finish::Sunk, tx, ty, tw, th, kit::kPieceCorner);
+      const Rgba& k = b.icon == Icon::Folder ? pal.textDim : pal.faint;
+      if (b.icon != Icon::None)
+        drawIcon(cr, b.icon, tx + tw / 2, ty + th / 2, b.icon == Icon::Folder ? 96 : 77, k.r, k.g, k.b);
+    }
+    if (stashCovers_ && !b.thumbPath.empty()) drawStudioMark(cr, b.thumbPath, tx, ty, tw, th);
+    drawCoverStrip(cr, b, tx, ty, tw, th);  // under the stars, and the plays
+    drawOfflineState(cr, b, tx, ty, tw, th);
+    // The name in two lines under the picture (the playing one's after
+    // its mark), the size and date on the last line; a name that would
+    // reach them gets fewer lines. With a byline, the name has one line
+    // and the byline the next.
+    const double detailY = b.y + b.h - kit::kSpace - kCardLine;
+    const double nameY = ty + th + kCardNameGap;  // its first line's box
+    double nameX = b.x + kit::kSpace;
+    if (b.selected) {
+      drawPlayMark(cr, nameX + kPlayMarkSize / 2, nameY + kCardLine / 2);
+      nameX += kPlayMarkW;
+    }
+    const double nameW = b.x + b.w - kit::kSpace - nameX;
+    const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
+    drawLinesIn(cr, b.label, nameX, nameY, nameW, kit::kRowSize, b.byline.empty() ? 2 : 1, kCardLine,
+                ink, b.fileName);
+    if (!b.byline.empty())
+      drawLinesIn(cr, b.byline, nameX, nameY + kCardLine, nameW, 22, 1, kCardLine, dim);
+    // A downloaded video's tick starts the last line.
+    const double tick = downloadedMark(b.offlinePath) ? 30 : 0;
+    if (tick > 0) drawOfflineTick(cr, b.x + kit::kSpace + 11, detailY + kCardLine / 2, 22);
+    if (!b.detail.empty())
+      drawLinesIn(cr, b.detail, b.x + kit::kSpace + tick, detailY, b.w - 2 * kit::kSpace - tick, 22, 1,
+                  kCardLine, dim);
+    return;
+  }
+  if (b.listRow) {  // a list row: picture or icon, name, columns
+    const Palette& pal = palette();
+    double tx, ty, tw, th;
+    listPicture(b, tx, ty, tw, th);
+    drawRowLead(cr, b, ink, tx + tw + kRowNameGap + listNameWidth(b), b.y, b.h);
+    if (listColumns_) {  // right-aligned numbers, then the date
+      const ListColumns c = listColumns(b.x + b.w, listFit());
+      if (downloadedMark(b.offlinePath))
+        drawOfflineTick(cr, c.status + kStatusColumnW / 2, b.y + b.h / 2, 22);
+      const ListFit& fit = listFit();
+      const double sizeW = textWidth(b.size, 24, false), playsW = textWidth(b.plays, 24, false);
+      const double lengthW = textWidth(b.length, 24, false);
+      drawText(cr, b.plays, c.plays + kPlaysColumnW - playsW, b.y, playsW + 2, b.h, 24, false,
+               false, pal.textDim.r, pal.textDim.g, pal.textDim.b);
+      drawText(cr, b.length, c.length + fit.length - lengthW, b.y, lengthW + 2, b.h, 24, false,
+               false, pal.textDim.r, pal.textDim.g, pal.textDim.b);
+      drawText(cr, b.size, c.size + fit.size - sizeW, b.y, sizeW + 2, b.h, 24, false, false,
+               pal.textDim.r, pal.textDim.g, pal.textDim.b);
+      drawText(cr, b.date, c.date, b.y, fit.date, b.h, 24, false, false, pal.textDim.r,
+               pal.textDim.g, pal.textDim.b);
+    }
+    return;
+  }
+  if (b.label.empty() && !b.field) {  // icon only: round buttons scale it, slim list rows shrink it
+    const double size = b.iconSize > 0 ? b.iconSize
+                        : b.w == b.h   ? b.w * (b.w >= 72 ? 0.42 : 0.5)
+                                       : std::min(kIconSize, b.h * 0.62);
+    if (alpha < 1) fadedColour(icon, alpha, icon);
+    drawIcon(cr, b.icon, b.x + b.w / 2, b.y + b.h / 2, size, icon[0], icon[1], icon[2], alpha);
+    return;
+  }
+  double textX = b.x + 8, textW = b.w - 16;
+  bool center = true;
+  if (b.alignLeft) {
+    textX = b.x + 22;
+    textW = b.w - 44;
+    center = false;
+  }
+  const Rgba& dim = palette().textDim;
+  const double faded[4] = {dim.r, dim.g, dim.b, dim.a};
+  if (b.crossed) ink = faded;
+  if (b.icon != Icon::None) {
+    const double iconSize = kIconSize * 0.75;
+    const double cx = b.x + 35 + iconSize / 2, cy = b.y + b.h / 2;
+    const double* k = b.crossed ? ink : icon;
+    drawIcon(cr, b.icon, cx, cy, iconSize, k[0], k[1], k[2]);
+    if (b.crossed) {
+      const double r = iconSize * 0.55;
+      cairo_move_to(cr, cx - r, cy - r);
+      cairo_line_to(cr, cx + r, cy + r);
+      cairo_set_source_rgba(cr, ink[0], ink[1], ink[2], 1);
+      cairo_set_line_width(cr, 3);
+      cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+      cairo_stroke(cr);
+    }
+    textX = b.x + 35 + iconSize + 20;
+    textW = b.w - (textX - b.x) - 35;
+    center = false;
+  }
+  if (b.field) {  // a search
+    drawFieldText(cr, b, ink);
+    return;
+  }
+  if (b.keySwatch != -1) {  // a key's colour before the label
+    const double r = b.h * 0.34;
+    drawKeySwatch(cr, b.keySwatch, textX + r, b.y + b.h / 2, r);
+    textX += 2 * r + 14;
+    textW -= 2 * r + 14;
+  }
+  double k[3] = {ink[0], ink[1], ink[2]};
+  if (alpha < 1) fadedColour(k, alpha, k);
+  drawText(cr, b.label, textX, b.y, textW, b.h, b.fontSize > 0 ? b.fontSize : kTextSize, false,
+           center, k[0], k[1], k[2], alpha);
+}
+
 bool Menu::fadesInPlace(const Button& b, bool surface) const {
-  // drawButtonContent()'s last two cases: an icon alone, a label alone.
-  if (surface || !b.badge.empty() || b.popup || b.well || b.offlineLook || b.stashLook ||
-      !b.ratingPath.empty() || b.listLook || b.volumeSlider || b.slider != MenuCommand::None ||
-      b.swatch >= 0 || b.select || b.scrollbar || b.dialog || b.field || b.tab || b.chip || b.band ||
-      b.listItem || b.toggle || !b.caption.empty() || b.card || b.listRow)
+  // drawPlainButton()'s last two cases: an icon alone, a label alone.
+  if (surface || !b.badge.empty() || b.popup || b.well || b.part != PartKind::Plain ||
+      !b.ratingPath.empty() || b.slider != MenuCommand::None || b.field || !b.caption.empty() ||
+      b.card || b.listRow)
     return false;
   if (b.label.empty()) return onePaint(b.icon);
   return b.icon == Icon::None && !b.crossed && b.keySwatch == -1;
@@ -1134,10 +1145,10 @@ void Menu::fieldTextBox(const Button& b, double& x, double& w, int& size) const 
   size = b.fontSize > 0 ? b.fontSize : kTextSize;
   x = b.x + kit::kSpace;
   w = b.w - 2 * kit::kSpace - b.inner;  // before its own button, if it has one
-  if (b.listLook) {  // a tools row's search: after its icon, before what it finds (drawListPart())
+  if (b.part == PartKind::List) {  // a tools row's search: after its icon, before what it finds (drawListPart())
     x = b.x + kit::kSpace + 26 + 12;
     w = b.x + b.w - kit::kSpace - b.inner - x;
-  } else if (b.icon != Icon::None) {  // a search: after its icon, as drawButtonContent() has it
+  } else if (b.icon != Icon::None) {  // a search: after its icon, as drawPlainButton() has it
     x = b.x + 35 + kIconSize * 0.75 + 20;
     w = b.w - (x - b.x) - 35;
   }
@@ -1413,7 +1424,7 @@ void Menu::scrollGroups(size_t first) {
   bar.h = kBrowserHeight - kPagePad - bar.y;
   bar.radius = 10;
   bar.bare = true;
-  bar.scrollbar = true;
+  bar.part = PartKind::Scrollbar;
   bar.action = [] { return MenuCommand{}; };  // handled in click()/drag()
   buttons_.push_back(bar);
 }

@@ -236,16 +236,17 @@ Settings loadSettings() {
 // Reads settings.conf's entries over `s`. oldFoveation: the file is from
 // before foveation_version=2.
 static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) {
+  using namespace value_range;
   FocusSettingsReader focus;
   StashSettingsReader servers(s.stash, s.otherServers);
   bool focusRead = false;  // else the focus stays as in `s`
   for (const auto& [key, value] : file) {
     if (key == "accent") s.accent.preset = accentPreset(value);
-    else if (key == "accent_hue") s.accent.hue = std::clamp(std::atoi(value.c_str()), 0, 359);
+    else if (key == "accent_hue") s.accent.hue = std::clamp(std::atoi(value.c_str()), kAccentHue.least, kAccentHue.most);
     else if (key == "accent_brightness")
-      s.accent.brightness = std::clamp(std::atoi(value.c_str()), 0, 100);
+      s.accent.brightness = std::clamp(std::atoi(value.c_str()), kPercent.least, kPercent.most);
     else if (key == "accent_saturation")
-      s.accent.saturation = std::clamp(std::atoi(value.c_str()), 0, 100);
+      s.accent.saturation = std::clamp(std::atoi(value.c_str()), kPercent.least, kPercent.most);
     else if (key == "language") s.language = value;
     else if (key == "gaze_correction_learned") s.gazeLearned = value;
     else if (key == "keyboard_layout") s.keyboardLayout = value;
@@ -263,13 +264,13 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "subtitle_distance_cm") s.subtitleDistance = std::atoi(value.c_str());
     else if (key == "video_mipmaps") s.videoMipmaps = value != "0";
     else if (key == "anti_shimmer") parseAntiShimmer(value, s.antiShimmer);
-    else if (key == "sharpen") s.sharpen = std::clamp(std::atoi(value.c_str()), 0, 300);
-    else if (key == "match_colour") s.matchColour = std::clamp(std::atoi(value.c_str()), 0, 100);
+    else if (key == "sharpen") s.sharpen = std::clamp(std::atoi(value.c_str()), kSharpen.least, kSharpen.most);
+    else if (key == "match_colour") s.matchColour = std::clamp(std::atoi(value.c_str()), kPercent.least, kPercent.most);
     else if (key == "match_brightness")
-      s.matchBrightness = std::clamp(std::atoi(value.c_str()), 0, 100);
+      s.matchBrightness = std::clamp(std::atoi(value.c_str()), kPercent.least, kPercent.most);
     else if (key == "tone_look") s.toneLook = value == "1";
     else if (key == "render_scale")
-      s.legacyRenderScale = std::clamp(std::atoi(value.c_str()), 50, 200);
+      s.legacyRenderScale = std::clamp(std::atoi(value.c_str()), kRenderScale.least, kRenderScale.most);
     else if (key == "video_resolution")
       s.videoResolution = std::clamp(std::atoi(value.c_str()), kMinResolution, kMaxResolution);
     else if (key == "video_resolution_pixels")
@@ -305,14 +306,14 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "thumbnails") s.thumbnails = value != "0";
     else if (key == "show_performance") s.showPerformance = value == "1";
     else if (key == "vibration") s.vibration = value != "0";
-    else if (key == "volume") s.volume = std::clamp(std::atoi(value.c_str()), 0, 130);
+    else if (key == "volume") s.volume = std::clamp(std::atoi(value.c_str()), kKeptVolume.least, kKeptVolume.most);
     else if (key == "screen_distance_cm") s.screen.distance = std::atof(value.c_str()) / 100;
     else if (key == "screen_height_cm") s.screen.height = std::atof(value.c_str()) / 100;
     else if (key == "screen_curve") s.screen.curve = static_cast<float>(std::atof(value.c_str()));
     else if (key == "script_enabled") s.scripts.enabled = value == "1";
     else if (key == "script_address") s.scripts.address = value;
     else if (key == "script_offset_ms")
-      s.scripts.offsetMs = std::clamp(std::atoi(value.c_str()), -kScriptOffsetLimit, kScriptOffsetLimit);
+      s.scripts.offsetMs = std::clamp(std::atoi(value.c_str()), kScriptOffset.least, kScriptOffset.most);
     else if (key == "script_range_low") s.scripts.rangeLow = std::atoi(value.c_str());
     else if (key == "script_range_high") s.scripts.rangeHigh = std::atoi(value.c_str());
     else if (key == "skip_seconds")
@@ -339,8 +340,8 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
                               s.foveationRing, s.foveationOutside);
   if (focusRead) focus.finish(s.focus, s.focusPrefs);
   s.screen = s.screen.clamped();
-  s.scripts.rangeLow = std::clamp(s.scripts.rangeLow, 0, 100 - kScriptRangeGap);
-  s.scripts.rangeHigh = std::clamp(s.scripts.rangeHigh, s.scripts.rangeLow + kScriptRangeGap, 100);
+  s.scripts.rangeLow = std::clamp(s.scripts.rangeLow, kScriptStroke.least, kScriptStroke.most - kScriptRangeGap);
+  s.scripts.rangeHigh = std::clamp(s.scripts.rangeHigh, s.scripts.rangeLow + kScriptRangeGap, kScriptStroke.most);
   return s;
 }
 

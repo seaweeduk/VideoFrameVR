@@ -55,8 +55,7 @@ void StashPages::showHome(Menu& m) {
   StashHomePage& p = pageOf(st);
   p.stale = true;
   p.seed = static_cast<uint64_t>(unixNow()) * 1000 + ++p.visits;  // new random picks
-  m.list_.offset = static_cast<int>(std::floor(p.scroll));
-  m.list_.fraction = p.scroll - m.list_.offset;
+  m.list_.setPosition(p.scroll);
 }
 
 void StashPages::leaveHome(Menu& m) {
@@ -104,7 +103,7 @@ void StashPages::layoutHome(Menu& m) {
   st.takeChanges(sources(m));  // a new catalog, the library's history
   const StashCatalog* c = catalog(m);
   if (c)
-    p.rebuild(st, *c, m.stash_->generation(), shownFormat(m), m.view_.stash.malePerformers);
+    p.rebuild(st, *c, m.stash_->generation(), shownFormat(m), m.view_.stash->malePerformers);
   const double x0 = kContentLeft, right = kContentRight;
 
   layoutHomeHeader(m, p, c);
@@ -191,7 +190,7 @@ void StashPages::layoutHome(Menu& m) {
     b.size = more;
     b.bare = true;
     b.radius = kit::kCorner;
-    b.stashLook = static_cast<int>(StashLook::Shelf);
+    b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::Shelf);
     b.action = [open] {
       open();
       return MenuCommand{};
@@ -269,7 +268,7 @@ void StashPages::layoutHome(Menu& m) {
         StashHomePage& home = pageOf(now);
         if (const StashCatalog* latest = catalog(m))
           home.rebuild(now, *latest, m.stash_->generation(), shownFormat(m),
-                       m.view_.stash.malePerformers);
+                       m.view_.stash->malePerformers);
         return play(m, home.shelves[s].all, path, false);
       };
       addSceneCard(m, b, scene);
@@ -306,7 +305,7 @@ void StashPages::layoutHome(Menu& m) {
       if (entry.played > 0) b.plays = std::to_string(entry.played);
       b.card = true;
       b.radius = kCardCorner;
-      b.stashLook = static_cast<int>(StashLook::PerformerCard);
+      b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::PerformerCard);
       b.stashId = performer.id;
       b.action = [&m, id = performer.id] {
         showPerformer(m, id);

@@ -4,6 +4,7 @@
 #include "deletion.h"
 #include "file_util.h"
 #include "library.h"
+#include "location.h"
 #include "media_server.h"
 #include "menu.h"
 #include "notices.h"
@@ -27,11 +28,6 @@
 #include <cmath>
 #include <cstdio>
 #include <utility>
-
-bool isStream(const std::string& location) {
-  return location.find("://") != std::string::npos && !remote::isRemote(location) &&
-         !isStashScene(location);
-}
 
 PlaybackSession::PlaybackSession(VideoPlayer& player, Settings& settings, Library& library,
                                  VideoMemory& memory, Offline& offline,
@@ -131,9 +127,9 @@ bool PlaybackSession::open(const std::string& requested) {
       if (!openingRecord || !awaitingRecord) running.video = legacy;
     }
   }
-  awaitingResume = awaitingRecord && settings.resume && !isStream(path) && !isPhotoFile(path);
+  awaitingResume = awaitingRecord && settings.resume && !isLink(path) && !isPhotoFile(path);
   resolvedResume = -1;
-  passthrough.videoChanged(isStream(path));
+  passthrough.videoChanged(isLink(path));
   videoChanged();
   running.applyVideoSettings();
   knownWidth = knownHeight = 0;  // re-detect the format once the size is known
@@ -151,7 +147,7 @@ bool PlaybackSession::open(const std::string& requested) {
     // A newly chosen video always plays, even if the last one was paused,
     // from where it was left if the library knows (streams start over).
     double start = -1;
-    if (settings.resume && !isStream(path)) {
+    if (settings.resume && !isLink(path)) {
       const VideoRecord r = library.record(path);
       start = resumePoint(r.resumeSeconds, r.durationSeconds);
     }
@@ -163,7 +159,7 @@ bool PlaybackSession::open(const std::string& requested) {
   durationKept = false;
   // As for links, Stash's stream opens its preview at once: the first one
   // pointed at then comes about 0.4 s sooner over a LAN.
-  seekPreview.videoChanged(path, isStream(path) || isStashScene(path));
+  seekPreview.videoChanged(path, isStream(path));
   nextSlideAt = glfwGetTime() + slideshowSeconds;  // each photo gets its full time
   return running.video.hasFormat;
 }
@@ -208,7 +204,7 @@ void PlaybackSession::step(int step, bool atEnd) {
   const bool replaced = endStep;  // Previous or Next pressed while an end's step is under way
   endStep = false;
   if (running.currentFile.empty()) return;
-  if (isStream(running.currentFile)) {
+  if (isLink(running.currentFile)) {
     say(strings().jobs.notForStreams);
     return;
   }
@@ -349,7 +345,7 @@ void PlaybackSession::pollFailure() {
 void PlaybackSession::countPlay(bool opened) {
   // A play counts each time a video file opens (a resumed
   // one too; pausing, looping and seeking don't). Streams and photos don't.
-  if (opened && !running.currentFile.empty() && !isStream(running.currentFile) &&
+  if (opened && !running.currentFile.empty() && !isLink(running.currentFile) &&
       !isPhotoFile(running.currentFile)) {
     library.recordPlay(running.currentFile);
     videoOpened = true;
@@ -443,7 +439,7 @@ void PlaybackSession::poll() {
   if (atEnd != wasAtEnd) {
     const AfterVideo after = afterVideo();
     if (atEnd && (after == AfterVideo::Next || after == AfterVideo::Shuffle) &&
-        !isStream(running.currentFile))
+        !isLink(running.currentFile))
       step(1, true);
     else
       menuAtEnd = atEnd;
@@ -495,7 +491,7 @@ void PlaybackSession::photoShown(int photoWidth, int photoHeight) {
 }
 
 void PlaybackSession::fill(MenuView& view) const {
-  view.streaming = isStream(running.currentFile);
+  view.streaming = isLink(running.currentFile);
   // A scene from Stash's stream only through Stash (docs/alpha/delete-file.md).
   // A scene played from its server: only through a server that deletes.
   view.deletable = running.currentFile.empty() || view.streaming ? MenuView::Deletable::No

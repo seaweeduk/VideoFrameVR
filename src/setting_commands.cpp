@@ -21,8 +21,9 @@ bool applySettingCommand(const MenuCommand& c, Settings& settings) {
       const int value = static_cast<int>(c.value);
       if (c.type == MenuCommand::SetAccent) accent.preset = std::clamp(value, 0, kAccentCustom);
       else if (c.type == MenuCommand::SetAccentHue) accent.hue = (value % 360 + 360) % 360;
-      else if (c.type == MenuCommand::SetAccentBrightness) accent.brightness = std::clamp(value, 0, 100);
-      else accent.saturation = std::clamp(value, 0, 100);
+      else if (c.type == MenuCommand::SetAccentBrightness)
+        accent.brightness = std::clamp(value, value_range::kPercent.least, value_range::kPercent.most);
+      else accent.saturation = std::clamp(value, value_range::kPercent.least, value_range::kPercent.most);
       saveSettings(settings);
       break;
     }
@@ -185,13 +186,13 @@ void changeScripts(const MenuCommand& c, Settings& settings) {
                     ? std::string()
                     : c.path.substr(first, c.path.find_last_not_of(" \t") - first + 1);
   } else if (c.type == MenuCommand::SetScriptOffset) {
-    s.offsetMs = std::clamp(value, -kScriptOffsetLimit, kScriptOffsetLimit);
+    s.offsetMs = std::clamp(value, value_range::kScriptOffset.least, value_range::kScriptOffset.most);
   } else if (c.type == MenuCommand::SetScriptRangeLow) {
     // The other end keeps its distance.
-    s.rangeLow = std::clamp(value, 0, 100 - kScriptRangeGap);
+    s.rangeLow = std::clamp(value, value_range::kScriptStroke.least, value_range::kScriptStroke.most - kScriptRangeGap);
     s.rangeHigh = std::max(s.rangeHigh, s.rangeLow + kScriptRangeGap);
   } else {
-    s.rangeHigh = std::clamp(value, kScriptRangeGap, 100);
+    s.rangeHigh = std::clamp(value, kScriptRangeGap, value_range::kScriptStroke.most);
     s.rangeLow = std::min(s.rangeLow, s.rangeHigh - kScriptRangeGap);
   }
   saveSettings(settings);
@@ -214,8 +215,8 @@ void fillSettings(MenuView& view, const Settings& settings) {
   view.seekPreview = settings.seekPreview;
   view.thumbnails = settings.thumbnails;
   view.vibration = settings.vibration;
-  view.controls.map = settings.controls;
-  view.controls.gestures = settings.gestures;
+  view.controls.map = &settings.controls;
+  view.controls.gestures = &settings.gestures;
   view.controls.skipSeconds = settings.skipSeconds;
   view.controls.bigSkipSeconds = settings.bigSkipSeconds;
   view.showWhatsNew = settings.showWhatsNew;

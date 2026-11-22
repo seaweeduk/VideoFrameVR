@@ -95,7 +95,7 @@ void StashPages::drawIcon(cairo_t* cr, StashIcon icon, double cx, double cy, dou
 void StashPages::drawButton(const Menu& m, cairo_t* cr, const Button& b, const double ink[4]) {
   const Palette& pal = m.palette();
   const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
-  switch (static_cast<StashLook>(b.stashLook)) {
+  switch (static_cast<StashLook>(b.look)) {
     case StashLook::SceneColumns: {
       const SceneColumns c = sceneColumns(m, b.x + b.w);
       if (m.downloadedMark(b.offlinePath))

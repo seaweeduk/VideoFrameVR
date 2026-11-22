@@ -311,5 +311,6 @@ bool Menu::pointingAtLongList(int& page) const {
 bool Menu::pointingAtVolume() const {
   if (setup_ || hovered_ < 0 || hovered_ >= static_cast<int>(buttons_.size())) return false;
   const Button& b = buttons_[hovered_];
-  return b.panel == kMain && (b.volumeSlider || b.icon == Icon::VolumeUp || b.icon == Icon::Mute);
+  return b.panel == kMain &&
+         (b.part == PartKind::VolumeSlider || b.icon == Icon::VolumeUp || b.icon == Icon::Mute);
 }

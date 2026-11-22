@@ -114,7 +114,7 @@ void StashPages::layoutSceneTab(Menu& m, Menu::StripLayout& strip) {
                             showSceneDetails(m);
                           return MenuCommand{};
                         });
-  b.stashLook = static_cast<int>(StashLook::Tab);
+  b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::Tab);
   b.stashIcon = static_cast<int>(StashIcon::Stash);
   b.disabled = !open && (m.view_.currentFile.empty() || m.view_.streaming || m.view_.photo);
 }
@@ -249,11 +249,11 @@ void StashPages::layoutSceneDetails(Menu& m) {
   // A copy on this device: its video's scene.
   const int index = c && local && m.stashCovers_ ? m.stashCovers_->sceneIndex(path) : -1;
   const StashScene* s = index >= 0 ? &c->scenes()[index] : nullptr;
-  const bool male = m.view_.stash.malePerformers;
+  const bool male = m.view_.stash->malePerformers;
   // Editing tags needs write-back on; turned off, the edits go, as they do
   // for another video.
-  const bool canEdit = s && m.view_.stash.writeBack && m.stash_->writeBack() &&
-                       mediaServer(m.view_.stash.kind).abilities().editTags;
+  const bool canEdit = s && m.view_.stash->writeBack && m.stash_->writeBack() &&
+                       mediaServer(m.view_.stash->kind).abilities().editTags;
   if (path != d.path || (s ? s->id : 0) != d.scene || (d.editing && !canEdit)) {
     if (d.editing && st.typing == StashMenu::Typing::Tags) m.editing_ = false;
     d.editing = d.adding = d.confirm = d.saving = false;
@@ -386,10 +386,10 @@ void StashPages::SceneDetails::notInStash() {
     if (c)
       for (const StashCatalogFolder& f : c->folders())
         if (!f.folder.empty())
-          if (std::string here = m.view_.stash.localPath(f.folder); !here.empty())
+          if (std::string here = m.view_.stash->localPath(f.folder); !here.empty())
             folders.push_back(std::move(here));
     if (folders.empty())
-      for (const StashFolderMap& f : m.view_.stash.folders) folders.push_back(f.to);
+      for (const StashFolderMap& f : m.view_.stash->folders) folders.push_back(f.to);
     const bool inside = std::any_of(folders.begin(), folders.end(), [&](const std::string& f) {
       return !f.empty() && stashUnder(path, f);
     });
@@ -451,7 +451,7 @@ StashPages::Button* StashPages::SceneDetails::chip(const std::string& label,
   b.dim = outlined;  // More, "+N more": a link
   b.bare = outlined;
   b.radius = kTagH / 2;
-  b.stashLook = static_cast<int>(StashLook::TagChip);
+  b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::TagChip);
   b.action = [action] {
     action();
     return MenuCommand{};
@@ -545,7 +545,7 @@ void StashPages::SceneDetails::addTags() {
   field.on = typing;
   field.caret = typing ? m.caret() : -1;
   field.example = hint;  // while empty, typed into or not
-  field.stashLook = static_cast<int>(StashLook::Field);  // its icon even while empty
+  field.part = PartKind::Stash, field.look = static_cast<int>(StashLook::Field);  // its icon even while empty
   field.radius = 12;
   m.buttons_.push_back(field);
   if (!d.search.empty()) {
@@ -674,7 +674,7 @@ void StashPages::SceneDetails::about() {
       const int age = stashAge(p.born, s->day);
       if (age >= 0) b.detail = stashPrinted(t.ageThen, age);
       b.stashId = p.id;
-      b.stashLook = static_cast<int>(StashLook::PerformerCard);
+      b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::PerformerCard);
       b.action = [&m, id = p.id] {
         showPerformer(m, id);
         return MenuCommand{};
@@ -736,7 +736,7 @@ void StashPages::SceneDetails::tagHeading(const std::vector<int>& tags) {
   const double headY = cy + (kTagH - kOrderH) / 2;
   Button heading;
   heading.panel = Menu::kBrowser;
-  heading.listLook = static_cast<int>(ListLook::Heading);
+  heading.part = PartKind::List, heading.look = static_cast<int>(ListLook::Heading);
   heading.x = kRightX - 12;  // its text in line with the column's
   heading.y = headY;
   heading.w = m.textWidth(t.tags, kit::kGroupTitleSize, true) + 24;
@@ -1060,7 +1060,7 @@ void StashPages::SceneDetails::actions() {
     b.size = count;
     b.selected = selected;
     b.radius = kit::kCorner;
-    b.stashLook = static_cast<int>(StashLook::Go);
+    b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::Go);
     b.stashIcon = static_cast<int>(icon);
     b.action = std::move(action);
     const ActionSpace a = actionSpace(kActionH);
@@ -1220,7 +1220,7 @@ void StashPages::drawSceneButton(const Menu& m, cairo_t* cr, const Button& b,
                                  const double ink[4]) {
   const Palette& pal = m.palette();
   const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
-  switch (static_cast<StashLook>(b.stashLook)) {
+  switch (static_cast<StashLook>(b.look)) {
     case StashLook::Tab: {  // as the strip's other tabs, with Stash's mark
       double icon[4];
       m.iconInk(b, ink, icon);

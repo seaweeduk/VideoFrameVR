@@ -149,7 +149,7 @@ void StashPages::layoutCard(Menu& m, double x, double w, double bottom) {
 void StashPages::editServer(Menu& m, int field, ServerKind kind) {
   if (!m.stashMenu_) attach(m);
   StashMenu& st = state(m);
-  const StashSettings& now = m.view_.stash;
+  const StashSettings& now = *m.view_.stash;
   const bool inUse = now.kind == kind;
   st.draft = {inUse ? now.url : std::string(), inUse ? now.apiKey : std::string(), "", ""};
   st.draftUnverified = inUse && now.unverified() ? now.unverifiedHost : std::string();
@@ -167,7 +167,7 @@ void StashPages::editServer(Menu& m, int field, ServerKind kind) {
   m.settingsPages_.section = Menu::SettingsSection::Stash;  // where Save and Cancel go back to
 }
 
-void StashPages::editServer(Menu& m, int field) { editServer(m, field, m.view_.stash.kind); }
+void StashPages::editServer(Menu& m, int field) { editServer(m, field, m.view_.stash->kind); }
 
 // The choice at the top of the section: no server (-1), or a kind (its
 // place in mediaServers()). One with a server set up is used at once, its
@@ -177,7 +177,7 @@ MenuCommand StashPages::chooseServer(Menu& m, int index) {
   leaveSettings(m);
   if (index < 0) return command(MenuCommand::UseServer, -1)();
   const ServerKind kind = mediaServers()[index]->kind();
-  const StashSettings& now = m.view_.stash;
+  const StashSettings& now = *m.view_.stash;
   if (now.enabled && now.kind == kind) return {};
   if (m.view_.serversSetUp >> static_cast<int>(kind) & 1)
     return command(MenuCommand::UseServer, static_cast<int>(kind))();
@@ -190,7 +190,7 @@ MenuCommand StashPages::chooseServer(Menu& m, int index) {
 // sending to it.
 StashSettingsShown StashPages::settingsShown(Menu& m) {
   const StashStrings& t = strings().stash;
-  const StashSettings& s = m.view_.stash;
+  const StashSettings& s = *m.view_.stash;
   StashSettingsShown shown;
   shown.enabled = s.enabled;
   shown.abilities = mediaServer(s.kind).abilities();
@@ -307,7 +307,7 @@ void StashPages::layoutSettings(Menu& m, Menu::PageLayout& page, const StashSett
   if (shown.certificate) {
     sync.tooltip = ts.untrustedTip;
     sync.action = [&m] {
-      m.openDialog(Menu::Dialog::StashCertificate, stashHost(m.view_.stash.url));
+      m.openDialog(Menu::Dialog::StashCertificate, stashHost(m.view_.stash->url));
       return MenuCommand{};
     };
   }
@@ -452,7 +452,7 @@ void StashPages::layoutServerEditor(Menu& m) {
     b.caret = active ? m.caret() : -1;
     b.radius = 12;
     b.fontSize = Menu::kTextSize;
-    b.stashLook = static_cast<int>(StashLook::Field);
+    b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::Field);
     if (i < 2) b.tooltip = named.tipFields[i];
     m.buttons_.push_back(b);
     if (password) {
@@ -506,7 +506,7 @@ void StashPages::layoutServerEditor(Menu& m) {
       return MenuCommand{};
     });
     verify.panel = Menu::kBrowser;
-    verify.stashLook = static_cast<int>(StashLook::Warning);
+    verify.part = PartKind::Stash, verify.look = static_cast<int>(StashLook::Warning);
     verify.x = x;
     verify.y = y;
     verify.w = std::min(m.textWidth(ts.verify, Menu::kTextSize, false) + 82, cancel.x - kGap - x);
@@ -577,7 +577,7 @@ void StashPages::layoutSendPanel(Menu& m) {
         line(t.nothing, false, 1);
       if (plan.found > 0) line(stashPrinted(t.found, stashNumber(plan.found)), true, 1);
       if (plan.waiting > 0) line(stashPrinted(t.waitingToo, stashNumber(plan.waiting)), true, 1);
-      line(mediaServer(m.view_.stash.kind).abilities().ratingsAndWatchedOnly() ? t.rulesBasic
+      line(mediaServer(m.view_.stash->kind).abilities().ratingsAndWatchedOnly() ? t.rulesBasic
                                                                                 : t.rules,
            true, 2);
       if (sendable) line(t.backup, true, 1);

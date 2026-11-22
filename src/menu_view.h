@@ -24,6 +24,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <tuple>
 #include <vector>
 
 // Match the room's switch (room_light.h): not offered, the room not shown,
@@ -82,29 +83,38 @@ struct ScreenView {
 // patch pointed at isn't one colour, or the picture can't be read.
 enum class KeyPickNote { None, Uneven, Unreadable };
 
+// What a view's pointers point at until it is filled: T's defaults, for the
+// whole run.
+template <class T>
+const T* defaultShown() {
+  static const T value{};
+  return &value;
+}
+
 // Settings' Controls (menu_controls.cpp): the controller type it shows,
-// what the buttons do, its gestures, and how far Skip and Big skip go.
+// what the buttons do, its gestures, and how far Skip and Big skip go. The
+// buttons' and gestures' are the settings' own, by pointer (MenuViewCopies).
 struct ControlsView {
   ControllerType type = ControllerType::Touch;
-  ControlMap map;
-  GestureMap gestures;
+  const ControlMap* map = defaultShown<ControlMap>();
+  const GestureMap* gestures = defaultShown<GestureMap>();
   int skipSeconds = 10, bigSkipSeconds = 60;
   bool operator==(const ControlsView& o) const {
-    return type == o.type && map == o.map && gestures == o.gestures && skipSeconds == o.skipSeconds &&
+    return type == o.type && *map == *o.map && *gestures == *o.gestures && skipSeconds == o.skipSeconds &&
            bigSkipSeconds == o.bigSkipSeconds;
   }
   bool operator!=(const ControlsView& o) const { return !(*this == o); }
 };
 
-// Everything the menu shows about the app.
-struct MenuView {
-  PlaybackState playback;
-  VideoFormat format;
+// Everything the menu shows about the app (MenuView, below), in groups by
+// what a change of a field redraws (Menu::update()). A new field goes in
+// the group that says what it needs.
+
+// A change of any of these lays the whole menu out again.
+struct MenuViewLayout {
   bool halfPacked = false;  // flat 3D shown with half-squeezed eyes (chosen by hand)
-  ScreenView screen;
   bool passthrough = false;
-  GreenScreen greenScreen;   // of the running video
-  bool colourKey = false;    // ... its key is a colour key (VideoSettings::colourKeyed()) ...
+  bool colourKey = false;    // the running video's key is a colour key (VideoSettings::colourKeyed()) ...
   KeyColour keyColour;       // ... on this colour
   bool fillChecked = false;  // ... and the video was checked for a flat background
   bool fillChecking = false;  // ... or is being, and hasn't answered yet
@@ -115,45 +125,26 @@ struct MenuView {
   bool maskFormat = false;   // its format is the one a packed mask comes in (maskFormat())
   bool maskLayers = false;   // its mask has a second layer (VideoSettings::maskLayersFound)
   bool secondLayerHidden = false;  // ... hidden by hand
-  int opacity = 100;            // of the running video, percent
   bool opacityApplies = false;  // the runtime blends the video over the room
   std::string currentFile;
   bool playbackFailed = false;  // the current video couldn't be played
   bool discEncrypted = false;   // ... because it is an encrypted disc image
   bool decoderBusy = false;     // ... because the decoder is busy (decoder_holders.h)
-  Accent accent;
   bool floatingSubtitles = false;
-  bool hardwareAv1 = false;  // the headset's decoder takes AV1 (SteamOS 0.5.10)
   bool streaming = false;  // the current video is a link, not a file
   int videoWidth = 0, videoHeight = 0;
   bool background = true;  // night sky around the flat screen
   bool autoPassthrough = false;  // passthrough switches itself on for videos made for it
   bool keyGreen = false;         // a PC whose runtime doesn't blend: passthrough draws the room green
   bool passthroughAvailable = false;  // the runtime blends, or keyGreen is on in its place
-  int subtitleSize = 100, subtitleRaise = 0, subtitleDistance = 150;  // see Settings
   bool photo = false;        // the current file is a photo
   int slideshowSeconds = 0;  // 0 = no slideshow
   AfterVideo afterVideo = AfterVideo::Next;  // what happens when a video ends
-  // Picture settings of the running video.
-  int brightness = 0, contrast = 0, saturation = 0;
-  ColourBalance balance;  // the video's, or Match the room's while it is on and applies
   RoomMatch roomMatch = RoomMatch::Hidden;
   bool roomMatched = false;  // Match the room is on (applied only while the room is shown)
-  int matchColour = 70, matchBrightness = 60;  // percent (Settings::matchColour)
-  float zoom = 1.0f;
-  int originForward = 0;  // surround viewpoint: percent of the sphere's radius toward the picture
   bool tvGamma = false;  // SDR video converted for a TV's gamma (darker shadows)
   bool videoMipmaps = true;  // global: video sampled through mipmaps
-  AntiShimmer antiShimmer = AntiShimmer::On;  // this run's: without them (anti_shimmer.h)
-  int sharpen = 0;           // global: video sharpening in percent, 0 = off
   bool toneLook = false;     // global: tone curve and vignette
-  // Global eye size: the choice (pixels with stops, otherwise percent),
-  // and the requested and allowed scales in percent.
-  int videoResolution = 100, videoResolutionActive = 100, videoResolutionEffective = 100;
-  const std::vector<int>* resolutionStops = nullptr;  // Frame; owned by the run
-  int resolutionOverride = 0;  // eye image pixels across this run asks for from the command line, else 0
-  int resolutionBase = 0;    // eye image pixels across at 100 %
-  bool resolutionNotice = false;  // 1× has changed meaning; show the migrated size
   // The Frame's foveation (FoveationLevel), where the eye images have it.
   bool foveationAvailable = false;
   FoveationLevel foveation = FoveationLevel::High;
@@ -165,6 +156,87 @@ struct MenuView {
   bool frameReuse = true;  // Frame: repeated frames not drawn, this run's (frame_reuse.h)
   bool advancedSettings = false;
   int refreshRate = 0;  // Frame: Hz, SteamVR's for this app (refresh_rate.h); 0: not changeable
+  std::array<int, 9> foveationMaps{{0, 1, 2, 3, 4, 5, 6, 7, 8}};
+  std::array<int, 3> sharpDegrees{};
+  bool resume = true;           // videos start where they were left
+  bool freeDecoder = false;     // Frame: the decoder is freed from Steam without asking
+  bool seekPreview = true;      // the seek bar shows the frame where the pointer is
+  bool showPerformance = false;  // the performance readout, this run's (--show-performance)
+  bool vibration = true;        // controllers buzz on clicks, seeks and grabs
+  bool thumbnails = true;       // file browser and library: thumbnails, else a video icon
+  bool setupBanner = false;     // the Library's "You're all set" after setup (DismissSetupBanner)
+  bool showWhatsNew = true;     // What's new opens after updates (Settings::showWhatsNew)
+  ReleaseUpdate::State releaseUpdate = ReleaseUpdate::State::Disabled;
+  std::string releaseVersion;
+  DiagnosticsExport::State diagnostics = DiagnosticsExport::State::Idle;
+  std::string diagnosticsFile;  // Saved: the zip's name
+  bool crashedLastRun = false;  // until its diagnostics are saved
+  bool softwareDecoding = false;  // the video plays without hardware decoding
+  ScriptStatus scriptStatus;    // funscripts: how far the way to a device has got, and whether the video has a script
+  std::string downloadsTo;      // Settings::downloadsTo
+  // The strip's delete button (docs/alpha/delete-file.md): not shown
+  // (nothing open, a link), shown, or shown disabled for a scene played
+  // from Stash's stream: Send to Stash off, or Stash not answering.
+  enum class Deletable : uint8_t { No, Yes, NeedsSendToStash, StashDown } deletable = Deletable::No;
+};
+// Every field, in order: one added to MenuViewLayout and not named here
+// doesn't compile.
+inline bool operator==(const MenuViewLayout& a, const MenuViewLayout& b) {
+  const auto fields = [](const MenuViewLayout& v) {
+    const auto& [halfPacked, passthrough, colourKey, keyColour, fillChecked, fillChecking,
+                 greenScreenFound, keyPicking, keyPickNote, packedAlpha, maskFormat, maskLayers,
+                 secondLayerHidden, opacityApplies, currentFile, playbackFailed, discEncrypted,
+                 decoderBusy, floatingSubtitles, streaming, videoWidth, videoHeight, background,
+                 autoPassthrough, keyGreen, passthroughAvailable, photo, slideshowSeconds, afterVideo,
+                 roomMatch, roomMatched, tvGamma, videoMipmaps, toneLook, foveationAvailable, foveation,
+                 showFoveation, foveationLearned, sharpBins, foveationRing, foveationOutside,
+                 frameReuse, advancedSettings, refreshRate, foveationMaps, sharpDegrees, resume,
+                 freeDecoder, seekPreview, showPerformance, vibration, thumbnails, setupBanner,
+                 showWhatsNew, releaseUpdate, releaseVersion, diagnostics, diagnosticsFile,
+                 crashedLastRun, softwareDecoding, scriptStatus, downloadsTo, deletable] = v;
+    return std::tie(halfPacked, passthrough, colourKey, keyColour, fillChecked, fillChecking,
+                    greenScreenFound, keyPicking, keyPickNote, packedAlpha, maskFormat, maskLayers,
+                    secondLayerHidden, opacityApplies, currentFile, playbackFailed, discEncrypted,
+                    decoderBusy, floatingSubtitles, streaming, videoWidth, videoHeight, background,
+                    autoPassthrough, keyGreen, passthroughAvailable, photo, slideshowSeconds, afterVideo,
+                    roomMatch, roomMatched, tvGamma, videoMipmaps, toneLook, foveationAvailable, foveation,
+                    showFoveation, foveationLearned, sharpBins, foveationRing, foveationOutside,
+                    frameReuse, advancedSettings, refreshRate, foveationMaps, sharpDegrees, resume,
+                    freeDecoder, seekPreview, showPerformance, vibration, thumbnails, setupBanner,
+                    showWhatsNew, releaseUpdate, releaseVersion, diagnostics, diagnosticsFile,
+                    crashedLastRun, softwareDecoding, scriptStatus, downloadsTo, deletable);
+  };
+  return fields(a) == fields(b);
+}
+inline bool operator!=(const MenuViewLayout& a, const MenuViewLayout& b) { return !(a == b); }
+
+// A change of one of these redraws only its own part: a slider's row, or
+// the strip (appFps). Menu::update() names each field: a new one doesn't
+// compile until it says what it redraws.
+struct MenuViewRows {
+  // Picture settings of the running video.
+  int brightness = 0, contrast = 0, saturation = 0;
+  ColourBalance balance;  // the video's, or Match the room's while it is on and applies
+  int matchColour = 70, matchBrightness = 60;  // percent (Settings::matchColour)
+  float zoom = 1.0f;
+  int originForward = 0;  // surround viewpoint: percent of the sphere's radius toward the picture
+  int opacity = 100;            // of the running video, percent
+  int sharpen = 0;           // global: video sharpening in percent, 0 = off
+  ScreenView screen;
+  int subtitleSize = 100, subtitleRaise = 0, subtitleDistance = 150;  // see Settings
+  int appFps = 0;               // frames the app drew in the last second (0 = not known yet)
+};
+
+// Shown on one page only, which compares them itself (Menu::PageKind's
+// update): Video settings' Display, Focus, and the Library's banner.
+struct MenuViewPage {
+  // Global eye size: the choice (pixels with stops, otherwise percent),
+  // and the requested and allowed scales in percent.
+  int videoResolution = 100, videoResolutionActive = 100, videoResolutionEffective = 100;
+  const std::vector<int>* resolutionStops = nullptr;  // Frame; owned by the run
+  int resolutionOverride = 0;  // eye image pixels across this run asks for from the command line, else 0
+  int resolutionBase = 0;    // eye image pixels across at 100 %
+  bool resolutionNotice = false;  // 1× has changed meaning; show the migrated size
   // What the resolution, foveation, mipmaps, anti-shimmer and sharpening
   // match (presets.h), else Custom.
   PerformancePreset performancePreset = PerformancePreset::High;
@@ -175,35 +247,56 @@ struct MenuView {
   int userPresetsListed = 0;
   int userPresetShown = -1;
   const Presets* presets = nullptr;
-  std::array<int, 9> foveationMaps{{0, 1, 2, 3, 4, 5, 6, 7, 8}};
-  std::array<int, 3> sharpDegrees{};
   FocusView focus;  // stereo focus of the running video
   bool motionEmulation = true;  // global: head translation emulation (motion.h)
   int motionDistance = 200;     // ... cm
-  bool resume = true;           // videos start where they were left
-  bool freeDecoder = false;     // Frame: the decoder is freed from Steam without asking
-  bool seekPreview = true;      // the seek bar shows the frame where the pointer is
-  bool seekPreviewAvailable = true;  // ... can at all (not on the Steam Frame)
-  bool showPerformance = false;  // the performance readout, this run's (--show-performance)
-  bool vibration = true;        // controllers buzz on clicks, seeks and grabs
-  bool thumbnails = true;       // file browser and library: thumbnails, else a video icon
-  StashSettings stash;          // the media server's setup in use (its pages show only while it is on)
-  unsigned serversSetUp = 0;    // a bit per ServerKind with a server set up, in use or not
-  bool setupBanner = false;     // the Library's "You're all set" after setup (DismissSetupBanner)
-  bool showWhatsNew = true;     // What's new opens after updates (Settings::showWhatsNew)
-  int appFps = 0;               // frames the app drew in the last second (0 = not known yet)
-  ReleaseUpdate::State releaseUpdate = ReleaseUpdate::State::Disabled;
-  std::string releaseVersion;
-  DiagnosticsExport::State diagnostics = DiagnosticsExport::State::Idle;
-  std::string diagnosticsFile;  // Saved: the zip's name
-  bool crashedLastRun = false;  // until its diagnostics are saved
-  bool softwareDecoding = false;  // the video plays without hardware decoding
+};
+
+// Parts whose fields redraw in different ways: Menu::update() (and
+// StashPages::update(), updateControls()) compares them a field at a time.
+struct MenuViewParts {
+  PlaybackState playback;
+  VideoFormat format;
+  GreenScreen greenScreen;   // of the running video
+  Accent accent;
   ScriptSettings scripts;       // funscripts on a device (script_player.h)
-  ScriptStatus scriptStatus;    // ... how far the way to one has got, and whether the video has a script
-  std::string downloadsTo;      // Settings::downloadsTo
-  // The strip's delete button (docs/alpha/delete-file.md): not shown
-  // (nothing open, a link), shown, or shown disabled for a scene played
-  // from Stash's stream: Send to Stash off, or Stash not answering.
-  enum class Deletable : uint8_t { No, Yes, NeedsSendToStash, StashDown } deletable = Deletable::No;
+  // The media server's setup in use (its pages show only while it is on):
+  // the settings' own, by pointer (MenuViewCopies).
+  const StashSettings* stash = defaultShown<StashSettings>();
   ControlsView controls;
+};
+
+// Read when the menu is drawn, but a change of one redraws nothing by
+// itself.
+struct MenuViewQuiet {
+  bool hardwareAv1 = false;  // the headset's decoder takes AV1 (SteamOS 0.5.10)
+  AntiShimmer antiShimmer = AntiShimmer::On;  // this run's: without them (anti_shimmer.h)
+  bool seekPreviewAvailable = true;  // the seek bar's preview can show at all (not on the Steam Frame)
+  unsigned serversSetUp = 0;    // a bit per ServerKind with a server set up, in use or not
+};
+
+// Everything the menu shows about the app. No fields of its own: each is in
+// the group above for what a change of it redraws.
+struct MenuView : MenuViewLayout, MenuViewRows, MenuViewPage, MenuViewParts, MenuViewQuiet {};
+
+// The menu's own copies of what a view has by pointer, so that it keeps
+// drawing what it was handed, as with the rest of the view; copied only
+// when they change.
+struct MenuViewCopies {
+  StashSettings stash;
+  ControlMap controls;
+  GestureMap gestures;
+  // `view` pointed at these.
+  void point(MenuView& view) {
+    view.stash = &stash;
+    view.controls.map = &controls;
+    view.controls.gestures = &gestures;
+  }
+  // `view`'s taken (where they changed), and `view` pointed at these.
+  void take(MenuView& view) {
+    if (*view.stash != stash) stash = *view.stash;
+    if (*view.controls.map != controls) controls = *view.controls.map;
+    if (*view.controls.gestures != gestures) gestures = *view.controls.gestures;
+    point(view);
+  }
 };

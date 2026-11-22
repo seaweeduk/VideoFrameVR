@@ -122,7 +122,7 @@ void StashPages::drawPerformerButton(const Menu& m, cairo_t* cr, const Button& b
   const double dim[4] = {pal.textDim.r, pal.textDim.g, pal.textDim.b, pal.textDim.a};
   const StashCatalog* c = catalog(m);
   const int index = c ? c->performerById(b.stashId) : -1;
-  if (b.stashLook == static_cast<int>(StashLook::PerformerCard)) {
+  if (b.look == static_cast<int>(StashLook::PerformerCard)) {
     const double pw = b.w - 2 * kCardIn, ph = std::round(pw * 1.5), px = b.x + kCardIn,
                  py = b.y + kCardIn;
     if (index >= 0)
@@ -161,8 +161,7 @@ double StashPages::performerCardHeight(double w, int lines) {
 void StashPages::showPerformers(Menu& m) {
   StashPerformersState& ps = state(m).performers;
   m.showPage(Menu::Page::StashPerformers);
-  m.list_.offset = static_cast<int>(std::floor(ps.scroll));
-  m.list_.fraction = ps.scroll - m.list_.offset;
+  m.list_.setPosition(ps.scroll);
   m.side_.position = ps.railPosition;
 }
 
@@ -223,7 +222,7 @@ void StashPages::layoutPerformerGrid(Menu& m, double x0, double top) {
     b.card = true;
     b.radius = kCardCorner;
     b.scrolls = true;
-    b.stashLook = static_cast<int>(StashLook::PerformerCard);
+    b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::PerformerCard);
     b.stashId = p.id;
     b.action = [&m, id = p.id] {
       showPerformer(m, id);
@@ -252,7 +251,7 @@ void StashPages::layoutPerformers(Menu& m) {
   StashMenu& st = state(m);
   StashPerformersState& ps = st.performers;
   const StashStrings& t = strings().stash;
-  st.buildPerformers(ps, sources(m), m.view_.stash.malePerformers);
+  st.buildPerformers(ps, sources(m), m.view_.stash->malePerformers);
   const StashCatalog* c = catalog(m);
   const bool editing = m.editingFilter();
   const double bottom = editing ? kKeyboardY - 16 : kListBottom;
@@ -323,7 +322,7 @@ void StashPages::layoutPerformers(Menu& m) {
           s.sort = StashPerformerSort::Name;
           s.descending = false;
           s.stale = true;
-          state(m).buildPerformers(s, sources(m), m.view_.stash.malePerformers);
+          state(m).buildPerformers(s, sources(m), m.view_.stash->malePerformers);
         }
         const StashCatalog* cat = catalog(m);
         for (size_t at = 0; cat && at < s.shown.size(); ++at)
@@ -455,7 +454,7 @@ void StashPages::enterPerformer(Menu& m) {
   st.list.performers = {st.performer};
   const StashCatalog* c = catalog(m);
   if (c && st.list.format != StashFormat::All &&
-      st.count(st.list, *c, m.view_.stash.malePerformers) == 0)
+      st.count(st.list, *c, m.view_.stash->malePerformers) == 0)
     st.list.format = StashFormat::All;
 }
 
@@ -531,7 +530,7 @@ void StashPages::layoutProfile(Menu& m, int index, double x, double top, double 
     b.size = count;
     b.latched = i < chosen;
     b.radius = kCoStarH / 2;
-    b.stashLook = static_cast<int>(StashLook::CoStar);
+    b.part = PartKind::Stash, b.look = static_cast<int>(StashLook::CoStar);
     b.stashId = co.id;
     b.tooltip = t.tipCoStar;
     b.action = [&m, id = co.id] {

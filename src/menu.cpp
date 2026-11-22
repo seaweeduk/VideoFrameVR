@@ -43,7 +43,10 @@ constexpr double kGlideWindow = 0.1, kGlideStart = 120, kGlideTau = 0.15, kGlide
 
 }  // namespace
 
-Menu::Menu() = default;
+Menu::Menu() {
+  viewCopies_.point(view_);
+  browserCopies_.point(browserView_);
+}
 
 Menu::~Menu() {
   for (Frame* f : {&browserFrame_, &stripFrame_})
@@ -104,8 +107,8 @@ bool Menu::hoverRect(PanelId panel, float rect[4], float& radius, bool& danger, 
   const Button& b = buttons_[hovered_];
   // Sliders show their own state.
   // A red label on the strip has only its tooltip.
-  if (b.panel != panel || b.disabled || b.volumeSlider || b.slider != MenuCommand::None ||
-      b.chip == 1)
+  if (b.panel != panel || b.disabled || b.part == PartKind::VolumeSlider ||
+      b.slider != MenuCommand::None || (b.part == PartKind::Chip && b.look == 1))
     return false;
   // Cut off where drawButtons() cuts the button off.
   clip[0] = clip[1] = -1e6f;
@@ -132,7 +135,7 @@ bool Menu::hoverRect(PanelId panel, float rect[4], float& radius, bool& danger, 
         return true;
       }
   }
-  if (b.scrollbar) {  // its thumb alone is raised
+  if (b.part == PartKind::Scrollbar) {  // its thumb alone is raised
     double x = 0, w = 0, y = 0, h = 0;
     scrollbarTrack(b, x, w);
     scrollbarThumb(b, y, h);
@@ -200,78 +203,45 @@ void Menu::update(const MenuView& view) {
       std::abs(a.duration - b.duration) > 0.5 || a.title != b.title ||
       trackSignature(a.tracks) != trackSignature(b.tracks) ||
       view.format.projection != view_.format.projection ||
-      view.format.stereo != view_.format.stereo || view.halfPacked != view_.halfPacked ||
-      view.currentFile != view_.currentFile || view.playbackFailed != view_.playbackFailed ||
-      view.discEncrypted != view_.discEncrypted || view.decoderBusy != view_.decoderBusy ||
+      view.format.stereo != view_.format.stereo ||
+      static_cast<const MenuViewLayout&>(view) != view_ ||
       accent != view_.accent ||
       a.videoCodec != b.videoCodec ||
       a.pixelFormat != b.pixelFormat || a.fps != b.fps || a.audioCodec != b.audioCodec ||
       a.audioChannels != b.audioChannels ||
-      view.floatingSubtitles != view_.floatingSubtitles || view.streaming != view_.streaming ||
-      view.videoWidth != view_.videoWidth ||
-      view.videoHeight != view_.videoHeight ||
-      view.tvGamma != view_.tvGamma ||
-      view.videoMipmaps != view_.videoMipmaps ||
-      view.toneLook != view_.toneLook ||
-      view.foveationAvailable != view_.foveationAvailable || view.foveation != view_.foveation ||
-      view.showFoveation != view_.showFoveation || view.sharpBins != view_.sharpBins ||
-      view.foveationLearned != view_.foveationLearned ||
-      view.foveationRing != view_.foveationRing || view.sharpDegrees != view_.sharpDegrees ||
-      view.foveationOutside != view_.foveationOutside || view.frameReuse != view_.frameReuse ||
-      view.advancedSettings != view_.advancedSettings ||
-      view.refreshRate != view_.refreshRate ||
-      view.foveationMaps != view_.foveationMaps ||
-      view.photo != view_.photo || view.slideshowSeconds != view_.slideshowSeconds ||
-      view.afterVideo != view_.afterVideo ||
-      view.background != view_.background || view.autoPassthrough != view_.autoPassthrough ||
-      view.keyGreen != view_.keyGreen || view.passthroughAvailable != view_.passthroughAvailable ||
-      view.passthrough != view_.passthrough || view.packedAlpha != view_.packedAlpha ||
-      view.maskFormat != view_.maskFormat || view.opacityApplies != view_.opacityApplies ||
-      view.maskLayers != view_.maskLayers || view.secondLayerHidden != view_.secondLayerHidden ||
-      view.roomMatch != view_.roomMatch || view.roomMatched != view_.roomMatched ||
       view.greenScreen.on != view_.greenScreen.on ||
       view.greenScreen.source != view_.greenScreen.source ||
-      view.colourKey != view_.colourKey || view.keyColour != view_.keyColour ||
-      view.keyPicking != view_.keyPicking || view.keyPickNote != view_.keyPickNote ||
-      view.fillChecked != view_.fillChecked || view.fillChecking != view_.fillChecking ||
-      view.greenScreenFound != view_.greenScreenFound ||
-      view.resume != view_.resume || view.freeDecoder != view_.freeDecoder ||
-      view.seekPreview != view_.seekPreview || view.thumbnails != view_.thumbnails ||
-      view.showPerformance != view_.showPerformance || view.vibration != view_.vibration ||
-      view.releaseUpdate != view_.releaseUpdate || view.releaseVersion != view_.releaseVersion ||
-      view.diagnostics != view_.diagnostics || view.diagnosticsFile != view_.diagnosticsFile ||
-      view.crashedLastRun != view_.crashedLastRun || view.downloadsTo != view_.downloadsTo ||
-      view.softwareDecoding != view_.softwareDecoding || view.stash.card != view_.stash.card ||
+      view.stash->card != view_.stash->card ||
       view.scripts.enabled != view_.scripts.enabled || view.scripts.address != view_.scripts.address ||
-      view.scriptStatus != view_.scriptStatus ||
-      view.deletable != view_.deletable ||
-      view.setupBanner != view_.setupBanner || view.showWhatsNew != view_.showWhatsNew ||
       a.chapters.size() != b.chapters.size() || a.chapter != b.chapter;
   // These values change only their slider rows, not the strip or the page's layout.
-  if (view.brightness != view_.brightness) sliderChanged(MenuCommand::SetBrightness);
-  if (view.contrast != view_.contrast) sliderChanged(MenuCommand::SetContrast);
-  if (view.saturation != view_.saturation) sliderChanged(MenuCommand::SetSaturation);
-  if (view.balance.warmth != view_.balance.warmth) sliderChanged(MenuCommand::SetWarmth);
-  if (view.balance.tint != view_.balance.tint) sliderChanged(MenuCommand::SetTint);
-  if (view.balance.exposure != view_.balance.exposure) sliderChanged(MenuCommand::SetExposure);
-  if (view.matchColour != view_.matchColour) sliderChanged(MenuCommand::SetMatchColour);
-  if (view.matchBrightness != view_.matchBrightness) sliderChanged(MenuCommand::SetMatchBrightness);
-  if (view.zoom != view_.zoom) sliderChanged(MenuCommand::SetZoom);
-  if (view.originForward != view_.originForward) sliderChanged(MenuCommand::SetOriginForward);
-  if (view.opacity != view_.opacity) sliderChanged(MenuCommand::SetOpacity);
-  if (view.sharpen != view_.sharpen) sliderChanged(MenuCommand::SetSharpen);
-  if (view.screen.distanceCm != view_.screen.distanceCm) sliderChanged(MenuCommand::SetScreenDistance);
-  if (view.screen.heightCm != view_.screen.heightCm) sliderChanged(MenuCommand::SetScreenHeight);
-  if (view.screen.curvePercent != view_.screen.curvePercent) sliderChanged(MenuCommand::SetScreenCurve);
+  const auto& [brightness, contrast, saturation, balance, matchColour, matchBrightness, zoom,
+               originForward, opacity, sharpen, screen, subtitleSize, subtitleRaise, subtitleDistance,
+               appFps] = static_cast<const MenuViewRows&>(view);
+  if (brightness != view_.brightness) sliderChanged(MenuCommand::SetBrightness);
+  if (contrast != view_.contrast) sliderChanged(MenuCommand::SetContrast);
+  if (saturation != view_.saturation) sliderChanged(MenuCommand::SetSaturation);
+  if (balance.warmth != view_.balance.warmth) sliderChanged(MenuCommand::SetWarmth);
+  if (balance.tint != view_.balance.tint) sliderChanged(MenuCommand::SetTint);
+  if (balance.exposure != view_.balance.exposure) sliderChanged(MenuCommand::SetExposure);
+  if (matchColour != view_.matchColour) sliderChanged(MenuCommand::SetMatchColour);
+  if (matchBrightness != view_.matchBrightness) sliderChanged(MenuCommand::SetMatchBrightness);
+  if (zoom != view_.zoom) sliderChanged(MenuCommand::SetZoom);
+  if (originForward != view_.originForward) sliderChanged(MenuCommand::SetOriginForward);
+  if (opacity != view_.opacity) sliderChanged(MenuCommand::SetOpacity);
+  if (sharpen != view_.sharpen) sliderChanged(MenuCommand::SetSharpen);
+  if (screen.distanceCm != view_.screen.distanceCm) sliderChanged(MenuCommand::SetScreenDistance);
+  if (screen.heightCm != view_.screen.heightCm) sliderChanged(MenuCommand::SetScreenHeight);
+  if (screen.curvePercent != view_.screen.curvePercent) sliderChanged(MenuCommand::SetScreenCurve);
   const KeySliders &key = view.greenScreen.sliders(view.colourKey),
                    &keyWas = view_.greenScreen.sliders(view_.colourKey);
   if (key.strength != keyWas.strength) sliderChanged(MenuCommand::SetKeyStrength);
   if (key.softness != keyWas.softness) sliderChanged(MenuCommand::SetKeySoftness);
   if (key.spill != keyWas.spill) sliderChanged(MenuCommand::SetKeySpill);
   if (key.shrink != keyWas.shrink) sliderChanged(MenuCommand::SetKeyShrink);
-  if (view.subtitleSize != view_.subtitleSize) sliderChanged(MenuCommand::SetSubtitleSize);
-  if (view.subtitleRaise != view_.subtitleRaise) sliderChanged(MenuCommand::SetSubtitleRaise);
-  if (view.subtitleDistance != view_.subtitleDistance) sliderChanged(MenuCommand::SetSubtitleDistance);
+  if (subtitleSize != view_.subtitleSize) sliderChanged(MenuCommand::SetSubtitleSize);
+  if (subtitleRaise != view_.subtitleRaise) sliderChanged(MenuCommand::SetSubtitleRaise);
+  if (subtitleDistance != view_.subtitleDistance) sliderChanged(MenuCommand::SetSubtitleDistance);
   if (view.scripts.offsetMs != view_.scripts.offsetMs) sliderChanged(MenuCommand::SetScriptOffset);
   // One pushes the other along to keep their gap.
   if (view.scripts.rangeLow != view_.scripts.rangeLow || view.scripts.rangeHigh != view_.scripts.rangeHigh) {
@@ -286,12 +256,13 @@ void Menu::update(const MenuView& view) {
     current_ = current;
     currentGeneration_ = library_->generation();
   }
-  if (view.appFps != view_.appFps) stripDirty_ = true;
+  if (appFps != view_.appFps) stripDirty_ = true;
   if (accent != view_.accent) {
     accent_ = accentColours(accent);
     finishes_.setAccent(accent_);
   }
   view_ = view;
+  viewCopies_.take(view_);
   view_.accent = accent;
   // This video goes with the video (changed: the page is laid out again).
   if (view_.currentFile.empty() && settingsPages_.videoSection == VideoSection::ThisVideo) {
@@ -663,7 +634,7 @@ MenuCommand Menu::click() {
     return {};
   }
   if (buttons_[index].disabled) return {};
-  if (buttons_[index].volumeSlider) {
+  if (buttons_[index].part == PartKind::VolumeSlider) {
     strip_.draggingVolume = true;
     const MenuCommand c = volumeAtPointer(buttons_[index]);
     trackValue_ = c.value;
@@ -677,7 +648,7 @@ MenuCommand Menu::click() {
     trackValue_ = c.value;
     return c;
   }
-  if (buttons_[index].scrollbar) {
+  if (buttons_[index].part == PartKind::Scrollbar) {
     draggingScroll_ = true;
     scrollToPointer(buttons_[index]);
     return {};
@@ -753,7 +724,7 @@ MenuCommand Menu::drag(bool held) {
   if (draggingScroll_) {
     if (pointerPanel_ == kBrowser)
       for (const Button& b : buttons_)
-        if (b.scrollbar && b.popup == (dialog_ != Dialog::None)) scrollToPointer(b);
+        if (b.part == PartKind::Scrollbar && b.popup == (dialog_ != Dialog::None)) scrollToPointer(b);
     return {};
   }
   if (!held) {
@@ -785,7 +756,7 @@ MenuCommand Menu::drag(bool held) {
   }
   if (!strip_.draggingVolume) return {};
   for (const Button& b : buttons_)
-    if (b.volumeSlider) {
+    if (b.part == PartKind::VolumeSlider) {
       const MenuCommand c = volumeAtPointer(b);
       feelTrack(c.value, 0, 100, false, 0, [](double v) { return v / 100; });
       return c;
@@ -872,8 +843,7 @@ void Menu::setListPosition(double position) {
     for (const Button& b : buttons_)
       if (b.panel == kBrowser && (b.icon == Icon::JumpTop || b.icon == Icon::JumpBottom))
         browserChanged(b.y - 2, b.y + b.h + 2, b.x - 2, b.x + b.w + 2);
-  list_.offset = static_cast<int>(std::floor(position));
-  list_.fraction = position - list_.offset;
+  list_.setPosition(position);
   listMovedAt_ = steadySeconds();
   hideTooltipWhileScrolling();
   if (page_ == Page::Files || page_ == Page::Library || page_ == Page::Offline || networkList() ||
@@ -1381,7 +1351,7 @@ Menu::Button& Menu::navRow(const std::string& label, Icon icon, bool chosen, dou
   b.panel = kBrowser;
   b.nav = true;
   b.on = chosen;
-  b.listLook = static_cast<int>(place ? ListLook::NavPlace : ListLook::NavSection);
+  b.part = PartKind::List, b.look = static_cast<int>(place ? ListLook::NavPlace : ListLook::NavSection);
   b.dimInk = place && !chosen;
   b.x = kNavLeft + (place ? kNavIndent : 0);
   b.y = y;
@@ -1420,7 +1390,7 @@ void Menu::layoutNavigation() {
     if (!place.hidden) places.push_back(&place);
   // With Stash's section below, only the room the places take; with the
   // "Use Stash?" card, a row less.
-  const int capacity = stash_ ? 6 : view_.stash.card ? kNavPlaces - 1 : kNavPlaces;
+  const int capacity = stash_ ? 6 : view_.stash->card ? kNavPlaces - 1 : kNavPlaces;
   const int count = static_cast<int>(places.size());
   const bool pages = count > capacity;
   const int shown = pages ? capacity - 1 : count;
@@ -1447,7 +1417,7 @@ void Menu::layoutNavigation() {
                                }, x + w - 4 - pin, y + (kPlaceRowH - pin) / 2, pin);
       unpin.panel = kBrowser;
       unpin.bare = true;
-      unpin.listLook = static_cast<int>(ListLook::PlacePin);
+      unpin.part = PartKind::List, unpin.look = static_cast<int>(ListLook::PlacePin);
       unpin.iconSize = 22;
       unpin.tooltip = place.path + "\n";
       if (!place.available) unpin.tooltip += std::string(t.folderUnavailable) + "\n";
@@ -1478,7 +1448,7 @@ void Menu::layoutNavigation() {
     next.disabled = navigation_.placeOffset + shown >= count;
     Button dots;
     dots.panel = kBrowser;
-    dots.listLook = static_cast<int>(ListLook::PagerDots);
+    dots.part = PartKind::List, dots.look = static_cast<int>(ListLook::PagerDots);
     dots.x = x + kNavIndent + kNavButton;
     dots.y = y;
     dots.w = w - kNavIndent - 2 * kNavButton;
@@ -1512,7 +1482,7 @@ void Menu::layoutNavigation() {
   navigation_.stashCardY = -1;
   if (stash_)
     StashPages::layoutNavigation(*this, y, settingsY - 12);
-  else if (view_.stash.card)
+  else if (view_.stash->card)
     StashPages::layoutCard(*this, x, w, settingsY - 12);
 }
 
@@ -1824,11 +1794,11 @@ size_t Menu::stripLook() const {
     mix(static_cast<size_t>(b.icon));
     unsigned flags = 0;
     for (const bool f : {b.selected, b.popup, b.raised, b.danger, b.dangerHover, b.bare, b.primary,
-                         b.latched, b.disabled, b.crossed, b.on, b.tab, b.listItem, b.band,
-                         b.volumeSlider, b.hoverOnly, b.dialog})
+                         b.latched, b.disabled, b.crossed, b.on, b.hoverOnly})
       flags = flags << 1 | f;
     mix(flags);
-    mix(static_cast<size_t>(b.chip) << 8 | static_cast<size_t>(b.fontSize));
+    mix(static_cast<size_t>(b.part));
+    mix(static_cast<size_t>(b.look) << 8 | static_cast<size_t>(b.fontSize));
   }
   return h;
 }
@@ -1864,7 +1834,7 @@ size_t Menu::browserLook(double scroll, double page, double side, double notes) 
     if (b.panel != kBrowser) continue;
     if (b.hoverOnly) mix(hovered_ == static_cast<int>(i) || hovered_ == static_cast<int>(i) - 1);
     for (const double v : {b.x, b.y, b.w, b.h, static_cast<double>(b.rating), static_cast<double>(b.sliderValue),
-                           static_cast<double>(b.offlineLook)})
+                           static_cast<double>(b.part == PartKind::Offline ? b.look : 0)})
       mix(number(v));
     for (const std::string* s : {&b.label, &b.detail, &b.thumbPath, &b.caption, &b.badge, &b.byline, &b.size,
                                  &b.date, &b.plays, &b.length, &b.sliderText})
@@ -2242,6 +2212,7 @@ void Menu::redraw() {
     shownPictures_.clear();
     logosComing_.clear();
     browserView_ = view_;
+    browserCopies_.take(browserView_);
     browserOffset_ = list_.offset;
     browserFraction_ = list_.fraction;
     browserSide_ = side_.position;
@@ -2312,7 +2283,7 @@ bool Menu::shiftList() {
   // and of them only where the thumb was and is now: the track near the
   // panel's edge is costly to paint whole on every step.
   for (const Button& b : buttons_)
-    if (b.panel == kBrowser && b.scrollbar) {
+    if (b.panel == kBrowser && b.part == PartKind::Scrollbar) {
       double tx = 0, tw = 0, thumbY = 0, thumbH = 0;
       scrollbarTrack(b, tx, tw);
       scrollbarThumb(b, thumbY, thumbH);
