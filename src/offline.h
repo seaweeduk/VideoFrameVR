@@ -36,7 +36,8 @@ class Offline {
     uint64_t used = 0;  // by the copies on it
   };
   enum class State { Queued, Copying, Paused, Waiting, Failed, Done };
-  enum class Why { None, Server, Drive, Gone, NoRoom, Broken };  // Waiting or Failed
+  // Waiting or Failed. Unreadable: a local source there but not readable.
+  enum class Why { None, Server, Drive, Gone, NoRoom, Broken, Unreadable };
   struct Download {
     int64_t id = 0;
     std::string source;  // a path, a remote locator (remote.h) or a Stash scene's (stashSource())

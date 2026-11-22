@@ -43,6 +43,9 @@ std::string host(const std::string& locator);
 int port(const std::string& locator);
 // smb://h/s/a -> smb://h/s -> smb://h; "" above the root.
 std::string parent(const std::string& locator);
+// A locator as the app keeps it: SMB://h/s -> smb://h/s (the scheme in any
+// case names a locator). Anything else as it is.
+std::string lowerScheme(const std::string& location);
 
 enum class Status {
   Ok,

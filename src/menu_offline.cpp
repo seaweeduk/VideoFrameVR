@@ -712,9 +712,10 @@ void Menu::drawDownloadRow(cairo_t* cr, const Button& b, const double ink[4]) co
     if (d->state == Offline::State::Queued) {
       state = printed(t.queuedSize, sizeText(d->size).c_str());
     } else if (d->state == Offline::State::Waiting) {
-      state = d->why == Offline::Why::Drive    ? t.waitingDrive
-              : d->why == Offline::Why::Broken ? t.restarting
-                                               : t.waitingServer;
+      state = d->why == Offline::Why::Drive        ? t.waitingDrive
+              : d->why == Offline::Why::Broken     ? t.restarting
+              : d->why == Offline::Why::Unreadable ? t.waitingUnreadable
+                                                   : t.waitingServer;
       if (d->size) state += " · " + sizeText(d->size);
     } else if (d->state == Offline::State::Failed) {
       state = d->why == Offline::Why::NoRoom ? t.failedNoRoom : t.failedGone;
@@ -856,7 +857,9 @@ void Menu::drawOfflineButton(cairo_t* cr, const Button& b, const double ink[4]) 
                          copied.c_str(), total.c_str());
           break;
         case Offline::State::Waiting:
-          line = own->why == Offline::Why::Drive ? t.waitingDrive : t.waitingServer;
+          line = own->why == Offline::Why::Drive        ? t.waitingDrive
+                 : own->why == Offline::Why::Unreadable ? t.waitingUnreadable
+                                                        : t.waitingServer;
           break;
         case Offline::State::Failed:
           line = own->why == Offline::Why::NoRoom ? t.failedNoRoom : t.failedGone;

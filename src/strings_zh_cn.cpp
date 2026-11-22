@@ -902,6 +902,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.offline.pausedPlaying = "播放视频期间已暂停 · %d %% · %s / %s";
   s.offline.waitingServer = "正在等待服务器";
   s.offline.waitingDrive = "正在等待驱动器";
+  s.offline.waitingUnreadable = "无法读取视频，稍后重试";
   s.offline.restarting = "副本不一致，正在重新开始";
   s.offline.failedGone = "视频已不在原处";
   s.offline.failedNoRoom = "驱动器空间不足";

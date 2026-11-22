@@ -902,6 +902,7 @@ Strings spanishStrings(const Strings& english) {
   s.offline.pausedPlaying = "En pausa mientras se reproduce un vídeo · %d %% · %s de %s";
   s.offline.waitingServer = "Esperando al servidor";
   s.offline.waitingDrive = "Esperando a la unidad";
+  s.offline.waitingUnreadable = "No se puede leer el vídeo; se volverá a intentar";
   s.offline.restarting = "La copia no coincidía; empieza de nuevo";
   s.offline.failedGone = "El vídeo ya no está";
   s.offline.failedNoRoom = "No hay espacio suficiente en la unidad";

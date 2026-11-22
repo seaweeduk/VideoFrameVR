@@ -42,6 +42,9 @@ class Places {
   // A look started by refresh() hasn't been taken by poll() yet.
   bool looking() const { return pending_ != nullptr; }
   bool pinned(const std::string& path) const;
+  // Not "/": it would take every video on the device into the Library,
+  // apps' and games' own and every mounted drive's.
+  static bool pinnable(const std::string& path) { return path != "/"; }
   void togglePin(const std::string& path);
   // Edit places: moved by one among those shown in the editor (-1 up, 1 down),
   // hidden or shown, named ("" for its own name); back to the order found,

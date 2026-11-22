@@ -902,6 +902,7 @@ Strings japaneseStrings(const Strings& english) {
   s.offline.pausedPlaying = "動画の再生中は一時停止 · %d %% · %s / %s";
   s.offline.waitingServer = "サーバーの応答待ち";
   s.offline.waitingDrive = "ドライブの接続待ち";
+  s.offline.waitingUnreadable = "動画を読み込めません。もう一度試します";
   s.offline.restarting = "コピーが一致しなかったため最初からやり直します";
   s.offline.failedGone = "元の動画が見つかりません";
   s.offline.failedNoRoom = "ドライブの空き容量が足りません";

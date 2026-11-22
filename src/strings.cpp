@@ -931,6 +931,7 @@ constexpr Strings englishStrings() {
   s.offline.pausedPlaying = "Paused while a video plays · %d %% · %s of %s";
   s.offline.waitingServer = "Waiting for the server";
   s.offline.waitingDrive = "Waiting for the drive";
+  s.offline.waitingUnreadable = "The video can't be read; trying again";
   s.offline.restarting = "The copy didn't match; starting again";
   s.offline.failedGone = "The video isn't there any more";
   s.offline.failedNoRoom = "Not enough room on the drive";
