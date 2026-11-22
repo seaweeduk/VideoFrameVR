@@ -101,13 +101,13 @@ void Menu::endSetup(bool finished) {
     // Each pin goes first: the last tick's first, so they keep the order
     // they were shown in after Add.
     for (auto it = setup_->places.rbegin(); it != setup_->places.rend(); ++it)
-      if (!places_.pinned(*it)) places_.togglePin(*it);
+      if (!navigation_.places.pinned(*it)) navigation_.places.togglePin(*it);
     pinsChanged();
     for (const std::string& root : setup_->logins) remote::remember(root);
   }
   if (setup_ && setup_->stash.client) setup_->stash.client->cancel();
   setup_.reset();
-  smbForm_ = {};
+  network_.form = {};
   editing_ = false;
   dropdown_ = Dropdown::None;
   hovered_ = tooltip_ = pointerPanel_ = -1;
@@ -228,11 +228,11 @@ void SetupPages::redraw(Menu& m) {
   m.dirty_ = false;
   std::vector<SetupMenu::Box> damage;
   damage.swap(s.damage);
-  m.keyboardShown_ = false;
+  m.keyboard_.shown = false;
   layout(m);
   // The parts (menu_parts.h) put theirs on the browser: all of these are on setup's panel.
   for (Menu::Button& b : m.buttons_) b.panel = Menu::kSetup;
-  if (!m.keyboardShown_) m.keyPopup_ = {};  // gone with the keyboard
+  if (!m.keyboard_.shown) m.keyboard_.popup = {};  // gone with the keyboard
   // No tooltips (the keyboard's): one appearing would redraw it all.
   for (Menu::Button& b : m.buttons_) b.tooltip.clear();
   m.hovered_ = m.pointerPanel_ >= 0 ? m.buttonAt(m.pointerPanel_, m.pointerX_, m.pointerY_) : -1;
@@ -532,8 +532,8 @@ void SetupPages::drawHead(Menu& m, cairo_t* cr, const std::string& title, const 
 
 // Under the panel while it types, a panel of its own.
 void SetupPages::drawKeyboardPanel(Menu& m, cairo_t* cr) {
-  if (!m.keyboardShown_) return;
-  const double* k = m.keyboardRect_;
+  if (!m.keyboard_.shown) return;
+  const double* k = m.keyboard_.rect;
   MenuFinishes::panel(cr, k[0], k[1], k[2], k[3], 0, kit::kGroupCorner);
 }
 
@@ -563,7 +563,7 @@ void SetupPages::setStep(Menu& m, Step step) {
   }
   s.stash.page = SetupStash::Page::Ask;
   if (s.step == Step::Folders) {  // its tree stays as it was for Back
-    m.smbForm_ = {};
+    m.network_.form = {};
     m.editing_ = false;
   }
   s.step = step;

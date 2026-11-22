@@ -29,7 +29,7 @@ std::string Menu::scriptStatusText() const {
 
 void Menu::showScriptSettings() {
   showPage(Page::Settings);
-  settingsSection_ = SettingsSection::Scripts;
+  settingsPages_.section = SettingsSection::Scripts;
 }
 
 // Settings' Funscripts section: the switch; while on, where Intiface is and
@@ -93,7 +93,7 @@ void Menu::layoutScriptSettings(PageLayout& page) {
 }
 
 void Menu::openScriptAddress() {
-  scriptAddress_ = {true, view_.scripts.address};
+  settingsPages_.scriptAddress = {true, view_.scripts.address};
   dropdown_ = Dropdown::None;
   editing_ = true;
   dirty_ = true;
@@ -102,8 +102,8 @@ void Menu::openScriptAddress() {
 MenuCommand Menu::submitScriptAddress() {
   MenuCommand c;
   c.type = MenuCommand::SetScriptAddress;
-  c.path = scriptAddress_.text;
-  scriptAddress_ = {};
+  c.path = settingsPages_.scriptAddress.text;
+  settingsPages_.scriptAddress = {};
   editing_ = false;
   dirty_ = true;
   return c;
@@ -117,7 +117,7 @@ void Menu::layoutScriptAddress() {
   GroupLayout group = page.group(0, t.group);
   group.labelsFor({t.address});
   Field field;
-  field.text = scriptAddress_.text;
+  field.text = settingsPages_.scriptAddress.text;
   if (!kStandaloneHeadset) field.example = t.thisComputer;
   field.typing = editing_;
   field.action = [this] {
@@ -130,7 +130,7 @@ void Menu::layoutScriptAddress() {
              false, 6);
   group.buttons({{t.save, "", [this] { return submitScriptAddress(); }, false, true},
                  {text().cancel, "", [this] {
-                    scriptAddress_ = {};
+                    settingsPages_.scriptAddress = {};
                     editing_ = false;
                     dirty_ = true;
                     return MenuCommand{};

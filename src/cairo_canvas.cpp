@@ -137,7 +137,7 @@ void CairoCanvas::finishUpdate() {
   texture_.image = image_.image;
   texture_.view = image_.view;
   updating_ = false;
-  uploaded_ = true;
+  if (uploader_) uploaded_ = true;
 }
 
 void CairoCanvas::shiftUp(int x0, int y0, int x1, int y1, double dy) {

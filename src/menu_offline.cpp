@@ -80,8 +80,8 @@ void Menu::setOffline(Offline* offline) {
 void Menu::showOffline() {
   if (!offline_) return;
   showPage(Page::Offline);
-  scrollOffset_ = static_cast<int>(std::floor(offlineScroll_));
-  scrollFraction_ = offlineScroll_ - scrollOffset_;
+  list_.offset = static_cast<int>(std::floor(downloads_.scroll));
+  list_.fraction = downloads_.scroll - list_.offset;
 }
 
 // The library's oshash of a file, else Stash's.
@@ -95,9 +95,9 @@ std::string Menu::oshashFor(const std::string& path) const {
 
 // As listed: in the folder, the library or Stash; 0 if not known.
 uint64_t Menu::sizeFor(const std::string& path) const {
-  for (const FolderListing::Entry& e : listing_.entries())
+  for (const FolderListing::Entry& e : files_.listing.entries())
     if (e.path == path && e.size > 0) return e.size;
-  for (const LibraryItem& item : libraryItems_)
+  for (const LibraryItem& item : libraryPage_.items)
     if (item.entry.path == path && item.entry.size > 0) return item.entry.size;
   if (stash_ && stash_->catalog())
     if (const int scene = stashSceneAt(*stash_->catalog(), path); scene >= 0)
@@ -174,10 +174,10 @@ uint64_t roomOn(const Offline& offline, const Offline::Drive& d) {
 // question where downloads go; else to the drive chosen.
 MenuCommand Menu::startDownload(const std::string& path) {
   if (!offline_ || !downloadable(path)) return {};
-  offlineAsk_ = {};
-  offlineAsk_.path = path;
-  offlineAsk_.size = sizeFor(path);
-  offlineAsk_.oshash = oshashFor(path);
+  downloads_.ask = {};
+  downloads_.ask.path = path;
+  downloads_.ask.size = sizeFor(path);
+  downloads_.ask.oshash = oshashFor(path);
   const bool removable = std::any_of(offline_->drives().begin(), offline_->drives().end(),
                                      [](const Offline::Drive& d) { return !d.internal; });
   if (view_.downloadsTo.empty() && removable) {
@@ -189,14 +189,14 @@ MenuCommand Menu::startDownload(const std::string& path) {
 
 // Queues the download for the drive, or says it won't fit (and where it would).
 MenuCommand Menu::downloadTo(const std::string& root) {
-  const OfflineAsk ask = offlineAsk_;
+  const OfflineAsk ask = downloads_.ask;
   const Offline::Drive* drive = offline_->drive(root);
   if (drive && ask.size > 0 && ask.size > roomOn(*offline_, *drive)) {
-    offlineAsk_.root = root;
-    offlineAsk_.other.clear();
+    downloads_.ask.root = root;
+    downloads_.ask.other.clear();
     for (const Offline::Drive& d : offline_->drives())  // internal storage first
       if (d.root != root && ask.size <= roomOn(*offline_, d)) {
-        offlineAsk_.other = d.root;
+        downloads_.ask.other = d.root;
         break;
       }
     openDialog(Dialog::NoRoom, ask.path);
@@ -216,16 +216,16 @@ void Menu::offlineChanged() {
              std::to_string(static_cast<int>(d.why)) + (d.present ? "+" : "-") + d.root + "|";
   for (const Offline::Drive& d : offline_->drives()) shape += d.root + "|";
   for (const std::string& host : offline_->downServers()) shape += "!" + host;
-  if (shape != offlineShape_) {
-    offlineShape_ = shape;
-    ++offlineShapeGeneration_;
+  if (shape != downloads_.shape) {
+    downloads_.shape = shape;
+    ++downloads_.shapeGeneration;
     // Away from home, the library shows the copies in place of what's on the server.
-    if (!libraryItems_.empty() && placeLibraryItems()) sortLibrary();
+    if (!libraryPage_.items.empty() && placeLibraryItems()) sortLibrary();
     if (page_ != Page::Main) browserChanged();
     return;
   }
   if (page_ == Page::Main) return;
-  if (page_ == Page::Offline) browserChanged(0, listTop_ - 4);  // the summary and the drives
+  if (page_ == Page::Offline) browserChanged(0, list_.top - 4);  // the summary and the drives
   for (const Button& b : buttons_) {
     if (b.panel != kBrowser) continue;
     const Offline::Download* d = nullptr;
@@ -461,8 +461,8 @@ void Menu::layoutOfflinePage() {
     }
   }
 
-  listTop_ = drives.empty() ? kBrowserToolsY : kListTop;
-  listBottom_ = kListBottom;
+  list_.top = drives.empty() ? kBrowserToolsY : kListTop;
+  list_.bottom = kListBottom;
   // The list, in rows of kFileRowH: headings, the one copying taking two.
   struct Entry {
     const Offline::Download* d = nullptr;  // null: a heading
@@ -489,26 +489,26 @@ void Menu::layoutOfflinePage() {
   }
   int units = 0;
   for (const Entry& e : entries) units += e.units;
-  rowHeight_ = kFileRowH;
-  visibleRows_ = std::max(1, static_cast<int>((listBottom_ - listTop_) / kFileRowH));
-  listCount_ = units;
+  list_.rowHeight = kFileRowH;
+  list_.rows = std::max(1, static_cast<int>((list_.bottom - list_.top) / kFileRowH));
+  list_.count = units;
   int first, end;
-  clampScroll(listCount_, visibleRows_, first, end);
-  const double x0 = listLeft_, rowW = listRight_ - kScrollbarRoom - x0;
+  clampScroll(list_.count, list_.rows, first, end);
+  const double x0 = list_.left, rowW = list_.right - kScrollbarRoom - x0;
   constexpr double rowH = kFileRowH - kRowGap;
   // The drive column: as wide as the longest drive name in it needs, the
   // columns taking at most half the row.
-  driveColumnW_ = kDriveColumnW;
+  downloads_.driveColumnW = kDriveColumnW;
   std::vector<std::string> roots;
   for (const auto* d : done)
     if (std::find(roots.begin(), roots.end(), d->root) == roots.end()) roots.push_back(d->root);
   for (const std::string& root : roots) {
     const Offline::Drive* drive = offline_->drive(root);
     const std::string name = drive ? driveName(*drive, false) : baseName(root);
-    driveColumnW_ = std::max(driveColumnW_, kDriveTextX + std::ceil(textWidth(name, 24, false)) + 2);
+    downloads_.driveColumnW = std::max(downloads_.driveColumnW, kDriveTextX + std::ceil(textWidth(name, 24, false)) + 2);
   }
   const double most = rowW / 2 - kSizeColumnW - kDateColumnW - 2 * kColumnGap;
-  driveColumnW_ = std::min(driveColumnW_, std::max(kDriveColumnW, most));
+  downloads_.driveColumnW = std::min(downloads_.driveColumnW, std::max(kDriveColumnW, most));
   std::vector<ListItem> items;
   int firstItem = -1, endItem = 0;
   int at = 0;
@@ -524,7 +524,7 @@ void Menu::layoutOfflinePage() {
       items.back().thumbPath =
           e.d->present && (source.empty() || offline_->serverDown(source)) ? e.d->path : source;
     if (at <= first || from >= end) continue;
-    const double y = listTop_ + (from - scrollOffset_ - scrollFraction_) * kFileRowH;
+    const double y = list_.top + (from - list_.offset - list_.fraction) * kFileRowH;
     if (!e.d) {  // a heading, at the bottom of its row, over the rows it heads
       Button heading;
       heading.panel = kBrowser;
@@ -575,8 +575,8 @@ void Menu::layoutOfflinePage() {
                                     offline_->cancel(id);
                                     return MenuCommand{};
                                   }
-                                  offlineAsk_ = {};
-                                  offlineAsk_.id = id;
+                                  downloads_.ask = {};
+                                  downloads_.ask.id = id;
                                   openDialog(Dialog::RemoveDownload, source);
                                   return MenuCommand{};
                                 },
@@ -635,7 +635,7 @@ void Menu::layoutOfflinePage() {
   }
   Button probe;
   probe.h = rowH;
-  if (firstItem >= 0) wantThumbnails(items, firstItem, endItem, visibleRows_, listThumbW(probe));
+  if (firstItem >= 0) wantThumbnails(items, firstItem, endItem, list_.rows, listThumbW(probe));
   addScrollbar();
 }
 
@@ -686,12 +686,12 @@ void Menu::drawDownloadRow(cairo_t* cr, const Button& b, const double ink[4]) co
     // The drive, the size and when it was downloaded; or that it isn't there.
     const double dateX = end - kDateColumnW;
     const double sizeX = dateX - kColumnGap - kSizeColumnW;
-    const double driveX = sizeX - kColumnGap - driveColumnW_;
+    const double driveX = sizeX - kColumnGap - downloads_.driveColumnW;
     const Offline::Drive* drive = offline_->drive(d->root);
     drawIcon(cr, drive ? driveIcon(*drive) : Icon::Card, driveX + 14, b.y + b.h / 2, 24, dim[0], dim[1],
              dim[2]);
     drawText(cr, drive ? driveName(*drive, false) : baseName(d->root), driveX + kDriveTextX, b.y,
-             driveColumnW_ - kDriveTextX, b.h, 24, false, false, dim[0], dim[1], dim[2]);
+             downloads_.driveColumnW - kDriveTextX, b.h, 24, false, false, dim[0], dim[1], dim[2]);
     if (gone) {
       drawText(cr, t.missing, sizeX, b.y, end - sizeX, b.h, 24, false, false, dim[0], dim[1], dim[2]);
     } else {
@@ -921,7 +921,7 @@ void Menu::layoutOfflineDialog(DialogLayout& dialog) {
   dialog.button(textButton(base.cancel, Icon::None, close));
   if (dialog_ == Dialog::SaveTo) {
     dialog.title(t.saveToTitle);
-    dialog.line(offlineAsk_.size ? name + " · " + sizeText(offlineAsk_.size) : name, Ink::Strong, 2);
+    dialog.line(downloads_.ask.size ? name + " · " + sizeText(downloads_.ask.size) : name, Ink::Strong, 2);
     // One press picks the drive, remembers it and downloads there.
     const std::vector<Offline::Drive>& drives = offline_->drives();
     constexpr double cardH = 190;
@@ -952,24 +952,24 @@ void Menu::layoutOfflineDialog(DialogLayout& dialog) {
     });
     dialog.line(t.saveToHint);
   } else if (dialog_ == Dialog::NoRoom) {
-    const Offline::Drive* drive = offline_->drive(offlineAsk_.root);
-    const std::string driveText = drive ? driveName(*drive, false) : baseName(offlineAsk_.root);
+    const Offline::Drive* drive = offline_->drive(downloads_.ask.root);
+    const std::string driveText = drive ? driveName(*drive, false) : baseName(downloads_.ask.root);
     dialog.title(printed(t.noRoomTitle, driveText.c_str()));
     dialog.line(name, Ink::Strong, 2);
     const uint64_t room = drive ? roomOn(*offline_, *drive) : 0;
-    dialog.line(printed(t.needs, sizeText(offlineAsk_.size).c_str(), room ? sizeText(room).c_str() : "0"),
+    dialog.line(printed(t.needs, sizeText(downloads_.ask.size).c_str(), room ? sizeText(room).c_str() : "0"),
                 Ink::Warn);
-    dialog.line(offlineAsk_.other.empty()
+    dialog.line(downloads_.ask.other.empty()
                     ? std::string(t.noRoomHintOnly)
-                    : printed(t.noRoomHint, driveName(offlineAsk_.other, false).c_str()),
+                    : printed(t.noRoomHint, driveName(downloads_.ask.other, false).c_str()),
                 Ink::Dim, 2);
-    const Offline::Drive* other = offlineAsk_.other.empty() ? nullptr : offline_->drive(offlineAsk_.other);
+    const Offline::Drive* other = downloads_.ask.other.empty() ? nullptr : offline_->drive(downloads_.ask.other);
     if (!other) return;
     dialog.button(textButton(printed(t.instead, driveName(*other, false).c_str(),
                                      sizeText(roomOn(*offline_, *other)).c_str()),
                              driveIcon(*other), [this] {
                                dialog_ = Dialog::None;
-                               const OfflineAsk& a = offlineAsk_;
+                               const OfflineAsk& a = downloads_.ask;
                                offline_->add(a.path, a.size, a.oshash, a.other);
                                return MenuCommand{};
                              },
@@ -977,7 +977,7 @@ void Menu::layoutOfflineDialog(DialogLayout& dialog) {
   } else if (dialog_ == Dialog::RemoveDownload) {
     const Offline::Download* d = nullptr;
     for (const Offline::Download& x : offline_->downloads())
-      if (x.id == offlineAsk_.id) d = &x;
+      if (x.id == downloads_.ask.id) d = &x;
     dialog.title(t.removeTitle);
     if (d)
       dialog.line(printed(t.removeWhat, name.c_str(), sizeText(d->size).c_str(),
@@ -989,7 +989,7 @@ void Menu::layoutOfflineDialog(DialogLayout& dialog) {
                 Ink::Warn);
     Button remove = textButton(t.remove, Icon::Trash, [this] {
       dialog_ = Dialog::None;
-      offline_->remove(offlineAsk_.id);
+      offline_->remove(downloads_.ask.id);
       return MenuCommand{};
     });
     remove.danger = true;

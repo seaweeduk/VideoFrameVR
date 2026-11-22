@@ -4,14 +4,14 @@
 // each: its name in a field (to rename it), where it is, whether it shows
 // and its moves; Reset at the group's title, Done under it.
 void Menu::layoutPlacesPage() {
-  if (!placeRename_.path.empty()) {
+  if (!navigation_.placeRename.path.empty()) {
     layoutPlaceRename();
     return;
   }
   const PlacesStrings& t = text().places;
   auto place = [this](std::function<void(Places&)> change) {
     return [this, change] {
-      change(places_);
+      change(navigation_.places);
       dirty_ = true;
       return MenuCommand{};
     };
@@ -36,7 +36,7 @@ void Menu::layoutPlacesPage() {
   }
   constexpr double nameW = 520, moveW = kit::kRowH, in = kit::kSpacePiece;
   const double switchW = switchWidth(t.show);
-  const auto& places = places_.places();
+  const auto& places = navigation_.places.places();
   for (size_t i = 0; i < places.size(); ++i) {
     const Places::Place& p = places[i];
     const GroupLayout::Box row = group.room(kit::kRowH);
@@ -44,7 +44,7 @@ void Menu::layoutPlacesPage() {
     name.text = p.label;
     name.tooltip = t.tipRename;
     name.action = [this, path = p.path, own = p.ownName, label = p.label] {
-      placeRename_ = {path, own, label};
+      navigation_.placeRename = {path, own, label};
       editing_ = true;
       dirty_ = true;
       return MenuCommand{};
@@ -91,12 +91,12 @@ void Menu::layoutPlacesPage() {
 void Menu::layoutPlaceRename() {
   const PlacesStrings& t = text().places;
   char title[256];
-  std::snprintf(title, sizeof(title), t.renameTitle, placeRename_.ownName.c_str());
+  std::snprintf(title, sizeof(title), t.renameTitle, navigation_.placeRename.ownName.c_str());
   PageLayout page(*this, t.title);
   GroupLayout group = page.group(0, title);
   Field field;
-  field.text = placeRename_.text;
-  field.example = placeRename_.ownName;
+  field.text = navigation_.placeRename.text;
+  field.example = navigation_.placeRename.ownName;
   field.typing = editing_;
   field.action = [this] {
     editing_ = true;
@@ -110,7 +110,7 @@ void Menu::layoutPlaceRename() {
               }};
   save.primary = true;
   group.buttons({save, {strings().cancel, "", [this] {
-                          placeRename_ = {};
+                          navigation_.placeRename = {};
                           editing_ = false;
                           dirty_ = true;
                           return MenuCommand{};
@@ -119,8 +119,8 @@ void Menu::layoutPlaceRename() {
 }
 
 void Menu::savePlaceName() {
-  places_.rename(placeRename_.path, placeRename_.text);
-  placeRename_ = {};
+  navigation_.places.rename(navigation_.placeRename.path, navigation_.placeRename.text);
+  navigation_.placeRename = {};
   editing_ = false;
   dirty_ = true;
 }

@@ -4,6 +4,7 @@
 // controllers shown, with a label for each control and a line to it; the
 // gestures as a list; the chooser of a button's job and the gestures' editor.
 
+#include "control_rules.h"
 #include "menu.h"
 #include "setup_places.h"
 
@@ -84,7 +85,7 @@ struct ControlsPage {
   // The gestures' editor: first the buttons (held on the controller, then let
   // go), then the value.
   struct Editor {
-    enum class Mistake : uint8_t { None, Hands, Many, Trigger, Chooses, RoomLeft, RoomRight, RoomEither };
+    using Mistake = GestureMistake;
     int step = 1;
     int edit = -1;    // the gesture it changes (its index), else a new one
     bool back = false;  // the buttons again, from the value: Back goes back

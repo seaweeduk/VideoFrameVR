@@ -1,7 +1,8 @@
 #pragma once
 
+#include "delete_info.h"
 #include "file_ops.h"
-#include "menu.h"
+#include "menu_command.h"
 #include "stash_delete.h"
 
 #include <cstdint>
@@ -12,6 +13,7 @@
 
 class Library;
 class LibraryIndex;
+class Menu;
 class Offline;
 class Stash;
 class VideoPlayer;

@@ -18,7 +18,6 @@
 
 namespace {
 
-using Page = SetupFolders::Page;
 using Place = SetupFolders::Place;
 using Kind = SetupFolders::Place::Kind;
 
@@ -139,7 +138,7 @@ void SetupPages::drawBar(const Menu& m, cairo_t* cr, double x, double top, doubl
 void SetupPages::startFolders(Menu& m) {
   SetupFolders& f = *(m.setup_->folders = std::make_unique<SetupFolders>());
   f.finding.start([] { return setup_places::findDrives(); });
-  if (!m.discovery_.scanning()) m.discovery_.scan();
+  if (!m.network_.discovery.scanning()) m.network_.discovery.scan();
   f.open.insert(homeDir());
   readFolder(m, homeDir());
   showPlace(m, "/");
@@ -167,13 +166,13 @@ void SetupPages::update(Menu& m) {
   for (auto& [path, folder] : f.folders) {
     if (!folder.reading.take(folder.listing)) continue;
     folder.read = true;
-    if (s.step != SetupMenu::Step::Folders || f.page != Page::Pick || placeOf(m, path) != f.shown) continue;
+    if (s.step != SetupMenu::Step::Folders || f.page != SetupFolders::Page::Pick || placeOf(m, path) != f.shown) continue;
     if (path == f.shown) {  // the place itself: its folders, or its sign-in
       const remote::Status status = folder.listing.status;
       if ((status == remote::Status::NeedsLogin ||
            (path.rfind("sftp://", 0) == 0 &&
             (status == remote::Status::HostKeyUnknown || status == remote::Status::HostKeyChanged))) &&
-          m.smbForm_.kind == Menu::SmbForm::Kind::None && !m.smbForm_.signing)
+          m.network_.form.kind == Menu::SmbForm::Kind::None && !m.network_.form.signing)
         askLogin(m, remote::root(path));
       m.dirty_ = true;
       continue;
@@ -276,15 +275,15 @@ void SetupPages::ticksChanged(Menu& m) {
 
 void SetupPages::layoutFolders(Menu& m) {
   if (!m.setup_->folders) startFolders(m);
-  if (m.setup_->folders->page == Page::Added && m.setup_->places.empty()) m.setup_->folders->page = Page::Pick;
-  if (m.setup_->folders->page == Page::Pick)
+  if (m.setup_->folders->page == SetupFolders::Page::Added && m.setup_->places.empty()) m.setup_->folders->page = SetupFolders::Page::Pick;
+  if (m.setup_->folders->page == SetupFolders::Page::Pick)
     layoutPick(m);
   else
     layoutAdded(m);
 }
 
 void SetupPages::drawFolders(Menu& m, cairo_t* cr) {
-  if (m.setup_->folders->page == Page::Pick)
+  if (m.setup_->folders->page == SetupFolders::Page::Pick)
     drawPick(m, cr);
   else
     drawAdded(m, cr);
@@ -298,7 +297,7 @@ void SetupPages::showPlace(Menu& m, const std::string& root) {
   f.scroll = f.scrolled.count(root) ? f.scrolled[root] : 0;
   f.drag = {};
   f.reveal.clear();
-  m.smbForm_ = {};
+  m.network_.form = {};
   m.editing_ = root.empty();  // Add a computer: the keyboard up at once
   if (root.empty()) {
     f.computer.clear();
@@ -366,7 +365,7 @@ void SetupPages::layoutPick(Menu& m) {
   auto network = [&] {
     f.networkY = y;
     y += kit::kGroupTitle;
-    if (m.discovery_.scanning() && f.places.size() == computers) y += kit::kGroupTitle;
+    if (m.network_.discovery.scanning() && f.places.size() == computers) y += kit::kGroupTitle;
   };
   for (size_t i = 0; i < f.places.size(); ++i) {
     if (i == computers) network();
@@ -392,9 +391,9 @@ void SetupPages::layoutPick(Menu& m) {
   f.form = true;
   if (f.shown.empty()) {
     layoutAddComputer(m);
-  } else if (m.smbForm_.kind != Menu::SmbForm::Kind::None) {
+  } else if (m.network_.form.kind != Menu::SmbForm::Kind::None) {
     layoutSignIn(m);
-  } else if (m.smbForm_.signing && m.smbForm_.root == f.shown) {  // connecting
+  } else if (m.network_.form.signing && m.network_.form.root == f.shown) {  // connecting
     Menu::PageLayout page(m, Menu::PageLayout::UnderHeader{}, t.videosTitle);
     page.groupAt(0, kPaneX, kPaneY, kPaneR - kPaneX, m.serverName(f.shown)).status(Lamp::Busy, t.connecting);
   } else {
@@ -406,13 +405,13 @@ void SetupPages::layoutPick(Menu& m) {
   Menu::Action go{n == 0 ? std::string(t.skip) : n == 1 ? std::string(t.addOneFolder) : printed(t.addFolders, n), "",
                   [&m, n] {
                     SetupFolders& f = *m.setup_->folders;
-                    m.smbForm_ = {};
+                    m.network_.form = {};
                     m.editing_ = false;
                     if (n == 0) {
                       setStep(m, SetupMenu::Step::Stash);
                     } else {
                       f.scrolled[f.shown] = f.scroll;
-                      f.page = Page::Added;
+                      f.page = SetupFolders::Page::Added;
                       f.scroll = 0;
                       f.drag = {};
                     }
@@ -432,7 +431,7 @@ void SetupPages::drawPick(Menu& m, cairo_t* cr) {
   if (shows(cr, kNavX, f.networkY, kNavW, 2 * kit::kGroupTitle)) {
     m.drawText(cr, m.text().network.nav, kNavX + kit::kSpace, f.networkY, kNavW - kit::kSpace, kit::kGroupTitle,
                kit::kGroupTitleSize, true, false, dim.r, dim.g, dim.b);
-    if (m.discovery_.scanning() && std::none_of(f.places.begin(), f.places.end(), [](const Place& p) {
+    if (m.network_.discovery.scanning() && std::none_of(f.places.begin(), f.places.end(), [](const Place& p) {
           return p.kind == Kind::Computer;
         }))
       m.drawText(cr, t.looking, kNavX + kit::kSpace, f.networkY + kit::kGroupTitle, kNavW - kit::kSpace,
@@ -441,7 +440,7 @@ void SetupPages::drawPick(Menu& m, cairo_t* cr) {
   if (!f.form) {
     m.drawFinish(cr, Finish::Group, kPaneX, kPaneY, kPaneR - kPaneX, kPaneB - kPaneY, kit::kGroupCorner);
     drawTree(m, cr);
-  } else if (m.smbForm_.kind != Menu::SmbForm::Kind::None && m.smbForm_.sftp) {
+  } else if (m.network_.form.kind != Menu::SmbForm::Kind::None && m.network_.form.sftp) {
     drawSftp(m, cr);
   }
   drawKeyboardPanel(m, cr);
@@ -733,20 +732,20 @@ void SetupPages::toggleOpen(Menu& m, const std::string& path) {
 // A sign-in's user name and password (Show inside its field).
 void SetupPages::signInFields(Menu& m, Menu::GroupLayout& g) {
   const NetworkStrings& n = m.text().network;
-  const Menu::SmbForm& form = m.smbForm_;
+  const Menu::SmbForm& form = m.network_.form;
   for (const int i : {1, 2}) {
     Menu::Field field;
     field.text = i == 2 && !form.showPassword ? hidden(form.text[i]) : form.text[i];
     field.typing = form.field == i && m.editing_;
     field.action = [&m, i] {
-      m.smbForm_.field = i;
+      m.network_.form.field = i;
       m.editing_ = true;
       return MenuCommand{};
     };
     if (i == 2) {
       field.inner = form.showPassword ? m.text().hide : n.show;
       field.innerAction = [&m] {
-        m.smbForm_.showPassword = !m.smbForm_.showPassword;
+        m.network_.form.showPassword = !m.network_.form.showPassword;
         return MenuCommand{};
       };
     }
@@ -756,7 +755,7 @@ void SetupPages::signInFields(Menu& m, Menu::GroupLayout& g) {
 
 // Why it failed, and what to do about it.
 void SetupPages::formError(Menu& m, Menu::GroupLayout& g) {
-  const Menu::SmbForm& form = m.smbForm_;
+  const Menu::SmbForm& form = m.network_.form;
   if (!form.error.empty()) g.status(Lamp::Failed, form.error);
   if (!form.hint.empty()) g.note(form.hint, true);
 }
@@ -765,11 +764,11 @@ void SetupPages::formError(Menu& m, Menu::GroupLayout& g) {
 // user name (Menu::openSmbForm()), Done moving to the password, then signing
 // in.
 void SetupPages::layoutSignIn(Menu& m) {
-  if (m.smbForm_.sftp) {
+  if (m.network_.form.sftp) {
     layoutSftp(m);
     return;
   }
-  const Menu::SmbForm& form = m.smbForm_;
+  const Menu::SmbForm& form = m.network_.form;
   const NetworkStrings& n = m.text().network;
   const bool signing = form.signing != nullptr;
   Menu::PageLayout page(m, Menu::PageLayout::UnderHeader{}, m.text().setup.videosTitle);
@@ -778,7 +777,7 @@ void SetupPages::layoutSignIn(Menu& m) {
   signInFields(m, g);
   formError(m, g);
   Menu::Action go{signing ? n.signingIn : n.signIn, "", [&m] {
-                    m.smbForm_.field = 2;  // signs in from either field
+                    m.network_.form.field = 2;  // signs in from either field
                     return m.submitSmbForm();
                   }};
   go.primary = true;
@@ -792,15 +791,15 @@ void SetupPages::layoutAddComputer(Menu& m) {
   SetupFolders& f = *m.setup_->folders;
   const SetupStrings& t = m.text().setup;
   const NetworkStrings& n = m.text().network;
-  const Menu::SmbForm& form = m.smbForm_;
+  const Menu::SmbForm& form = m.network_.form;
   Menu::PageLayout page(m, Menu::PageLayout::UnderHeader{}, t.videosTitle);
   Menu::GroupLayout g = page.groupAt(0, kPaneX, kPaneY, kPaneR - kPaneX, t.addComputerTitle);
   g.labelsFor({n.type, t.computerField, n.port, n.fields[1]});
   g.choice(n.type, {n.types[0], n.types[1]}, f.sftp ? 1 : 0, [&m](int i) {
     m.setup_->folders->sftp = i == 1;
     m.setup_->folders->field = 0;
-    m.smbForm_.error.clear();
-    m.smbForm_.hint.clear();
+    m.network_.form.error.clear();
+    m.network_.form.hint.clear();
     m.editing_ = true;
     return MenuCommand{};
   });
@@ -850,11 +849,11 @@ void SetupPages::addComputer(Menu& m) {
     splitComputer(f);
     const Menu::TypedServer typed = Menu::splitServer(f.computer);
     const int port = f.port.empty() ? 22 : std::atoi(f.port.c_str());
-    if (typed.host.empty() || f.user.empty() || port < 1 || port > 65535 || m.smbForm_.signing) return;
-    m.smbForm_ = {};
-    m.smbForm_.root = Menu::sftpRoot(typed.host, port);
-    m.smbForm_.then = typed.path;
-    m.smbForm_.text = {f.computer, f.user, "", f.port};
+    if (typed.host.empty() || f.user.empty() || port < 1 || port > 65535 || m.network_.form.signing) return;
+    m.network_.form = {};
+    m.network_.form.root = Menu::sftpRoot(typed.host, port);
+    m.network_.form.then = typed.path;
+    m.network_.form.text = {f.computer, f.user, "", f.port};
     m.editing_ = false;
     m.connectSftp();
     return;
@@ -873,10 +872,10 @@ void SetupPages::addComputer(Menu& m) {
 }
 
 // The field typed into: a computer's name (an SFTP one's port or user
-// name), a sign-in's (Menu::smbForm_), or Stash's.
+// name), a sign-in's (Menu::network_.form), or Stash's.
 std::string* SetupPages::typed(Menu& m) {
   SetupMenu& s = *m.setup_;
-  if (s.step == SetupMenu::Step::Folders && s.folders && s.folders->page == Page::Pick && s.folders->shown.empty()) {
+  if (s.step == SetupMenu::Step::Folders && s.folders && s.folders->page == SetupFolders::Page::Pick && s.folders->shown.empty()) {
     SetupFolders& f = *s.folders;
     return !f.sftp || f.field == 0 ? &f.computer : f.field == 1 ? &f.port : &f.user;
   }
@@ -890,11 +889,11 @@ std::string* SetupPages::typed(Menu& m) {
 // setup ends (Menu::endSetup()).
 void SetupPages::signedIn(Menu& m) {
   SetupMenu& s = *m.setup_;
-  const std::string root = m.smbForm_.root, then = m.smbForm_.then;
-  if (s.holdWrites && m.smbForm_.remember &&
+  const std::string root = m.network_.form.root, then = m.network_.form.then;
+  if (s.holdWrites && m.network_.form.remember &&
       std::find(s.logins.begin(), s.logins.end(), root) == s.logins.end())
     s.logins.push_back(root);
-  m.smbForm_ = {};
+  m.network_.form = {};
   m.editing_ = false;
   m.dirty_ = true;
   if (!s.folders) return;
@@ -919,7 +918,7 @@ void SetupPages::signedIn(Menu& m) {
 void SetupPages::showSftp(Menu& m) {
   if (!m.setup_->folders) return;
   SetupFolders& f = *m.setup_->folders;
-  const Menu::SmbForm form = m.smbForm_;
+  const Menu::SmbForm form = m.network_.form;
   if (form.kind == Menu::SmbForm::Kind::AddServer) {
     showPlace(m, "");
     f.sftp = true;
@@ -927,13 +926,13 @@ void SetupPages::showSftp(Menu& m) {
     f.port = form.text[3];
     f.user = form.text[1];
     f.field = f.user.empty() ? 2 : 0;
-    m.smbForm_.error = form.error;
-    m.smbForm_.hint = form.hint;
+    m.network_.form.error = form.error;
+    m.network_.form.hint = form.hint;
     return;
   }
   if (std::find(f.hosts.begin(), f.hosts.end(), form.root) == f.hosts.end()) f.hosts.push_back(form.root);
   showRoot(f, form.root);
-  m.smbForm_ = form;
+  m.network_.form = form;
   m.editing_ = form.kind == Menu::SmbForm::Kind::SignIn;
   if (form.kind == Menu::SmbForm::Kind::KeyRefused) readFolder(m, form.root);
   m.dirty_ = true;
@@ -948,20 +947,20 @@ void SetupPages::askLogin(Menu& m, const std::string& root) {
   }
   remote::Login login;
   bool remembered = false;
-  const auto tried = m.sftpUsers_.find(root);
-  m.smbForm_ = {};
-  m.smbForm_.sftp = true;
-  m.smbForm_.root = root;
-  m.smbForm_.text[1] = remote::knownLogin(root, login, remembered) ? login.user
-                       : tried != m.sftpUsers_.end()               ? tried->second
+  const auto tried = m.network_.sftpUsers.find(root);
+  m.network_.form = {};
+  m.network_.form.sftp = true;
+  m.network_.form.root = root;
+  m.network_.form.text[1] = remote::knownLogin(root, login, remembered) ? login.user
+                       : tried != m.network_.sftpUsers.end()               ? tried->second
                                                                    : "";
-  if (!m.smbForm_.text[1].empty()) {
+  if (!m.network_.form.text[1].empty()) {
     m.connectSftp();
     return;
   }
-  m.smbForm_.kind = Menu::SmbForm::Kind::AddServer;
-  m.smbForm_.text[0] = remote::host(root);
-  m.smbForm_.text[3] = std::to_string(remote::port(root));
+  m.network_.form.kind = Menu::SmbForm::Kind::AddServer;
+  m.network_.form.text[0] = remote::host(root);
+  m.network_.form.text[3] = std::to_string(remote::port(root));
   showSftp(m);
 }
 
@@ -971,7 +970,7 @@ void SetupPages::askLogin(Menu& m, const std::string& root) {
 // or its key refused and the password to remember.
 void SetupPages::layoutSftp(Menu& m) {
   using Kind = Menu::SmbForm::Kind;
-  Menu::SmbForm& form = m.smbForm_;
+  Menu::SmbForm& form = m.network_.form;
   const NetworkStrings& n = m.text().network;
   const SetupStrings& t = m.text().setup;
   const int device = kStandaloneHeadset ? 0 : 1;
@@ -993,7 +992,7 @@ void SetupPages::layoutSftp(Menu& m) {
     g.labelsFor({n.signInWith, n.fields[1], n.fields[2]});
     if (form.keyChoice) {
       g.choice(n.signInWith, {t.methodKey[device], n.methods[1]}, form.byKey ? 0 : 1, [&m](int i) {
-        m.smbForm_.byKey = i == 0;
+        m.network_.form.byKey = i == 0;
         return MenuCommand{};
       });
       g.note(form.byKey ? t.keyChoiceHint[device] : t.passwordChoiceHint[device]);
@@ -1002,7 +1001,7 @@ void SetupPages::layoutSftp(Menu& m) {
     if (form.byKey && form.error.empty()) g.note(stashPrinted(t.keyOnce[device], user));
     formError(m, g);
     Menu::Action go{signing ? (form.byKey ? n.settingUpKey : n.signingIn) : n.signIn, "", [&m] {
-                      m.smbForm_.field = 2;  // signs in from either field
+                      m.network_.form.field = 2;  // signs in from either field
                       return m.submitSmbForm();
                     }};
     go.primary = true;
@@ -1038,7 +1037,7 @@ void SetupPages::layoutSftp(Menu& m) {
     formError(m, g);
     // Don't connect: back to the address, to fix it.
     Menu::Action dont{n.dontConnect, "", [&m] {
-                        Menu::SmbForm& f = m.smbForm_;
+                        Menu::SmbForm& f = m.network_.form;
                         f.kind = Kind::AddServer;
                         f.text[0] = remote::host(f.root) + (f.then.empty() ? "" : "/" + f.then);
                         f.text[3] = std::to_string(remote::port(f.root));
@@ -1047,8 +1046,8 @@ void SetupPages::layoutSftp(Menu& m) {
                       }};
     dont.primary = true;
     Menu::Action trust{n.trustNewKey, "", [&m] {
-                         const std::string key = m.smbForm_.fingerprint;
-                         m.smbForm_.kind = Kind::None;
+                         const std::string key = m.network_.form.fingerprint;
+                         m.network_.form.kind = Kind::None;
                          m.connectSftp(key);
                          return MenuCommand{};
                        }};
@@ -1061,18 +1060,18 @@ void SetupPages::layoutSftp(Menu& m) {
     // Remember password: saved now, or under --first-run when setup ends.
     Menu::Action remember{n.remember, "", [&m] {
                             SetupMenu& s = *m.setup_;
-                            const std::string root = m.smbForm_.root;
+                            const std::string root = m.network_.form.root;
                             if (!s.holdWrites)
                               remote::remember(root);
                             else if (std::find(s.logins.begin(), s.logins.end(), root) == s.logins.end())
                               s.logins.push_back(root);
-                            m.smbForm_ = {};
+                            m.network_.form = {};
                             m.dirty_ = true;
                             return MenuCommand{};
                           }};
     remember.primary = true;
     g.buttons({remember, {n.notNow, "", [&m] {
-                            m.smbForm_ = {};
+                            m.network_.form = {};
                             m.dirty_ = true;
                             return MenuCommand{};
                           }}});
@@ -1082,7 +1081,7 @@ void SetupPages::layoutSftp(Menu& m) {
 // What the parts don't draw: the key and the command in their boxes, a
 // changed key's two fingerprints.
 void SetupPages::drawSftp(Menu& m, cairo_t* cr) {
-  const Menu::SmbForm& form = m.smbForm_;
+  const Menu::SmbForm& form = m.network_.form;
   m.drawSmbForm(cr);
   if (form.kind != Menu::SmbForm::Kind::Changed) return;
   const NetworkStrings& n = m.text().network;
@@ -1103,8 +1102,8 @@ void SetupPages::drawSftp(Menu& m, cairo_t* cr) {
 
 // Refused: the password again, typed anew.
 void SetupPages::signInFailed(Menu& m) {
-  m.smbForm_.text[2].clear();
-  m.smbForm_.field = 2;
+  m.network_.form.text[2].clear();
+  m.network_.form.field = 2;
   m.editing_ = true;
 }
 
@@ -1122,7 +1121,7 @@ MenuCommand SetupPages::submit(Menu& m) {
     }
     return {};
   }
-  if (m.smbForm_.kind != Menu::SmbForm::Kind::None) return m.submitSmbForm();
+  if (m.network_.form.kind != Menu::SmbForm::Kind::None) return m.submitSmbForm();
   if (s.folders && s.folders->shown.empty()) {
     SetupFolders& f = *s.folders;
     if (f.sftp && f.field < 2) {  // on to the next field
@@ -1143,7 +1142,7 @@ MenuCommand SetupPages::submit(Menu& m) {
 // The picker again, its tree scrolled as it was.
 void SetupPages::backToPicker(Menu& m) {
   SetupFolders& f = *m.setup_->folders;
-  f.page = Page::Pick;
+  f.page = SetupFolders::Page::Pick;
   f.scroll = f.scrolled.count(f.shown) ? f.scrolled[f.shown] : 0;
   f.drag = {};
 }
@@ -1288,7 +1287,7 @@ bool SetupPages::scrolls(const Menu& m) {
   const SetupMenu& s = *m.setup_;
   const SetupFolders* f = s.folders.get();
   return s.step == SetupMenu::Step::Folders && f && f->scrollMax > 0 &&
-         (f->page == Page::Added || (!f->shown.empty() && m.smbForm_.kind == Menu::SmbForm::Kind::None));
+         (f->page == SetupFolders::Page::Added || (!f->shown.empty() && m.network_.form.kind == Menu::SmbForm::Kind::None));
 }
 
 // By whole texture pixels, so the texture's rows move on the GPU
@@ -1297,7 +1296,7 @@ void SetupPages::scroll(Menu& m, double rows) {
   if (!scrolls(m) || rows == 0) return;
   SetupFolders& f = *m.setup_->folders;
   constexpr double perPixel = menu_geometry::kRasterScale;
-  const double wanted = f.scroll + rows * (f.page == Page::Added ? kItemH : kRowStep) + f.scrollRemainder;
+  const double wanted = f.scroll + rows * (f.page == SetupFolders::Page::Added ? kItemH : kRowStep) + f.scrollRemainder;
   const double to = std::clamp(std::round(wanted * perPixel) / perPixel, 0.0, f.scrollMax);
   f.scrollRemainder = to > 0 && to < f.scrollMax ? wanted - to : 0;
   scrollTo(m, to);
@@ -1342,7 +1341,7 @@ bool SetupPages::press(Menu& m) {
   SetupMenu& s = *m.setup_;
   SetupFolders* f = s.folders.get();
   if (!f || s.step != SetupMenu::Step::Folders || m.pointerPanel_ != Menu::kSetup ||
-      (f->page == Page::Pick && (f->shown.empty() || m.smbForm_.kind != Menu::SmbForm::Kind::None)) ||
+      (f->page == SetupFolders::Page::Pick && (f->shown.empty() || m.network_.form.kind != Menu::SmbForm::Kind::None)) ||
       m.pointerY_ < f->top || m.pointerY_ > f->bottom || m.pointerX_ < f->left - 4 || m.pointerX_ > f->right + 20)
     return false;
   f->drag = {};
@@ -1373,6 +1372,6 @@ MenuCommand SetupPages::drag(Menu& m, bool held) {
   }
   const double moved = m.pointerY_ - d.lastY;
   d.lastY = m.pointerY_;
-  if (moved != 0 && f.scrollMax > 0) scroll(m, -moved / (f.page == Page::Added ? kItemH : kRowStep));
+  if (moved != 0 && f.scrollMax > 0) scroll(m, -moved / (f.page == SetupFolders::Page::Added ? kItemH : kRowStep));
   return {};
 }

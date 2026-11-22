@@ -8,7 +8,10 @@
 #include <string>
 
 class Library;
+class Passthrough;
 class VideoPlayer;
+struct MenuCommand;
+struct MenuView;
 struct Settings;
 
 void printFormat(const VideoFormat& f, const char* reason);
@@ -67,6 +70,10 @@ class RunningVideo {
   void keepSharpen();
   // Each frame: what is due to be stored. `zoomHeld`: a zoom is still held.
   void saveDue(bool zoomHeld);
+  // The command, if it changes the running video's settings, Sharpen or
+  // the flat screen's size; false for any other.
+  bool handle(const MenuCommand& c, Passthrough& passthrough);
+  void fill(MenuView& view) const;
 
  private:
   VideoPlayer& player;

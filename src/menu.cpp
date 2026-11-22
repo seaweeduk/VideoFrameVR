@@ -68,6 +68,7 @@ bool Menu::initCanvas(CairoCanvas& canvas, int width, int height, float scale, b
 }
 
 void Menu::draw(PanelId panel, cairo_t* cr) {
+  if (panel == kSetup && !setup_) return;
   if (panel == kSetup)
     SetupPages::draw(*this, cr);
   else if (panel == kMain)
@@ -85,7 +86,7 @@ const std::vector<Menu::Button>& Menu::layOut() {
 }
 
 bool Menu::working() const {
-  if (!places_.ready() || places_.looking() || listing_.reading() || discovery_.scanning()) return true;
+  if (!navigation_.places.ready() || navigation_.places.looking() || files_.listing.reading() || network_.discovery.scanning()) return true;
   if ((controls_ && controls_->loading.running()) || (hints_ && hints_->loading.running())) return true;
   if (!setup_) return false;
   if (setup_->controls.loading.running()) return true;
@@ -110,8 +111,8 @@ bool Menu::hoverRect(PanelId panel, float rect[4], float& radius, bool& danger, 
   clip[0] = clip[1] = -1e6f;
   clip[2] = clip[3] = 1e6f;
   if (b.scrolls) {
-    clip[1] = static_cast<float>(listTop_ - 2);
-    clip[3] = static_cast<float>(listBottom_);
+    clip[1] = static_cast<float>(list_.top - 2);
+    clip[3] = static_cast<float>(list_.bottom);
   } else if (b.side) {
     clip[0] = static_cast<float>(side_.x);
     clip[1] = static_cast<float>(side_.y);
@@ -293,18 +294,18 @@ void Menu::update(const MenuView& view) {
   view_ = view;
   view_.accent = accent;
   // This video goes with the video (changed: the page is laid out again).
-  if (view_.currentFile.empty() && videoSection_ == VideoSection::ThisVideo) {
-    videoSection_ = VideoSection::Display;
+  if (view_.currentFile.empty() && settingsPages_.videoSection == VideoSection::ThisVideo) {
+    settingsPages_.videoSection = VideoSection::Display;
     if (page_ == Page::VideoSettings) dropdown_ = Dropdown::None;
   }
   if (changed) dirty_ = true;
   if (playing) stripDirty_ = true;
-  if (ticked) bandTicked_ = true;
+  if (ticked) strip_.bandTicked = true;
   // The strip's clock.
   const long minute = static_cast<long>(std::time(nullptr) / 60);
-  if (minute != clockMinute_) {
-    clockMinute_ = minute;
-    clockTicked_ = true;
+  if (minute != strip_.clockMinute) {
+    strip_.clockMinute = minute;
+    strip_.clockTicked = true;
   }
   // New thumbnails only matter while the file browser shows them. They are
   // drawn in batches: each redraw of the browser costs a little.
@@ -320,7 +321,7 @@ void Menu::update(const MenuView& view) {
     if (now - lastThumbnailRedraw_ > (picturesAlone() ? 0.2 : 0.7)) {
       thumbnailsPending_ = false;
       lastThumbnailRedraw_ = now;
-      if (!picturesChanged()) browserChanged(listTop_ - 4, listBottom_ + 4);  // only the list shows them
+      if (!picturesChanged()) browserChanged(list_.top - 4, list_.bottom + 4);  // only the list shows them
     }
   }
   if (stash_) StashPages::update(*this);  // its catalog, status and settings
@@ -329,26 +330,26 @@ void Menu::update(const MenuView& view) {
   // what its texture shows is no longer known.
   if (!panelShown(kBrowser) &&
       (newThumbnails || (stashCovers_ && stashCovers_->stash().imagesArrived()) ||
-       (offline_ && offline_->generation() != offlineGeneration_)))
+       (offline_ && offline_->generation() != downloads_.generation)))
     publishedKnown_ = false;
-  if (offline_ && offline_->generation() != offlineGeneration_) {
-    offlineGeneration_ = offline_->generation();
+  if (offline_ && offline_->generation() != downloads_.generation) {
+    downloads_.generation = offline_->generation();
     offlineChanged();
   }
 
-  if (places_.poll()) {
+  if (navigation_.places.poll()) {
     browserChanged();
     pinsChanged();
   }
   updateNetwork();
   updateStashFolders();
   // A folder read in the background: its entries, later their dates and sizes.
-  const bool reading = listing_.reading();
-  if (listing_.poll()) {
+  const bool reading = files_.listing.reading();
+  if (files_.listing.poll()) {
     // A folder's videos, once their sizes and dates are known, also go into
     // the library's index (if it is under a pin).
-    const auto& entries = listing_.entries();
-    if (index_ && fileKind_ == FileKind::Video && !listing_.unavailable() &&
+    const auto& entries = files_.listing.entries();
+    if (index_ && files_.kind == FileKind::Video && !files_.listing.unavailable() &&
         std::none_of(entries.begin(), entries.end(), [](const FolderListing::Entry& e) {
           return !e.directory && e.modified == 0;
         }))
@@ -361,10 +362,10 @@ void Menu::update(const MenuView& view) {
     } else {
       browserChanged();
     }
-  } else if (library_ && library_->generation() != recordsGeneration_) {
+  } else if (library_ && library_->generation() != files_.recordsGeneration) {
     // Ratings and plays changed (or files were found again): shown at once,
     // in the same order.
-    const std::vector<VideoRecord> before = std::move(records_);
+    const std::vector<VideoRecord> before = std::move(files_.records);
     lookUpRecords();
     if (page_ == Page::Files) recordsChanged(before);
   }
@@ -379,13 +380,13 @@ void Menu::update(const MenuView& view) {
     libraryFilesChanged({}, {});
   if (page_ == Page::Library) {
     std::string status = libraryStatus();
-    if (status != libraryStatus_) {
-      libraryStatus_ = std::move(status);
+    if (status != libraryPage_.status) {
+      libraryPage_.status = std::move(status);
       dirty_ = true;
     }
     updateLibraryFirstSync();
   }
-  if (page_ == Page::Library && library_ && library_->generation() != libraryGeneration_) {
+  if (page_ == Page::Library && library_ && library_->generation() != libraryPage_.generation) {
     refreshLibraryRecords();
     browserChanged();
   }
@@ -395,7 +396,7 @@ void Menu::updateVideoSettings(const MenuView& view) {
   // The eye size can change while playing (a later Auto resolution, or
   // --resolution-cycle, or the Resolution slider, which redraws nothing
   // itself): only the video settings page shows it.
-  if (videoSection_ == VideoSection::Display) {
+  if (settingsPages_.videoSection == VideoSection::Display) {
     const ResolutionStatus status = resolutionStatus(view);
     const ResolutionStatus was = resolutionStatus(view_);
     if (status != was || view.videoResolution != view_.videoResolution ||
@@ -420,9 +421,9 @@ void Menu::updateVideoSettings(const MenuView& view) {
   if (view.userPresetsListed != view_.userPresetsListed ||
       (lit && dropdown_ == Dropdown::Presets))
     browserChanged();
-  else if (lit && presetBox_[2] > 0)
-    browserChanged(presetBox_[1] - 4, presetBox_[1] + presetBox_[3] + 4, presetBox_[0] - 4,
-                   presetBox_[0] + presetBox_[2] + 4);
+  else if (lit && settingsPages_.presetBox[2] > 0)
+    browserChanged(settingsPages_.presetBox[1] - 4, settingsPages_.presetBox[1] + settingsPages_.presetBox[3] + 4, settingsPages_.presetBox[0] - 4,
+                   settingsPages_.presetBox[0] + settingsPages_.presetBox[2] + 4);
 }
 
 bool Menu::panelShown(PanelId panel) const {
@@ -524,7 +525,7 @@ void Menu::feelHover(int hovered) {
 }
 
 bool Menu::dragging() const {
-  return draggingSlider_ != MenuCommand::None || draggingVolume_ || draggingSeek_ ||
+  return draggingSlider_ != MenuCommand::None || strip_.draggingVolume || strip_.draggingSeek ||
          draggingScroll_ || listDragging() || ratingDrag_.active ||
          (setup_ && setup_->folders && setup_->folders->drag.moving);
 }
@@ -636,7 +637,7 @@ MenuCommand Menu::click() {
       return {};
     }
   }
-  if (keyPopup_.open) {
+  if (keyboard_.popup.open) {
     // The keyboard's accents or layouts: a click anywhere else closes them
     // and does what it does.
     const int index = buttonAt(pointerPanel_, pointerX_, pointerY_);
@@ -645,8 +646,8 @@ MenuCommand Menu::click() {
   if (onSeekBand()) {
     // The seek bar: the knob follows the pointer while the trigger is held,
     // the video jumps there on letting go (drag()).
-    draggingSeek_ = true;
-    lastScrub_ = trackValue_ = seekAtPointer();
+    strip_.draggingSeek = true;
+    strip_.lastScrub = trackValue_ = seekAtPointer();
     dirty_ = true;
     return {};
   }
@@ -663,7 +664,7 @@ MenuCommand Menu::click() {
   }
   if (buttons_[index].disabled) return {};
   if (buttons_[index].volumeSlider) {
-    draggingVolume_ = true;
+    strip_.draggingVolume = true;
     const MenuCommand c = volumeAtPointer(buttons_[index]);
     trackValue_ = c.value;
     return c;
@@ -712,8 +713,8 @@ MenuCommand Menu::drag(bool held) {
     pressSpot_ = {};
     pressChanged(spot);
   }
-  if (keyDown_.at >= 0) keyHeld(held);
-  if (keyPopup_.open && keyPopup_.dragging && !held) {
+  if (keyboard_.keyDown.at >= 0) keyHeld(held);
+  if (keyboard_.popup.open && keyboard_.popup.dragging && !held) {
     // Let go after holding a key: over one of its popup's keys, that one;
     // anywhere else it closes, so it never covers the keys typed next.
     const int index = buttonAt(pointerPanel_, pointerX_, pointerY_);
@@ -756,33 +757,33 @@ MenuCommand Menu::drag(bool held) {
     return {};
   }
   if (!held) {
-    draggingVolume_ = false;
+    strip_.draggingVolume = false;
     // The held head goes back to its size: the band's box (tickBoxes()).
-    if (draggingSeek_) bandTicked_ = true;
-    if (draggingSeek_ && lastScrub_ >= 0) {
+    if (strip_.draggingSeek) strip_.bandTicked = true;
+    if (strip_.draggingSeek && strip_.lastScrub >= 0) {
       // Let go: the video jumps to where the knob was dropped.
-      draggingSeek_ = false;
+      strip_.draggingSeek = false;
       MenuCommand c;
       c.type = MenuCommand::SeekTo;
-      c.value = lastScrub_;
+      c.value = strip_.lastScrub;
       c.option = 1;  // from the seek bar
       return c;
     }
-    draggingSeek_ = false;
+    strip_.draggingSeek = false;
   }
   if (pointerPanel_ != kMain) return {};
-  if (draggingSeek_) {
+  if (strip_.draggingSeek) {
     // Only the knob and the preview frame follow; the video itself jumps
     // once, on letting go (seeking big videos continuously stutters).
     const double seconds = seekAtPointer(), duration = view_.playback.duration;
     feelTrack(seconds, 0, duration, false, 0, [duration](double v) { return v / duration; });
-    if (std::abs(seconds - lastScrub_) >= view_.playback.duration / 1500) {
-      lastScrub_ = seconds;
+    if (std::abs(seconds - strip_.lastScrub) >= view_.playback.duration / 1500) {
+      strip_.lastScrub = seconds;
       stripDirty_ = true;
     }
     return {};
   }
-  if (!draggingVolume_) return {};
+  if (!strip_.draggingVolume) return {};
   for (const Button& b : buttons_)
     if (b.volumeSlider) {
       const MenuCommand c = volumeAtPointer(b);
@@ -803,14 +804,14 @@ void Menu::cancelDrag() {
     ratingChanged(ratingDrag_);
   }
   if (listDrag_.pressed) listDrag_ = ListDrag{};
-  if (draggingSeek_) {
-    draggingSeek_ = false;
+  if (strip_.draggingSeek) {
+    strip_.draggingSeek = false;
     stripDirty_ = true;
   }
   if (adjust_.held) releaseValue();
   draggingSlider_ = MenuCommand::None;
   draggingScroll_ = false;
-  draggingVolume_ = false;
+  strip_.draggingVolume = false;
 }
 
 void Menu::scroll(double rows) {
@@ -831,7 +832,7 @@ void Menu::scroll(double rows) {
 }
 
 void Menu::scrollPixels(double pixels) {
-  scrollRows(pixels / (groupedPage() || dialog_ == Dialog::WhatsNew ? kSettingStep : rowHeight_));
+  scrollRows(pixels / (groupedPage() || dialog_ == Dialog::WhatsNew ? kSettingStep : list_.rowHeight));
 }
 
 void Menu::scrollRows(double rows) {
@@ -846,40 +847,40 @@ void Menu::scrollRows(double rows) {
       pageScroll_ = position;
       hoverQuiet_ = true;
       scrolledAt_ = steadySeconds();
-      browserChanged(listTop_ - 4, listBottom_ + 4);
+      browserChanged(list_.top - 4, list_.bottom + 4);
     }
     return;
   }
-  const int maxOffset = std::max(0, listCount_ - visibleRows_);
+  const int maxOffset = std::max(0, list_.count - list_.rows);
   // In whole texture pixels (the rest is kept for the next time), so the
   // texture's list can be moved instead of drawn again (shiftList()).
-  const double perRow = rowHeight_ * menu_geometry::kRasterScale;
-  const double wanted = rows + scrollRemainder_;
+  const double perRow = list_.rowHeight * menu_geometry::kRasterScale;
+  const double wanted = rows + list_.remainder;
   const double step = std::round(wanted * perRow) / perRow;
-  const double now = scrollOffset_ + scrollFraction_;
+  const double now = list_.offset + list_.fraction;
   const double position = std::clamp(now + step, 0.0, static_cast<double>(maxOffset));
-  scrollRemainder_ = position == now + step ? wanted - step : 0;
+  list_.remainder = position == now + step ? wanted - step : 0;
   if (position != now) setListPosition(position);
 }
 
 void Menu::setListPosition(double position) {
   stopPreview();
   // To the top and to the end are greyed while there is nowhere to go.
-  const double max = std::max(0, listCount_ - visibleRows_);
-  const double now = scrollOffset_ + scrollFraction_;
+  const double max = std::max(0, list_.count - list_.rows);
+  const double now = list_.offset + list_.fraction;
   if ((now <= 0) != (position <= 0) || (now >= max) != (position >= max))
     for (const Button& b : buttons_)
       if (b.panel == kBrowser && (b.icon == Icon::JumpTop || b.icon == Icon::JumpBottom))
         browserChanged(b.y - 2, b.y + b.h + 2, b.x - 2, b.x + b.w + 2);
-  scrollOffset_ = static_cast<int>(std::floor(position));
-  scrollFraction_ = position - scrollOffset_;
+  list_.offset = static_cast<int>(std::floor(position));
+  list_.fraction = position - list_.offset;
   listMovedAt_ = steadySeconds();
   hideTooltipWhileScrolling();
   if (page_ == Page::Files || page_ == Page::Library || page_ == Page::Offline || networkList() ||
       stashListPage())
-    listMoved_ = true;
+    list_.moved = true;
   else
-    browserChanged(listTop_ - 4, listBottom_ + 4);  // only the list moved
+    browserChanged(list_.top - 4, list_.bottom + 4);  // only the list moved
 }
 
 // What scrolls on a list page or a tall grouped page: its rows, cards and
@@ -890,9 +891,9 @@ bool Menu::onListContent(int index) const {
   if (!listOpen() || pointerPanel_ != kBrowser || dialog_ != Dialog::None) return false;
   if (index >= 0) return buttons_[index].scrolls || buttons_[index].side;
   if (overSide()) return true;
-  const double right = groupedPage() ? kBrowserWidth : listRight_;
-  return pointerX_ >= kPageX && pointerX_ <= right && pointerY_ >= listTop_ &&
-         pointerY_ <= listBottom_;
+  const double right = groupedPage() ? kBrowserWidth : list_.right;
+  return pointerX_ >= kPageX && pointerX_ <= right && pointerY_ >= list_.top &&
+         pointerY_ <= list_.bottom;
 }
 
 void Menu::pressList(const Button* row) {
@@ -1017,7 +1018,7 @@ const Menu::PageKind Menu::kPages[] = {
     {PageKind::kList | PageKind::kPictures | PageKind::kThumbnails | PageKind::kKept,  // Library
      [](Menu& m) { m.layoutLibraryPage(); },
      [](Menu& m, cairo_t* cr) { m.drawLibraryHeading(cr); },
-     [](Menu& m) { m.libraryPlace_ = m.listPlace(m.libraryPaths(), m.gallery_ ? kGalleryColumns : 1); },
+     [](Menu& m) { m.libraryPage_.place = m.listPlace(m.libraryPaths(), m.gallery_ ? kGalleryColumns : 1); },
      [](Menu& m, const MenuView& view) {
        // Its banner names the performance preset.
        if (view.setupBanner && view.performancePreset != m.view_.performancePreset) m.dirty_ = true;
@@ -1056,12 +1057,12 @@ const Menu::PageKind Menu::kPages[] = {
     {PageKind::kList | PageKind::kPictures | PageKind::kThumbnails | PageKind::kKept,  // Offline
      [](Menu& m) { m.layoutOfflinePage(); },
      [](Menu& m, cairo_t* cr) { m.drawOfflineHeading(cr); },
-     [](Menu& m) { m.offlineScroll_ = m.scrollOffset_ + m.scrollFraction_; }, nullptr},
+     [](Menu& m) { m.downloads_.scroll = m.list_.offset + m.list_.fraction; }, nullptr},
     {PageKind::kGrouped,  // Places
      [](Menu& m) {
        const size_t first = m.buttons_.size();
        m.layoutPlacesPage();
-       if (m.placeRename_.path.empty())
+       if (m.navigation_.placeRename.path.empty())
          m.scrollGroups(first);
        else
          m.pageScrollMax_ = 0;  // over the keyboard, it fits
@@ -1081,27 +1082,27 @@ void Menu::showPage(Page page) {
   // The folder's list keeps its place (openDirectory() restores it); the
   // other list pages restore theirs once shown (showListPage()).
   if (page != Page::Files) {
-    scrollOffset_ = 0;
-    scrollFraction_ = 0;
+    list_.offset = 0;
+    list_.fraction = 0;
   }
   pageScroll_ = 0;
   listDrag_ = ListDrag{};
   // Video settings opens on Display, or while a video is open on the
   // section picked last.
   if (page == Page::VideoSettings && page_ != page)
-    videoSection_ = view_.currentFile.empty() ? VideoSection::Display : videoSectionPicked_;
+    settingsPages_.videoSection = view_.currentFile.empty() ? VideoSection::Display : settingsPages_.videoSectionPicked;
   // Settings opens on General (showStashSettings(): on Stash).
-  if (page == Page::Settings && page_ != page) settingsSection_ = SettingsSection::General;
+  if (page == Page::Settings && page_ != page) settingsPages_.section = SettingsSection::General;
   // A change's notice on the Controls page is for the visit it was made in.
   if (controls_) controls_->noticeShown = false;
   page_ = page;
   if (pageIs(PageKind::kKept)) lastBrowserPage_ = page;
   editing_ = false;
-  smbForm_ = {};
-  placeRename_ = {};
-  presetName_ = {};
-  scriptAddress_ = {};
-  presetDeleting_.clear();
+  network_.form = {};
+  navigation_.placeRename = {};
+  settingsPages_.presetName = {};
+  settingsPages_.scriptAddress = {};
+  settingsPages_.presetDeleting.clear();
   // The user's presets as they are now (a file may have been copied in).
   if (page == Page::VideoSettings) command_.type = MenuCommand::ListUserPresets;
   if (page != Page::Files && page != Page::Network) {
@@ -1141,7 +1142,7 @@ int Menu::buttonAt(int panel, double px, double py) const {
     const Button& b = buttons_[i];
     // Popups own hover too: the shader's highlight sits above the Cairo texture.
     if ((dialog_ != Dialog::None || dropdown_ != Dropdown::None) && !b.popup) continue;
-    if (b.scrolls && (py < listTop_ - 2 || py > listBottom_)) continue;  // as drawn
+    if (b.scrolls && (py < list_.top - 2 || py > list_.bottom)) continue;  // as drawn
     if (b.side && (py < side_.y || py > side_.y + side_.h)) continue;
     if (b.panel == panel && b.action && (!b.disabled || !b.tooltip.empty()) && px >= b.x && px <= b.x + b.w &&
         py >= b.y && py <= b.y + b.h)
@@ -1285,7 +1286,7 @@ void Menu::drawDialog(cairo_t* cr) {
 void Menu::layout(bool browser) {
   if (browser) pageTop_ = 0;  // a page alone's (layoutBrowser())
   layoutPage(browser);
-  if (browser && !keyboardShown_) keyPopup_ = {};  // gone with the keyboard
+  if (browser && !keyboard_.shown) keyboard_.popup = {};  // gone with the keyboard
   if (browser && dialog_ != Dialog::None) layoutDialog();  // last, so it is on top
   if (browser) panelTop_ = pageAlone() ? alonePanelTop() : 0;
 }
@@ -1306,10 +1307,10 @@ void Menu::layoutPage(bool browser) {
   if (!browser) old.swap(buttons_);
   buttons_.clear();
   if (browser) {
-    keyboardShown_ = false;
-    listRight_ = kMainWidth - kMargin;
-    listLeft_ = kPageX + kPagePad;
-    listCount_ = 0;
+    keyboard_.shown = false;
+    list_.right = kMainWidth - kMargin;
+    list_.left = kPageX + kPagePad;
+    list_.count = 0;
     side_.w = 0;
   }
   layoutMain();
@@ -1334,7 +1335,7 @@ void Menu::layoutBrowser() {
   if (pageAlone()) {
     // A preset's name typed over the keyboard: the whole height, as the
     // keyboard needs it.
-    const bool naming = page_ == Page::VideoSettings && presetName_.open;
+    const bool naming = page_ == Page::VideoSettings && settingsPages_.presetName.open;
     pageTop_ = naming ? 0 : pageAloneTop();
     const size_t first = buttons_.size();
     auto layoutAlone = [&] { pageKind().layout(*this); };
@@ -1401,7 +1402,7 @@ void Menu::layoutNavigation() {
   Button& explorer = navRow(t.fileExplorer, Icon::Folder,
                             folder && placeOf(directory()) < 0 && !network, y, false,
                             [this] { showFileBrowser(); });
-  if (places_.ready()) {
+  if (navigation_.places.ready()) {
     // Edit places: a gear at the heading's end, shown only while pointing at it.
     explorer.inner = kNavRowH;
     Button& edit = addRound(Icon::Settings, t.places.edit, [this] {
@@ -1415,7 +1416,7 @@ void Menu::layoutNavigation() {
   }
   y += kNavRowH + kit::kSpacePiece;
   std::vector<const Places::Place*> places;  // those not hidden (Edit places)
-  for (const Places::Place& place : places_.places())
+  for (const Places::Place& place : navigation_.places.places())
     if (!place.hidden) places.push_back(&place);
   // With Stash's section below, only the room the places take; with the
   // "Use Stash?" card, a row less.
@@ -1423,8 +1424,8 @@ void Menu::layoutNavigation() {
   const int count = static_cast<int>(places.size());
   const bool pages = count > capacity;
   const int shown = pages ? capacity - 1 : count;
-  placeOffset_ = pages ? std::clamp(placeOffset_, 0, count - 1) / shown * shown : 0;
-  for (int i = placeOffset_; i < std::min(placeOffset_ + shown, count); ++i) {
+  navigation_.placeOffset = pages ? std::clamp(navigation_.placeOffset, 0, count - 1) / shown * shown : 0;
+  for (int i = navigation_.placeOffset; i < std::min(navigation_.placeOffset + shown, count); ++i) {
     const Places::Place& place = *places[i];
     Button& shortcut = navRow(place.label, placeIcon(place.kind), folder && directory() == place.path,
                               y, true, [this, path = place.path] { openPlace(path); });
@@ -1440,7 +1441,7 @@ void Menu::layoutNavigation() {
       constexpr double pin = 40;
       Button& unpin = addRound(Icon::Pin, t.unpinFolder,
                                [this, path = place.path] {
-                                 places_.togglePin(path);
+                                 navigation_.places.togglePin(path);
                                  refreshPlaces();
                                  return MenuCommand{};
                                }, x + w - 4 - pin, y + (kPlaceRowH - pin) / 2, pin);
@@ -1459,22 +1460,22 @@ void Menu::layoutNavigation() {
     y = kNavTop + kNavRowH + kit::kSpacePiece + shown * (kPlaceRowH + kit::kSpacePiece);
     Button& previous = addRound(Icon::ChevronLeft, t.previousPlaces,
                                 [this, shown] {
-                                  placeOffset_ = std::max(0, placeOffset_ - shown);
+                                  navigation_.placeOffset = std::max(0, navigation_.placeOffset - shown);
                                   return MenuCommand{};
                                 }, x + kNavIndent, y, kNavButton);
     previous.panel = kBrowser;
     previous.bare = true;
     previous.iconSize = 26;
-    previous.disabled = placeOffset_ == 0;
+    previous.disabled = navigation_.placeOffset == 0;
     Button& next = addRound(Icon::Chevron, t.morePlaces,
                             [this, shown] {
-                              placeOffset_ += shown;
+                              navigation_.placeOffset += shown;
                               return MenuCommand{};
                             }, x + w - kNavButton, y, kNavButton);
     next.panel = kBrowser;
     next.bare = true;
     next.iconSize = 26;
-    next.disabled = placeOffset_ + shown >= count;
+    next.disabled = navigation_.placeOffset + shown >= count;
     Button dots;
     dots.panel = kBrowser;
     dots.listLook = static_cast<int>(ListLook::PagerDots);
@@ -1482,13 +1483,13 @@ void Menu::layoutNavigation() {
     dots.y = y;
     dots.w = w - kNavIndent - 2 * kNavButton;
     dots.h = kNavButton;
-    dots.sliderValue = placeOffset_ / shown;
+    dots.sliderValue = navigation_.placeOffset / shown;
     dots.sliderMax = (count + shown - 1) / shown;
     buttons_.push_back(dots);
     y += kPlaceRowH + kit::kSpacePiece;
   }
   y += kit::kSpaceTight;
-  navLineY_ = y;
+  navigation_.lineY = y;
   y += kNavRuleH + 12;
   Button& servers = navRow(t.network.nav, Icon::Globe, page_ == Page::Network || network, y, false,
                            [this] { showNetwork(); });
@@ -1508,7 +1509,7 @@ void Menu::layoutNavigation() {
   constexpr double settingsY = kBrowserHeight - kNavTop - kNavRowH;
   navRow(t.settings, Icon::Settings, settingsShown(), settingsY, false,
          [this] { showPage(Page::Settings); });
-  stashCardY_ = -1;
+  navigation_.stashCardY = -1;
   if (stash_)
     StashPages::layoutNavigation(*this, y, settingsY - 12);
   else if (view_.stash.card)
@@ -1517,7 +1518,7 @@ void Menu::layoutNavigation() {
 
 // Which of the navigation's places is this folder, -1 if none (or hidden).
 int Menu::placeOf(const std::string& path) const {
-  const auto& places = places_.places();
+  const auto& places = navigation_.places.places();
   for (int i = 0; i < static_cast<int>(places.size()); ++i)
     if (places[i].path == path && !places[i].hidden) return i;
   return -1;
@@ -1531,7 +1532,7 @@ void Menu::openPlace(const std::string& path) {
     showFileBrowser();
     return;
   }
-  fileKind_ = FileKind::Video;
+  files_.kind = FileKind::Video;
   openDirectory(path);
   showPage(Page::Files);
 }
@@ -1539,13 +1540,13 @@ void Menu::openPlace(const std::string& path) {
 // Looks for the navigation's places again (on a worker thread).
 void Menu::refreshPlaces() {
   const Strings& t = text();
-  places_.refresh({}, {t.placeHome, t.placeVideos, t.placeFileSystem, t.drives.card,
+  navigation_.places.refresh({}, {t.placeHome, t.placeVideos, t.placeFileSystem, t.drives.card,
                        t.drives.usbDrive, t.drives.drive});
 }
 
 void Menu::pinsChanged() {
   std::vector<std::string> pins;
-  for (const Places::Place& place : places_.places())
+  for (const Places::Place& place : navigation_.places.places())
     if (place.pinned) pins.push_back(place.path);
   if (!index_ || pins == indexPins_) return;
   indexPins_ = pins;
@@ -1726,8 +1727,8 @@ MenuFinishes::Flat Menu::scrollBand() const {
   if (page_ != Page::Files && page_ != Page::Library && page_ != Page::Offline && !networkList() &&
       !stashPage())
     return {};
-  if (page_ == Page::Files && smbForm_.kind != SmbForm::Kind::None) return {};
-  MenuFinishes::Flat band{listTop_ - 2, listBottom_};
+  if (page_ == Page::Files && network_.form.kind != SmbForm::Kind::None) return {};
+  MenuFinishes::Flat band{list_.top - 2, list_.bottom};
   if (side_.w > 0) {
     band.top = std::min(band.top, side_.y);
     band.bottom = std::max(band.bottom, side_.y + side_.h);
@@ -1739,7 +1740,7 @@ void Menu::pressChanged(const HoverSpot& spot) {
   const auto b = std::find_if(buttons_.begin(), buttons_.end(), [&spot](const Button& c) {
     return HoverSpot{c.panel, c.x, c.y, c.w, c.h} == spot;
   });
-  // A key redraws itself as keyDown_ comes and goes (keyChanged()).
+  // A key redraws itself as keyboard_.keyDown comes and goes (keyChanged()).
   if (b == buttons_.end() || !pressDrawn(*b) || b->keyCap) return;
   // Its shadow at rest goes as it is pushed in, and comes back.
   Finish finish = Finish::Raised;
@@ -1780,13 +1781,13 @@ void Menu::tickBoxes(bool band, bool clock) {
                  kLeft + kInset + textWidth("00:00", kClockSize, false) + 8, kTabsY + kTabsH + 4);
   if (!band || view_.keyPicking) return;
   const BandMarks now = bandMarks();
-  const BandMarks& was = bandDrawn_;
+  const BandMarks& was = strip_.bandDrawn;
   const double x = kLeft, w = kRight - kLeft;
   // Shadows and lit edges, and half of a held head.
   const double reach = std::max({MenuFinishes::reach(Finish::Sunk), MenuFinishes::reach(Finish::Filled),
                                  MenuFinishes::reach(Finish::Head)}) + 8;
   const double y0 = kBandY - reach, y1 = kBandY + kBandH + reach;
-  if (!bandDrawnKnown_ || now.timeline != was.timeline || now.dragging != was.dragging ||
+  if (!strip_.bandDrawnKnown || now.timeline != was.timeline || now.dragging != was.dragging ||
       now.of != was.of || now.titleRight != was.titleRight) {  // the title's room too
     stripChanged(x - reach, y0, x + w + reach, y1);
   } else if (now.timeline) {
@@ -1804,17 +1805,17 @@ void Menu::tickBoxes(bool band, bool clock) {
     }
     if (now.at != was.at) stripChanged(now.titleRight + 12, y0, x + w + reach, y1);
   }
-  bandDrawn_ = now;
-  bandDrawnKnown_ = true;
+  strip_.bandDrawn = now;
+  strip_.bandDrawnKnown = true;
 }
 
 size_t Menu::stripLook() const {
-  size_t h = std::hash<std::string>{}(infoText_);
+  size_t h = std::hash<std::string>{}(strip_.infoText);
   const auto mix = [&h](size_t v) { h ^= v + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2); };
   const std::hash<double> number;
   const std::hash<std::string> text;
-  mix(number(infoX_));
-  mix(number(infoRight_));
+  mix(number(strip_.infoX));
+  mix(number(strip_.infoRight));
   for (const Button& b : buttons_) {
     if (b.panel != kMain) continue;
     for (const double v : {b.x, b.y, b.w, b.h, b.radius, b.iconSize, static_cast<double>(b.rating)})
@@ -1837,7 +1838,7 @@ size_t Menu::browserLook(double scroll, double page, double side, double notes) 
   const auto mix = [&h](size_t v) { h ^= v + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2); };
   const std::hash<double> number;
   const std::hash<std::string> text;
-  for (const double v : {panelTop_, scroll, page, side, notes, stashCardY_}) mix(number(v));
+  for (const double v : {panelTop_, scroll, page, side, notes, navigation_.stashCardY}) mix(number(v));
   // What the page draws besides its buttons: its heading, the folder, and
   // what a list shows in place of its rows.
   Icon state = Icon::None;
@@ -1848,7 +1849,7 @@ size_t Menu::browserLook(double scroll, double page, double side, double notes) 
   mix(static_cast<size_t>(state));
   if (page_ == Page::Files) {
     mix(text(directory()));
-    mix(static_cast<size_t>(fileKind_) << 2 | static_cast<size_t>(stashFolders_.picking) << 1 |
+    mix(static_cast<size_t>(files_.kind) << 2 | static_cast<size_t>(stashFolders_.picking) << 1 |
         static_cast<size_t>(stashFolders_.notThere));
   }
   // ... and what it draws as pointed at or pressed (pointedParts()).
@@ -1911,13 +1912,13 @@ void Menu::drawBrowser(cairo_t* cr) {
   paintBrowserFrame(cr);
 
   if (!pageAlone()) {  // the rule under the places
-    roundedRect(cr, kNavLeft + kit::kSpace, navLineY_, kNavWidth - 2 * kit::kSpace, kNavRuleH,
+    roundedRect(cr, kNavLeft + kit::kSpace, navigation_.lineY, kNavWidth - 2 * kit::kSpace, kNavRuleH,
                 kNavRuleH / 2);
     setColor(cr, pal.rule);
     cairo_fill(cr);
   }
-  if (!pageAlone() && stashCardY_ >= 0) {  // the "Use Stash?" card's box
-    groupFrame(cr, kNavLeft, stashCardY_, kNavWidth, 124);
+  if (!pageAlone() && navigation_.stashCardY >= 0) {  // the "Use Stash?" card's box
+    groupFrame(cr, kNavLeft, navigation_.stashCardY, kNavWidth, 124);
   }
   drawKeyboard(cr);
   // Headings and labels.
@@ -2020,37 +2021,37 @@ void Menu::redraw() {
   // A pressed control (pressChanged()), the second ticking over and the
   // clock's minute (tickBoxes()) redraw only their boxes.
   bool stripAll = all || stripDirty_;
-  const bool bandTicked = bandTicked_, clockTicked = clockTicked_;
+  const bool bandTicked = strip_.bandTicked, clockTicked = strip_.clockTicked;
   const bool ticked = bandTicked || clockTicked;
   const bool strip = stripAll || stripParts_ > 0 || ticked;
-  const bool asked = browserDirty_ || listMoved_ || sideMoved_;
+  const bool asked = browserDirty_ || list_.moved || side_.moved;
   const bool browser = all || (browserRow_ < 0 && asked);
   // A browser change alone redraws and uploads only its rows; scrolling alone
   // moves the list (or the side column) on the GPU (shiftList(), shiftSide()).
   int first = all ? 0 : browserFirst_, end = all ? kBrowserHeight : browserEnd_;
-  const bool fullWidth = all || listMoved_ || sideMoved_;
+  const bool fullWidth = all || list_.moved || side_.moved;
   const int left = fullWidth ? 0 : browserLeft_, right = fullWidth ? kBrowserWidth : browserRight_;
-  const bool movedOnly = (listMoved_ || sideMoved_) && !all && !browserDirty_;
-  const bool listMoved = listMoved_, sideMoved = sideMoved_;
+  const bool movedOnly = (list_.moved || side_.moved) && !all && !browserDirty_;
+  const bool listMoved = list_.moved, sideMoved = side_.moved;
   if (movedOnly) first = kBrowserHeight, end = 0;
-  if (listMoved_) {
+  if (list_.moved) {
     if (dialog_ == Dialog::WhatsNew) {
       const WhatsNewBox box = whatsNewBox();
       first = std::min(first, static_cast<int>(box.y) - 4);
       end = std::max(end, static_cast<int>(box.y + box.h) + 4);
     } else {
-      first = std::min(first, static_cast<int>(listTop_) - 4);
-      end = std::max(end, static_cast<int>(listBottom_) + 4);
+      first = std::min(first, static_cast<int>(list_.top) - 4);
+      end = std::max(end, static_cast<int>(list_.bottom) + 4);
     }
   }
-  if (sideMoved_ && !movedOnly) {
+  if (side_.moved && !movedOnly) {
     first = std::min(first, static_cast<int>(side_.y) - 4);
     end = std::max(end, static_cast<int>(side_.y + side_.h) + 4);
   }
-  dirty_ = stripDirty_ = bandTicked_ = clockTicked_ = false;
+  dirty_ = stripDirty_ = strip_.bandTicked = strip_.clockTicked = false;
   std::vector<Damage> damage;
   if (browser) {
-    browserDirty_ = listMoved_ = sideMoved_ = false;
+    browserDirty_ = list_.moved = side_.moved = false;
     damage.swap(browserDamage_);
   }
   const bool tipOnBrowser = tooltip_ >= 0 && tooltip_ < static_cast<int>(buttons_.size()) &&
@@ -2062,8 +2063,8 @@ void Menu::redraw() {
   const size_t look = !stripAll && ticked ? stripLook() : 0;
   // My presets' button takes a row of its own or not as its name changes
   // (layoutPresetGroup()), moving what is under it in its column.
-  const bool presets = browser && !all && page_ == Page::VideoSettings && presetBox_[2] > 0;
-  const double presetWas[4] = {presetBox_[0], presetBox_[1], presetBox_[2], presetBox_[3]};
+  const bool presets = browser && !all && page_ == Page::VideoSettings && settingsPages_.presetBox[2] > 0;
+  const double presetWas[4] = {settingsPages_.presetBox[0], settingsPages_.presetBox[1], settingsPages_.presetBox[2], settingsPages_.presetBox[3]};
   const double columnWas = presets ? presetColumnBottom() : 0;
   PointedPart pointedWas[3];
   const int pointedWasCount = browser ? pointedParts(pointedWas) : 0;
@@ -2073,12 +2074,12 @@ void Menu::redraw() {
   // ... and where a page alone's panel starts moved.
   const bool whole = all || (browser && (!(scrollBand() == drawnBand_) ||
                                          static_cast<int>(panelTop_) != browserTop_));
-  if (presets && !whole && presetBox_[2] > 0 &&
-      (presetBox_[1] != presetWas[1] || presetBox_[3] != presetWas[3])) {
-    const double y0 = std::min(presetBox_[1], presetWas[1]) - 4;
+  if (presets && !whole && settingsPages_.presetBox[2] > 0 &&
+      (settingsPages_.presetBox[1] != presetWas[1] || settingsPages_.presetBox[3] != presetWas[3])) {
+    const double y0 = std::min(settingsPages_.presetBox[1], presetWas[1]) - 4;
     const double y1 = std::max(presetColumnBottom(), columnWas) + 4;
-    const double x0 = std::min(presetBox_[0], presetWas[0]) - 4;
-    const double x1 = std::max(presetBox_[0] + presetBox_[2], presetWas[0] + presetWas[2]) + 4;
+    const double x0 = std::min(settingsPages_.presetBox[0], presetWas[0]) - 4;
+    const double x1 = std::max(settingsPages_.presetBox[0] + settingsPages_.presetBox[2], presetWas[0] + presetWas[2]) + 4;
     damage.swap(browserDamage_);  // drawn now, with the rest
     browserChanged(y0, y1, x0, x1);
     damage.swap(browserDamage_);
@@ -2109,10 +2110,10 @@ void Menu::redraw() {
   if (browser && !whole) {
     PointedPart now[3];
     const int count = pointedParts(now);
-    const double listUp = listMoved && drawnScroll_ >= 0
-                              ? (scrollOffset_ + scrollFraction_ - drawnScroll_) * rowHeight_
+    const double listUp = listMoved && list_.drawn >= 0
+                              ? (list_.offset + list_.fraction - list_.drawn) * list_.rowHeight
                               : 0;
-    const double sideUp = sideMoved && drawnSide_ >= 0 ? side_.position - drawnSide_ : 0;
+    const double sideUp = sideMoved && side_.drawn >= 0 ? side_.position - side_.drawn : 0;
     for (int i = 0; i < pointedWasCount; ++i) {
       const double up = pointedWas[i].scrolls ? listUp : pointedWas[i].side ? sideUp : 0;
       pointedWas[i].y0 -= up;
@@ -2170,8 +2171,8 @@ void Menu::redraw() {
       for (int i = 0; i < count; ++i) canvases_[kMain].upload(boxes[i].y0, boxes[i].y1, boxes[i].x0, boxes[i].x1);
     }
     if (stripAll && !view_.keyPicking) {
-      bandDrawn_ = bandMarks();
-      bandDrawnKnown_ = true;
+      strip_.bandDrawn = bandMarks();
+      strip_.bandDrawnKnown = true;
     }
   }
   stripParts_ = 0;
@@ -2195,7 +2196,7 @@ void Menu::redraw() {
     if (sideMoved && !shiftSide()) {  // its columns alone
       drawBrowserPart(static_cast<int>(side_.y) - 4, static_cast<int>(side_.y + side_.h) + 4,
                       static_cast<int>(side_.x) - 4, static_cast<int>(side_.x + side_.w) + 4);
-      drawnSide_ = side_.position;
+      side_.drawn = side_.position;
     }
     if (!listMoved || shiftContent()) {
       drawPointed();
@@ -2211,14 +2212,14 @@ void Menu::redraw() {
       area <= kBrowserWidth * kBrowserHeight / 4) {
     const double listUp = dialog_ == Dialog::WhatsNew
                               ? whatsNew_.scroll - whatsNew_.drawn
-                              : drawnScroll_ < 0
+                              : list_.drawn < 0
                                     ? 0
-                                    : (scrollOffset_ + scrollFraction_ - drawnScroll_) * rowHeight_;
-    const double sideUp = drawnSide_ < 0 ? 0 : side_.position - drawnSide_;
+                                    : (list_.offset + list_.fraction - list_.drawn) * list_.rowHeight;
+    const double sideUp = side_.drawn < 0 ? 0 : side_.position - side_.drawn;
     if (sideMoved && !shiftSide()) {
       drawBrowserPart(static_cast<int>(side_.y) - 4, static_cast<int>(side_.y + side_.h) + 4,
                       static_cast<int>(side_.x) - 4, static_cast<int>(side_.x + side_.w) + 4);
-      drawnSide_ = side_.position;
+      side_.drawn = side_.position;
     }
     if (!listMoved || shiftContent()) {
       const int reach = static_cast<int>(std::ceil(std::max(std::abs(listUp), std::abs(sideUp))));
@@ -2241,8 +2242,8 @@ void Menu::redraw() {
     shownPictures_.clear();
     logosComing_.clear();
     browserView_ = view_;
-    browserOffset_ = scrollOffset_;
-    browserFraction_ = scrollFraction_;
+    browserOffset_ = list_.offset;
+    browserFraction_ = list_.fraction;
     browserSide_ = side_.position;
     browserPage_ = pageScroll_;
     browserWhatsNew_ = whatsNew_.scroll;
@@ -2258,8 +2259,8 @@ void Menu::redraw() {
     drawBrowserPart(first, end, left, right);
   }
   drawPointed();
-  if (first <= listTop_ - 2 && end >= listBottom_) drawnScroll_ = scrollOffset_ + scrollFraction_;
-  if (side_.w > 0 && first <= side_.y - 2 && end >= side_.y + side_.h) drawnSide_ = side_.position;
+  if (first <= list_.top - 2 && end >= list_.bottom) list_.drawn = list_.offset + list_.fraction;
+  if (side_.w > 0 && first <= side_.y - 2 && end >= side_.y + side_.h) side_.drawn = side_.position;
   if (dialog_ == Dialog::WhatsNew && fullWidth) whatsNew_.drawn = whatsNew_.scroll;
 }
 
@@ -2286,22 +2287,22 @@ void Menu::drawBrowserPart(int y0, int y1, int x0, int x1) {
 bool Menu::shiftList() {
   if ((page_ != Page::Files && page_ != Page::Library && page_ != Page::Offline && !networkList() &&
        !stashListPage()) ||
-      dialog_ != Dialog::None || ratingDrag_.active || drawnScroll_ < 0)
+      dialog_ != Dialog::None || ratingDrag_.active || list_.drawn < 0)
     return false;
   if (tooltip_ >= 0 && tooltip_ < static_cast<int>(buttons_.size()) &&
       buttons_[tooltip_].panel == kBrowser)
     return false;
   for (const Button& b : buttons_)
     if (b.popup && b.panel == kBrowser) return false;
-  const double position = scrollOffset_ + scrollFraction_;
-  const double up = (position - drawnScroll_) * rowHeight_;  // layout pixels the list moves up
+  const double position = list_.offset + list_.fraction;
+  const double up = (position - list_.drawn) * list_.rowHeight;  // layout pixels the list moves up
   const double pixels = up * menu_geometry::kRasterScale;
-  const int y0 = static_cast<int>(listTop_) - 2, y1 = static_cast<int>(listBottom_);
+  const int y0 = static_cast<int>(list_.top) - 2, y1 = static_cast<int>(list_.bottom);
   if (std::abs(pixels - std::round(pixels)) > 1e-3 || std::abs(up) >= y1 - y0 - 1) return false;
   // Left of the scroll bar, all of what scrolls: rows, cards and their buttons,
   // the playing one's shadow (clear of the page's rounded corners).
-  const int x0 = static_cast<int>(std::floor(listLeft_ - kListShadowX));
-  const int x1 = static_cast<int>(std::ceil(listRight_ - kListRightCut));
+  const int x0 = static_cast<int>(std::floor(list_.left - kListShadowX));
+  const int x1 = static_cast<int>(std::ceil(list_.right - kListRightCut));
   canvases_[kBrowser].shiftUp(x0, y0, x1, y1, up);
   if (up > 0)
     drawBrowserPart(static_cast<int>(std::floor(y1 - up)), y1, x0, x1);
@@ -2318,7 +2319,7 @@ bool Menu::shiftList() {
       const ScrollExtent e = scrollExtent(&b);
       const double range = e.total - e.shown;
       const double was =
-          b.y + (b.h - thumbH) * (range > 0 ? std::clamp(drawnScroll_ / range, 0.0, 1.0) : 0.0);
+          b.y + (b.h - thumbH) * (range > 0 ? std::clamp(list_.drawn / range, 0.0, 1.0) : 0.0);
       double top = std::max(b.y, std::min(was, thumbY));
       double bottom = std::min(b.y + b.h, std::max(was, thumbY) + thumbH);
       const bool pressed = drawnPressed(b);
@@ -2332,20 +2333,20 @@ bool Menu::shiftList() {
       // Held, its pushed-in surface reaches into the columns the rows moved in.
       if (pressed && b.x < x1) drawBrowserPart(y0, y1, static_cast<int>(std::floor(b.x)) - 1, x1);
     }
-  drawnScroll_ = position;
+  list_.drawn = position;
   return true;
 }
 
 // The side column, as shiftList(): its texture pixels move up by what it
 // scrolled, and only what comes into view is drawn.
 bool Menu::shiftSide() {
-  if (side_.w <= 0 || dialog_ != Dialog::None || drawnSide_ < 0) return false;
+  if (side_.w <= 0 || dialog_ != Dialog::None || side_.drawn < 0) return false;
   if (tooltip_ >= 0 && tooltip_ < static_cast<int>(buttons_.size()) &&
       buttons_[tooltip_].panel == kBrowser)
     return false;
   for (const Button& b : buttons_)
     if (b.popup && b.panel == kBrowser) return false;
-  const double up = side_.position - drawnSide_;
+  const double up = side_.position - side_.drawn;
   const double pixels = up * menu_geometry::kRasterScale;
   const int y0 = static_cast<int>(side_.y), y1 = static_cast<int>(side_.y + side_.h);
   if (std::abs(pixels - std::round(pixels)) > 1e-3 || std::abs(up) >= y1 - y0 - 1) return false;
@@ -2357,7 +2358,7 @@ bool Menu::shiftSide() {
     drawBrowserPart(y0, static_cast<int>(std::ceil(y0 - up)), x0, x1);
   // Where it is, along its right edge, clear of the rows.
   drawBrowserPart(y0, y1, x1 - static_cast<int>(kScrollTrackW) - 1, x1);
-  drawnSide_ = side_.position;
+  side_.drawn = side_.position;
   return true;
 }
 
@@ -2369,15 +2370,15 @@ bool Menu::overSide() const {
 
 // By whole texture pixels (the rest is kept for the next time), as scrollRows().
 void Menu::scrollSide(double pixels) {
-  const double wanted = pixels + sideRemainder_;
+  const double wanted = pixels + side_.remainder;
   constexpr double perPixel = menu_geometry::kRasterScale;
   const double step = std::round(wanted * perPixel) / perPixel;
   const double position = std::clamp(side_.position + step, 0.0, side_.max);
-  sideRemainder_ = position == side_.position + step ? wanted - step : 0;
+  side_.remainder = position == side_.position + step ? wanted - step : 0;
   if (position == side_.position) return;
   side_.position = position;
   hideTooltipWhileScrolling();
-  sideMoved_ = true;
+  side_.moved = true;
 }
 
 const Texture* Menu::texture(PanelId panel) {
@@ -2394,15 +2395,15 @@ const Texture* Menu::texture(PanelId panel) {
     return setup_->canvas.texture();
   }
   const bool starting = dirty_;
-  if (dirty_ || stripDirty_ || stripParts_ > 0 || bandTicked_ || clockTicked_ ||
-      (panel == kBrowser && browserRow_ < 0 && (browserDirty_ || listMoved_ || sideMoved_)))
+  if (dirty_ || stripDirty_ || stripParts_ > 0 || strip_.bandTicked || strip_.clockTicked ||
+      (panel == kBrowser && browserRow_ < 0 && (browserDirty_ || list_.moved || side_.moved)))
     redraw();
   if (panel == kBrowser) {
     if (browserRow_ >= 0 && !starting) {
       const int end = std::min(browserRow_ + 128, kBrowserHeight);
       std::swap(view_, browserView_);
-      std::swap(scrollOffset_, browserOffset_);
-      std::swap(scrollFraction_, browserFraction_);
+      std::swap(list_.offset, browserOffset_);
+      std::swap(list_.fraction, browserFraction_);
       std::swap(side_.position, browserSide_);
       std::swap(pageScroll_, browserPage_);
       std::swap(whatsNew_.scroll, browserWhatsNew_);
@@ -2410,8 +2411,8 @@ const Texture* Menu::texture(PanelId panel) {
       std::swap(whatsNew_.scroll, browserWhatsNew_);
       std::swap(pageScroll_, browserPage_);
       std::swap(side_.position, browserSide_);
-      std::swap(scrollFraction_, browserFraction_);
-      std::swap(scrollOffset_, browserOffset_);
+      std::swap(list_.fraction, browserFraction_);
+      std::swap(list_.offset, browserOffset_);
       std::swap(view_, browserView_);
       browserRow_ = end;
       if (end == kBrowserHeight) {
@@ -2422,8 +2423,8 @@ const Texture* Menu::texture(PanelId panel) {
         browserRow_ = -1;
         browserColumn_ = pageAlone() ? kPageX : 0;
         drawnTop_ = browserTop_;
-        drawnScroll_ = browserOffset_ + browserFraction_;
-        drawnSide_ = browserSide_;
+        list_.drawn = browserOffset_ + browserFraction_;
+        side_.drawn = browserSide_;
         if (dialog_ == Dialog::WhatsNew) whatsNew_.drawn = browserWhatsNew_;
       }
     } else if (browserRow_ < 0 && !dirty_) {
@@ -2434,9 +2435,9 @@ const Texture* Menu::texture(PanelId panel) {
   }
   // Drawn in place with nothing left to draw (and no preview frame, until
   // its stop is drawn): the texture is the page as it is.
-  if (lookStale_ && browserRow_ < 0 && !dirty_ && !browserDirty_ && !listMoved_ && !sideMoved_ &&
+  if (lookStale_ && browserRow_ < 0 && !dirty_ && !browserDirty_ && !list_.moved && !side_.moved &&
       preview_.path.empty() && panelShown(kBrowser)) {
-    publishedLook_ = browserLook(scrollOffset_ + scrollFraction_, pageScroll_, side_.position, whatsNew_.scroll);
+    publishedLook_ = browserLook(list_.offset + list_.fraction, pageScroll_, side_.position, whatsNew_.scroll);
     lookStale_ = false;
   }
   return canvases_[panel].texture();

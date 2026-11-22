@@ -73,15 +73,15 @@ int Menu::resolutionNoteLines(const MenuView& view) const {
 
 void Menu::layoutVideoSettings() {
 #ifndef NDEBUG
-  if (fitChecked_ != &text()) checkVideoSettingsFit();
+  if (settingsPages_.fitChecked != &text()) checkVideoSettingsFit();
 #endif
-  presetBox_[2] = 0;
+  settingsPages_.presetBox[2] = 0;
   // A preset's name being typed: alone, over the keyboard.
-  if (presetName_.open) {
+  if (settingsPages_.presetName.open) {
     layoutPresetName();
     return;
   }
-  layoutVideoSection(videoSection_);
+  layoutVideoSection(settingsPages_.videoSection);
 }
 
 void Menu::layoutVideoSection(VideoSection section) {
@@ -91,7 +91,7 @@ void Menu::layoutVideoSection(VideoSection section) {
   const bool open = !view_.currentFile.empty();
   PageLayout page(*this, t.videoSettings, open ? view_.playback.title : std::string());
   page.sections({t.display, t.thisVideo}, static_cast<int>(section), [this](int i) {
-    videoSection_ = videoSectionPicked_ = static_cast<VideoSection>(i);
+    settingsPages_.videoSection = settingsPages_.videoSectionPicked = static_cast<VideoSection>(i);
     dropdown_ = Dropdown::None;
     dirty_ = true;
   });
@@ -582,7 +582,7 @@ double Menu::videoSettingsBottom(bool advanced, bool check) {
 // Says loudly where Video settings with every row doesn't fit (Advanced
 // settings on).
 void Menu::checkVideoSettingsFit() {
-  fitChecked_ = &text();
+  settingsPages_.fitChecked = &text();
   videoSettingsBottom(true, true);
 }
 #endif

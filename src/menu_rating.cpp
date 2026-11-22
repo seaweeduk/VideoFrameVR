@@ -62,7 +62,7 @@ Menu::RatingDrag Menu::ratingControl(const Button& control) const {
   d.w = control.w;
   d.h = control.h;
   d.card = control.card;
-  d.scroll = scrollOffset_ + scrollFraction_;
+  d.scroll = list_.offset + list_.fraction;
   d.saved = control.rating;
   return d;
 }
@@ -97,7 +97,7 @@ void Menu::startRating(const Button& control) {
 // rating as it was: other stars are under the pointer now.
 MenuCommand Menu::dragRating(bool held) {
   RatingDrag& d = ratingDrag_;
-  if (d.panel == kBrowser && scrollOffset_ + scrollFraction_ != d.scroll) {
+  if (d.panel == kBrowser && list_.offset + list_.fraction != d.scroll) {
     d.active = false;
     browserChanged();
     return {};

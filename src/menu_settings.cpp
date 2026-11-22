@@ -29,7 +29,7 @@ std::string metres(int cm, bool unit = true) {
 void Menu::layoutSettings() {
   // Intiface's address being typed in: alone, over the keyboard. Before
   // Stash's panel, which takes any typing here for its own.
-  if (scriptAddress_.open) {
+  if (settingsPages_.scriptAddress.open) {
     layoutScriptAddress();
     return;
   }
@@ -37,14 +37,14 @@ void Menu::layoutSettings() {
   // ratings and plays being sent: alone.
   if (stashMenu_ && StashPages::layoutSettingsPanel(*this)) return;
 #ifndef NDEBUG
-  if (settingsFitChecked_ != &text()) checkSettingsFit();
+  if (settingsPages_.settingsFitChecked != &text()) checkSettingsFit();
 #endif
-  layoutSettingsSection(settingsSection_);
+  layoutSettingsSection(settingsPages_.section);
 }
 
 void Menu::showStashSettings() {
   showPage(Page::Settings);
-  settingsSection_ = SettingsSection::Stash;
+  settingsPages_.section = SettingsSection::Stash;
 }
 
 void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsShown* stash) {
@@ -57,7 +57,7 @@ void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsSho
                 [this](int i) {
                   StashPages::leaveSettings(*this);
                   if (controls_) controls_->noticeShown = false;
-                  settingsSection_ = static_cast<SettingsSection>(i);
+                  settingsPages_.section = static_cast<SettingsSection>(i);
                   dropdown_ = Dropdown::None;
                   dirty_ = true;
                 });
@@ -261,7 +261,7 @@ void Menu::layoutHelpGroup(PageLayout& page, int column) {
 // Both sections with every row that can show at once, laid out and taken
 // away again.
 void Menu::checkSettingsFit() {
-  settingsFitChecked_ = &text();
+  settingsPages_.settingsFitChecked = &text();
   const MenuView saved = view_;
   const Dropdown dropdown = dropdown_;
   const PageHead head = pageHead_;

@@ -97,7 +97,7 @@ void Menu::chooseStashFolder(const std::string& folder) {
     dir = fallbacks.front();
     fallbacks.erase(fallbacks.begin());
   }
-  fileKind_ = FileKind::Video;
+  files_.kind = FileKind::Video;
   openDirectory(dir, fallbacks);
   showPage(Page::Files);
 }

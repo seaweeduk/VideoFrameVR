@@ -119,7 +119,7 @@ void StashPages::layoutCard(Menu& m, double x, double w, double bottom) {
   const SetupStrings& t = strings().setup;
   constexpr double h = 124;
   const double y = bottom - h;
-  m.stashCardY_ = y;
+  m.navigation_.stashCardY = y;
   auto connect = [&m] {
     m.showStashSettings();
     return command(MenuCommand::StashCard)();
@@ -164,7 +164,7 @@ void StashPages::editServer(Menu& m, int field, ServerKind kind) {
   st.typing = StashMenu::Typing::Server;
   m.editing_ = true;
   m.pageScroll_ = 0;
-  m.settingsSection_ = Menu::SettingsSection::Stash;  // where Save and Cancel go back to
+  m.settingsPages_.section = Menu::SettingsSection::Stash;  // where Save and Cancel go back to
 }
 
 void StashPages::editServer(Menu& m, int field) { editServer(m, field, m.view_.stash.kind); }

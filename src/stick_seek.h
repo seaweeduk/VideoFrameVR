@@ -26,8 +26,8 @@ class StickSeek {
     bool backKey = false, forwardKey = false;  // the arrow keys held down
     int skipSeconds = 10;      // Skip's length, a stick's tap
     bool headValid = false;
-    Vec3 headPos;
-    Mat4 menuAt;  // where the menu opens (menuFrame): a hold's strip goes there
+    const Vec3* headPos = nullptr;
+    const Mat4* menuAt = nullptr;  // where the menu opens (menuFrame): a hold's strip goes there
   };
 
   StickSeek(VideoPlayer& player, MenuPanels& panel) : player(player), panel(panel) {}

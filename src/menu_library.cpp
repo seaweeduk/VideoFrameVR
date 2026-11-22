@@ -22,14 +22,14 @@ namespace fs = std::filesystem;
 // once each: one with a file in the pins is that file's row.
 
 bool Menu::noPins() const {
-  return places_.ready() && std::none_of(places_.places().begin(), places_.places().end(),
+  return navigation_.places.ready() && std::none_of(navigation_.places.places().begin(), navigation_.places.places().end(),
                                          [](const Places::Place& p) { return p.pinned; });
 }
 
 void Menu::showLibrary() {
   loadLibrary();
   showPage(Page::Library);
-  scrollToPlace(libraryPlace_, libraryPaths(), gallery_ ? kGalleryColumns : 1);
+  scrollToPlace(libraryPage_.place, libraryPaths(), gallery_ ? kGalleryColumns : 1);
 }
 
 std::vector<std::string> Menu::libraryPaths() {
@@ -63,7 +63,7 @@ const std::shared_ptr<const StashCatalog>& Menu::stashCatalog() const {
 // Whether the scenes listed are from another catalog than Stash's now.
 bool Menu::libraryCatalogChanged() const {
   const auto& catalog = stashCatalog();
-  return libraryCatalog_.owner_before(catalog) || catalog.owner_before(libraryCatalog_);
+  return libraryPage_.catalog.owner_before(catalog) || catalog.owner_before(libraryPage_.catalog);
 }
 
 // After the files in the pins: Stash's scenes with none of them, each where
@@ -73,13 +73,13 @@ bool Menu::libraryCatalogChanged() const {
 // and SMB or SFTP, or with Stash's folder not mapped to it).
 void Menu::addLibraryScenes() {
   const auto& catalog = stashCatalog();
-  libraryCatalog_ = catalog;
+  libraryPage_.catalog = catalog;
   if (!catalog) return;
   const std::vector<StashScene>& scenes = catalog->scenes();
   std::vector<char> pinned(scenes.size());
   std::unordered_map<std::string, int> byFile;
   auto fileKey = [](const std::string& name, uint64_t size) { return name + '/' + std::to_string(size); };
-  for (const LibraryItem& item : libraryItems_) {
+  for (const LibraryItem& item : libraryPage_.items) {
     int i = catalog->sceneByPath(item.path);
     if (i < 0 && library_) {
       const std::string oshash = library_->oshashOf(item.path);
@@ -109,16 +109,16 @@ void Menu::addLibraryScenes() {
       item.record = library_->record(item.path);
       item.id = item.record.id;
     }
-    libraryItems_.push_back(std::move(item));
+    libraryPage_.items.push_back(std::move(item));
   }
 }
 
 void Menu::loadLibrary() {
-  libraryItems_.clear();
+  libraryPage_.items.clear();
   if (index_)
-    for (const auto& [path, file] : index_->files()) libraryItems_.push_back(libraryItem(path, file));
+    for (const auto& [path, file] : index_->files()) libraryPage_.items.push_back(libraryItem(path, file));
   addLibraryScenes();
-  if (library_) libraryGeneration_ = library_->generation();
+  if (library_) libraryPage_.generation = library_->generation();
   placeLibraryItems();
   sortLibrary();
 }
@@ -141,7 +141,7 @@ void Menu::libraryFilesChanged(const std::vector<std::string>& changed,
   if (page_ != Page::Library) return;  // showLibrary() reads them all
   const std::vector<ListItem>& before = libraryListItems();
   const int columns = gallery_ ? kGalleryColumns : 1;
-  const double top = scrollOffset_ + scrollFraction_;
+  const double top = list_.offset + list_.fraction;
   std::string anchor;
   if (hovered_ >= 0 && hovered_ < static_cast<int>(buttons_.size()) &&
       buttons_[hovered_].panel == kBrowser && buttons_[hovered_].scrolls) {
@@ -164,34 +164,34 @@ void Menu::libraryFilesChanged(const std::vector<std::string>& changed,
       libraryCatalogChanged() || (stashCatalog() && (!changed.empty() || !removed.empty()));
   std::unordered_set<std::string> drop(removed.begin(), removed.end());
   drop.insert(changed.begin(), changed.end());
-  libraryItems_.erase(std::remove_if(libraryItems_.begin(), libraryItems_.end(),
+  libraryPage_.items.erase(std::remove_if(libraryPage_.items.begin(), libraryPage_.items.end(),
                                      [&](const LibraryItem& item) {
                                        return item.scene ? scenes : drop.count(item.path) > 0;
                                      }),
-                      libraryItems_.end());
-  const size_t kept = libraryItems_.size();
+                      libraryPage_.items.end());
+  const size_t kept = libraryPage_.items.size();
   for (const std::string& path : changed)
-    libraryItems_.push_back(libraryItem(path, index_->files().at(path)));
+    libraryPage_.items.push_back(libraryItem(path, index_->files().at(path)));
   if (scenes) addLibraryScenes();
   placeLibraryItems();
-  const auto added = libraryItems_.begin() + static_cast<long>(kept);
-  for (auto it = added; it != libraryItems_.end(); ++it) {
+  const auto added = libraryPage_.items.begin() + static_cast<long>(kept);
+  for (auto it = added; it != libraryPage_.items.end(); ++it) {
     if (stashCovers_) it->title = stashCovers_->title(it->entry.path);
     it->listed = libraryShows(*it);
   }
   auto before_ = [this](const LibraryItem& a, const LibraryItem& b) { return libraryBefore(a, b); };
-  std::stable_sort(added, libraryItems_.end(), before_);
-  std::inplace_merge(libraryItems_.begin(), libraryItems_.begin() + static_cast<long>(kept),
-                     libraryItems_.end(), before_);
-  libraryListStale_ = true;
+  std::stable_sort(added, libraryPage_.items.end(), before_);
+  std::inplace_merge(libraryPage_.items.begin(), libraryPage_.items.begin() + static_cast<long>(kept),
+                     libraryPage_.items.end(), before_);
+  libraryPage_.listStale = true;
 
   if (anchored) {
     const std::vector<ListItem>& after = libraryListItems();
     for (int i = 0; i < static_cast<int>(after.size()); ++i)
       if (after[i].thumbPath == anchor) {
         const double position = std::max(0.0, i / columns - rowsFromTop);
-        scrollOffset_ = static_cast<int>(std::floor(position));
-        scrollFraction_ = position - scrollOffset_;
+        list_.offset = static_cast<int>(std::floor(position));
+        list_.fraction = position - list_.offset;
         break;
       }
   }
@@ -201,9 +201,9 @@ void Menu::libraryFilesChanged(const std::vector<std::string>& changed,
 // Ratings and plays changed: shown at once, in the same order (as in a folder).
 // By id: a path listed may since have become another video's, or none.
 void Menu::refreshLibraryRecords() {
-  libraryGeneration_ = library_->generation();
-  libraryListStale_ = true;
-  for (LibraryItem& item : libraryItems_) {
+  libraryPage_.generation = library_->generation();
+  libraryPage_.listStale = true;
+  for (LibraryItem& item : libraryPage_.items) {
     item.record = item.id ? library_->video(item.id) : library_->record(item.path);
     item.id = item.record.id;
   }
@@ -214,7 +214,7 @@ void Menu::refreshLibraryRecords() {
 // stream if that serves the file (a scene's, pinned or not) and answers,
 // else none. True if that changed anything.
 bool Menu::placeLibraryItems() {
-  libraryListStale_ = true;
+  libraryPage_.listStale = true;
   bool changed = false;
   auto stream = [this](const LibraryItem& item) {
     const auto& catalog = stashCatalog();
@@ -227,7 +227,7 @@ bool Menu::placeLibraryItems() {
     const std::string at = i >= 0 ? stashStreamOf(catalog->scenes()[i], oshash) : std::string();
     return offline_->serverDown(at) ? std::string() : at;
   };
-  for (LibraryItem& item : libraryItems_) {
+  for (LibraryItem& item : libraryPage_.items) {
     std::string shown = item.path;
     if (offline_ && offline_->serverDown(shown)) {
       shown = offline_->copyOf(shown, item.oshash);
@@ -241,12 +241,12 @@ bool Menu::placeLibraryItems() {
   return changed;
 }
 
-// In librarySort_: by name, or by the field with what has none of it last;
+// In libraryPage_.sort: by name, or by the field with what has none of it last;
 // ties by name. The name is the one shown: Stash's title, if it replaces
 // the file's.
 bool Menu::libraryBefore(const LibraryItem& a, const LibraryItem& b) const {
-  const int field = fieldOf(librarySort_);
-  const bool down = librarySort_ == kFieldOrders[field].down;
+  const int field = fieldOf(libraryPage_.sort);
+  const bool down = libraryPage_.sort == kFieldOrders[field].down;
   if (field != kByName) {
     auto key = [field](const LibraryItem& item) {
       return field == kBySize ? static_cast<double>(item.entry.size)
@@ -261,7 +261,7 @@ bool Menu::libraryBefore(const LibraryItem& a, const LibraryItem& b) const {
 }
 
 bool Menu::libraryShows(const LibraryItem& item) const {
-  switch (libraryShow_) {
+  switch (libraryPage_.show) {
     case 1: return item.record.playCount == 0;
     case 2: return item.record.playCount > 0;
     case 3: return item.record.rating > 0;
@@ -270,44 +270,44 @@ bool Menu::libraryShows(const LibraryItem& item) const {
 }
 
 void Menu::sortLibrary() {
-  libraryListStale_ = true;
-  for (LibraryItem& item : libraryItems_) {
+  libraryPage_.listStale = true;
+  for (LibraryItem& item : libraryPage_.items) {
     if (stashCovers_) item.title = stashCovers_->title(item.entry.path);
     item.listed = libraryShows(item);
   }
-  std::stable_sort(libraryItems_.begin(), libraryItems_.end(),
+  std::stable_sort(libraryPage_.items.begin(), libraryPage_.items.end(),
                    [this](const LibraryItem& a, const LibraryItem& b) { return libraryBefore(a, b); });
 }
 
 int Menu::libraryMatchCount() const {
   int n = 0;
-  for (const LibraryItem& item : libraryItems_)
-    n += !item.entry.path.empty() && item.listed && matchesFilter(item.entry, libraryFilter_);
+  for (const LibraryItem& item : libraryPage_.items)
+    n += !item.entry.path.empty() && item.listed && matchesFilter(item.entry, libraryPage_.filter);
   return n;
 }
 
 const std::vector<Menu::ListItem>& Menu::libraryListItems() {
-  if (!libraryListStale_ && libraryListPlaying_ == view_.currentFile) return libraryList_;
-  libraryListStale_ = false;
-  libraryListPlaying_ = view_.currentFile;
-  std::vector<ListItem>& items = libraryList_;
+  if (!libraryPage_.listStale && libraryPage_.listPlaying == view_.currentFile) return libraryPage_.list;
+  libraryPage_.listStale = false;
+  libraryPage_.listPlaying = view_.currentFile;
+  std::vector<ListItem>& items = libraryPage_.list;
   items.clear();
-  std::fill(std::begin(libraryCounts_), std::end(libraryCounts_), 0);
-  const bool played = fieldOf(librarySort_) == kByPlayed;
-  for (const LibraryItem& library : libraryItems_) {
+  std::fill(std::begin(libraryPage_.counts), std::end(libraryPage_.counts), 0);
+  const bool played = fieldOf(libraryPage_.sort) == kByPlayed;
+  for (const LibraryItem& library : libraryPage_.items) {
     const FolderListing::Entry& e = library.entry;
-    if (e.path.empty() || !matchesFilter(e, libraryFilter_)) continue;
+    if (e.path.empty() || !matchesFilter(e, libraryPage_.filter)) continue;
     const VideoRecord& r = library.record;
-    ++libraryCounts_[0];
-    ++libraryCounts_[r.playCount > 0 ? 2 : 1];
-    libraryCounts_[3] += r.rating > 0;
+    ++libraryPage_.counts[0];
+    ++libraryPage_.counts[r.playCount > 0 ? 2 : 1];
+    libraryPage_.counts[3] += r.rating > 0;
     if (!library.listed) continue;
     ListItem item{e.name, e.path == view_.currentFile, nullptr};
     item.action = [this, path = e.path] {
       // Previous and Next go through the list as it shows.
-      playList_.clear();
-      for (const ListItem& shown : libraryList_) playList_.push_back(shown.thumbPath);
-      playAt_ = path;
+      played_.list.clear();
+      for (const ListItem& shown : libraryPage_.list) played_.list.push_back(shown.thumbPath);
+      played_.at = path;
       return openVideo(path);
     };
     item.thumbPath = e.path;
@@ -333,14 +333,14 @@ void Menu::layoutLibraryShow(double& x) {
   for (int i = 0; i < 4; ++i) {
     ToolPiece p;
     p.label = t.libraryShows[i];
-    p.count = stashNumber(libraryCounts_[i]);
-    p.chosen = libraryShow_ == i;
-    p.disabled = libraryCounts_[i] == 0 && libraryShow_ != i;  // never a choice that shows nothing
+    p.count = stashNumber(libraryPage_.counts[i]);
+    p.chosen = libraryPage_.show == i;
+    p.disabled = libraryPage_.counts[i] == 0 && libraryPage_.show != i;  // never a choice that shows nothing
     p.action = [this, i] {
-      libraryShow_ = i;
+      libraryPage_.show = i;
       sortLibrary();
-      scrollOffset_ = 0;
-      scrollFraction_ = 0;
+      list_.offset = 0;
+      list_.fraction = 0;
       dirty_ = true;
       return MenuCommand{};
     };
@@ -429,17 +429,17 @@ Menu::LibraryBands Menu::libraryBands() const {
 void Menu::updateLibraryFirstSync() {
   const FirstSync state = firstSync();
   std::string words = state == FirstSync::None ? "" : firstSyncText(!libraryPinHelp());
-  if (state != libraryFirstSync_) {
+  if (state != libraryPage_.firstSync) {
     dirty_ = true;
-  } else if (words != libraryFirstSyncText_) {
+  } else if (words != libraryPage_.firstSyncText) {
     const LibraryBands b = libraryBands();
     if (b.sync >= 0)
       browserChanged(b.sync, b.sync + kSyncLineH, kPageX, kPageX + kPageWidth);
     else
       browserChanged(kCentreTextY - 4, kCentreButtonsY - 4, kPageX, kPageX + kPageWidth);
   }
-  libraryFirstSync_ = state;
-  libraryFirstSyncText_ = std::move(words);
+  libraryPage_.firstSync = state;
+  libraryPage_.firstSyncText = std::move(words);
 }
 
 // "You're all set" with the quality preset in effect, a link to Video
@@ -488,7 +488,7 @@ void Menu::layoutLibraryBands(const LibraryBands& bands) {
 // settings.
 void Menu::layoutLibraryCentre() {
   const Strings& t = text();
-  listCount_ = 0;
+  list_.count = 0;
   std::vector<Button> row;
   if (firstSync() == FirstSync::Failed) {
     row.push_back(textButton(t.setup.tryAgain, Icon::None, command(MenuCommand::SyncStash), true));
@@ -621,25 +621,25 @@ void Menu::layoutLibraryPage() {
   // How many: all of them, or what the search and Show leave of them.
   libraryListItems();  // the counts
   int total = 0;
-  for (const LibraryItem& item : libraryItems_) total += !item.entry.path.empty();
+  for (const LibraryItem& item : libraryPage_.items) total += !item.entry.path.empty();
   const std::string count =
-      libraryFilter_.empty() && libraryShow_ == 0
+      libraryPage_.filter.empty() && libraryPage_.show == 0
           ? stashPrinted(s.firstLook ? t.libraryCountSoFar : total == 1 ? t.libraryCountOne : t.libraryCount,
                          stashNumber(total))
-          : stashPrinted(t.libraryMatches, stashNumber(libraryCounts_[libraryShow_]), stashNumber(total));
+          : stashPrinted(t.libraryMatches, stashNumber(libraryPage_.counts[libraryPage_.show]), stashNumber(total));
   contentTitle(t.library, count, right, libraryStatus());
   layoutLibraryBands(bands);
   const bool editing = editingFilter();
-  listBottom_ = editing ? kKeyboardY - 16 : kListBottom;
+  list_.bottom = editing ? kKeyboardY - 16 : kListBottom;
   if (gallery_) {
-    listTop_ = kGridTop + bands.shift;
-    addGallery(libraryListItems(), listLeft_, editing ? kEditingGalleryRows : kGalleryRows);
+    list_.top = kGridTop + bands.shift;
+    addGallery(libraryListItems(), list_.left, editing ? kEditingGalleryRows : kGalleryRows);
   } else {
-    listTop_ = kListTop + bands.shift;
+    list_.top = kListTop + bands.shift;
     listColumns_ = true;
-    addList(libraryListItems(), listLeft_, kFileRowH,
-            static_cast<int>((listBottom_ - listTop_) / kFileRowH));
-    if (listCount_ > 0) layoutListHeader(listLeft_, listRight_ - listLeft_ - kScrollbarRoom);
+    addList(libraryListItems(), list_.left, kFileRowH,
+            static_cast<int>((list_.bottom - list_.top) / kFileRowH));
+    if (list_.count > 0) layoutListHeader(list_.left, list_.right - list_.left - kScrollbarRoom);
   }
   if (editing) layoutKeyboard();
   layoutFileTools();
