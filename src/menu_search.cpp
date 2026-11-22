@@ -293,7 +293,7 @@ void Menu::keyHeld(bool held) {
         if (otherLayout() == 0)
           openKeyPopup(false, false);
         else
-          command_ = useLayouts(activeLayout() == 0 ? otherLayout() : 0, otherLayout());
+          queueCommand(useLayouts(activeLayout() == 0 ? otherLayout() : 0, otherLayout()));
       }
     } else if (!on) {
       k.done = true;  // moved off before the popup came

@@ -135,6 +135,7 @@ bool PlaybackSession::open(const std::string& requested) {
   knownWidth = knownHeight = 0;  // re-detect the format once the size is known
   knownViews = TwoViews::No;
   formatDetected = false;
+  stickSeek.cancel();
   if (isPhotoFile(path)) {
     // Photos are shown by photoPreloader, not mpv: decoded in the
     // background, the next one (after the last the first, as the slideshow
@@ -152,7 +153,6 @@ bool PlaybackSession::open(const std::string& requested) {
       start = resumePoint(r.resumeSeconds, r.durationSeconds);
     }
     player.command("set pause no");
-    stickSeek.cancel();
     player.load(path, std::max(0.0, start));
     if (start > 0) std::printf("Resuming at %s\n", clockTime(start).c_str());
   }

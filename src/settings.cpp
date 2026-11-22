@@ -259,9 +259,12 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "downloads_to") s.downloadsTo = value;
     else if (key == "gallery") s.gallery = value == "1";
     else if (key == "video_settings_section") s.videoSettingsThisVideo = value == "this_video";
-    else if (key == "subtitle_size") s.subtitleSize = std::atoi(value.c_str());
-    else if (key == "subtitle_height") s.subtitleRaise = std::atoi(value.c_str());
-    else if (key == "subtitle_distance_cm") s.subtitleDistance = std::atoi(value.c_str());
+    else if (key == "subtitle_size")
+      s.subtitleSize = std::clamp(std::atoi(value.c_str()), kSubtitleSize.least, kSubtitleSize.most);
+    else if (key == "subtitle_height")
+      s.subtitleRaise = std::clamp(std::atoi(value.c_str()), kSubtitleRaise.least, kSubtitleRaise.most);
+    else if (key == "subtitle_distance_cm")
+      s.subtitleDistance = std::clamp(std::atoi(value.c_str()), kSubtitleDistance.least, kSubtitleDistance.most);
     else if (key == "video_mipmaps") s.videoMipmaps = value != "0";
     else if (key == "anti_shimmer") parseAntiShimmer(value, s.antiShimmer);
     else if (key == "sharpen") s.sharpen = std::clamp(std::atoi(value.c_str()), kSharpen.least, kSharpen.most);

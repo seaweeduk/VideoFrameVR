@@ -268,7 +268,7 @@ void SetupPages::ticksChanged(Menu& m) {
   MenuCommand c;
   c.type = MenuCommand::SetupPlaces;
   for (const std::string& path : s.places) c.path += (c.path.empty() ? "" : "\n") + path;
-  m.command_ = c;
+  m.queueCommand(std::move(c));
 }
 
 // --- The page -----------------------------------------------------------

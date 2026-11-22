@@ -2,6 +2,7 @@
 #include "menu_style.h"
 #include "stash.h"
 #include "stash_catalog.h"
+#include "stash_http.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -56,7 +57,7 @@ void Menu::updateStashFolders() {
       !stash_->folderFinder().running()) {
     f.automatic = false;
     const std::vector<StashFolderMap> found = stash_->foundFolders();
-    if (found != view_.stash->folders) command_ = stashFolders(found);
+    if (found != view_.stash->folders) queueStashFolders(found);
   }
   if (stash_->folderSearches() == f.searches) return;
   f.searches = stash_->folderSearches();
@@ -64,8 +65,7 @@ void Menu::updateStashFolders() {
     f.checking = false;
     const auto& found = stash_->folderFinder().foundFor(f.folder);
     if (!found.empty()) {
-      command_ = stashFolders(stash_->foldersWith(f.folder, {found.front().pathFrom,
-                                                             found.front().pathTo}));
+      queueStashFolders(stash_->foldersWith(f.folder, {found.front().pathFrom, found.front().pathTo}));
       f.picking = false;
       showStashSettings();
     } else {
@@ -73,6 +73,20 @@ void Menu::updateStashFolders() {
     }
   }
   dirty_ = true;
+}
+
+void Menu::queueStashFolders(const std::vector<StashFolderMap>& folders) {
+  stashFolders_.kind = stash_->settings().kind;
+  stashFolders_.server = StashAddress(stash_->settings().url).server;
+  queueCommand(stashFolders(folders));
+}
+
+void Menu::stashSetUp(const StashSettings& setup) {
+  const StashFolders& f = stashFolders_;
+  if (setup.kind == f.kind && StashAddress(setup.url).server == f.server) return;
+  commands_.erase(std::remove_if(commands_.begin(), commands_.end(),
+                                 [](const MenuCommand& c) { return c.type == MenuCommand::SetStashFolders; }),
+                  commands_.end());
 }
 
 MenuCommand Menu::stashFolders(const std::vector<StashFolderMap>& folders) const {

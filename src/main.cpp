@@ -2283,7 +2283,7 @@ int run(Options opts) {
             ? 5 * static_cast<int>(std::lround(2000.0f * length(focusIn.rightEye - focusIn.leftEye)))
             : 0;
     menu.update(view);
-    execute(menu.takeCommand());
+    for (MenuCommand c = menu.takeCommand(); c.type != MenuCommand::None; c = menu.takeCommand()) execute(c);
     if (opts.startMenu == StartMenu::Seek && panel.open && !hitPanel) {
       // Back and forth along the seek bar every 20 seconds, as a hand looking for a scene would.
       const double fraction = 0.5 - 0.4 * std::cos(now * 2 * kPi / 20);

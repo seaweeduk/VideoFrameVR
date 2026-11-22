@@ -29,6 +29,13 @@ bool sameTracks(const std::vector<Track>& a, const std::vector<Track>& b) {
   });
 }
 
+// What Settings' Stash section and the "Use Stash?" card show of the media
+// server's setup: a server let go of (Stash off) redraws nothing else.
+auto stashShown(const StashSettings& s) {
+  return std::tie(s.card, s.enabled, s.kind, s.url, s.apiKey, s.folders, s.covers, s.titles,
+                  s.malePerformers, s.writeBack);
+}
+
 // Dragging a list: how far (layout pixels) the pointer has to move along it
 // before the list follows and a press stops being a click. The menu is 1.5 m
 // away, 26 px to the degree: a steady hand's beam wavers by a few pixels and
@@ -212,7 +219,7 @@ void Menu::update(const MenuView& view) {
       a.audioChannels != b.audioChannels ||
       view.greenScreen.on != view_.greenScreen.on ||
       view.greenScreen.source != view_.greenScreen.source ||
-      view.stash->card != view_.stash->card ||
+      stashShown(*view.stash) != stashShown(*view_.stash) ||
       view.scripts.enabled != view_.scripts.enabled || view.scripts.address != view_.scripts.address ||
       a.chapters.size() != b.chapters.size() || a.chapter != b.chapter;
   // These values change only their slider rows, not the strip or the page's layout.
@@ -386,6 +393,8 @@ void Menu::updateVideoSettings(const MenuView& view) {
         sliderChanged(MenuCommand::SetVideoResolution, kit::kRowStep + lines * kit::kNoteLine);
     }
   }
+  if (settingsPages_.videoSection == VideoSection::Display && view.antiShimmer != view_.antiShimmer)
+    browserChanged();
   // The presets: only Video settings' Display shows them. Which one is
   // lit changes only their group (unless the list is open); a new listing
   // also the list, or the name being typed's check.
@@ -1076,7 +1085,7 @@ void Menu::showPage(Page page) {
   settingsPages_.scriptAddress = {};
   settingsPages_.presetDeleting.clear();
   // The user's presets as they are now (a file may have been copied in).
-  if (page == Page::VideoSettings) command_.type = MenuCommand::ListUserPresets;
+  if (page == Page::VideoSettings) queueCommand({MenuCommand::ListUserPresets});
   if (page != Page::Files && page != Page::Network) {
     stashFolders_.picking = stashFolders_.checking = stashFolders_.notThere = false;
   }

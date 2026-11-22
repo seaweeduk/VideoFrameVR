@@ -179,7 +179,7 @@ void SetupPages::updateStash(Menu& m) {
     st.kind = r.kind;
   }
   switch (answer) {
-    case Answer::Open: m.command_ = stashAccepted(m, r.apiKey); break;
+    case Answer::Open: m.queueCommand(stashAccepted(m, r.apiKey)); break;
     case Answer::NeedsSignIn: openStashPage(m, SetupStash::Page::SignIn); break;
     case Answer::Unreached: st.error = kStandaloneHeadset ? t.unreachableHeadset : t.unreachableComputer; break;
     case Answer::Failed:
