@@ -33,7 +33,7 @@ Strings frenchStrings(const Strings& english) {
   s.on = "Oui";
   s.track = "Piste";
   s.subtitles3d = "Flottants en 2D";
-  s.subtitles3dHint = "2D : devant ou dans l'image. 3D et 180°/360° : toujours flottants.";
+  s.subtitles3dHint = "2D : devant ou dans l'image. 3D et 180°/360° : toujours flottants. Ceux des Blu-ray et DVD restent là où le disque les place.";
   s.subtitleFromFile = "Sous-titres depuis un fichier";
   s.space = "Espace";
   s.paste = "Coller";

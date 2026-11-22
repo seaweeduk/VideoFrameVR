@@ -689,9 +689,50 @@ void VideoPlayer::addSubtitle(const std::string& path) {
 }
 
 void VideoPlayer::setSubtitlesInFrame(bool visible) {
-  if (visible == subtitlesInFrame_) return;
   subtitlesInFrame_ = visible;
+  updateSubtitleVisibility();
+}
+
+// mpv hands out only the subtitles it shows: picture subtitles it hands out
+// are visible to it whether or not it would draw them.
+void VideoPlayer::updateSubtitleVisibility() {
+  if (takesSubtitles() != subtitlesTaken_) {
+    subtitlesTaken_ = takesSubtitles();
+    if (subtitlesTaken_) std::printf("Subtitles: picture subtitles, drawn by the app\n");
+  }
+  const bool visible = subtitlesInFrame_ || takesSubtitles();
+  if (visible == subtitlesVisible_) return;
+  subtitlesVisible_ = visible;
   setProperty(mpv_, "sub-visibility", visible ? "yes" : "no");
+}
+
+void VideoPlayer::setSubtitleCanvas(float eyeAspect) {
+  subtitleCanvas_ = eyeAspect;
+  redrawForSubtitles();
+}
+
+void VideoPlayer::redrawForSubtitles() {
+  if ((pictureSubtitle_ || subtitlesOut_) && video_.valid() && !loading_ &&
+      subtitles_.changes(pictureSubtitle_, subtitleCanvas_))
+    framePending_ = true;
+}
+
+subtitle_export* VideoPlayer::subtitleParam() {
+  subtitlesPassed_ = pictureSubtitle_ || subtitlesOut_;
+  if (!subtitlesPassed_) return nullptr;
+  subtitlesOut_ = pictureSubtitle_;
+  return subtitles_.param(pictureSubtitle_, subtitleCanvas_);
+}
+
+void VideoPlayer::subtitlesTaken() {
+  if (!subtitlesPassed_) return;
+  subtitles_.taken();
+  if (!subtitles_.handled() && !subtitlesUnhandledLogged_) {
+    subtitlesUnhandledLogged_ = true;
+    std::printf("Subtitles: this libmpv draws picture subtitles into the video itself (not on 3D "
+                "or surround video)\n");
+  }
+  updateSubtitleVisibility();
 }
 
 void VideoPlayer::setSubtitleStyle(double scale, int raise) {
@@ -1009,6 +1050,11 @@ void VideoPlayer::onPropertyValue(const std::string& name, const mpv_event_prope
     if (name == "track-list") {
       playback_.tracks = parseTracks(*static_cast<mpv_node*>(prop->data));
       labelDiscTracks();
+      pictureSubtitle_ = std::any_of(playback_.tracks.begin(), playback_.tracks.end(), [](const Track& t) {
+        return t.type == "sub" && t.selected && isPictureSubtitle(t.codec);
+      });
+      updateSubtitleVisibility();
+      redrawForSubtitles();
     } else if (name == "video-params" && loading_ && fileLoaded_ && !newVideoSized_)
       // Prepare before decoding reaches the VO; video-out-params still
       // supplies the final filtered size before showing the first frame.
@@ -1029,7 +1075,11 @@ void VideoPlayer::onPropertyGone(const std::string& name) {
   }
   else if (name == "duration") playback_.duration = 0;
   else if (name == "demuxer-cache-time") playback_.bufferedUntil = 0;
-  else if (name == "track-list") playback_.tracks.clear();
+  else if (name == "track-list") {
+    playback_.tracks.clear();
+    pictureSubtitle_ = false;
+    updateSubtitleVisibility();
+  }
   else if (name == "sub-text") playback_.subtitleText.clear();
   else if (name == "eof-reached") playback_.endReached = false;
   else if (name == "video-format") playback_.videoCodec.clear();
@@ -1333,7 +1383,7 @@ bool VideoPlayer::wantExport() const {
   if (!direct_ || !direct_->available() || mipmaps_ || exportRefused_ || sourceTrc_.empty() ||
       (targetTrc_ != sourceTrc_ && !(tvGamma_ && sourceTrc_ == kBt1886)))
     return false;
-  if (subtitlesInFrame_)
+  if (subtitlesInFrame_ && !takesSubtitles())
     for (const Track& t : playback_.tracks)
       if (t.type == "sub" && t.selected) return false;
   return true;
@@ -1450,6 +1500,12 @@ void VideoPlayer::render() {
   // Frames done with go back to mpv with this call (its converter's buffers).
   if (direct_) direct_->release(export_);
   int block = 0;  // never stall the XR frame loop
+  // Picture subtitles, or (not asked) the block parameter again, which mpv
+  // reads once: an invalid one would end the list.
+  subtitle_export* const subtitles = subtitleParam();
+  const mpv_render_param subtitleEntry =
+      subtitles ? mpv_render_param{static_cast<mpv_render_param_type>(SUBTITLE_EXPORT_PARAM), subtitles}
+                : mpv_render_param{MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block};
   bool counted = false;
   if (wantExport()) {
     // mpv hands the frame out, else (exported -1) draws nothing: it is drawn
@@ -1462,9 +1518,11 @@ void VideoPlayer::render() {
     mpv_render_param params[] = {{MPV_RENDER_PARAM_OPENGL_FBO, &fbo},
                                  exportParam,
                                  {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block},
+                                 subtitleEntry,
                                  {MPV_RENDER_PARAM_INVALID, nullptr}};
     const int rendered = mpv_render_context_render(render_, params);
     export_.release_count = 0;
+    subtitlesTaken();
     if (rendered >= 0 && export_.exported == 1) {
       if (!DirectVideo::supported(export_)) {
         exportRefused_ = true;  // for this video: each try would cost a conversion
@@ -1503,11 +1561,13 @@ void VideoPlayer::render() {
       {MPV_RENDER_PARAM_OPENGL_FBO, &fbo},
       {MPV_RENDER_PARAM_FLIP_Y, &flipY},
       {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block},
+      subtitleEntry,
       direct_ ? exportParam : mpv_render_param{MPV_RENDER_PARAM_INVALID, nullptr},
       {MPV_RENDER_PARAM_INVALID, nullptr},
   };
   const int rendered = mpv_render_context_render(render_, params);
   export_.release_count = 0;
+  subtitlesTaken();
   if (!counted) countFrame(rendered);
   // Shown only once mpv has drawn it: a failed render keeps the last frame.
   if (rendered < 0) return;

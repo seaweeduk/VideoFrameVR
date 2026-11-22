@@ -4,6 +4,7 @@
 #include "playback_state.h"
 #include "player_sleep.h"
 #include "seek_queue.h"
+#include "subtitle_picture.h"
 #include "video_format.h"
 #include "video_export.h"
 #include "video_texture.h"
@@ -64,8 +65,18 @@ class VideoPlayer {
   bool frameStep(bool back);
   // Loads an external subtitle file and selects it.
   void addSubtitle(const std::string& path);
-  // Whether mpv draws subtitles into the video frame.
+  // Whether mpv draws subtitles into the video frame. Picture subtitles
+  // (Blu-ray, DVD, DVB) never are where mpv hands them out instead
+  // (subtitlePicture()): the app draws them, whatever this says.
   void setSubtitlesInFrame(bool visible);
+  // The shape of one eye's picture as shown (width / height), which picture
+  // subtitles are laid out on.
+  void setSubtitleCanvas(float eyeAspect);
+  // The picture subtitles showing, for the app to draw; none while mpv
+  // draws them or no picture subtitle track is selected.
+  const SubtitlePicture& subtitlePicture() const {
+    return takesSubtitles() ? subtitles_.picture() : noSubtitlePicture();
+  }
   // Size (1 = normal) and height (percent of the picture above the usual
   // place) of the subtitles mpv draws into the frame.
   void setSubtitleStyle(double scale, int raise);
@@ -192,6 +203,17 @@ class VideoPlayer {
   void sendPicture();  // to mpv: picture_, or none with plainPicture_
   void releaseTarget();
   bool wantExport() const;
+  // A picture subtitle track is selected and mpv hands its pictures out.
+  bool takesSubtitles() const { return pictureSubtitle_ && subtitles_.handled(); }
+  void updateSubtitleVisibility();
+  // The parameter for a render call that draws, or nullptr: mpv is asked
+  // only while a picture subtitle track is selected, and once after it so
+  // that mpv draws subtitles itself again.
+  subtitle_export* subtitleParam();
+  // Paused, mpv draws only when asked: one more call for a new track or canvas.
+  void redrawForSubtitles();
+  // After that call: copies what changed.
+  void subtitlesTaken();
   // Whether the decoder opened next writes 8-bit video compressed (Q08C) for
   // the eyes to sample, or linear for mpv to draw: told to mpv on a change,
   // so a setting never reopens the one playing.
@@ -255,6 +277,14 @@ class VideoPlayer {
   std::vector<Chapter> mpvChapters_;  // as mpv last told them (chapter-list, chapter)
   int mpvChapter_ = -1;
   bool subtitlesInFrame_ = true;
+  bool subtitlesVisible_ = true;  // mpv's sub-visibility, as last set
+  bool pictureSubtitle_ = false;  // the selected subtitle track draws pictures
+  bool subtitlesOut_ = false;     // mpv was last asked to take them out of the video
+  bool subtitlesPassed_ = false;  // this render call passes subtitles_' parameter
+  bool subtitlesTaken_ = false;   // takesSubtitles(), as last logged
+  bool subtitlesUnhandledLogged_ = false;
+  float subtitleCanvas_ = 16.0f / 9.0f;
+  SubtitleExport subtitles_;
   bool loading_ = false;
   bool failed_ = false;
   bool fileLoaded_ = false;     // the new file has been opened

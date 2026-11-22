@@ -62,6 +62,7 @@
 #include "media_server.h"
 #include "stick_seek.h"
 #include "strings.h"
+#include "picture_subtitles.h"
 #include "subtitle_overlay.h"
 #include "thumbnailer.h"
 #include "uploader.h"
@@ -357,6 +358,19 @@ class SubtitlePlacement {
     center.y -= drop;
     return translation(center) * rotationY(headYaw) * scaling(w, h, 1);
   }
+
+  // Picture subtitles of surround video: the picture they are laid out on
+  // (one eye's, eyeAspect its width / height), ahead at the subtitle
+  // distance, as wide as text subtitles can be there and moving with the
+  // heading. Its bottom, where they usually are, about where the text goes.
+  Mat4 canvasAhead(Vec3 headPos, float headYaw, float eyeAspect, const Settings& settings) const {
+    const float distance = settings.subtitleDistance / 100.0f;
+    const float k = distance / kSurroundSubtitleDistance;
+    const float w = kSurroundSubtitleWidth * k, h = w / std::max(eyeAspect, 0.1f);
+    Vec3 center = headPos + forwardFromYaw(headYaw) * distance;
+    center.y -= kSurroundSubtitleDrop * k - 0.4f * h;
+    return translation(center) * rotationY(headYaw) * scaling(w, h, 1);
+  }
 };
 
 // The menu panel (Menu::PanelId) a ray hits first, -1 if none; u/v in its
@@ -577,6 +591,7 @@ int run(Options opts) {
   DiagnosticsExport diagnostics;
   SubtitleOverlay subtitles;
   if (!subtitles.init(uploader)) return 1;
+  PictureSubtitles pictureSubtitles(uploader);
   // "Loading …" shown instead of the video while a file opens, or why it
   // doesn't play. Drawn once before playback starts.
   NoticeCanvas loadingText(1);
@@ -1376,6 +1391,7 @@ int run(Options opts) {
         settings.floatingSubtitles ||
         running.format.stereo != StereoLayout::Mono || running.format.projection != Projection::Flat;
     player.setSubtitlesInFrame(!floatingSubtitles);
+    player.setSubtitleCanvas(eyeDisplayAspect(running.format, player.aspect()));
     subtitles.setText(floatingSubtitles ? player.playback().subtitleText : "");
     if (keys.togglePassthrough && !passthroughAvailable) {
       // The video keeps its choice for a runtime that shows the room.
@@ -1446,6 +1462,7 @@ int run(Options opts) {
     scene.clear = ClearMode::Dark;
     scene.sky = false;
     scene.video.reset();
+    scene.onPicture.clear();
     scene.overlays.clear();
     timer.lap(FrameTimer::XrWait);
     if (!earlyVideo) player.render();
@@ -2466,6 +2483,19 @@ int run(Options opts) {
     if (!subtitles.empty() && headValid && !loading)
       addText(subtitles, subtitlePlacement.update(running, player.aspect(), headPos,
                                                       yawFromQuat(headRot), settings));
+    // Picture subtitles where the disc puts them: on a flat screen part of
+    // the picture (FrameScene::onPicture).
+    pictureSubtitles.update(player.subtitlePicture());
+    if (!pictureSubtitles.empty() && !loading && videoImage && !photo) {
+      const float eyeAspect = eyeDisplayAspect(running.format, frameAspect);
+      // As opaque as the video: its opacity (percent) applies only where the room shows.
+      const float opacity = scene.clear == ClearMode::Transparent ? video.opacity / 100.0f : 1.0f;
+      if (running.format.projection == Projection::Flat)
+        pictureSubtitles.addTo(scene.onPicture, running.screen, eyeAspect, opacity);
+      else if (headValid)
+        pictureSubtitles.addTo(overlays, subtitlePlacement.canvasAhead(headPos, yawFromQuat(headRot),
+                                                                       eyeAspect, settings));
+    }
     if ((stillLoading || (!photo && player.failed())) && headValid) {
       // Where the picture will be, the size of the messages in front of the eyes.
       using decoder_holders::Busy;
@@ -2549,6 +2579,7 @@ int run(Options opts) {
     const bool roomBlank = passthrough.roomBlank();
     if (roomBlank) {
       scene.video.reset();
+      scene.onPicture.clear();
       scene.overlays.clear();
       scene.sky = false;
       scene.clear = ClearMode::Transparent;
@@ -2591,6 +2622,7 @@ int run(Options opts) {
       FrameReuse::Frame shown;
       shown.scene = &scene;
       shown.picture = player.pictureVersion();
+      shown.onPicture = scene.onPicture.empty() ? 0 : pictureSubtitles.version();
       shown.alphaBlend = blended || peek;
       shown.displayTime = xr.displayTime();
       shown.eyeCount = xr.eyeCount();

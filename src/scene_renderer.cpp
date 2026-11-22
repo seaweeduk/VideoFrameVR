@@ -315,8 +315,9 @@ bool SceneRenderer::record(GpuContext::FrameSlot& slot, const EyeFrame& eyes,
       const EyeData eye = eyeData(matrices[i], image.area, i);
       if (scene.sky) drawSky(cmd, eye);
       if (video) drawVideo(cmd, eye, i, *video, scene.clear, video->sharpen);
-      if (!scene.overlays.empty())
-        drawOverlays(cmd, eye, matrices[i], scene);
+      if (video && video->texture && !scene.onPicture.empty())
+        drawOverlays(cmd, eye, matrices[i], scene.onPicture);
+      if (!scene.overlays.empty()) drawOverlays(cmd, eye, matrices[i], scene.overlays);
     }
     if (scene.showFoveation) {
       vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_.foveation(plainEye_));
@@ -668,7 +669,7 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
 }
 
 void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
-                                 const EyeMatrices& matrices, const FrameScene& scene) {
+                                 const EyeMatrices& matrices, const std::vector<OverlayDraw>& items) {
   // Pushed once: the pipelines share the layout, so it stays for every draw.
   pushEye(cmd, eye);
   VkPipeline bound = VK_NULL_HANDLE;
@@ -677,8 +678,8 @@ void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
     bound = pipeline(id);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bound);
   };
-  for (size_t k = 0; k < scene.overlays.size(); ++k) {
-    const OverlayDraw& item = scene.overlays[k];
+  for (size_t k = 0; k < items.size(); ++k) {
+    const OverlayDraw& item = items[k];
     if (const PanelItem* panel = std::get_if<PanelItem>(&item)) {
       if (!panel->texture) continue;
       // Only the panel with a pointed control is drawn by the pipeline that
@@ -731,7 +732,7 @@ void SceneRenderer::drawPanel(VkCommandBuffer cmd, const PanelItem& panel) {
   const Mat4 model = panel.curved ? panel.curved->model() : panel.model;
   for (int r = 0; r < 3; ++r)
     for (int c = 0; c < 4; ++c) p.model[r][c] = model.m[c * 4 + r];
-  p.uv[1] = p.uv[3] = 1.0f;
+  for (int i = 0; i < 4; ++i) p.uv[i] = panel.uv[i];
   p.shape[1] = 1.0f;
   if (panel.curved) {
     const CurvedPanel& c = *panel.curved;

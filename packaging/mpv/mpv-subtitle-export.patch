@@ -1,0 +1,97 @@
+# Picture subtitles (PGS, VobSub, DVB) handed to the app as bitmaps instead of
+# drawn into the video (src/subtitle_export.h). Both builds, after mpv-mvc.patch.
+--- a/video/out/vo_libmpv.c
++++ b/video/out/vo_libmpv.c
+@@ -26,6 +26,7 @@
+ #include "player/client.h"
+ 
+ #include "libmpv.h"
++#include "subtitle_export.h"
+ 
+ #if HAVE_MACOS_COCOA_CB
+ #include "osdep/mac/app_bridge.h"
+@@ -109,6 +110,11 @@
+     struct render_backend *renderer;
+     struct m_config_cache *vo_opts_cache;
+     struct mp_vo_opts *vo_opts;
++
++    // --- Picture subtitles handed to the app (subtitle_export.h); also only
++    //     from mpv_render_*() API.
++    struct sub_bitmap_list *sub_list; // what the last call handed out
++    double sub_pts;
+ };
+ 
+ const struct render_backend_fns *render_backends[] = {
+@@ -312,6 +318,7 @@
+         talloc_free(ctx->renderer->priv);
+         talloc_free(ctx->renderer);
+     }
++    talloc_free(ctx->sub_list);
+     talloc_free(ctx->dr);
+     talloc_free(ctx->dispatch);
+ 
+@@ -333,6 +340,51 @@
+     return atomic_compare_exchange_strong(&ctx->in_use, &prev, true);
+ }
+ 
++// The app draws the subtitles (subtitle_export.h): they are left out of the
++// video and handed out as BGRA bitmaps laid out on the app's canvas.
++static void export_subtitles(struct mpv_render_context *ctx, struct osd_state *osd,
++                             struct vo_frame *frame, mpv_render_param *params)
++{
++    struct subtitle_export *e =
++        get_mpv_render_param(params, (mpv_render_param_type)SUBTITLE_EXPORT_PARAM, NULL);
++    if (!e || e->magic != SUBTITLE_EXPORT_MAGIC || e->size != sizeof(*e))
++        return;
++    e->handled = 1;
++    e->change_id = 0;
++    e->num_parts = 0;
++    e->parts = NULL;
++    bool take = e->take && osd && e->canvas_w > 0 && e->canvas_h > 0;
++    if (osd)
++        osd_set_render_subs_in_filter(osd, take);
++    TA_FREEP(&ctx->sub_list);
++    if (!take)
++        return;
++    if (frame->current)
++        ctx->sub_pts = frame->current->pts;
++    static const bool bgra[SUBBITMAP_COUNT] = {[SUBBITMAP_BGRA] = true};
++    struct mp_osd_res res = {.w = e->canvas_w, .h = e->canvas_h, .display_par = 1};
++    ctx->sub_list = osd_render(osd, res, ctx->sub_pts, OSD_DRAW_SUB_FILTER, bgra);
++    e->change_id = ctx->sub_list->change_id;
++    int count = 0;
++    for (int i = 0; i < ctx->sub_list->num_items; i++)
++        count += ctx->sub_list->items[i]->num_parts;
++    if (!count)
++        return;
++    struct subtitle_export_part *parts =
++        talloc_array(ctx->sub_list, struct subtitle_export_part, count);
++    for (int i = 0; i < ctx->sub_list->num_items; i++) {
++        struct sub_bitmaps *imgs = ctx->sub_list->items[i];
++        for (int n = 0; n < imgs->num_parts; n++) {
++            struct sub_bitmap *b = &imgs->parts[n];
++            parts[e->num_parts++] = (struct subtitle_export_part){
++                .bitmap = b->bitmap, .stride = b->stride, .w = b->w, .h = b->h,
++                .x = b->x, .y = b->y, .dw = b->dw, .dh = b->dh,
++            };
++        }
++    }
++    e->parts = parts;
++}
++
+ int mpv_render_context_render(mpv_render_context *ctx, mpv_render_param *params)
+ {
+     mp_mutex_lock(&ctx->lock);
+@@ -401,9 +453,12 @@
+     struct vo_frame dummy = {0};
+     if (!frame)
+         frame = &dummy;
++    struct osd_state *osd = ctx->vo ? ctx->vo->osd : NULL;
+ 
+     mp_mutex_unlock(&ctx->lock);
+ 
++    export_subtitles(ctx, osd, frame, params);
++
+     MP_STATS(ctx, "glcb-render");
+ 
+     int err = 0;

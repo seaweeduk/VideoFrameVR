@@ -135,6 +135,9 @@ cp /work/libplacebo-build/meson-info/intro-buildoptions.json /work/config/libpla
 mkdir -p "$mpv_source/video/decode/mvc"
 cp /src/packaging/mpv/mvc/*.[ch] "$mpv_source/video/decode/mvc/"
 patch -d "$mpv_source" -p1 < /src/packaging/mpv/mpv-mvc.patch
+# Both: picture subtitles handed to the app (src/subtitle_export.h).
+cp /src/src/subtitle_export.h "$mpv_source/video/out/"
+patch -d "$mpv_source" -p1 < /src/packaging/mpv/mpv-subtitle-export.patch
 if [[ $arch == aarch64 ]]; then
   patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-reset.patch
   patch -d "$mpv_source" -p1 < /src/packaging/frame/mpv-v4l2-hardware-only.patch

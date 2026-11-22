@@ -56,7 +56,7 @@ constexpr Strings englishStrings() {
   s.on = "On";
   s.track = "Track";
   s.subtitles3d = "Floating for 2D";
-  s.subtitles3dHint = "2D: float in front, or stay in-picture. 3D and 180°/360° always float.";
+  s.subtitles3dHint = "2D: float in front, or stay in-picture. 3D and 180°/360° always float. Blu-ray and DVD subtitles stay where the disc puts them.";
   s.subtitleFromFile = "Subtitle from file";
   s.space = "Space";
   s.paste = "Paste";

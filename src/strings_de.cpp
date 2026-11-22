@@ -33,7 +33,7 @@ Strings germanStrings(const Strings& english) {
   s.on = "An";
   s.track = "Spur";
   s.subtitles3d = "Bei 2D schwebend";
-  s.subtitles3dHint = "2D: vor oder im Bild. Bei 3D und 180°/360° immer schwebend.";
+  s.subtitles3dHint = "2D: vor oder im Bild. Bei 3D und 180°/360° immer schwebend. Blu-ray- und DVD-Untertitel bleiben, wo die Disc sie zeigt.";
   s.subtitleFromFile = "Untertitel aus Datei";
   s.space = "Leerzeichen";
   s.paste = "Einfügen";

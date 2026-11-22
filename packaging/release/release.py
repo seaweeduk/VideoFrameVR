@@ -132,7 +132,8 @@ def prepare_sdk(cache, base, extras):
 def dependency_key(app, architecture):
     digest = hashlib.sha256((SDK_DIGEST + architecture).encode())
     paths = [app / "packaging/release/build-sdk.sh", app / "packaging/release/sources.json",
-             app / "packaging/release/debian.json", app / "src/video_export.h"]
+             app / "packaging/release/debian.json", app / "src/video_export.h",
+             app / "src/subtitle_export.h"]
     paths += sorted((app / "packaging/frame").glob("*.patch"))
     paths += sorted((app / "packaging/frame/ffmpeg/libavcodec").glob("*.[ch]"))
     paths += sorted((app / "packaging/mpv").glob("*.patch"))
