@@ -63,7 +63,8 @@ export CFLAGS="-O2 -ffile-prefix-map=/work=. -ffile-prefix-map=/src=."
 export CXXFLAGS="$CFLAGS"
 
 json_source=/work/source/json
-mpv_source=/work/source/mpv-0.41.0
+mpv_source=/work/source/mpv-0.42.0
+placebo_source=/work/source/libplacebo-v7.387.0
 ffmpeg_source=/work/source/ffmpeg-9.1
 smb2_source=/work/source/libsmb2-2bcb014b23a8c8cccf534eea8bda2fe5df453cfd
 ssh_source=/work/source/libssh-0.12.2
@@ -118,6 +119,17 @@ meson install -C /work/libbluray-build
 cp /work/libudfread-build/meson-info/intro-buildoptions.json /work/config/libudfread-options.json
 cp /work/libbluray-build/meson-info/intro-buildoptions.json /work/config/libbluray-options.json
 "$PKG_CONFIG" --modversion libudfread libbluray
+# mpv needs libplacebo 7.387 or newer. Its OpenGL renderer uses only the
+# colour and tone-mapping code, so no graphics backend or shader compiler.
+meson setup /work/libplacebo-build "$placebo_source" "${cross[@]}" \
+  --prefix="$prefix" --libdir=lib --buildtype=release --wrap-mode=nofallback \
+  -Ddefault_library=shared -Dvulkan=disabled -Dvk-proc-addr=disabled -Dopengl=disabled \
+  -Dgl-proc-addr=disabled -Dd3d11=disabled -Dglslang=disabled -Dshaderc=disabled \
+  -Dlcms=enabled -Dxxhash=enabled -Dlibdovi=disabled -Dunwind=disabled -Ddemos=false
+ninja -C /work/libplacebo-build -j"$jobs"
+meson install -C /work/libplacebo-build
+cp /work/libplacebo-build/meson-info/intro-buildoptions.json /work/config/libplacebo-options.json
+"$PKG_CONFIG" --modversion libplacebo
 # Both architectures: 3D Blu-ray (MVC) in both views. The Frame's patches
 # apply on top of it.
 mkdir -p "$mpv_source/video/decode/mvc"
@@ -161,7 +173,11 @@ if [[ $arch == x86_64 ]]; then
 fi
 mkdir -p /work/ffmpeg-build
 cd /work/ffmpeg-build
+# Without dovi_split, mpv passes a Dolby Vision enhancement layer to the base
+# layer's decoder, which skips it. With it, mpv decodes the layer separately
+# for gpu-next, the only renderer that draws it; the app uses gpu.
 "$ffmpeg_source/configure" --prefix="$prefix" "${ffmpeg_cross[@]}" "${ffmpeg_desktop[@]}" "${ffmpeg_licence[@]}" \
+  --disable-bsf=dovi_split \
   --pkg-config="$PKG_CONFIG" --disable-autodetect --enable-libdrm --enable-v4l2-m2m \
   --enable-zlib --enable-bzlib --enable-lzma --enable-gnutls --enable-libdav1d --enable-libopus \
   --enable-shared --disable-static --disable-doc --disable-debug --disable-programs \

@@ -1,4 +1,4 @@
-# Private mpv Frame integration. Apply to the pinned 0.41.0 source after
+# Private mpv Frame integration. Apply to the pinned 0.42.0 source after
 # packaging/mpv/mpv-mvc.patch.
 --- a/video/decode/vd_lavc.c
 +++ b/video/decode/vd_lavc.c
@@ -34,7 +34,7 @@
  #include "options/m_option.h"
  
  static void init_avctx(struct mp_filter *vd);
-@@ -147,6 +172,7 @@ struct hwdec_opts {
+@@ -155,6 +180,7 @@ struct hwdec_opts {
      int hwdec_image_format;
      int hwdec_extra_frames;
      int hwdec_threads;
@@ -42,7 +42,7 @@
  };
  
  const struct m_sub_options hwdec_conf = {
-@@ -165,6 +191,9 @@ const struct m_sub_options hwdec_conf =
+@@ -173,6 +199,9 @@ const struct m_sub_options hwdec_conf =
              .flags = UPDATE_HWDEC},
          {"hwdec-threads", OPT_INT(hwdec_threads), M_RANGE(0, DBL_MAX)},
          {"vd-lavc-software-fallback", OPT_REPLACED("hwdec-software-fallback")},
@@ -52,7 +52,7 @@
          {0}
      },
      .size = sizeof(struct hwdec_opts),
-@@ -219,6 +248,13 @@ typedef struct lavc_ctx {
+@@ -223,6 +252,13 @@ typedef struct lavc_ctx {
      bool hwdec_failed;
      bool hwdec_notified;
      bool force_eof;
@@ -63,10 +63,10 @@
 +    bool v4l2_smallest_pool;  // this session asked for the driver's minimum and one more
 +    bool prefer_v4l2_ubwc;
 +    bool v4l2_eof;
+     int wait_for_keyframe; // max number of frames to wait for keyframe after reset
  
      bool intra_only;
-     int framedrop_flags;
-@@ -698,10 +734,23 @@ static void force_fallback(struct mp_fil
+@@ -716,10 +752,23 @@ static void force_fallback(struct mp_fil
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
  
@@ -93,7 +93,7 @@
      select_and_set_hwdec(vd);
      init_avctx(vd);
  }
-@@ -711,6 +760,8 @@ static void reinit(struct mp_filter *vd)
+@@ -729,6 +778,8 @@ static void reinit(struct mp_filter *vd)
      vd_ffmpeg_ctx *ctx = vd->priv;
  
      uninit_avctx(vd);
@@ -102,7 +102,7 @@
  
      /*
       * Reset attempted hwdecs so that if the hwdec list is reconfigured
-@@ -738,6 +789,10 @@ static void init_avctx(struct mp_filter
+@@ -761,6 +812,10 @@ static void init_avctx(struct mp_filter
      vd_ffmpeg_ctx *ctx = vd->priv;
      struct vd_lavc_params *lavc_param = ctx->opts;
      struct mp_codec_params *c = ctx->codec;
@@ -113,7 +113,7 @@
  
      m_config_cache_update(ctx->opts_cache);
  
-@@ -753,6 +808,34 @@ static void init_avctx(struct mp_filter
+@@ -776,6 +831,34 @@ static void init_avctx(struct mp_filter
      if (!lavc_codec)
          return;
  
@@ -148,7 +148,7 @@
      const AVCodecDescriptor *desc = avcodec_descriptor_get(lavc_codec->id);
      ctx->intra_only = desc && (desc->props & AV_CODEC_PROP_INTRA_ONLY);
  
-@@ -768,6 +851,37 @@ static void init_avctx(struct mp_filter
+@@ -791,6 +874,37 @@ static void init_avctx(struct mp_filter
      avctx->codec_id = lavc_codec->id;
      avctx->pkt_timebase = ctx->codec_timebase;
  
@@ -186,7 +186,7 @@
      ctx->pic = av_frame_alloc();
      if (!ctx->pic)
          goto error;
-@@ -917,8 +1031,20 @@ static void reset_avctx(struct mp_filter
+@@ -941,8 +1055,20 @@ static void reset_avctx(struct mp_filter
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
  
@@ -208,8 +208,8 @@
 +    }
      ctx->flushing = false;
      ctx->hwdec_request_reinit = false;
- }
-@@ -957,7 +1083,13 @@ static void uninit_avctx(struct mp_filte
+     // Wait for the first keyframe after reset to ensure the decoder state is
+@@ -984,7 +1110,13 @@ static void uninit_avctx(struct mp_filte
      mp_free_av_packet(&ctx->avpkt);
      av_buffer_unref(&ctx->cached_hw_frames_ctx);
  
@@ -223,7 +223,7 @@
  
      av_buffer_unref(&ctx->hwdec_dev);
  
-@@ -1195,7 +1327,7 @@ static void prepare_decoding(struct mp_f
+@@ -1249,7 +1381,7 @@ static void prepare_decoding(struct mp_f
          reset_avctx(vd);
  }
  
@@ -232,7 +232,7 @@
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
      struct hwdec_opts *hwdec_opts = ctx->hwdec_opts;
-@@ -1204,6 +1336,27 @@ static void handle_err(struct mp_filter
+@@ -1258,6 +1390,27 @@ static void handle_err(struct mp_filter
              ctx->use_hwdec ? " (hardware decoding)" : "");
  
      if (ctx->use_hwdec) {
@@ -260,7 +260,7 @@
          ctx->hwdec_fail_count += 1;
          if (ctx->hwdec_fail_count >= hwdec_opts->software_fallback)
              ctx->hwdec_failed = true;
-@@ -1253,7 +1406,7 @@ static bool send_mvc_queue(struct mp_fil
+@@ -1307,7 +1460,7 @@ static bool send_mvc_queue(struct mp_fil
          if (ret == AVERROR(EAGAIN))
              return true;
          if (ret < 0 && ret != AVERROR_EOF)
@@ -269,7 +269,7 @@
          vd_mvc_pop(ctx->mvc);
      }
      return false;
-@@ -1262,6 +1415,29 @@ static bool send_mvc_queue(struct mp_fil
+@@ -1316,6 +1469,29 @@ static bool send_mvc_queue(struct mp_fil
  static int send_packet(struct mp_filter *vd, struct demux_packet *pkt)
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
@@ -299,7 +299,7 @@
  
      if (ctx->num_requeue_packets && ctx->requeue_packets[0] != pkt)
          return AVERROR(EAGAIN); // cannot consume the packet
-@@ -1291,6 +1467,7 @@ static int send_packet(struct mp_filter
+@@ -1354,6 +1530,7 @@ static int send_packet(struct mp_filter
          return 0;
  
      int ret;
@@ -307,7 +307,7 @@
      if (ctx->mvc) {
          if (!vd_mvc_send(ctx->mvc, pkt)) {
              // The rewrite can't take this stream: carry on in 2D, from a
-@@ -1328,7 +1505,7 @@ static int send_packet(struct mp_filter
+@@ -1391,7 +1568,7 @@ static int send_packet(struct mp_filter
      }
  
      if (ret < 0)
@@ -316,7 +316,7 @@
      return ret;
  }
  
-@@ -1352,6 +1529,8 @@ static int decode_frame(struct mp_filter
+@@ -1415,6 +1592,8 @@ static int decode_frame(struct mp_filter
  
      if (!avctx || ctx->force_eof)
          return AVERROR_EOF;
@@ -325,7 +325,7 @@
  
      prepare_decoding(vd);
  
-@@ -1362,9 +1541,20 @@ static int decode_frame(struct mp_filter
+@@ -1425,9 +1604,20 @@ static int decode_frame(struct mp_filter
      if (ctx->mvc)
          send_mvc_queue(vd);
  
@@ -346,7 +346,7 @@
              // If flushing was initialized earlier and has ended now, make it
              // start over in case we get new packets at some point in the future.
              // This must take the delay queue into account, so avctx returns EOF
-@@ -1374,11 +1564,23 @@ static int decode_frame(struct mp_filter
+@@ -1437,11 +1627,23 @@ static int decode_frame(struct mp_filter
          } else if (ret == AVERROR(EAGAIN)) {
              // just retry after caller writes a packet
          } else {
@@ -371,7 +371,7 @@
      mp_codec_info_from_av(avctx, ctx->codec);
  
      // If something was decoded successfully, it must return a frame with valid
-@@ -1394,7 +1596,7 @@ static int decode_frame(struct mp_filter
+@@ -1457,7 +1659,7 @@ static int decode_frame(struct mp_filter
      if (mpi->imgfmt == IMGFMT_CUDA && !mpi->planes[0]) {
          MP_ERR(vd, "CUDA frame without data. This is a FFmpeg bug.\n");
          talloc_free(mpi);
@@ -380,7 +380,7 @@
          return AVERROR_BUG;
      }
  
-@@ -1415,7 +1617,7 @@ static int decode_frame(struct mp_filter
+@@ -1478,7 +1680,7 @@ static int decode_frame(struct mp_filter
              if (!sw) {
                  MP_ERR(vd, "Could not copy back hardware decoded frame.\n");
                  ctx->hwdec_fail_count = INT_MAX - 1; // force fallback
@@ -389,7 +389,7 @@
                  return AVERROR_UNKNOWN;
              }
              mpi = sw;
-@@ -1426,6 +1628,21 @@ static int decode_frame(struct mp_filter
+@@ -1489,6 +1691,21 @@ static int decode_frame(struct mp_filter
              return ret;
      }
  
@@ -411,7 +411,7 @@
      MP_TARRAY_APPEND(ctx, ctx->delay_queue, ctx->num_delay_queue, mpi);
      return ret;
  }
-@@ -1490,7 +1707,7 @@ static int receive_frame(struct mp_filte
+@@ -1553,7 +1770,7 @@ static int receive_frame(struct mp_filte
          if (!res) {
              MP_ERR(vd, "Could not copy back hardware decoded frame.\n");
              ctx->hwdec_fail_count = INT_MAX - 1; // force fallback
@@ -420,7 +420,7 @@
              return AVERROR_UNKNOWN;
          }
      }
-@@ -1571,6 +1788,10 @@ static void vd_lavc_reset(struct mp_filt
+@@ -1637,6 +1854,10 @@ static void vd_lavc_reset(struct mp_filt
  
      flush_all(vd);
  
@@ -433,7 +433,7 @@
  }
 --- a/meson.build
 +++ b/meson.build
-@@ -1480,6 +1480,8 @@ endif
+@@ -1532,6 +1532,8 @@ endif
  features += {'dmabuf-interop-gl': features['egl'] and drm.found()}
  if features['dmabuf-interop-gl']
      dependencies += drm.partial_dependency(includes: true, compile_args: true)
@@ -570,8 +570,8 @@
 +#endif
  
  static const struct libmpv_gpu_context_fns *context_backends[] = {
- #if HAVE_GL
-@@ -16,6 +32,42 @@ struct priv {
+ #if HAVE_D3D11
+@@ -19,6 +35,42 @@ struct priv {
      struct libmpv_gpu_context *context;
  
      struct gl_video *renderer;
@@ -614,7 +614,7 @@
  };
  
  struct native_resource_entry {
-@@ -168,11 +220,453 @@ static int get_target_size(struct render
+@@ -171,11 +223,453 @@ static int get_target_size(struct render
      return 0;
  }
  
@@ -1068,7 +1068,7 @@
      // Mapping the surface is cheap, better than adding new backend entrypoints.
      struct ra_tex *tex;
      int err = p->context->fns->wrap_fbo(p->context, params, &tex);
-@@ -188,6 +682,9 @@ static int render(struct render_backend
+@@ -193,6 +687,9 @@ static int render(struct render_backend
  
      struct ra_fbo target = {.tex = tex, .flip = flip};
      gl_video_render_frame(p->renderer, frame, &target, RENDER_FRAME_DEF);
@@ -1078,7 +1078,7 @@
      p->context->fns->done_frame(p->context, frame->display_synced);
  
      return 0;
-@@ -221,6 +718,17 @@ static void destroy(struct render_backen
+@@ -226,6 +723,17 @@ static void destroy(struct render_backen
  {
      struct priv *p = ctx->priv;
  
@@ -1096,7 +1096,7 @@
      if (p->renderer)
          gl_video_uninit(p->renderer);
  
-@@ -243,6 +751,10 @@ const struct render_backend_fns render_b
+@@ -248,6 +756,10 @@ const struct render_backend_fns render_b
      .resize = resize,
      .get_target_size = get_target_size,
      .render = render,
@@ -1109,7 +1109,7 @@
      .perfdata = perfdata,
 --- a/video/out/gpu/video.c
 +++ b/video/out/gpu/video.c
-@@ -4115,6 +4115,12 @@ void gl_video_reset(struct gl_video *p)
+@@ -4247,6 +4247,12 @@ void gl_video_reset(struct gl_video *p)
      gl_video_reset_surfaces(p);
  }
  
@@ -1122,7 +1122,7 @@
  bool gl_video_showing_interpolated_frame(struct gl_video *p)
  {
      return p->is_interpolated;
-@@ -4196,6 +4202,14 @@ struct gl_video *gl_video_init(struct ra
+@@ -4328,6 +4334,14 @@ struct gl_video *gl_video_init(struct ra
      });
      init_gl(p);
      reinit_from_options(p);
@@ -1161,7 +1161,7 @@
      /* Handle input and redraw events, called by vo_check_events() */
      VOCTRL_CHECK_EVENTS,
      /* signal a device pause */
-@@ -539,6 +541,7 @@ bool vo_has_frame(struct vo *vo);
+@@ -540,6 +542,7 @@ bool vo_has_frame(struct vo *vo);
  void vo_redraw(struct vo *vo);
  bool vo_want_redraw(struct vo *vo);
  void vo_seek_reset(struct vo *vo);
@@ -1171,7 +1171,7 @@
  int64_t vo_get_drop_count(struct vo *vo);
 --- a/video/out/vo.c
 +++ b/video/out/vo.c
-@@ -1281,10 +1281,35 @@ void vo_seek_reset(struct vo *vo)
+@@ -1280,10 +1280,35 @@ void vo_seek_reset(struct vo *vo)
      struct vo_internal *in = vo->in;
      mp_mutex_lock(&in->lock);
      forget_frames(vo);
@@ -1253,7 +1253,7 @@
          return VO_TRUE;
 --- a/player/video.c
 +++ b/player/video.c
-@@ -158,6 +158,20 @@ static void vo_chain_uninit(struct vo_ch
+@@ -163,6 +163,20 @@ static void vo_chain_uninit(struct vo_ch
  void uninit_video_chain(struct MPContext *mpctx)
  {
      if (mpctx->vo_chain) {
@@ -1276,7 +1276,7 @@
          mpctx->vo_chain = NULL;
 --- a/video/out/gpu/video.h
 +++ b/video/out/gpu/video.h
-@@ -223,6 +223,7 @@ bool gl_video_icc_auto_enabled(struct gl
+@@ -226,6 +226,7 @@ bool gl_video_icc_auto_enabled(struct gl
  bool gl_video_gamma_auto_enabled(struct gl_video *p);
  
  void gl_video_reset(struct gl_video *p);
@@ -1286,7 +1286,7 @@
  struct mp_hwdec_devices;
 --- a/filters/f_decoder_wrapper.c
 +++ b/filters/f_decoder_wrapper.c
-@@ -544,6 +544,15 @@ bool mp_decoder_wrapper_get_pts_reset(st
+@@ -608,6 +608,15 @@ bool mp_decoder_wrapper_get_pts_reset(st
      return res;
  }
  
@@ -1304,7 +1304,7 @@
      struct priv *p = d->f->priv;
 --- a/filters/f_decoder_wrapper.h
 +++ b/filters/f_decoder_wrapper.h
-@@ -59,6 +59,7 @@ void mp_decoder_wrapper_set_coverart_fla
+@@ -63,6 +63,7 @@ void mp_decoder_wrapper_set_coverart_fla
  bool mp_decoder_wrapper_get_pts_reset(struct mp_decoder_wrapper *d);
  
  void mp_decoder_wrapper_set_play_dir(struct mp_decoder_wrapper *d, int dir);

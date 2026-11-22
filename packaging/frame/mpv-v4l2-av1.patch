@@ -18,7 +18,7 @@
                               [source && source->comp[0].depth > 8];
  }
  
-@@ -703,7 +704,9 @@ static void select_and_set_hwdec(struct
+@@ -721,7 +722,9 @@ static void select_and_set_hwdec(struct
      } else {
          const AVCodecParameters *par = ctx->codec->lav_codecpar;
          bool large_v4l2 = false;
@@ -29,7 +29,7 @@
              for (int n = 0; n < ctx->num_attempted_hwdecs; n++) {
                  if (bstr_find0(ctx->attempted_hwdecs[n], "v4l2m2m") >= 0)
                      large_v4l2 = true;
-@@ -890,12 +893,17 @@ static void init_avctx(struct mp_filter
+@@ -913,12 +916,17 @@ static void init_avctx(struct mp_filter
              spare += 3;
          av_opt_set_int(avctx->priv_data, "capture_spare", spare, 0);
      }
@@ -48,7 +48,7 @@
          const AVCodecParameters *par = c->lav_codecpar;
          ctx->v4l2_smallest_pool = (int64_t)par->width * par->height >= atomic_load(v4l2_refused(par));
          if (ctx->v4l2_smallest_pool)
-@@ -1377,7 +1385,8 @@ static void handle_err(struct mp_filter
+@@ -1431,7 +1439,8 @@ static void handle_err(struct mp_filter
              const AVCodecParameters *par = ctx->codec->lav_codecpar;
              int64_t refused = 0;
              bool smaller = false;

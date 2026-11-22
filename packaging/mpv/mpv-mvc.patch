@@ -1,5 +1,5 @@
 # Two-view H.264 MVC (3D Blu-ray, Stereo High) in both views: see
-# video/decode/vd_mvc.h. Apply to the pinned 0.41.0 source with
+# video/decode/vd_mvc.h. Apply to the pinned 0.42.0 source with
 # packaging/mpv/mvc/ copied to video/decode/mvc/, before the Frame patches.
 # Also: no decoder error for Blu-ray DTS-HD audio after seeks (demux_lavf).
 --- a/demux/demux_lavf.c
@@ -12,15 +12,15 @@
  #include <libavutil/dovi_meta.h>
  #include <libavutil/mathematics.h>
  #include <libavutil/opt.h>
-@@ -220,6 +221,7 @@ struct stream_info {
-     double last_key_pts;
+@@ -235,6 +236,7 @@ struct stream_info {
      double highest_pts;
      double ts_offset;
+     struct mp_dovi_split *dovi_split;
 +    bool seeked;    // no packet read since the last seek
  };
  
- typedef struct lavf_priv {
-@@ -250,6 +252,16 @@ typedef struct lavf_priv {
+ struct avio_cookie {
+@@ -275,6 +277,16 @@ typedef struct lavf_priv {
  
      AVDictionary *av_opts;
  
@@ -37,7 +37,7 @@
      // Proxying nested streams.
      struct nested_stream *nested;
      int num_nested;
-@@ -588,6 +600,38 @@ static void guess_and_set_vobsub_name(st
+@@ -639,6 +651,38 @@ static void guess_and_set_vobsub_name(st
      talloc_free(tmp);
  }
  
@@ -76,8 +76,8 @@
  static void select_tracks(struct demuxer *demuxer, int start)
  {
      lavf_priv_t *priv = demuxer->priv;
-@@ -598,6 +642,13 @@ static void select_tracks(struct demuxer
-                         !stream->attached_picture;
+@@ -655,6 +699,13 @@ static void select_tracks(struct demuxer
+         }
          st->discard = selected ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
      }
 +    // The dependent view goes with the base view.
@@ -90,7 +90,7 @@
  }
  
  static inline const uint8_t *mp_av_stream_get_side_data(const AVStream *st,
-@@ -718,6 +769,12 @@ static void handle_new_stream(demuxer_t
+@@ -775,6 +826,12 @@ static void handle_new_stream(demuxer_t
          break;
      }
      case AVMEDIA_TYPE_VIDEO: {
@@ -103,8 +103,8 @@
          sh = demux_alloc_sh_stream(STREAM_VIDEO);
  
          if ((st->disposition & AV_DISPOSITION_ATTACHED_PIC) &&
-@@ -773,6 +830,14 @@ static void handle_new_stream(demuxer_t
-         // This also applies to vfw-muxed mkv, but we can't detect these easily.
+@@ -835,6 +892,14 @@ static void handle_new_stream(demuxer_t
+         // AVI uses decode-order indices as DTS and needs the compensation.
          sh->codec->avi_dts = matches_avinputformat_name(priv, "avi");
  
 +        if (priv->mvc_ts && priv->mvc_base < 0 &&
@@ -118,7 +118,7 @@
          break;
      }
      case AVMEDIA_TYPE_SUBTITLE: {
-@@ -977,6 +1042,8 @@ static int demux_open_lavf(demuxer_t *de
+@@ -1467,6 +1532,8 @@ static int demux_open_lavf(demuxer_t *de
  
      demuxer->priv = priv;
      priv->stream = demuxer->stream;
@@ -127,7 +127,7 @@
  
      priv->opts = mp_get_config_group(priv, demuxer->global, &demux_lavf_conf);
      struct demux_lavf_opts *lavfdopts = priv->opts;
-@@ -1103,6 +1170,21 @@ static int demux_open_lavf(demuxer_t *de
+@@ -1619,6 +1686,21 @@ static int demux_open_lavf(demuxer_t *de
  
      priv->avfc = avfc;
  
@@ -149,7 +149,7 @@
      bool probeinfo = lavfdopts->probeinfo != 0;
      switch (lavfdopts->probeinfo) {
      case -2: probeinfo = priv->avfc->nb_streams == 0; break;
-@@ -1211,6 +1293,133 @@ fail:
+@@ -1750,6 +1832,133 @@ fail:
      return -1;
  }
  
@@ -283,7 +283,7 @@
  static bool demux_lavf_read_packet(struct demuxer *demux,
                                     struct demux_packet **mp_pkt)
  {
-@@ -1218,7 +1427,7 @@ static bool demux_lavf_read_packet(struc
+@@ -1764,7 +1973,7 @@ static bool demux_lavf_read_packet(struc
  
      AVPacket *pkt = av_packet_alloc();
      MP_HANDLE_OOM(pkt);
@@ -292,7 +292,7 @@
      update_read_stats(demux);
      if (r < 0) {
          av_packet_free(&pkt);
-@@ -1247,6 +1456,20 @@ static bool demux_lavf_read_packet(struc
+@@ -1804,6 +2013,20 @@ static bool demux_lavf_read_packet(struc
          return true; // don't signal EOF if skipping a packet
      }
  
@@ -313,16 +313,16 @@
      // Never send additional frames for streams that are a single frame.
      if (stream->image && priv->format_hack.first_frame_only && pkt->pos != 0) {
          av_packet_free(&pkt);
-@@ -1315,6 +1538,8 @@ static void demux_drop_buffers_lavf(demu
- {
+@@ -1895,6 +2118,8 @@ static void demux_drop_buffers_lavf(demu
      lavf_priv_t *priv = demuxer->priv;
-     av_seek_frame(priv->avfc, -1, 0, 1);
+     if (!priv->stream || priv->stream->seekable)
+         av_seek_frame(priv->avfc, -1, 0, 1);
 +    mvc_clear(priv);
 +    set_seeked(priv);
      demux_flush(demuxer);
-     stream_drop_buffers(priv->stream);
-     avio_flush(priv->avfc->pb);
-@@ -1388,6 +1613,22 @@ static void demux_seek_lavf(demuxer_t *d
+     if (priv->stream)
+         stream_drop_buffers(priv->stream);
+@@ -1980,6 +2205,22 @@ static void demux_seek_lavf(demuxer_t *d
          }
      }
  
@@ -345,7 +345,7 @@
      int r = av_seek_frame(priv->avfc, seek_stream, seek_pts_av, avsflags);
      if (r < 0 && (avsflags & AVSEEK_FLAG_BACKWARD)) {
          // When seeking before the beginning of the file, and seeking fails,
-@@ -1415,6 +1656,7 @@ static void demux_close_lavf(demuxer_t *
+@@ -2008,6 +2249,7 @@ static void demux_close_lavf(demuxer_t *
  {
      lavf_priv_t *priv = demuxer->priv;
      if (priv) {
@@ -355,7 +355,7 @@
          avformat_close_input(&priv->avfc);
 --- a/demux/stheader.h
 +++ b/demux/stheader.h
-@@ -113,6 +113,7 @@ struct mp_codec_params {
+@@ -162,6 +162,7 @@ struct mp_codec_params {
  
      // STREAM_VIDEO
      bool avi_dts;         // use DTS timing; first frame and DTS is 0
@@ -363,24 +363,11 @@
      double fps;           // frames per second (set only if constant fps)
      bool reliable_fps;    // the fps field is definitely not broken
      int par_w, par_h;     // pixel aspect ratio (0 if unknown/square)
---- a/filters/f_decoder_wrapper.c
-+++ b/filters/f_decoder_wrapper.c
-@@ -610,7 +610,9 @@ static void fix_image_params(struct priv
-     if (m.p_w <= 0 || m.p_h <= 0)
-         m.p_w = m.p_h = 1;
- 
--    m.stereo3d = p->codec->stereo_mode;
-+    // A decoder that joins views says so (vd_mvc.h).
-+    if (m.stereo3d == MP_STEREO3D_MONO)
-+        m.stereo3d = p->codec->stereo_mode;
- 
-     if (!mp_rect_equals(&p->codec->crop, &(struct mp_rect){0})) {
-         struct mp_rect crop = p->codec->crop;
 --- a/filters/f_decoder_wrapper.h
 +++ b/filters/f_decoder_wrapper.h
-@@ -75,6 +75,9 @@ enum dec_ctrl {
-     // framedrop mode: 0=none, 1=standard, 2=hrseek
-     VDCTRL_SET_FRAMEDROP,
+@@ -81,6 +81,9 @@ enum dec_ctrl {
+     // int*: extra hw surfaces retained
+     VDCTRL_SET_EXTRA_HW_FRAMES,
      VDCTRL_CHECK_FORCED_EOF,
 +    // two-view MVC: "stereo" (both views), "2d" (base view only); false if
 +    // the video isn't MVC
@@ -390,7 +377,7 @@
  int mp_decoder_wrapper_control(struct mp_decoder_wrapper *d,
 --- a/meson.build
 +++ b/meson.build
-@@ -209,6 +209,9 @@ sources = files(
+@@ -222,6 +222,9 @@ sources = files(
      ## Video
      'video/csputils.c',
      'video/decode/vd_lavc.c',
@@ -402,7 +389,7 @@
      'video/filter/vf_sub.c',
 --- a/player/command.c
 +++ b/player/command.c
-@@ -2314,6 +2314,21 @@ static int mp_property_hwdec_current(voi
+@@ -2451,6 +2451,21 @@ static int mp_property_hwdec_current(voi
      return m_property_strdup_ro(action, arg, current);
  }
  
@@ -424,7 +411,7 @@
  static int mp_property_hwdec_interop(void *ctx, struct m_property *prop,
                                       int action, void *arg)
  {
-@@ -4464,6 +4479,7 @@ static const struct m_property mp_proper
+@@ -4808,6 +4823,7 @@ static const struct m_property mp_proper
      {"video-aspect-override", mp_property_video_aspect_override},
      {"vid", mp_property_switch_track, .priv = (void *)(const int[]){0, STREAM_VIDEO}},
      {"hwdec-current", mp_property_hwdec_current},
@@ -432,7 +419,7 @@
      {"hwdec-interop", mp_property_hwdec_interop},
  
      {"estimated-frame-count", mp_property_frame_count},
-@@ -4596,7 +4612,7 @@ static const char *const *const mp_event
+@@ -4948,7 +4964,7 @@ static const char *const *const mp_event
        "video-format", "video-codec", "video-bitrate", "dwidth", "dheight",
        "width", "height", "container-fps", "aspect", "aspect-name", "vo-configured", "current-vo",
        "video-dec-params", "osd-dimensions", "hwdec", "hwdec-current", "hwdec-interop",
@@ -451,7 +438,7 @@
  
  #include "options/m_option.h"
  
-@@ -84,6 +85,8 @@ struct vd_lavc_params {
+@@ -92,6 +93,8 @@ struct vd_lavc_params {
      bool check_hw_profile;
      char **avopts;
      int dr;
@@ -460,7 +447,7 @@
  };
  
  static const struct m_opt_choice_alternatives discard_names[] = {
-@@ -115,6 +118,9 @@ const struct m_sub_options vd_lavc_conf
+@@ -123,6 +126,9 @@ const struct m_sub_options vd_lavc_conf
          {"vd-lavc-dr", OPT_CHOICE(dr,
              {"auto", -1}, {"no", 0}, {"yes", 1})},
          {"vd-apply-cropping", OPT_BOOL(apply_cropping)},
@@ -470,9 +457,9 @@
          {0}
      },
      .change_flags = UPDATE_VD,
-@@ -217,6 +223,14 @@ typedef struct lavc_ctx {
-     bool intra_only;
+@@ -223,6 +229,14 @@ typedef struct lavc_ctx {
      int framedrop_flags;
+     int extra_hw_frames_hint; // VDCTRL_SET_EXTRA_HW_FRAMES
  
 +    // Two-view H.264 MVC (vd_mvc.h): set while both views are decoded.
 +    struct vd_mvc *mvc;
@@ -485,7 +472,7 @@
      bool hw_probing;
      struct demux_packet **sent_packets;
      int num_sent_packets;
-@@ -492,6 +506,15 @@ static AVBufferRef *hwdec_create_dev(str
+@@ -499,6 +513,15 @@ static AVBufferRef *hwdec_create_dev(str
      return NULL;
  }
  
@@ -501,7 +488,7 @@
  // Select if and which hwdec to use. Also makes sure to get the decode device.
  static void select_and_set_hwdec(struct mp_filter *vd)
  {
-@@ -533,8 +556,17 @@ static void select_and_set_hwdec(struct
+@@ -543,8 +566,17 @@ static void select_and_set_hwdec(struct
              for (int n = 0; n < num_hwdecs; n++) {
                  struct hwdec_info *hwdec = &hwdecs[n];
  
@@ -521,7 +508,7 @@
                      continue;
                  hwdec_name_supported = true;
  
-@@ -792,7 +824,8 @@ static void init_avctx(struct mp_filter
+@@ -815,7 +847,8 @@ static void init_avctx(struct mp_filter
  
      mp_set_avcodec_threads(vd->log, avctx, threads);
  
@@ -531,8 +518,8 @@
          avctx->opaque = vd;
          avctx->get_buffer2 = get_buffer2_direct;
      }
-@@ -851,6 +884,12 @@ static void init_avctx(struct mp_filter
-     }
+@@ -875,6 +908,12 @@ static void init_avctx(struct mp_filter
+     avctx->max_pixels = 2048 * 2048;
  #endif
  
 +    // The rewritten MVC pictures carry their own parameter sets, in Annex B.
@@ -544,7 +531,7 @@
      /* open it */
      if (avcodec_open2(avctx, lavc_codec, NULL) < 0)
          goto error;
-@@ -859,7 +898,7 @@ static void init_avctx(struct mp_filter
+@@ -883,7 +922,7 @@ static void init_avctx(struct mp_filter
      // decoding of the rest of the stream. The only currently known case is the
      // x264 build number (encoded in a SEI element), needed to enable a
      // workaround for broken 4:4:4 streams produced by older x264 versions.
@@ -553,7 +540,7 @@
          mp_set_av_packet(ctx->avpkt, c->first_packet, &ctx->codec_timebase);
          avcodec_send_packet(avctx, ctx->avpkt);
          avcodec_receive_frame(avctx, ctx->pic);
-@@ -888,6 +927,12 @@ static void flush_all(struct mp_filter *
+@@ -915,6 +954,12 @@ static void flush_all(struct mp_filter *
  {
      vd_ffmpeg_ctx *ctx = vd->priv;
  
@@ -566,7 +553,7 @@
      for (int n = 0; n < ctx->num_delay_queue; n++)
          talloc_free(ctx->delay_queue[n]);
      ctx->num_delay_queue = 0;
-@@ -1133,7 +1178,8 @@ static void prepare_decoding(struct mp_f
+@@ -1187,7 +1232,8 @@ static void prepare_decoding(struct mp_f
      if (!avctx)
          return;
  
@@ -576,7 +563,7 @@
      if (drop == 1) {
          avctx->skip_frame = opts->framedrop;    // normal framedrop
      } else if (drop == 2) {
-@@ -1142,7 +1188,7 @@ static void prepare_decoding(struct mp_f
+@@ -1196,7 +1242,7 @@ static void prepare_decoding(struct mp_f
          if (ctx->intra_only)
              avctx->skip_frame = AVDISCARD_ALL;
      } else {
@@ -585,7 +572,7 @@
      }
  
      if (ctx->hwdec_request_reinit)
-@@ -1164,10 +1210,58 @@ static void handle_err(struct mp_filter
+@@ -1218,10 +1264,58 @@ static void handle_err(struct mp_filter
      }
  }
  
@@ -645,7 +632,7 @@
  
      if (ctx->num_requeue_packets && ctx->requeue_packets[0] != pkt)
          return AVERROR(EAGAIN); // cannot consume the packet
-@@ -1178,16 +1272,53 @@ static int send_packet(struct mp_filter
+@@ -1232,6 +1326,19 @@ static int send_packet(struct mp_filter
      if (!ctx->avctx)
          return AVERROR_EOF;
  
@@ -664,6 +651,8 @@
 +
      prepare_decoding(vd);
  
+     if (ctx->wait_for_keyframe > 0 && pkt) {
+@@ -1246,11 +1353,35 @@ static int send_packet(struct mp_filter
      if (avctx->skip_frame == AVDISCARD_ALL)
          return 0;
  
@@ -704,7 +693,7 @@
  
      if (ctx->hw_probing && ctx->num_sent_packets < 32 &&
          ctx->hwdec_opts->software_fallback <= 32)
-@@ -1228,6 +1359,9 @@ static int decode_frame(struct mp_filter
+@@ -1291,6 +1422,9 @@ static int decode_frame(struct mp_filter
      if (ctx->num_requeue_packets)
          send_queued_packet(vd);
  
@@ -714,7 +703,7 @@
      int ret = avcodec_receive_frame(avctx, ctx->pic);
      if (ret < 0) {
          if (ret == AVERROR_EOF) {
-@@ -1269,9 +1403,29 @@ static int decode_frame(struct mp_filter
+@@ -1332,9 +1466,29 @@ static int decode_frame(struct mp_filter
      mpi->pts = mp_pts_from_av(ctx->pic->pts, &ctx->codec_timebase);
      mpi->dts = mp_pts_from_av(ctx->pic->pkt_dts, &ctx->codec_timebase);
      mpi->pkt_duration = mp_pts_from_av(ctx->pic->duration, &ctx->codec_timebase);
@@ -744,7 +733,7 @@
      MP_TARRAY_APPEND(ctx, ctx->delay_queue, ctx->num_delay_queue, mpi);
      return ret;
  }
-@@ -1312,6 +1466,10 @@ static int receive_frame(struct mp_filte
+@@ -1375,6 +1529,10 @@ static int receive_frame(struct mp_filte
      if (ret == AVERROR(EAGAIN) && ctx->num_requeue_packets)
          return 0; // force retry, so send_queued_packet() gets called
  
@@ -755,7 +744,7 @@
      if (ctx->num_delay_queue <= ctx->max_delay_queue && ret != AVERROR_EOF)
          return ret;
  
-@@ -1391,6 +1549,11 @@ static int control(struct mp_filter *vd,
+@@ -1457,6 +1615,11 @@ static int control(struct mp_filter *vd,
      case VDCTRL_REINIT:
          reinit(vd);
          return CONTROL_TRUE;
@@ -767,8 +756,8 @@
      }
      return CONTROL_UNKNOWN;
  }
-@@ -1465,6 +1628,9 @@ static struct mp_decoder *create(struct
-         ctx->vo = info->dr_vo;
+@@ -1532,6 +1695,9 @@ static struct mp_decoder *create(struct
+         ctx->force_swdec = info->force_swdec;
      }
  
 +    if (vd_mvc_by_params(codec))
