@@ -2,6 +2,7 @@
 
 #include "media_server.h"
 #include "frame_scaler.h"
+#include "media_decode.h"
 
 #include <cairo.h>
 #include <curl/curl.h>
@@ -128,17 +129,13 @@ class Decoder {
     input_->pb = io_;
     input_->flags |= AVFMT_FLAG_CUSTOM_IO;
     if (avformat_open_input(&input_, nullptr, av_find_input_format("mov"), nullptr) < 0 ||
-        avformat_find_stream_info(input_, nullptr) < 0)
+        avformat_find_stream_info(input_, nullptr) < 0 || !frame_ || !packet_)
       return false;
-    const AVCodec* decoder = nullptr;
-    stream_ = av_find_best_stream(input_, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
-    if (stream_ < 0 || !decoder) return false;
-    codec_ = avcodec_alloc_context3(decoder);
-    if (!codec_ || avcodec_parameters_to_context(codec_, input_->streams[stream_]->codecpar) < 0)
-      return false;
-    codec_->thread_count = 1;
-    codec_->max_pixels = 4096 * 4096;
-    return frame_ && packet_ && avcodec_open2(codec_, decoder, nullptr) >= 0;
+    codec_ = openVideoDecoder(input_, stream_, [](AVCodecContext* c) {
+      c->thread_count = 1;
+      c->max_pixels = 4096 * 4096;
+    });
+    return codec_ != nullptr;
   }
 
   bool next(const Cancellation& cancel) {

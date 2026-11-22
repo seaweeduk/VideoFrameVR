@@ -1,5 +1,6 @@
 #pragma once
 
+#include "frame_participant.h"
 #include "gl_util.h"
 #include "gpu_context.h"
 #include "texture.h"
@@ -49,7 +50,7 @@ class SharedImage {
 // is issued, then the frame: useInFrame() while recording, recordAcquires()
 // before the eye passes and recordReleases() after them, frameWaits() for the
 // submission and frameSubmitted() or frameAbandoned() after it.
-class GlInterop {
+class GlInterop : public FrameParticipant {
  public:
   GlInterop() = default;
   GlInterop(const GlInterop&) = delete;
@@ -90,13 +91,13 @@ class GlInterop {
 
   // The frame being recorded samples `image` (not one GL holds).
   bool useInFrame(SharedImage& image);
-  void recordAcquires(VkCommandBuffer cmd);
-  void recordReleases(VkCommandBuffer cmd);
+  void recordAcquires(VkCommandBuffer cmd) override;
+  void recordReleases(VkCommandBuffer cmd) override;
   // What the frame's submission waits for: at most one value per timeline.
   void frameWaits(std::vector<SemaphoreWait>& waits) const;
   // The frame was submitted as frame timeline value `value`, or was not.
-  void frameSubmitted(uint64_t value);
-  void frameAbandoned();
+  void frameSubmitted(uint64_t value) override;
+  void frameAbandoned() override;
 
  private:
   bool loadGl();

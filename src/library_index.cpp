@@ -6,6 +6,7 @@
 #include "remote.h"
 #include "sqlite_util.h"
 #include "stash_catalog.h"
+#include "thread_priority.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -23,10 +24,7 @@
 
 #include <dirent.h>
 #include <sqlite3.h>
-#include <sys/resource.h>
 #include <sys/stat.h>
-#include <sys/syscall.h>
-#include <unistd.h>
 
 namespace fs = std::filesystem;
 using File = LibraryIndex::File;
@@ -237,9 +235,7 @@ struct LibraryIndex::Shared {
 
 void LibraryIndex::Shared::run() {
   // Behind everything else: playback, the menu, thumbnails.
-  const auto tid = static_cast<id_t>(syscall(SYS_gettid));
-  setpriority(PRIO_PROCESS, tid, 19);
-  syscall(SYS_ioprio_set, 1 /* IOPRIO_WHO_PROCESS */, tid, 3 << 13 /* IOPRIO_CLASS_IDLE */);
+  runInBackground(Background::CpuAndIo);
   load();
   handOver();
   auto last = std::chrono::steady_clock::now();

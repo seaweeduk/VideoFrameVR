@@ -1,8 +1,9 @@
 #include "direct_video.h"
 
+#include "offscreen_pass.h"
+
 #include <cstdint>
 // The SPIR-V headers declare bare arrays: <cstdint> first.
-#include "shaders/fullscreen.vert.h"
 #include "shaders/still_tp10.frag.h"
 
 #include <poll.h>
@@ -100,6 +101,56 @@ bool tp10Band(uint32_t* d, unsigned texels, unsigned rows, bool chroma, unsigned
   return true;
 }
 
+// An image to bind to a DMA-BUF, in the layout of modifier with its planes
+// where layouts put them.
+bool createDmaBufImage(GpuContext& gpu, VkFormat format, VkExtent3D extent, VkImageUsageFlags usage,
+                       uint64_t modifier, const VkSubresourceLayout* layouts, uint32_t planes,
+                       VkImage& image, const char* what) {
+  VkImageDrmFormatModifierExplicitCreateInfoEXT explicitModifier{
+      VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT};
+  explicitModifier.drmFormatModifier = modifier;
+  explicitModifier.drmFormatModifierPlaneCount = planes;
+  explicitModifier.pPlaneLayouts = layouts;
+  VkExternalMemoryImageCreateInfo external{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
+  external.pNext = &explicitModifier;
+  external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+  VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+  info.pNext = &external;
+  info.imageType = VK_IMAGE_TYPE_2D;
+  info.format = format;
+  info.extent = extent;
+  info.mipLevels = 1;
+  info.arrayLayers = 1;
+  info.samples = VK_SAMPLE_COUNT_1_BIT;
+  info.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
+  info.usage = usage;
+  info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  return gpu.check(vkCreateImage(gpu.device(), &info, nullptr, &image), what);
+}
+
+// size bytes of a DMA-BUF (its own copy of fd) as memory of type, dedicated
+// to an image unless that is null.
+bool importDmaBuf(GpuContext& gpu, int fd, VkDeviceSize size, uint32_t type, VkImage dedicatedTo,
+                  VkDeviceMemory& memory, const char* what) {
+  const int own = dup(fd);
+  if (own < 0) return false;
+  VkImportMemoryFdInfoKHR import{VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR};
+  import.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+  import.fd = own;
+  VkMemoryDedicatedAllocateInfo dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
+  dedicated.image = dedicatedTo;
+  if (dedicatedTo) import.pNext = &dedicated;
+  VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+  alloc.pNext = &import;
+  alloc.allocationSize = size;
+  alloc.memoryTypeIndex = type;
+  if (!gpu.check(vkAllocateMemory(gpu.device(), &alloc, nullptr, &memory), what)) {
+    close(own);
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 // A converter or decoder buffer, imported once: its two planes as images,
@@ -124,77 +175,6 @@ struct DirectBuffer {
   int users = 0;  // frames
   double lastSeen = 0;
 };
-
-VkPipeline fullscreenPipeline(GpuContext& gpu, VkPipelineLayout layout, VkRenderPass pass,
-                              const uint32_t* fragment, size_t fragmentBytes,
-                              VkPipelineCreateFlags flags, VkColorComponentFlags writeMask,
-                              const char* what) {
-  VkDevice d = gpu.device();
-  VkPipeline pipeline = VK_NULL_HANDLE;
-  VkShaderModule modules[2] = {};
-  const uint32_t* code[2] = {kSpirv_fullscreen_vert, fragment};
-  const size_t bytes[2] = {sizeof(kSpirv_fullscreen_vert), fragmentBytes};
-  bool ok = true;
-  for (int i = 0; i < 2 && ok; ++i) {
-    VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    info.codeSize = bytes[i];
-    info.pCode = code[i];
-    ok = gpu.check(vkCreateShaderModule(d, &info, nullptr, &modules[i]), what);
-  }
-  if (ok) {
-    VkPipelineShaderStageCreateInfo stages[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO},
-                                                 {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
-    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-    stages[0].module = modules[0];
-    stages[0].pName = "main";
-    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    stages[1].module = modules[1];
-    stages[1].pName = "main";
-    VkPipelineVertexInputStateCreateInfo vertexInput{
-        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-    VkPipelineInputAssemblyStateCreateInfo assembly{
-        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
-    viewport.viewportCount = 1;
-    viewport.scissorCount = 1;
-    VkPipelineRasterizationStateCreateInfo raster{
-        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-    raster.polygonMode = VK_POLYGON_MODE_FILL;
-    raster.cullMode = VK_CULL_MODE_NONE;
-    raster.lineWidth = 1.0f;
-    VkPipelineMultisampleStateCreateInfo multisample{
-        VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-    VkPipelineColorBlendAttachmentState blendAttachment{};
-    blendAttachment.colorWriteMask = writeMask;
-    VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-    blend.attachmentCount = 1;
-    blend.pAttachments = &blendAttachment;
-    const VkDynamicState dynamic[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-    VkPipelineDynamicStateCreateInfo dynamicInfo{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-    dynamicInfo.dynamicStateCount = 2;
-    dynamicInfo.pDynamicStates = dynamic;
-    VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    info.flags = flags;
-    info.stageCount = 2;
-    info.pStages = stages;
-    info.pVertexInputState = &vertexInput;
-    info.pInputAssemblyState = &assembly;
-    info.pViewportState = &viewport;
-    info.pRasterizationState = &raster;
-    info.pMultisampleState = &multisample;
-    info.pColorBlendState = &blend;
-    info.pDynamicState = &dynamicInfo;
-    info.layout = layout;
-    info.renderPass = pass;
-    ok = gpu.check(vkCreateGraphicsPipelines(d, gpu.pipelineCache(), 1, &info, nullptr, &pipeline),
-                   what);
-  }
-  for (VkShaderModule m : modules)
-    if (m) vkDestroyShaderModule(d, m, nullptr);
-  return ok ? pipeline : VK_NULL_HANDLE;
-}
 
 DirectVideo::DirectVideo() = default;
 
@@ -477,42 +457,10 @@ bool DirectVideo::initStill() {
   if (!gpu_->check(vkCreatePipelineLayout(d, &layoutInfo, nullptr, &stillLayout_), "still layout"))
     return false;
   for (int i = 0; i < 2; ++i) {
-    VkAttachmentDescription attachment{};
-    attachment.format = i == 0 ? VK_FORMAT_R16_UNORM : VK_FORMAT_R16G16_UNORM;
-    attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    VkAttachmentReference color{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &color;
-    VkSubpassDependency before{};
-    before.srcSubpass = VK_SUBPASS_EXTERNAL;
-    before.dstSubpass = 0;
-    before.srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-    before.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    before.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    VkSubpassDependency after{};
-    after.srcSubpass = 0;
-    after.dstSubpass = VK_SUBPASS_EXTERNAL;
-    after.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    after.dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-    after.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    after.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    const VkSubpassDependency dependencies[2] = {before, after};
-    VkRenderPassCreateInfo passInfo{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-    passInfo.attachmentCount = 1;
-    passInfo.pAttachments = &attachment;
-    passInfo.subpassCount = 1;
-    passInfo.pSubpasses = &subpass;
-    passInfo.dependencyCount = 2;
-    passInfo.pDependencies = dependencies;
-    if (!gpu_->check(vkCreateRenderPass(d, &passInfo, nullptr, &stillPass_[i]), "still pass"))
+    if (!createOffscreenPass(*gpu_, i == 0 ? VK_FORMAT_R16_UNORM : VK_FORMAT_R16G16_UNORM,
+                             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             VK_ACCESS_SHADER_READ_BIT, stillPass_[i], "still pass"))
       return false;
     stillPipeline_[i] = fullscreenPipeline(
         *gpu_, stillLayout_, stillPass_[i], kSpirv_still_tp10_frag, sizeof(kSpirv_still_tp10_frag),
@@ -673,26 +621,10 @@ bool DirectVideo::importPlane(DirectBuffer& b, int plane, int fd) {
   VkSubresourceLayout layout{};
   layout.offset = b.offset[plane];
   layout.rowPitch = b.pitch[plane];
-  VkImageDrmFormatModifierExplicitCreateInfoEXT modifier{
-      VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT};
-  modifier.drmFormatModifier = 0;  // DRM_FORMAT_MOD_LINEAR
-  modifier.drmFormatModifierPlaneCount = 1;
-  modifier.pPlaneLayouts = &layout;
-  VkExternalMemoryImageCreateInfo external{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
-  external.pNext = &modifier;
-  external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-  VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-  info.pNext = &external;
-  info.imageType = VK_IMAGE_TYPE_2D;
-  info.format = format;
-  info.extent = {w, h, 1};
-  info.mipLevels = 1;
-  info.arrayLayers = 1;
-  info.samples = VK_SAMPLE_COUNT_1_BIT;
-  info.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
-  info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;  // still()'s copy
-  info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  if (!gpu_->check(vkCreateImage(d, &info, nullptr, &b.image[plane]), "creating a decoded frame's image"))
+  if (!createDmaBufImage(*gpu_, format, {w, h, 1},
+                         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,  // still()'s copy
+                         0 /* DRM_FORMAT_MOD_LINEAR */, &layout, 1, b.image[plane],
+                         "creating a decoded frame's image"))
     return false;
   VkMemoryDedicatedRequirements dedicatedReq{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
   VkMemoryRequirements2 req{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};
@@ -712,24 +644,11 @@ bool DirectVideo::importPlane(DirectBuffer& b, int plane, int fd) {
                  static_cast<unsigned long long>(b.size));
     return false;
   }
-  const int own = dup(fd);
-  if (own < 0) return false;
-  VkImportMemoryFdInfoKHR import{VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR};
-  import.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-  import.fd = own;
-  VkMemoryDedicatedAllocateInfo dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
-  dedicated.image = b.image[plane];
-  if (dedicatedReq.prefersDedicatedAllocation || dedicatedReq.requiresDedicatedAllocation)
-    import.pNext = &dedicated;
-  VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-  alloc.pNext = &import;
-  alloc.allocationSize = b.size;
-  alloc.memoryTypeIndex = type;
-  if (!gpu_->check(vkAllocateMemory(d, &alloc, nullptr, &b.memory[plane]),
-                   "importing a decoded frame")) {
-    close(own);
+  const bool dedicated =
+      dedicatedReq.prefersDedicatedAllocation || dedicatedReq.requiresDedicatedAllocation;
+  if (!importDmaBuf(*gpu_, fd, b.size, type, dedicated ? b.image[plane] : VK_NULL_HANDLE,
+                    b.memory[plane], "importing a decoded frame"))
     return false;
-  }
   if (!gpu_->check(vkBindImageMemory(d, b.image[plane], b.memory[plane], 0),
                    "binding a decoded frame's memory"))
     return false;
@@ -765,25 +684,9 @@ bool DirectVideo::importTp10(DirectBuffer& b, int fd) {
   for (int i = 0; i < 2;) {
     VkSubresourceLayout layout{};
     layout.rowPitch = b.pitch[i];
-    VkImageDrmFormatModifierExplicitCreateInfoEXT modifier{
-        VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT};
-    modifier.drmFormatModifier = kModifierQcomCompressed;
-    modifier.drmFormatModifierPlaneCount = 1;
-    modifier.pPlaneLayouts = &layout;
-    VkExternalMemoryImageCreateInfo external{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
-    external.pNext = &modifier;
-    external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-    VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-    info.pNext = &external;
-    info.imageType = VK_IMAGE_TYPE_2D;
-    info.format = kTp10Carrier;
-    info.extent = {texels, i ? rows / 2 : rows, 1};
-    info.mipLevels = 1;
-    info.arrayLayers = 1;
-    info.samples = VK_SAMPLE_COUNT_1_BIT;
-    info.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
-    info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
-    if (!gpu_->check(vkCreateImage(d, &info, nullptr, &b.image[i]), "creating a Main 10 frame's image"))
+    if (!createDmaBufImage(*gpu_, kTp10Carrier, {texels, i ? rows / 2 : rows, 1},
+                           VK_IMAGE_USAGE_SAMPLED_BIT, kModifierQcomCompressed, &layout, 1, b.image[i],
+                           "creating a Main 10 frame's image"))
       return false;
     vkGetImageMemoryRequirements(d, b.image[i], &req[i]);
     if (i == 0 && req[0].size < b.offset[1] && rows < h + 64) {
@@ -805,19 +708,9 @@ bool DirectVideo::importTp10(DirectBuffer& b, int fd) {
   }
   const uint32_t type =
       gpu_->memoryType(req[0].memoryTypeBits & req[1].memoryTypeBits & fdProps.memoryTypeBits, 0);
-  const int own = type == UINT32_MAX ? -1 : dup(fd);
-  if (own < 0) return false;
-  VkImportMemoryFdInfoKHR import{VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR};
-  import.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-  import.fd = own;
-  VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-  alloc.pNext = &import;
-  alloc.allocationSize = b.size;
-  alloc.memoryTypeIndex = type;
-  if (!gpu_->check(vkAllocateMemory(d, &alloc, nullptr, &b.memory[0]), "importing a Main 10 frame")) {
-    close(own);
+  if (type == UINT32_MAX ||
+      !importDmaBuf(*gpu_, fd, b.size, type, VK_NULL_HANDLE, b.memory[0], "importing a Main 10 frame"))
     return false;
-  }
   for (int i = 0; i < 2; ++i) {
     if (!gpu_->check(vkBindImageMemory(d, b.image[i], b.memory[0], b.offset[i]),
                      "binding a Main 10 frame's memory"))
@@ -870,25 +763,9 @@ bool DirectVideo::importQ08c(DirectBuffer& b, int fd) {
     layouts[i].offset = b.offset[i];
     layouts[i].rowPitch = b.pitch[i];
   }
-  VkImageDrmFormatModifierExplicitCreateInfoEXT modifier{
-      VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT};
-  modifier.drmFormatModifier = kModifierQcomCompressed;
-  modifier.drmFormatModifierPlaneCount = 2;
-  modifier.pPlaneLayouts = layouts;
-  VkExternalMemoryImageCreateInfo external{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
-  external.pNext = &modifier;
-  external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-  VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-  info.pNext = &external;
-  info.imageType = VK_IMAGE_TYPE_2D;
-  info.format = kQ08cFormat;
-  info.extent = {static_cast<uint32_t>(b.width), static_cast<uint32_t>(b.height), 1};
-  info.mipLevels = 1;
-  info.arrayLayers = 1;
-  info.samples = VK_SAMPLE_COUNT_1_BIT;
-  info.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
-  info.usage = kQ08cUsage;
-  if (!gpu_->check(vkCreateImage(d, &info, nullptr, &b.image[0]), "creating an 8-bit frame's image"))
+  if (!createDmaBufImage(*gpu_, kQ08cFormat,
+                         {static_cast<uint32_t>(b.width), static_cast<uint32_t>(b.height), 1}, kQ08cUsage,
+                         kModifierQcomCompressed, layouts, 2, b.image[0], "creating an 8-bit frame's image"))
     return false;
   VkMemoryRequirements req;
   vkGetImageMemoryRequirements(d, b.image[0], &req);
@@ -900,22 +777,9 @@ bool DirectVideo::importQ08c(DirectBuffer& b, int fd) {
     return false;
   }
   const uint32_t type = gpu_->memoryType(req.memoryTypeBits & fdProps.memoryTypeBits, 0);
-  const int own = type == UINT32_MAX ? -1 : dup(fd);
-  if (own < 0) return false;
-  VkImportMemoryFdInfoKHR import{VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR};
-  import.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-  import.fd = own;
-  VkMemoryDedicatedAllocateInfo dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
-  dedicated.image = b.image[0];
-  import.pNext = &dedicated;
-  VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-  alloc.pNext = &import;
-  alloc.allocationSize = b.size;
-  alloc.memoryTypeIndex = type;
-  if (!gpu_->check(vkAllocateMemory(d, &alloc, nullptr, &b.memory[0]), "importing an 8-bit frame")) {
-    close(own);
+  if (type == UINT32_MAX ||
+      !importDmaBuf(*gpu_, fd, b.size, type, b.image[0], b.memory[0], "importing an 8-bit frame"))
     return false;
-  }
   if (!gpu_->check(vkBindImageMemory(d, b.image[0], b.memory[0], 0), "binding an 8-bit frame's memory"))
     return false;
   VkSamplerYcbcrConversionInfo use{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO};
@@ -1084,15 +948,8 @@ DirectFrame* DirectVideo::still(DirectFrame& frame) {
   }
   for (int i = 0; i < 2 && frame.tp10_; ++i) {
     if (stillFramebuffer_[i]) continue;
-    VkFramebufferCreateInfo info{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-    info.renderPass = stillPass_[i];
-    info.attachmentCount = 1;
-    info.pAttachments = &stillPlanes_[i].view;
-    info.width = stillPlanes_[i].width;
-    info.height = stillPlanes_[i].height;
-    info.layers = 1;
-    if (!gpu_->check(vkCreateFramebuffer(gpu_->device(), &info, nullptr, &stillFramebuffer_[i]),
-                     "still framebuffer"))
+    if (!createOffscreenFramebuffer(*gpu_, stillPass_[i], stillPlanes_[i].view, stillPlanes_[i].width,
+                                    stillPlanes_[i].height, stillFramebuffer_[i], "still framebuffer"))
       return nullptr;
   }
   if (!still_) still_ = std::make_unique<DirectFrame>();

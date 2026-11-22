@@ -234,9 +234,11 @@ KeyPicker::Result KeyPicker::result(KeyColour& colour) {
   if (drawer_) {
     if (!drawer_->ready()) return Result::None;
     const float* values = drawer_->values();
+    if (values)
+      for (int c = 0; c < 4; ++c) read[c] = values[c];
+    drawer_->release();
     drawer_ = nullptr;
     if (!values) return Result::Failed;
-    for (int c = 0; c < 4; ++c) read[c] = values[c];
   } else if (fence_) {
     const GLenum state = glClientWaitSync(fence_, 0, 0);
     if (state != GL_ALREADY_SIGNALED && state != GL_CONDITION_SATISFIED) return Result::None;

@@ -9,10 +9,9 @@
 
 #include "removable_drives.h"
 
+#include "thread_priority.h"
+
 #include <gio/gio.h>
-#include <sys/resource.h>
-#include <sys/syscall.h>
-#include <unistd.h>
 
 #include <algorithm>
 #include <cctype>
@@ -217,7 +216,7 @@ bool RemovableDrives::poll(Change& change) {
 }
 
 void RemovableDrives::work() {
-  setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 19);
+  runInBackground(Background::Cpu);
   GDBusConnection* bus = nullptr;
   if (mountOthers_) {
     GError* error = nullptr;

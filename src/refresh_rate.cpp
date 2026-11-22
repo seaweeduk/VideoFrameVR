@@ -13,10 +13,6 @@
 
 namespace {
 
-// Also visible inside the Steam Linux Runtime container.
-constexpr char kVrcmdDir[] = "/opt/steamvr/bin/linuxarm64";
-constexpr char kVrcmd[] = "/opt/steamvr/bin/linuxarm64/vrcmd";
-
 std::string appId() {
   const char* id = std::getenv("SteamAppId");
   if (!id || !*id || std::string(id) == "0") return {};

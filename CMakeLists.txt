@@ -30,9 +30,13 @@ find_package(Vulkan REQUIRED)
 add_executable(videoframevr
   src/main.cpp
   src/xr_context.cpp
+  src/xr_input.cpp
+  src/xr_device.cpp
   src/xbvr_client.cpp
   src/xbvr_server.cpp
   src/video_player.cpp
+  src/seek_queue.cpp
+  src/player_sleep.cpp
   src/decoder_holders.cpp
   src/deletion.cpp
   src/passthrough.cpp
@@ -83,6 +87,7 @@ add_executable(videoframevr
   src/accent.cpp
   src/mask_probe.cpp
   src/media_client.cpp
+  src/media_decode.cpp
   src/media_server.cpp
   src/menu.cpp
   src/menu_adjust.cpp
@@ -132,6 +137,7 @@ add_executable(videoframevr
   src/mpv_gl_context.cpp
   src/notices.cpp
   src/offline.cpp
+  src/offscreen_pass.cpp
   src/options.cpp
   src/oshash.cpp
   src/panel_fades.cpp
@@ -198,6 +204,7 @@ add_executable(videoframevr
   src/strings_zh_cn.cpp
   src/strings_ja.cpp
   src/subtitle_overlay.cpp
+  src/thread_priority.cpp
   src/thumbnailer.cpp
   src/tile_grid.cpp
   src/uploader.cpp

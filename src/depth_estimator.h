@@ -60,7 +60,8 @@ struct DepthPatch {
   float pickPart[4] = {};
 };
 
-// Draws a DepthPatch from a frame that stays out of GL (DirectDepth).
+// Draws a DepthPatch from a frame that stays out of GL (DirectDepth), or
+// from a GL texture (GlDepth).
 // One at a time: draw() queues it, ready() says when its values are there.
 class DepthPatchDrawer {
  public:
@@ -68,6 +69,7 @@ class DepthPatchDrawer {
   virtual bool draw(const DepthPatch& patch) = 0;
   virtual bool ready() = 0;
   virtual const float* values() = 0;  // width x the patch's rows, once ready()
+  virtual void release() {}           // done with values()
 };
 
 struct DepthRequest {
@@ -92,6 +94,40 @@ struct DepthRequest {
   // than this and the picture rules this depth out.
   float held = 0;
   uint64_t tag = 0;  // handed back with the estimate
+};
+
+// DepthEstimator's GL program: draws a DepthPatch from a request's texture
+// into an R32F target, read back asynchronously into a pixel buffer. GL
+// thread.
+class GlDepth : public DepthPatchDrawer {
+ public:
+  GlDepth() = default;
+  GlDepth(const GlDepth&) = delete;
+  GlDepth& operator=(const GlDepth&) = delete;
+  ~GlDepth() override;
+
+  // Patches up to width x rows (with their thumbnail) fit.
+  bool init(int width, int rows);
+  // The drawer for the request's texture, or nullptr if it has none. The
+  // request outlives draw().
+  DepthPatchDrawer* source(const DepthRequest& request);
+
+  bool draw(const DepthPatch& patch) override;
+  bool ready() override;
+  const float* values() override;  // mapped until release()
+  void release() override;
+
+ private:
+  const DepthRequest* request_ = nullptr;
+  GLuint program_ = 0, vao_ = 0, target_ = 0, fbo_ = 0, pbo_ = 0;
+  GLuint sampler_ = 0;  // trilinear, whatever filter the video texture is set to
+  GLint uTex_ = -1, uMode_ = -1, uRect_ = -1, uStart_ = -1, uStep_ = -1, uProjection_ = -1,
+        uFisheyeFov_ = -1, uFlip_ = -1, uEyeScale_ = -1, uEyeOffset_ = -1, uAlphaPacked_ = -1,
+        uAlphaCenter_ = -1, uAlphaScale_ = -1, uGreenKey_ = -1, uKeyCut_ = -1,
+        uKey_ = -1;
+  GLsync fence_ = nullptr;
+  size_t bytes_ = 0;  // the queued draw's readback
+  void* mapped_ = nullptr;
 };
 
 struct DepthEstimate {
@@ -178,14 +214,8 @@ class DepthEstimator {
   };
   void work();
 
-  GLuint program_ = 0, vao_ = 0, target_ = 0, fbo_ = 0, pbo_ = 0;
-  GLuint sampler_ = 0;  // trilinear, whatever filter the video texture is set to
-  GLint uTex_ = -1, uMode_ = -1, uRect_ = -1, uStart_ = -1, uStep_ = -1, uProjection_ = -1,
-        uFisheyeFov_ = -1, uFlip_ = -1, uEyeScale_ = -1, uEyeOffset_ = -1, uAlphaPacked_ = -1,
-        uAlphaCenter_ = -1, uAlphaScale_ = -1, uGreenKey_ = -1, uKeyCut_ = -1,
-        uKey_ = -1;
-  GLsync fence_ = nullptr;
-  DepthPatchDrawer* drawer_ = nullptr;  // drawing pending_ instead of GL
+  GlDepth gl_;
+  DepthPatchDrawer* drawer_ = nullptr;  // drawing pending_ (gl_ or the request's)
   Job pending_;  // read back on the GPU
   bool forgetScene_ = false, forgetVideo_ = false;
   std::chrono::steady_clock::time_point thumbnailAt_{};  // the last request with one

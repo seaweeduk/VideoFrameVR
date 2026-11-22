@@ -1,5 +1,6 @@
 #pragma once
 
+#include "frame_participant.h"
 #include "gpu_context.h"
 #include "texture.h"
 #include "video_export.h"
@@ -49,13 +50,6 @@ class DirectFrame {
   uint64_t lastUse_ = 0;  // frame timeline value of the last submission sampling it
 };
 
-// A pipeline drawing fragment over all of pass's one colour attachment
-// (fullscreen.vert) through writeMask; viewport and scissor dynamic.
-VkPipeline fullscreenPipeline(GpuContext& gpu, VkPipelineLayout layout, VkRenderPass pass,
-                              const uint32_t* fragment, size_t fragmentBytes,
-                              VkPipelineCreateFlags flags, VkColorComponentFlags writeMask,
-                              const char* what);
-
 // The app's side of mpv's frame export: imports each converter buffer once
 // into Vulkan, tracks which frames are still in use and tells mpv which it
 // can have back. Its scene calls follow GlInterop's (gl_interop.h):
@@ -64,7 +58,7 @@ VkPipeline fullscreenPipeline(GpuContext& gpu, VkPipelineLayout layout, VkRender
 // frameSubmitted() or frameAbandoned() after it. Nothing is imported into
 // GL: its imports could keep a decoder buffer after the frames were gone
 // (DirectDepth). Main thread.
-class DirectVideo {
+class DirectVideo : public FrameParticipant {
  public:
   DirectVideo();
   DirectVideo(const DirectVideo&) = delete;
@@ -157,11 +151,11 @@ class DirectVideo {
   bool returnable(uint64_t& completed);
 
   void useInFrame(const DirectFrame& frame);
-  void recordAcquires(VkCommandBuffer cmd);
-  void recordReleases(VkCommandBuffer cmd);
+  void recordAcquires(VkCommandBuffer cmd) override;
+  void recordReleases(VkCommandBuffer cmd) override;
   bool frameWaits(std::vector<SemaphoreWait>& waits);
-  void frameSubmitted(uint64_t value);
-  void frameAbandoned();
+  void frameSubmitted(uint64_t value) override;
+  void frameAbandoned() override;
 
  private:
   struct Semaphore {

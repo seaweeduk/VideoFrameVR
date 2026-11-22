@@ -1,6 +1,7 @@
 #include "video_check.h"
 
-#include "platform.h"
+#include "media_decode.h"
+#include "thread_priority.h"
 #include "remote_avio.h"
 #include "frame_scaler.h"
 
@@ -11,10 +12,6 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-#include <sched.h>
-#include <sys/resource.h>
-#include <sys/syscall.h>
-#include <unistd.h>
 
 #include <algorithm>
 #include <array>
@@ -43,16 +40,6 @@ constexpr double kFisheyeArea = 0.94;
 // (the live check, MaskProbe, catches it elsewhere).
 constexpr int kLayerGrid = 1024;
 constexpr double kLayerSamplesAt[] = {0.25, 0.55, 0.85};
-
-struct Interrupt {
-  const std::atomic<uint64_t>& generation;
-  uint64_t mine;
-  Clock::time_point deadline = Clock::now() + std::chrono::seconds(60);  // else no result: again next time
-  static int check(void* opaque) {
-    const auto& self = *static_cast<Interrupt*>(opaque);
-    return self.generation.load() != self.mine || Clock::now() >= self.deadline;
-  }
-};
 
 // One sample, 8 bits: YUV 4:4:4 planes (the decoder's range), or RGB in
 // plane 0.
@@ -381,36 +368,15 @@ bool layerSample(const AVFrame* f, bool& read) {
 class Keyframes {
  public:
   Keyframes(const std::string& path, Interrupt& interrupt) : interrupt_(interrupt) {
-    format_ = avformat_alloc_context();
-    if (!format_) return;
-    format_->interrupt_callback = {Interrupt::check, &interrupt_};
-    if (!remote_.attach(format_, path)) {
-      avformat_free_context(format_);
-      format_ = nullptr;
-      return;
-    }
-    if (avformat_open_input(&format_, path.c_str(), nullptr, nullptr) < 0) {
-      format_ = nullptr;  // freed by avformat_open_input
-      return;
-    }
-    if (avformat_find_stream_info(format_, nullptr) < 0 || format_->duration <= 0) return;
-    const AVCodec* decoder = nullptr;
-    stream_ = av_find_best_stream(format_, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
-    if (stream_ < 0 || !decoder) return;
-    codec_ = avcodec_alloc_context3(decoder);
-    if (!codec_ ||
-        avcodec_parameters_to_context(codec_, format_->streams[stream_]->codecpar) < 0) {
-      close();
-      return;
-    }
-    codec_->thread_count = 2;
-    codec_->skip_frame = AVDISCARD_NONKEY;
-    codec_->skip_loop_filter = AVDISCARD_ALL;
-    codec_->flags2 |= AV_CODEC_FLAG2_FAST;
-    if (avcodec_open2(codec_, decoder, nullptr) < 0) {
-      close();
-      return;
-    }
+    format_ = openMedia(path, remote_, interrupt_);
+    if (!format_ || format_->duration <= 0) return;
+    codec_ = openVideoDecoder(format_, stream_, [](AVCodecContext* c) {
+      c->thread_count = 2;
+      c->skip_frame = AVDISCARD_NONKEY;
+      c->skip_loop_filter = AVDISCARD_ALL;
+      c->flags2 |= AV_CODEC_FLAG2_FAST;
+    });
+    if (!codec_) return;
     duration_ = double(format_->duration) / AV_TIME_BASE;
   }
   ~Keyframes() {
@@ -480,8 +446,6 @@ class Keyframes {
   }
 
  private:
-  void close() { avcodec_free_context(&codec_); }
-
   Interrupt& interrupt_;
   RemoteAvio remote_;  // outlives format_ (destroyed after it)
   AVFormatContext* format_ = nullptr;
@@ -577,15 +541,7 @@ bool VideoCheck::result(Result& out) {
 void VideoCheck::work() {
   // Behind playback and everything else: one video's check can wait. On the
   // Frame off the compositor's cores (its decoder's threads follow).
-  const auto tid = static_cast<pid_t>(syscall(SYS_gettid));
-  setpriority(PRIO_PROCESS, static_cast<id_t>(tid), 19);
-  syscall(SYS_ioprio_set, 1 /* IOPRIO_WHO_PROCESS */, tid, 3 << 13 /* IOPRIO_CLASS_IDLE */);
-  if (kStandaloneHeadset) {
-    cpu_set_t cores;
-    CPU_ZERO(&cores);
-    for (const int core : kFrameBackgroundCores) CPU_SET(core, &cores);
-    sched_setaffinity(tid, sizeof(cores), &cores);
-  }
+  runInBackground(Background::Decoding);
   for (;;) {
     Job job;
     {
@@ -595,7 +551,8 @@ void VideoCheck::work() {
       job = std::move(job_);
       job_ = {};
     }
-    Interrupt interrupt{generation_, job.generation};
+    // 60 s, else no result: again next time.
+    Interrupt interrupt{std::chrono::seconds(60), generation_, job.generation};
     const auto began = Clock::now();
     const bool green = job.kind == Kind::GreenScreen;
     const char* what = green ? "Green screen check" : "Mask layer check";

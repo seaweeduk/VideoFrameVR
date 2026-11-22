@@ -25,6 +25,7 @@
 
 class DirectVideo;
 class EyeTargets;
+class FrameParticipant;
 class GlInterop;
 class MirrorWindow;
 class Uploader;
@@ -273,8 +274,10 @@ class SceneRenderer {
   // draws into it, or a decoded frame is not ready): recorded without it.
   bool record(GpuContext::FrameSlot& slot, const EyeFrame& eyes, const EyeMatrices* matrices,
               const FrameScene& scene, double time, std::vector<SemaphoreWait>& waits);
-  // The frame recorded last was not submitted (as GlInterop's).
-  void frameAbandoned() { keyMask_.frameAbandoned(); }
+  // The frame recorded last was submitted as frame timeline value `value`
+  // (GpuContext::submit), or was not.
+  void frameSubmitted(uint64_t value);
+  void frameAbandoned();
   // The times of the slot's last frame, once its slot is reused (never
   // waits); false if they are not there.
   bool readTimes(const GpuContext::FrameSlot& slot, GpuTimes& times);
@@ -305,6 +308,8 @@ class SceneRenderer {
   GpuContext* gpu_ = nullptr;
   GlInterop* interop_ = nullptr;
   DirectVideo* direct_ = nullptr;
+  // interop_ and direct_ (if any), in the order their frame calls are made.
+  FrameParticipant* participants_[2] = {};
   Uploader* uploader_ = nullptr;
   EyeTargets* targets_ = nullptr;
   Pipelines pipelines_;

@@ -2,6 +2,8 @@
 
 #include "gl_util.h"
 #include "playback_state.h"
+#include "player_sleep.h"
+#include "seek_queue.h"
 #include "video_format.h"
 #include "video_export.h"
 #include "video_texture.h"
@@ -13,6 +15,8 @@
 #include <string>
 #include <vector>
 
+struct mpv_event;
+struct mpv_event_property;
 struct mpv_handle;
 struct mpv_node;
 struct mpv_render_context;
@@ -117,7 +121,7 @@ class VideoPlayer {
   void setCounting(bool on);
   const Counts& counts() const { return counts_; }
   // A seek is on its way or waiting.
-  bool seeking() const { return seekStage_ != SeekStage::None || seekWaiting_; }
+  bool seeking() const { return seeks_.busy(); }
   // The frame shown was handed out by mpv for the eyes to sample (direct),
   // not drawn by mpv.
   bool directFrame() const { return directCurrent_ != nullptr; }
@@ -162,6 +166,25 @@ class VideoPlayer {
   bool shutdownRequested() const { return shutdown_; }
 
  private:
+  // pollEvents(), in its order: the load's timeouts, one handler per mpv
+  // event, then what waits for the events.
+  void timeOutLoad();
+  void onLogMessage(const mpv_event* ev);
+  void onStartFile(const mpv_event* ev);
+  void onFileLoaded();
+  void onVideoReconfig();
+  void onGetPropertyReply(const mpv_event* ev);
+  void onPropertyChange(const mpv_event* ev);
+  void onCountedProperty(const std::string& name, const mpv_event_property* prop);  // --timing, counts_
+  void onPropertyValue(const std::string& name, const mpv_event_property* prop);
+  void onPropertyGone(const std::string& name);
+  void onEndFile(const mpv_event* ev);
+  void onSetPropertyReply(const mpv_event* ev);
+  void onCommandReply(const mpv_event* ev);
+  void onPlaybackRestart();
+  void runDeferred();
+  void stopFailedPlayback();
+  void addSidecarSubtitles();
   bool updateVideoSize(const mpv_node& params, bool preparing = false);
   void logPixelPath(int64_t displayW, int64_t displayH, int maxSize, int levels);
   void updateMipmaps(SharedImage* image);
@@ -179,16 +202,8 @@ class VideoPlayer {
   void giveBackFrames();
   // Sends a loadfile command; its reply names mpv's playlist entry for it.
   void loadFile(const char** cmd);
-  struct SeekRequest {
-    bool absolute = false;
-    double amount = 0;  // seconds: the time, or the distance from the position
-    bool exact = false;
-    int merged = 1;  // requests it stands for
-  };
-  void requestSeek(const SeekRequest& request);
+  void requestSeek(const SeekQueue::SeekRequest& request);
   void sendSeek();       // the waiting request, if nothing holds it back
-  void resetSeeks();
-  void cancelVideoSleep();
   bool videoReleaseComplete();
   void failVideoResume(const char* reason);
   void closeVideoForSleep(bool snapshot);
@@ -214,7 +229,6 @@ class VideoPlayer {
   uint64_t pictureVersion_ = 0;
   bool exportRefused_ = false;  // this video's colour is not one the shaders reproduce
   bool compressedRefused_ = false;  // its frames cannot be sampled as the decoder wrote them (Q10C, Q08C)
-  bool v4l2_ = false;               // hwdec v4l2m2m: the Frame's decoder, frames left in its buffers
   bool q08cCapture_ = false;        // mpv's hwdec-v4l2-q08c, as updateCapture() last set it
   VideoTexture video_;
   int width_ = 0;
@@ -272,36 +286,8 @@ class VideoPlayer {
   std::string sourceTrc_;            // the video's transfer, as mpv names it
   std::string targetTrc_ = "srgb";   // what mpv converts it to
   bool shutdown_ = false;
-  enum class VideoSleep { Awake, Closing, Closed, Opening, Seeking };
-  VideoSleep videoSleep_ = VideoSleep::Awake;
-  bool sleepCloseReplied_ = false;
-  bool sleepCloseInFlight_ = false;
-  bool videoReleased_ = false;
-  bool resumeFrameSeen_ = false;
-  bool resumePictureShown_ = false;
-  bool deferredStop_ = false;
-  std::string deferredLoadPath_;
-  double deferredLoadStart_ = 0;
-  double deferredActionAt_ = 0;
-  double hiddenSince_ = -1;
-  double sleepPosition_ = 0;
-  double sleepActionAt_ = 0;
-  bool sleepPaused_ = false;
-  bool presentationActive_ = true;
-  uint64_t resumeSeek_ = 0;
-  bool sleepSeekChanged_ = false;
-  bool resumeRestarted_ = false;
-  std::string sleepTrack_ = "auto";
-  // The seek on its way: sent, accepted (mpv's reply), started (its seek
-  // event); playback's restart ends it.
-  enum class SeekStage { None, Sent, Accepted, Started };
-  SeekStage seekStage_ = SeekStage::None;
-  bool seekExact_ = false;
-  double seekSentAt_ = 0;  // seconds, steady clock
-  double seekTarget_ = 0;
-  uint64_t seekCount_ = 0;
-  bool seekWaiting_ = false;
-  SeekRequest waitingSeek_;
+  PlayerSleep sleep_{export_};
+  SeekQueue seeks_;
   bool timing_ = false;
   bool counting_ = false;        // --timing or the performance readout
   bool countsObserved_ = false;  // mpv's properties for counts_ are observed
