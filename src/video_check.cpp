@@ -2,7 +2,7 @@
 
 #include "platform.h"
 #include "remote_avio.h"
-#include "thumbnailer.h"  // frameScaler
+#include "frame_scaler.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>

@@ -2,11 +2,11 @@
 #include "app_dirs.h"
 #include "autofocus.h"
 #include "bluray.h"
+#include "button_jobs.h"
 #include "direct_depth.h"
 #include "direct_video.h"
 #include "eye_resolution.h"
 #include "eye_targets.h"
-#include "file_ops.h"
 #include "file_util.h"
 #include "first_run.h"
 #include "focus_marker.h"
@@ -19,7 +19,6 @@
 #include "hints.h"
 #include "video_check.h"
 #include "removable_drives.h"
-#include "room_light.h"
 #include "gl_interop.h"
 #include "gl_util.h"
 #include "gpu_context.h"
@@ -34,6 +33,7 @@
 #include "notices.h"
 #include "offline.h"
 #include "options.h"
+#include "passthrough.h"
 #include "performance_readout.h"
 #include "photo_preloader.h"
 #include "pixel_path.h"
@@ -41,9 +41,11 @@
 #include "presets.h"
 #include "refresh_rate.h"
 #include "decoder_holders.h"
+#include "deletion.h"
 #include "diagnostics.h"
 #include "release_update.h"
 #include "run_log.h"
+#include "running_video.h"
 #include "scene_renderer.h"
 #include "screen_control.h"
 #include "see_through.h"
@@ -54,10 +56,10 @@
 #include "setup_placement.h"
 #include "remote.h"
 #include "stash.h"
-#include "stash_delete.h"
 #include "media_server.h"
 #include "stash_http.h"
 #include "stash_stream.h"
+#include "stick_seek.h"
 #include "strings.h"
 #include "subtitle_overlay.h"
 #include "thumbnailer.h"
@@ -92,7 +94,6 @@
 #include <memory>
 #include <mutex>
 #include <random>
-#include <set>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -110,25 +111,8 @@ constexpr float kSurroundSubtitleDistance = 2.5f;
 constexpr float kSurroundSubtitleWidth = 2.0f;
 constexpr float kSurroundSubtitleDrop = 0.55f;
 constexpr float kTurnStep = kPi / 6;  // 30 degrees per A or D press
-// The buttons' Zoom in and out: a press steps the Zoom (180°/360°) setting
-// as the menu's slider does; held past kZoomDelay, it goes on at kZoomRate
-// until let go.
-constexpr double kZoomDelay = 0.4;  // seconds
-constexpr double kZoomRate = 40;    // percent a second
 // The viewpoint's and opacity's overlay stays this long after its gesture lets go.
 constexpr double kValueShown = 1.5;
-// ... and the seek bar a held seek shows with the menu closed.
-constexpr double kSeekBarLinger = 0.6;
-// The stick's seeks stop this far before the end: a seek into it would end
-// the video (and open the menu).
-constexpr double kSeekEndMargin = 5.0;
-// While a seek is held, the paused video shows the picture at the target at
-// most this often, once the last one is shown and the target has moved on
-// this far (each is a decoder restart on the Frame, about 250 ms).
-constexpr double kHeldPictureEvery = 0.5;  // seconds
-constexpr double kHeldPictureMove = 1.0;   // seconds of video
-// Passthrough switched on by itself says so this long.
-constexpr double kPassthroughNoticeShown = 5.0;
 // A microSD card or USB drive put in says so this long.
 constexpr double kDriveNoticeShown = 5.0;
 // Dragging the picture with the trigger: a smoothed copy of the hand's turn
@@ -139,13 +123,6 @@ constexpr double kDragMaxStep = 0.1;  // seconds
 
 struct App {
   VideoPlayer* player = nullptr;
-  std::string currentFile;
-  std::string streamOshash;  // a Stash stream playing: its file's oshash as opened
-  ScreenPlacement screen;
-  VideoFormat format;
-  bool formatChosenByUser = false;  // stops auto-detection from overriding the user
-  bool rememberFormat = false;      // the user changed the format by key: store it
-  VideoSettings video;  // what is remembered about the running video
   int slideshowSeconds = 0;  // photos: show the next one after this long; 0 = off
   double nextSlideAt = 0;    // glfwGetTime() when it does
   // Picking the background key's colour (MenuCommand::PickKeyColour): the
@@ -156,13 +133,6 @@ struct App {
   float keyPickUv[2] = {}, keyPickPart[4] = {};
   KeyPickNote keyPickNote = KeyPickNote::None;
   double recenterAt = 0;  // glfwGetTime() of a recenter counting down; 0 = none
-  // Settings (VideoSettings::Part) of the running video changed in a run of
-  // small steps (a slider, a held stick, a drag), stored at glfwGetTime()
-  // saveAt; 0 = none waiting.
-  unsigned unsavedParts = 0;
-  double saveAt = 0;
-  bool screenChanged = false;  // by key: keep the flat screen's new size
-  bool flipVideo = false;
 };
 
 std::string utf8(unsigned int codepoint) {
@@ -225,12 +195,6 @@ void printControls() {
       "  Esc Esc      quit (press twice)\n\n");
 }
 
-void printFormat(const VideoFormat& f, const char* reason) {
-  std::printf("Format (%s): %s, %s%s%s\n", reason, projectionName(f.projection), stereoName(f.stereo),
-              f.packing != Packing::Auto ? ", packing " : "",
-              f.packing != Packing::Auto ? packingName(f.packing) : "");
-}
-
 // Text from the desktop clipboard, on one line.
 std::string clipboardText(GLFWwindow* window) {
   const char* clip = glfwGetClipboardString(window);
@@ -245,6 +209,7 @@ std::string clipboardText(GLFWwindow* window) {
 // the running video change it at once.
 struct KeyboardInput {
   App& app;
+  RunningVideo& running;
   bool recenter = false;
   bool togglePassthrough = false;  // T key; handled where the settings are
   bool toggleMenu = false;
@@ -294,7 +259,7 @@ void KeyboardInput::onKey(GLFWwindow* window, int key, int action, int mods) {
   if (action != GLFW_PRESS) return;
 
   VideoPlayer& player = *app.player;
-  ScreenPlacement& screen = app.screen;
+  ScreenPlacement& screen = running.screen;
   switch (key) {
     case GLFW_KEY_ESCAPE: {
       // Quitting takes two presses, so a stray Esc doesn't end the video.
@@ -313,34 +278,34 @@ void KeyboardInput::onKey(GLFWwindow* window, int key, int action, int mods) {
     case GLFW_KEY_DOWN: videoStep = -1; break;
     case GLFW_KEY_M: player.command("cycle mute"); break;
     case GLFW_KEY_P:
-      app.format.projection = nextProjection(app.format.projection);
-      app.rememberFormat = true;
-      printFormat(app.format, "manual");
+      running.format.projection = nextProjection(running.format.projection);
+      running.rememberFormat = true;
+      printFormat(running.format, "manual");
       break;
     case GLFW_KEY_L:
-      app.format.stereo = nextStereo(app.format.stereo);
-      app.rememberFormat = true;
-      printFormat(app.format, "manual");
+      running.format.stereo = nextStereo(running.format.stereo);
+      running.rememberFormat = true;
+      printFormat(running.format, "manual");
       break;
     case GLFW_KEY_C:
       screen.size.curve = screen.size.curve > 0 ? 0.0f : ScreenSize::kMaxCurve;
-      app.screenChanged = true;
+      running.screenChanged = true;
       break;
     case GLFW_KEY_T: togglePassthrough = true; break;
     case GLFW_KEY_R: recenter = true; break;
     case GLFW_KEY_F:
-      app.flipVideo = !app.flipVideo;
-      std::printf("Video flip: %s\n", app.flipVideo ? "on" : "off");
+      running.flipVideo = !running.flipVideo;
+      std::printf("Video flip: %s\n", running.flipVideo ? "on" : "off");
       break;
     case GLFW_KEY_W:
     case GLFW_KEY_S:
       screen.size.distance += key == GLFW_KEY_W ? -0.25f : 0.25f;
-      app.screenChanged = true;
+      running.screenChanged = true;
       break;
     case GLFW_KEY_Q:
     case GLFW_KEY_E:
       screen.size.height *= key == GLFW_KEY_Q ? 1 / 1.1f : 1.1f;
-      app.screenChanged = true;
+      running.screenChanged = true;
       break;
     default: break;
   }
@@ -355,35 +320,6 @@ void KeyboardInput::onChar(unsigned int codepoint) {
   }
   if (codepoint == '+') app.player->command("add volume 5");
   else if (codepoint == '-') app.player->command("add volume -5");
-}
-
-// Runs `job` on a thread of its own; dropping the future doesn't wait for it.
-template <typename Job>
-auto detached(Job job) {
-  std::packaged_task<decltype(job())()> task(std::move(job));
-  auto result = task.get_future();
-  std::thread(std::move(task)).detach();
-  return result;
-}
-
-// Why the playing file couldn't be deleted, as the delete dialog says it,
-// and as the run log does.
-std::string deleteError(DeleteStatus status, const std::string& error) {
-  const DeleteStrings& t = strings().deletion;
-  switch (status) {
-    case DeleteStatus::Changed: return t.changed;
-    case DeleteStatus::Gone: return t.gone;
-    case DeleteStatus::NotAFile: return t.notAFile;
-    case DeleteStatus::Denied: return t.denied;
-    case DeleteStatus::InUse: return t.inUse;
-    case DeleteStatus::Offline: return t.offline;
-    default: return error;
-  }
-}
-const char* deleteLogged(DeleteStatus status) {
-  static const char* const names[] = {"deleted", "changed", "gone", "not a file", "not allowed",
-                                      "in use", "server not answering", "failed"};
-  return names[static_cast<int>(status)];
 }
 
 // A link: a scene from Stash plays as its file does.
@@ -413,15 +349,15 @@ void catchQuitSignals() {
 // subtitle size, raise (percent of the picture) and distance apply.
 class SubtitlePlacement {
  public:
-  Mat4 update(const App& app, float frameAspect, Vec3 headPos, float headYaw,
+  Mat4 update(const RunningVideo& running, float frameAspect, Vec3 headPos, float headYaw,
               const Settings& settings) {
-    const ScreenPlacement& s = app.screen;
+    const ScreenPlacement& s = running.screen;
     const float scale = settings.subtitleSize / 100.0f;
     // 0 is where the user found them best: 30% of the picture lower than the
     // first placement (on the flat screen: below the picture).
     const float raise = (settings.subtitleRaise - 30) / 100.0f;
-    if (app.format.projection == Projection::Flat) {
-      const ScreenSurface screen(s, eyeDisplayAspect(app.format, frameAspect));
+    if (running.format.projection == Projection::Flat) {
+      const ScreenSurface screen(s, eyeDisplayAspect(running.format, frameAspect));
       const float screenH = screen.height();
       const float w = screen.width() * 0.8f * scale, h = w / SubtitleOverlay::kAspect;
       const Vec3 local = {0.0f, -screenH / 2 + h / 2 + screenH * (0.04f + raise),
@@ -766,48 +702,6 @@ int run(Options opts) {
   };
   bool peeking = false;  // Peek at the room is held: the room shows instead of the video
   double softwareSince = -1;       // the video has played in software decoding since
-  // Passthrough switching itself on for videos made for it (see_through.h):
-  // once per video, when its size and settings are known.
-  // The green screen check, or the mask layer check for a video with a
-  // packed mask (video_check.h).
-  VideoCheck videoCheck;
-  bool passthroughSettled = false;
-  bool greenCheckAsked = false;  // the green screen check was asked for, for this video
-  bool fillCheckPending = false;  // ... and its fill check hasn't answered yet
-  double videoCheckAt = 0;  // glfwGetTime() the check starts, a moment after the video opens
-  VideoCheck::Kind videoCheckKind = VideoCheck::Kind::GreenScreen;
-  std::set<std::string> layersSeen;  // videos whose mask's second layer MaskProbe found
-  const char* passthroughWhy = nullptr;  // the notice's first line
-  double passthroughShownUntil = 0;
-  // The colour balance: the video's own (app.video.balance, saved with it),
-  // or while Match the room is on and the room is shown the room's, never
-  // saved: the room's light belongs to the room, not to a video. The switch
-  // stays as set for the run; with the room hidden (another video, passthrough
-  // off, Opacity at 100 %) the video's own is drawn, shown and edited until
-  // the room shows again.
-  RoomLight roomLight;
-  const bool roomReadable = kStandaloneHeadset && RoomLight::available();
-  double roomFailedUntil = 0;  // glfwGetTime() Match the room stops saying it failed
-  // Match the room, a switch: on, the room's reading (the run's first, or
-  // Read again's) times the strengths, from the video's own balance (grey
-  // cameras and a dark room leave the warmth and tint as they are). Moved by
-  // hand while on, the sliders stay as moved until the match is applied again
-  // (a strength, Read again). A reading is kept when it ends, but applied
-  // only if they were not moved by hand or reset after it was asked for.
-  ColourBalance roomBalance;
-  std::optional<RoomLight::Reading> roomReading;  // this run's latest
-  bool roomMatched = false;
-  // Hand moves while on, and Picture resets; their count when last asked.
-  unsigned balanceEdits = 0, roomAsked = 0;
-  // A new reading, unless one runs (which keeps the count it was asked with).
-  auto readRoom = [&] {
-    if (roomLight.start()) roomAsked = balanceEdits;
-  };
-  auto applyRoomMatch = [&] {
-    if (roomMatched && roomReading)
-      roomBalance.match(roomReading->light, roomReading->colour, roomReading->white,
-                        settings.matchColour / 100.0f, settings.matchBrightness / 100.0f);
-  };
 
   // Frame rates and drops over the video: the setting's, or the command
   // line's for this run until the menu switches it.
@@ -928,7 +822,8 @@ int run(Options opts) {
 
   App app;
   app.player = &player;
-  KeyboardInput keys{app};
+  RunningVideo running{player, settings, library};
+  KeyboardInput keys{app, running};
   glfwSetWindowUserPointer(input, &keys);
   glfwSetKeyCallback(input, [](GLFWwindow* window, int key, int /*scancode*/, int action, int mods) {
     static_cast<KeyboardInput*>(glfwGetWindowUserPointer(window))->onKey(window, key, action, mods);
@@ -938,38 +833,8 @@ int run(Options opts) {
   });
   printControls();
 
-  // Deleting the playing file (docs/alpha/delete-file.md): what the dialog
-  // shows, looked up in the background (a slow share must not freeze the
-  // headset), then the deletion, one at a time.
-  struct Deletion {
-    // The lookup's: the file's stamp (none for Stash's stream), and with
-    // Send to Stash on, its oshash and its scene's files as Stash has them.
-    struct Look {
-      DeleteStatus status = DeleteStatus::Ok;
-      FileStamp stamp;
-      std::string oshash;
-      bool asked = false;
-      StashFileLook stash;
-    };
-    DeleteInfo info;
-    // What is deleted: the file playing, or a copy's source (with the
-    // copy), a scene's stream locator for one from Stash's; empty: a source
-    // on another Stash server.
-    std::string target;
-    FileStamp stamp;  // the file's as the dialog shows it
-    int64_t scene = 0;  // the Stash scene it is a file of; 0: none
-    size_t sceneFiles = 0;
-    std::string stashPath;      // Stash's path of it; empty: not known for sure
-    std::string oshash;         // the file's, as the lookup read it
-    // The oshash the file deleted must have: the download's for a copy's
-    // source, the one opened for a stream; empty: any (a file here).
-    std::string expected;
-    bool throughStash = false;  // Stash deletes it: Send to Stash on, its file found
-    std::future<Look> lookup;   // dropped without waiting
-    std::future<DeleteOutcome> result;
-    bool resume = false;  // the video played when the button was pressed
-    int64_t copy = 0;     // the download whose copy plays
-  } deletion;
+  Deletion deletion{menu, player, settings, library, libraryIndex, offline, stash};
+  Passthrough passthrough{settings, library, xr, running.video, running.currentFile, running.format};
   // Holding the grip on the menu moves it with the hand; the trigger off it
   // holds the flat screen (screenControl).
   struct MenuGrab {
@@ -982,12 +847,6 @@ int run(Options opts) {
   // below, before the frames).
   GestureInput gestureInput;
   GestureInput::Host gestureHost;
-  // Scrub: where it takes the video, and the last picture shown on the way
-  // there (its target, when sent), as the stick's held seek.
-  struct Scrub {
-    bool on = false, sent = false;  // ... a picture on the way
-    double from = 0, target = 0, picture = 0, pictureAt = 0;
-  } scrub;
   // Holding the trigger away from the menu turns the picture with the hand
   // (sideways, up/down and roll), for fine centring.
   struct TurnDrag {
@@ -1039,45 +898,8 @@ int run(Options opts) {
   int knownWidth = 0, knownHeight = 0;
   TwoViews knownViews = TwoViews::No;
   bool formatDetected = false;  // for this file: logged once, then as it changes
-  // The stick's seek (HeldSeek): from where, whether it paused the video,
-  // and whether the bar shows where it goes until the video is there.
-  HeldSeek heldSeek;
-  double heldSeekFrom = 0, heldSeekTarget = 0;
-  bool heldSeekPaused = false, heldSeekLanding = false;
-  bool heldSeekBar = false;  // the strip placed for it, the menu closed
-  double heldSeekPicture = 0, heldSeekPictureAt = 0;  // the last picture's target, when sent
-  double heldSeekBarUntil = 0;  // ... shown after the stick let go
-  // Driven by a stick (not the arrow keys), it buzzes that hand: a tick each
-  // 10 s it goes, at most 8 a second, and a bump at the start or the end.
-  bool heldSeekStick = false, heldSeekAtLimit = false;
-  int heldSeekHand = 1;  // the stick's
-  // The buttons' Subtitles and Opacity jobs: what they turn back on; the
-  // opacity, each video's last see-through value however it was set, for
-  // this run (by its library id, else where it is).
-  int64_t lastSubtitle = 0;
-  std::unordered_map<std::string, int> lastSeeThrough;
-  std::string seeThroughFile;
-  int seeThroughSeen = 100;
-  auto seeThroughKey = [&] {
-    const VideoRecord r = library.record(app.currentFile);
-    return r.known() ? "#" + std::to_string(r.id) : app.currentFile;
-  };
-  // Zoom in or out held: by which hand (-1 none), since when, and how far
-  // it has gone, on which file. It is stored once, when let go.
-  struct ZoomHold {
-    Job job = Job::None;
-    int hand = -1;
-    double start = 0, at = 0;
-    std::string file;
-  } zoomHold;
-  auto zoomBy = [&](double percent) {
-    app.video.zoom = std::clamp(app.video.zoom + static_cast<float>(percent / 100),
-                                VideoSettings::kMinZoomPercent / 100.0f,
-                                VideoSettings::kMaxZoomPercent / 100.0f);
-    app.screen.zoom = app.video.zoom;
-    app.unsavedParts |= VideoSettings::kZoom;  // stored with the rest if the video changes first
-  };
-  double heldSeekTens = 0, heldSeekTickAt = 0;
+  StickSeek stickSeek{player, panel};
+  ButtonJobs buttonJobs{player, running, settings, library};
   HoldRepeat turnLeft(0.5, 0.35), turnRight(0.5, 0.35);  // A and D
   // The controllers' buttons as jobs (controls.h), by each hand's type; the
   // bindings Your controllers and the hints show, made again when the
@@ -1160,7 +982,7 @@ int run(Options opts) {
   auto startShuffle = [&] {
     shuffleSeed = (static_cast<uint64_t>(seedSource()) << 32 | seedSource()) | 1;
     playStart = openedAs;
-    playStartFile = app.currentFile;
+    playStartFile = running.currentFile;
   };
   // mpv starts a repeated video over by itself; it never reaches its end.
   auto applyAfterVideo = [&] {
@@ -1183,91 +1005,11 @@ int run(Options opts) {
     resumeSaveAt = glfwGetTime() + 60;
     if (point == resumeSaved) return;
     resumeSaved = point;
-    library.setResume(app.currentFile, point);
+    library.setResume(running.currentFile, point);
   };
   auto keepResume = [&] {
     saveResume();
     videoOpened = false;
-  };
-  // Stores these parts (VideoSettings::Part) of the running video's
-  // settings: only what the user changed, so the rest of a record still
-  // being found stays as it is.
-  auto storeVideo = [&](unsigned parts) { library.setSettings(app.currentFile, app.video, parts); };
-  // Keeps the volume for all videos, as mpv reports it: a second after it
-  // changes, so at most once a second while it keeps changing. Not before
-  // mpv has reported the one set at start, so its default can't overwrite it.
-  bool volumeApplied = false;
-  double volumeSaveAt = 0;
-  auto keepVolume = [&] {
-    volumeSaveAt = 0;
-    const int volume = static_cast<int>(std::lround(player.playback().volume));
-    if (!volumeApplied || volume == settings.volume) return;
-    settings.volume = volume;
-    saveSettings(settings);
-  };
-  // Stores these parts soon, with whatever else changes meanwhile: at most
-  // twice a second while they keep changing.
-  auto storeVideoSoon = [&](unsigned parts) {
-    app.unsavedParts |= parts;
-    if (app.saveAt == 0) app.saveAt = glfwGetTime() + 0.5;
-  };
-  // Stores what storeVideoSoon() still holds back.
-  auto saveUnsaved = [&] {
-    // A zoom being held: in whole percents, as when let go.
-    if (app.unsavedParts & VideoSettings::kZoom) {
-      app.video.zoom = std::round(app.video.zoom * 100) / 100;
-      app.screen.zoom = app.video.zoom;
-    }
-    // The screen's size is a setting for all videos (kScreen only marks it).
-    if (const unsigned parts = app.unsavedParts & ~VideoSettings::kScreen) storeVideo(parts);
-    if (app.unsavedParts & VideoSettings::kScreen) saveSettings(settings);  // settings.screen
-    app.unsavedParts = 0;
-    app.saveAt = 0;
-  };
-  // The flat screen's size was changed: for all videos.
-  auto keepScreenSize = [&] {
-    app.screen.size = app.screen.size.clamped();
-    settings.screen = app.screen.size;
-    storeVideoSoon(VideoSettings::kScreen);
-  };
-  // Passthrough switched on for a video made for it, saying so the first time ever.
-  auto passthroughByItself = [&](AutoPassthrough why) {
-    if (why == AutoPassthrough::None || app.video.passthrough) return;
-    app.video.passthrough = true;
-    if (why != AutoPassthrough::Mask && app.video.greenScreen.isDefault(app.video.colourKeyed()))
-      app.video.greenScreen.on = true;
-    const AutoPassthroughStrings& t = strings().autoPassthrough;
-    passthroughWhy = why == AutoPassthrough::Mask ? t.mask
-                     : why == AutoPassthrough::Fill ? t.fill
-                                                    : t.greenScreen;
-    if (!settings.passthroughNoticeSeen) {
-      passthroughShownUntil = glfwGetTime() + kPassthroughNoticeShown;
-      settings.passthroughNoticeSeen = true;
-      saveSettings(settings);
-    }
-    std::printf("Passthrough: on by itself (%s)\n",
-                why == AutoPassthrough::Mask   ? "mask"
-                : why == AutoPassthrough::Fill ? "flat background"
-                                               : "green screen");
-  };  // Puts the running video's remembered settings into effect.
-  auto applyVideoSettings = [&] {
-    if (app.video.hasFormat) {
-      app.format = app.video.format;
-      app.formatChosenByUser = true;
-      printFormat(app.format, "remembered");
-    }
-    app.screen.zoom = app.video.zoom;
-    app.screen.size = settings.screen;
-    player.setPicture(app.video.brightness, app.video.contrast, app.video.saturation);
-    player.setTvGamma(settings.tvGamma);
-  };
-  // Playback moves on (another video, or none): a delete dialog still
-  // asking goes, with its lookup, so its confirm can't act on what came
-  // next. One confirmed (Deleting) stays.
-  auto dropDeleteDialog = [&] {
-    deletion.lookup = {};
-    deletion.resume = false;
-    menu.cancelDelete();
   };
   // Opens a video with what is remembered about it. True if its format was
   // remembered.
@@ -1292,42 +1034,38 @@ int run(Options opts) {
     neighbor = {};
     nextPhoto = {};
     neighborStep = 0;
-    saveUnsaved();
+    running.saveUnsaved();
     keepResume();
-    dropDeleteDialog();
-    app.currentFile = path;
-    app.streamOshash = isStashScene(path) ? oshash : std::string();
+    deletion.dropDialog();
+    running.currentFile = path;
+    running.streamOshash = isStashScene(path) ? oshash : std::string();
     scripts.open(isPhotoFile(path) ? std::string() : path);
-    app.formatChosenByUser = false;
-    app.format = guessVideoFormat(path, 0, 0);
+    running.formatChosenByUser = false;
+    running.format = guessVideoFormat(path, 0, 0);
     // Its settings from the library, else as kept before it (videos.conf),
     // which the library takes over. A file the library doesn't know yet may
     // be a moved one with settings of its own: they apply once it is found.
-    app.video = VideoSettings{};
+    running.video = VideoSettings{};
     openingRecord = library.record(path).id;
     if (!isPhotoFile(path)) library.open(path);
     awaitingRecord = library.available() && !library.known(path);
-    if (!library.settings(path, app.video)) {
+    if (!library.settings(path, running.video)) {
       VideoSettings legacy;
       if (memory.get(path, legacy)) {
         // Queue the fallback before user edits can create settings. A known
         // path must still resolve to the same identity before it can use it.
         library.carryOverSettings(path, legacy, awaitingRecord ? openingRecord : 0);
-        if (!openingRecord || !awaitingRecord) app.video = legacy;
+        if (!openingRecord || !awaitingRecord) running.video = legacy;
       }
     }
     awaitingResume = awaitingRecord && settings.resume && !isStream(path) && !isPhotoFile(path);
     resolvedResume = -1;
-    passthroughSettled = false;
-    greenCheckAsked = false;
-    fillCheckPending = false;
-    videoCheckAt = 0;
-    passthroughShownUntil = 0;
+    passthrough.videoChanged(isStream(path));
     gestureInput.cancel(gestureHost);  // a twist under way was the last video's
     gestureInput.hide();
     controlInput.dropFileTaps();  // ... and a press waiting to skip or stop it
     opacityShownUntil = 0;
-    applyVideoSettings();
+    running.applyVideoSettings();
     knownWidth = knownHeight = 0;  // re-detect the format once the size is known
     knownViews = TwoViews::No;
     formatDetected = false;
@@ -1348,8 +1086,7 @@ int run(Options opts) {
         start = resumePoint(r.resumeSeconds, r.durationSeconds);
       }
       player.command("set pause no");
-      heldSeek.cancel();
-      heldSeekPaused = heldSeekLanding = heldSeekBar = false;
+      stickSeek.cancel();
       player.load(path, std::max(0.0, start));
       if (start > 0) std::printf("Resuming at %s\n", clockTime(start).c_str());
     }
@@ -1358,24 +1095,23 @@ int run(Options opts) {
     // pointed at then comes about 0.4 s sooner over a LAN.
     seekPreview.videoChanged(path, isStream(path) || isStashScene(path));
     app.nextSlideAt = glfwGetTime() + app.slideshowSeconds;  // each photo gets its full time
-    return app.video.hasFormat;
+    return running.video.hasFormat;
   };
   // Closes the running video or photo and leaves the scene empty, keeping
   // where it was left as switching to another would.
   auto closeVideo = [&] {
-    if (app.currentFile.empty()) return;
-    dropDeleteDialog();
-    saveUnsaved();
+    if (running.currentFile.empty()) return;
+    deletion.dropDialog();
+    running.saveUnsaved();
     keepResume();
     player.stop();
-    heldSeek.cancel();
-    heldSeekPaused = heldSeekLanding = heldSeekBar = false;
+    stickSeek.cancel();
     seekPreview.close();
-    app.currentFile.clear();
-    app.streamOshash.clear();
+    running.currentFile.clear();
+    running.streamOshash.clear();
     scripts.open({});
-    app.video.passthrough = false;
-    app.video.opacity = 100;  // the empty scene isn't blended; the video keeps its saved value
+    running.video.passthrough = false;
+    running.video.opacity = 100;  // the empty scene isn't blended; the video keeps its saved value
     gestureInput.cancel(gestureHost);
     gestureInput.hide();
     controlInput.dropFileTaps();
@@ -1386,20 +1122,13 @@ int run(Options opts) {
     awaitingRecord = false;
     awaitingResume = false;
   };
+  deletion.closeVideo = closeVideo;
   // Stores the current format for this video (after the user chose it).
   auto rememberFormat = [&] {
-    app.formatChosenByUser = true;
-    app.video.hasFormat = true;
-    app.video.format = app.format;
-    storeVideo(VideoSettings::kFormat);
-  };
-  // At once, also while a slider is held (mpv takes them asynchronously,
-  // direct frames recompute their colour matrix); stored soon, not per step.
-  auto applyPicture = [&](unsigned parts) {
-    if (parts != VideoSettings::kZoom)
-      player.setPicture(app.video.brightness, app.video.contrast, app.video.saturation);
-    app.screen.zoom = app.video.zoom;
-    storeVideoSoon(parts);
+    running.formatChosenByUser = true;
+    running.video.hasFormat = true;
+    running.video.format = running.format;
+    running.storeVideo(VideoSettings::kFormat);
   };
   // A Stash scene given on the command line opens once Stash's catalog is there.
   std::string startScene = isStashScene(opts.file) ? opts.file : "";
@@ -1411,18 +1140,18 @@ int run(Options opts) {
   auto stepVideo = [&](int step, bool atEnd = false) {
     const bool replaced = endStep;  // Previous or Next pressed while an end's step is under way
     endStep = false;
-    if (app.currentFile.empty()) return;
-    if (isStream(app.currentFile)) {
+    if (running.currentFile.empty()) return;
+    if (isStream(running.currentFile)) {
       say(strings().jobs.notForStreams);
       return;
     }
-    const bool shuffle = afterVideo() == AfterVideo::Shuffle && !isPhotoFile(app.currentFile);
+    const bool shuffle = afterVideo() == AfterVideo::Shuffle && !isPhotoFile(running.currentFile);
     // Opened from a list in the menu (Stash's scenes): through that list.
     std::string next;
     if (!menu.listNeighbor(openedAs, step, next, {shuffle ? shuffleSeed : 0, playStart})) {
       neighborStep = neighbor.valid() && !neighborWrap && !replaced ? neighborStep + step : step;
       neighborWrap = false;
-      neighbor = mediaNeighbor(app.currentFile, neighborStep, false,
+      neighbor = mediaNeighbor(running.currentFile, neighborStep, false,
                                {shuffle ? shuffleSeed : 0, playStartFile});
       endStep = atEnd;
       endStepRestarts = player.counts().restarts;
@@ -1458,15 +1187,7 @@ int run(Options opts) {
     settings.performancePreset = presets.matching(settings);
     userPresetShown = presets.shownUserPreset(userPresets, settings, pickedUserPreset);
   };
-  // Sharpen changed in a run of steps (its slider, a twist): matched and
-  // saved half a second after the first, at most twice a second. 0 = none.
-  double sharpenSaveAt = 0;
-  auto keepSharpen = [&] {
-    if (sharpenSaveAt == 0) return;
-    sharpenSaveAt = 0;
-    matchPreset();
-    saveSettings(settings);
-  };
+  running.matchPreset = matchPreset;
   auto applyPendingResolution = [&] {
     const int value = pendingResolution;
     pendingResolution = 0;
@@ -1588,13 +1309,6 @@ int run(Options opts) {
     app.keyPickNote = KeyPickNote::None;
   };
 
-  // The eye images are blended over the room (the headset's cameras, where
-  // the runtime blends): with passthrough on, or Opacity below 100, with or
-  // without passthrough (whose mask or key it doesn't bring). Match the room
-  // applies only then.
-  auto roomShown = [&] {
-    return xr.alphaBlendSupported() && (app.video.passthrough || app.video.opacity < 100);
-  };
   // A PC whose runtime doesn't blend, with the setting on: passthrough draws
   // the room in key green, for a streamer that keys it out on the headset.
   auto roomKeyed = [&] {
@@ -1632,82 +1346,60 @@ int run(Options opts) {
       case MenuCommand::PreviousVideo: stepVideo(-1); break;
       case MenuCommand::NextVideo: stepVideo(1); break;
       case MenuCommand::SetProjection:
-        app.format.projection = static_cast<Projection>(static_cast<int>(c.value));
+        running.format.projection = static_cast<Projection>(static_cast<int>(c.value));
         rememberFormat();
-        printFormat(app.format, "manual");
+        printFormat(running.format, "manual");
         break;
       case MenuCommand::SetStereo:
-        app.format.stereo = static_cast<StereoLayout>(static_cast<int>(c.value));
+        running.format.stereo = static_cast<StereoLayout>(static_cast<int>(c.value));
         rememberFormat();
-        printFormat(app.format, "manual");
+        printFormat(running.format, "manual");
         break;
       case MenuCommand::SetPacking:
-        app.format.packing = static_cast<Packing>(static_cast<int>(c.value));
+        running.format.packing = static_cast<Packing>(static_cast<int>(c.value));
         rememberFormat();
-        printFormat(app.format, "manual");
+        printFormat(running.format, "manual");
         break;
       case MenuCommand::SetBrightness:
-        app.video.brightness = static_cast<int>(c.value);
-        applyPicture(VideoSettings::kBrightness);
+        running.video.brightness = static_cast<int>(c.value);
+        running.applyPicture(VideoSettings::kBrightness);
         break;
       case MenuCommand::SetContrast:
-        app.video.contrast = static_cast<int>(c.value);
-        applyPicture(VideoSettings::kContrast);
+        running.video.contrast = static_cast<int>(c.value);
+        running.applyPicture(VideoSettings::kContrast);
         break;
       case MenuCommand::SetSaturation:
-        app.video.saturation = static_cast<int>(c.value);
-        applyPicture(VideoSettings::kSaturation);
+        running.video.saturation = static_cast<int>(c.value);
+        running.applyPicture(VideoSettings::kSaturation);
         break;
       case MenuCommand::SetWarmth:  // the colour balance: applied while drawing
       case MenuCommand::SetTint:
-      case MenuCommand::SetExposure: {
-        // The video's, saved, or while the room's is matched the room's, not.
-        const bool matching = roomMatched && roomShown();
-        ColourBalance& balance = matching ? roomBalance : app.video.balance;
-        const int value = std::clamp(static_cast<int>(c.value), -100, 100);
-        // Each its own part, as brightness etc.: an edit before the video's
-        // record is found leaves the other two as saved.
-        const bool warmth = c.type == MenuCommand::SetWarmth, tint = c.type == MenuCommand::SetTint;
-        (warmth ? balance.warmth : tint ? balance.tint : balance.exposure) = value;
-        if (matching) ++balanceEdits;
-        else
-          storeVideoSoon(warmth ? VideoSettings::kWarmth
-                         : tint ? VideoSettings::kTint
-                                : VideoSettings::kExposure);
+      case MenuCommand::SetExposure:
+        if (const unsigned part = passthrough.setBalance(c)) running.storeVideoSoon(part);
         break;
-      }
       case MenuCommand::ToggleMatchRoom:  // off: the video's own balance again
-        if (!roomShown()) break;  // the switch is disabled while the room is hidden
-        roomFailedUntil = 0;
-        roomMatched = !roomMatched;
-        if (roomMatched) {
-          roomBalance = app.video.balance;
-          roomAsked = balanceEdits;  // a reading still under way is for this one
-          if (roomReading) applyRoomMatch();
-          else readRoom();
-        }
+        passthrough.toggle();
         break;
       case MenuCommand::ReadRoomAgain:
-        roomFailedUntil = 0;
-        if (roomMatched && roomShown()) readRoom();
+        passthrough.readAgain();
         break;
       case MenuCommand::SetMatchColour:
         settings.matchColour = std::clamp(static_cast<int>(c.value), 0, 100);
         saveSettings(settings);
-        applyRoomMatch();
+        passthrough.applyRoomMatch();
         break;
       case MenuCommand::SetMatchBrightness:
         settings.matchBrightness = std::clamp(static_cast<int>(c.value), 0, 100);
         saveSettings(settings);
-        applyRoomMatch();
+        passthrough.applyRoomMatch();
         break;
       case MenuCommand::SetOpacity:  // applied while drawing
-        app.video.opacity = static_cast<int>(c.value);
-        storeVideoSoon(VideoSettings::kOpacity);
+        running.video.opacity = static_cast<int>(c.value);
+        running.storeVideoSoon(VideoSettings::kOpacity);
         break;
       case MenuCommand::SetZoom:
-        app.video.zoom = static_cast<float>(c.value / 100.0);
-        applyPicture(VideoSettings::kZoom);
+        running.video.zoom = static_cast<float>(c.value / 100.0);
+        running.applyPicture(VideoSettings::kZoom);
         break;
       case MenuCommand::ToggleTvGamma:
         settings.tvGamma = !settings.tvGamma;
@@ -1716,21 +1408,18 @@ int run(Options opts) {
         saveSettings(settings);
         break;
       case MenuCommand::ResetPicture:
-        app.video.brightness = app.video.contrast = app.video.saturation = 0;
-        app.video.balance = {};
-        if (roomShown()) {  // a hidden room keeps its switch for when it shows again
-          roomMatched = false;
-          ++balanceEdits;
-        }
-        app.video.zoom = 1.0f;
-        app.video.originForward = 0;
-        applyPicture(VideoSettings::kPicture | VideoSettings::kOrigin);
+        running.video.brightness = running.video.contrast = running.video.saturation = 0;
+        running.video.balance = {};
+        passthrough.pictureReset();
+        running.video.zoom = 1.0f;
+        running.video.originForward = 0;
+        running.applyPicture(VideoSettings::kPicture | VideoSettings::kOrigin);
         break;
       case MenuCommand::SetOriginForward:
-        app.video.originForward = std::clamp(static_cast<float>(c.value / 100.0),
+        running.video.originForward = std::clamp(static_cast<float>(c.value / 100.0),
                                              -VideoSettings::kMaxOriginForward,
                                              VideoSettings::kMaxOriginForward);
-        storeVideoSoon(VideoSettings::kOrigin);
+        running.storeVideoSoon(VideoSettings::kOrigin);
         break;
       case MenuCommand::Paste: menu.typeText(clipboardText(input)); break;
       case MenuCommand::SetSlideshow:
@@ -1741,16 +1430,16 @@ int run(Options opts) {
       case MenuCommand::SetScreenDistance:
       case MenuCommand::SetScreenHeight:
       case MenuCommand::SetScreenCurve: {
-        ScreenSize& size = app.screen.size;
+        ScreenSize& size = running.screen.size;
         (c.type == MenuCommand::SetScreenDistance ? size.distance
          : c.type == MenuCommand::SetScreenHeight ? size.height
                                                   : size.curve) = static_cast<float>(c.value / 100);
-        keepScreenSize();
+        running.keepScreenSize();
         break;
       }
       case MenuCommand::ResetScreen:
-        app.screen.size = settings.screen = ScreenSize{};
-        storeVideoSoon(VideoSettings::kScreen);
+        running.screen.size = settings.screen = ScreenSize{};
+        running.storeVideoSoon(VideoSettings::kScreen);
         break;
       case MenuCommand::Recenter:
         // From the menu: two seconds to look where "front" should be.
@@ -1759,12 +1448,12 @@ int run(Options opts) {
       case MenuCommand::ToggleAutoPassthrough:
         settings.autoPassthrough = !settings.autoPassthrough;
         saveSettings(settings);
-        passthroughSettled = false;  // for the video playing too
+        passthrough.resettle();  // for the video playing too
         break;
       case MenuCommand::ToggleKeyGreen:
         settings.keyGreen = !settings.keyGreen;
         saveSettings(settings);
-        passthroughSettled = false;  // Automatic passthrough, for the video playing
+        passthrough.resettle();  // Automatic passthrough, for the video playing
         break;
       case MenuCommand::ToggleVideoMipmaps:
         settings.videoMipmaps = !settings.videoMipmaps;
@@ -1922,7 +1611,7 @@ int run(Options opts) {
       case MenuCommand::SetSharpen:
         settings.sharpen = std::clamp(static_cast<int>(c.value), 0, 300);
         player.setSharpened(settings.sharpen > 0);
-        if (sharpenSaveAt == 0) sharpenSaveAt = glfwGetTime() + 0.5;
+        running.keepSharpenSoon();
         break;
       case MenuCommand::ToggleToneLook:
         settings.toneLook = !settings.toneLook;
@@ -2035,18 +1724,18 @@ int run(Options opts) {
         break;
       case MenuCommand::TogglePackedMask: {
         // Nothing is stored when the choice is what the name says.
-        const bool on = !packedMask(app.currentFile, app.video);
-        app.video.packedMask = on == hasPackedAlpha(app.currentFile) ? std::nullopt
+        const bool on = !packedMask(running.currentFile, running.video);
+        running.video.packedMask = on == hasPackedAlpha(running.currentFile) ? std::nullopt
                                                                      : std::optional<bool>(on);
-        storeVideo(VideoSettings::kPackedMask);
+        running.storeVideo(VideoSettings::kPackedMask);
         std::printf("Passthrough: mask in the video %s\n", on ? "on" : "off");
         break;
       }
       case MenuCommand::ToggleSecondLayer:
-        app.video.secondLayerHidden = !app.video.secondLayerHidden;
-        storeVideo(VideoSettings::kSecondLayer);
+        running.video.secondLayerHidden = !running.video.secondLayerHidden;
+        running.storeVideo(VideoSettings::kSecondLayer);
         std::printf("Passthrough: the mask's second layer %s\n",
-                    app.video.secondLayerHidden ? "hidden" : "shown");
+                    running.video.secondLayerHidden ? "hidden" : "shown");
         break;
       case MenuCommand::ToggleGreenScreen:
       case MenuCommand::SetKeyStrength:
@@ -2054,9 +1743,9 @@ int run(Options opts) {
       case MenuCommand::SetKeySpill:
       case MenuCommand::SetKeyShrink:
       case MenuCommand::SetKeyBackground: {
-        GreenScreen& key = app.video.greenScreen;
+        GreenScreen& key = running.video.greenScreen;
         const int value = static_cast<int>(c.value);
-        KeySliders& sliders = app.video.keySliders();
+        KeySliders& sliders = running.video.keySliders();
         if (c.type == MenuCommand::ToggleGreenScreen) key.on = !key.on;
         else if (c.type == MenuCommand::SetKeyBackground)
           key.source = value == static_cast<int>(KeySource::GreenScreen) ? KeySource::GreenScreen
@@ -2065,15 +1754,15 @@ int run(Options opts) {
         else if (c.type == MenuCommand::SetKeySoftness) sliders.softness = value;
         else if (c.type == MenuCommand::SetKeyShrink) sliders.shrink = value;
         else sliders.spill = value;
-        storeVideoSoon(VideoSettings::kGreenScreen);
+        running.storeVideoSoon(VideoSettings::kGreenScreen);
         break;
       }
       case MenuCommand::PickKeyColour:
         // Where the key is used: passthrough on a surround video, without its own mask.
-        if (app.video.passthrough && app.video.greenScreen.on && !app.currentFile.empty() &&
-            app.format.projection != Projection::Flat &&
-            !(packedMask(app.currentFile, app.video) && maskFormat(app.format))) {
-          app.keyPickFor = app.currentFile;
+        if (running.video.passthrough && running.video.greenScreen.on && !running.currentFile.empty() &&
+            running.format.projection != Projection::Flat &&
+            !(packedMask(running.currentFile, running.video) && maskFormat(running.format))) {
+          app.keyPickFor = running.currentFile;
           app.keyPickNote = KeyPickNote::None;
           std::printf("Background key: pick a colour\n");
         }
@@ -2085,21 +1774,15 @@ int run(Options opts) {
         // What the group shows: the key's sliders only while the green
         // screen is on (passthrough on, not the video's own mask) and removes
         // something, Match the room's strengths only while it is on.
-        if (roomReadable && roomMatched && roomShown()) {
-          const Settings defaults;
-          settings.matchColour = defaults.matchColour;
-          settings.matchBrightness = defaults.matchBrightness;
-          saveSettings(settings);
-          applyRoomMatch();
-        }
+        passthrough.resetMatch();
         unsigned parts = VideoSettings::kOpacity;
-        const bool own = packedMask(app.currentFile, app.video) && maskFormat(app.format);
-        if (app.video.passthrough && app.video.greenScreen.on && !own && app.video.keyRemoves()) {
-          app.video.keySliders() = GreenScreen().sliders(app.video.colourKeyed());
+        const bool own = packedMask(running.currentFile, running.video) && maskFormat(running.format);
+        if (running.video.passthrough && running.video.greenScreen.on && !own && running.video.keyRemoves()) {
+          running.video.keySliders() = GreenScreen().sliders(running.video.colourKeyed());
           parts |= VideoSettings::kGreenScreen;
         }
-        app.video.opacity = 100;
-        storeVideoSoon(parts);
+        running.video.opacity = 100;
+        running.storeVideoSoon(parts);
         break;
       }
       case MenuCommand::SetSubtitleSize:
@@ -2113,12 +1796,12 @@ int run(Options opts) {
         player.setSubtitleStyle(settings.subtitleSize / 100.0, settings.subtitleRaise);
         break;
       case MenuCommand::SetFocus:
-        if (applyFocusControl(static_cast<FocusControl>(c.option), c.value, app.video.hasFocus,
-                              app.video.focus, settings.focus, settings.focusPrefs)) {
+        if (applyFocusControl(static_cast<FocusControl>(c.option), c.value, running.video.hasFocus,
+                              running.video.focus, settings.focus, settings.focusPrefs)) {
           matchPreset();  // a user's preset keeps the focus defaults
           saveSettings(settings);
         }
-        storeVideo(VideoSettings::kFocus);
+        running.storeVideo(VideoSettings::kFocus);
         break;
       case MenuCommand::Quit: keys.quit = true; break;
       case MenuCommand::OpenFile:
@@ -2155,133 +1838,11 @@ int run(Options opts) {
                            : "set sid no");
         break;
       case MenuCommand::LoadSubtitle: player.addSubtitle(c.path); break;
-      case MenuCommand::RequestDelete: {
-        // The dialog is open; the video pauses meanwhile, a slideshow stops.
-        if (c.path != app.currentFile) {  // it changed meanwhile
-          menu.cancelDelete();
-          break;
-        }
-        if (deletion.result.valid()) break;
-        deletion.info = {};
-        deletion.info.file = c.path;
-        deletion.info.name = std::filesystem::path(c.path).filename().string();
-        deletion.info.photo = isPhotoFile(c.path);
-        deletion.expected.clear();
-        // A downloaded copy plays instead of its source (openVideo).
-        if (const Offline::Download* d = offline.find(c.path);
-            d && d->state == Offline::State::Done && d->present && d->path == c.path) {
-          deletion.info.source = d->source;
-          deletion.info.copyRoot = d->root;
-          deletion.info.size = d->size;
-          deletion.copy = d->id;
-          deletion.expected = d->oshash;
-        }
-        const std::string& source = deletion.info.source;
-        deletion.target = source.empty()          ? c.path
-                          : isStashSource(source) ? stashSourceLocator(source)
-                                                  : source;
-        const bool stream = isStashScene(deletion.target);
-        if (stream && source.empty()) deletion.expected = app.streamOshash;
-        // A Stash scene's file, at the scene's location (a file here or its
-        // stream), never by oshash alone.
-        deletion.scene = 0;
-        deletion.sceneFiles = 0;
-        deletion.stashPath.clear();
-        deletion.oshash.clear();
-        deletion.throughStash = false;
-        if (const auto catalog = stash ? stash->catalog() : nullptr; catalog && !deletion.target.empty())
-          if (const int i = stashSceneAt(*catalog, deletion.target); i >= 0) {
-            const StashScene& s = catalog->scenes()[i];
-            deletion.scene = s.id;
-            deletion.sceneFiles = s.oshashes.size();
-            deletion.stashPath = stashFilePathAt(*catalog, deletion.target);
-            if (isStashScene(deletion.target) && source.empty()) deletion.info.size = s.size;
-          }
-        deletion.resume = !deletion.info.photo && !player.playback().paused;
-        if (deletion.resume) player.command("set pause yes");
-        app.slideshowSeconds = 0;
-        deletion.lookup = detached([file = deletion.target, stream, check = stream || !source.empty(),
-                                    expected = deletion.expected,
-                                    ask = settings.stash.writeBack && deletion.scene != 0 &&
-                                          mediaServer(settings.stash.kind).abilities().deleteFiles,
-                                    scene = deletion.scene, stashPath = deletion.stashPath,
-                                    url = settings.stash.url, key = settings.stash.apiKey,
-                                    unverified = settings.stash.unverified()] {
-          Deletion::Look r;
-          if (file.empty())
-            r.status = DeleteStatus::Gone;
-          else if (!stream)
-            r.status = stampOf(file, r.stamp);
-          if (r.status != DeleteStatus::Ok || (!ask && !check)) return r;
-          r.oshash = stream ? expected : fingerprintFile(file).oshash;
-          // A copy's source still the video downloaded; a stream the one
-          // opened (Stash's fresh query below matches it).
-          if (check && (r.oshash.empty() || r.oshash != expected)) r.status = DeleteStatus::Changed;
-          if (r.status != DeleteStatus::Ok || !ask || r.oshash.empty()) return r;
-          r.asked = true;
-          r.stash = lookUpStashFile(url, key, unverified, scene, r.oshash, stashPath);
-          return r;
-        });
+      case MenuCommand::RequestDelete:
+        if (deletion.request(c, running.currentFile, running.streamOshash)) app.slideshowSeconds = 0;
         break;
-      }
-      case MenuCommand::CancelDelete:
-        deletion.lookup = {};
-        if (deletion.resume && app.currentFile == deletion.info.file) player.command("set pause no");
-        deletion.resume = false;
-        break;
-      case MenuCommand::DeleteFile: {
-        // Only the file the dialog showed, as it showed it.
-        if (!deletion.info.ready || c.path != deletion.info.file || c.path != app.currentFile ||
-            deletion.result.valid())
-          break;
-        deletion.resume = false;
-        const std::string target = deletion.target;
-        // Stash deletes it only with Send to Stash on still; its stream
-        // only through Stash; a copy's source only if it is still the
-        // video downloaded.
-        const bool throughStash = deletion.throughStash && settings.stash.writeBack;
-        if (c.value == 0 && (target.empty() || (isStashScene(target) && !throughStash) ||
-                             (!deletion.info.source.empty() && !deletion.info.sourceFound))) {
-          menu.showDeleteError(deleteError(DeleteStatus::Denied, std::string()));
-          break;
-        }
-        // The player, the seek preview and a download from it let go of it.
-        const std::string from = isStashScene(target) ? stashSource(target) : target;
-        if (const Offline::Download* d = offline.find(from);
-            d && d->source == from && d->state != Offline::State::Done)
-          offline.cancel(d->id);
-        closeVideo();
-        if (c.value > 0) {  // only the downloaded copy
-          offline.remove(deletion.copy);
-          library.forgetFile(c.path);
-          libraryIndex.deleted(c.path);
-          std::printf("Delete: a downloaded copy: deleted\n");
-          menu.deleteEnded(std::string());
-          break;
-        }
-        deletion.throughStash = throughStash;
-        deletion.result = std::async(std::launch::async, [target, stamp = deletion.stamp, throughStash,
-                                                          writeBack = settings.stash.writeBack,
-                                                          url = settings.stash.url,
-                                                          key = settings.stash.apiKey,
-                                                          unverified = settings.stash.unverified(),
-                                                          scene = deletion.scene,
-                                                          stashPath = deletion.stashPath,
-                                                          oshash = deletion.oshash,
-                                                          trash = deletion.info.stashTrash] {
-          const bool here = !isStashScene(target);
-          DeleteOutcome r;
-          if (throughStash)
-            r = deleteThroughStash(url, key, unverified, writeBack, scene, oshash, stashPath,
-                                   here ? target : std::string(), stamp, trash);
-          else
-            r.status = removeFile(target, stamp, r.error);
-          if (r.status == DeleteStatus::Ok && here)
-            dropThumbnail(target, stamp.size, stamp.modified, stamp.nanos);
-          return r;
-        });
-        break;
-      }
+      case MenuCommand::CancelDelete: deletion.cancel(running.currentFile); break;
+      case MenuCommand::DeleteFile: deletion.confirm(c, running.currentFile); break;
       case MenuCommand::UseServer:
         // None (-1), or a kind's own setup in use and on: the one it
         // replaces is kept as it was left.
@@ -2418,7 +1979,7 @@ int run(Options opts) {
   gestureHost.why = [&](GestureValue v) -> const char* {
     using V = GestureValue;
     const JobStrings& said = strings().jobs;
-    const bool open = !app.currentFile.empty(), photo = isPhotoFile(app.currentFile);
+    const bool open = !running.currentFile.empty(), photo = isPhotoFile(running.currentFile);
     switch (gestureValueInfo(v).where) {
       case GestureWhere::Anywhere: break;
       case GestureWhere::File:
@@ -2430,11 +1991,11 @@ int run(Options opts) {
         break;
       case GestureWhere::Surround:
         if (!open) return said.nothingOpen;
-        if (app.format.projection == Projection::Flat) return said.notForFlat;
+        if (running.format.projection == Projection::Flat) return said.notForFlat;
         break;
       case GestureWhere::Flat:
         if (!open) return said.nothingOpen;
-        if (app.format.projection != Projection::Flat) return said.flatOnly;
+        if (running.format.projection != Projection::Flat) return said.flatOnly;
         break;
     }
     switch (v) {
@@ -2445,28 +2006,28 @@ int run(Options opts) {
       case V::MatchBrightness:
       case V::MatchColour:
         // Where the menu shows them: Match the room on, the room shown.
-        if (!roomReadable) return said.notOnHeadset;
-        if (!roomShown()) return said.needsPassthrough;
-        if (!roomMatched) return strings().gestures.needsMatchRoom;
+        if (!passthrough.roomReadable) return said.notOnHeadset;
+        if (!passthrough.roomShown()) return said.needsPassthrough;
+        if (!passthrough.matched()) return strings().gestures.needsMatchRoom;
         break;
       case V::KeyStrength:
       case V::KeyEdges:
       case V::KeySpill:
       case V::KeyShrink:
         if (!xr.alphaBlendSupported() && !roomKeyed()) return said.noRoom;
-        if (!app.video.passthrough) return said.needsPassthrough;
-        if (packedMask(app.currentFile, app.video) && maskFormat(app.format)) return said.ownMask;
-        if (!app.video.greenScreen.on) return strings().gestures.needsRemoveBackground;
+        if (!running.video.passthrough) return said.needsPassthrough;
+        if (packedMask(running.currentFile, running.video) && maskFormat(running.format)) return said.ownMask;
+        if (!running.video.greenScreen.on) return strings().gestures.needsRemoveBackground;
         // As the menu hides their sliders: Automatic found nothing to remove.
-        if (!app.video.keyRemoves()) return strings().gestures.nothingRemoved;
+        if (!running.video.keyRemoves()) return strings().gestures.nothingRemoved;
         break;
       case V::Scrub:
-        if (player.loading() || player.playback().duration <= kSeekEndMargin || heldSeek.active()) return "";
+        if (player.loading() || player.playback().duration <= kSeekEndMargin || stickSeek.active()) return "";
         break;
       case V::Rating:
-        if (isStream(app.currentFile)) return said.notForStreams;
+        if (isStream(running.currentFile)) return said.notForStreams;
         if (!library.available()) return said.ratingsLocked;
-        if (!library.known(app.currentFile)) return "";  // its rating isn't read yet
+        if (!library.known(running.currentFile)) return "";  // its rating isn't read yet
         break;
       default: break;
     }
@@ -2474,31 +2035,32 @@ int run(Options opts) {
   };
   gestureHost.read = [&](GestureValue v) -> double {
     using V = GestureValue;
-    const ColourBalance& balance = roomMatched && roomShown() ? roomBalance : app.video.balance;
-    const KeySliders& key = app.video.keySliders();
+    const ColourBalance& balance =
+        passthrough.balance(passthrough.matched() && passthrough.roomShown());
+    const KeySliders& key = running.video.keySliders();
     switch (v) {
       case V::Volume: return player.playback().volume;
-      case V::Opacity: return app.video.opacity;
+      case V::Opacity: return running.video.opacity;
       case V::MatchBrightness: return settings.matchBrightness;
       case V::MatchColour: return settings.matchColour;
       case V::KeyStrength: return key.strength;
       case V::KeyEdges: return key.softness;
       case V::KeySpill: return key.spill;
       case V::KeyShrink: return key.shrink;
-      case V::Brightness: return app.video.brightness;
-      case V::Contrast: return app.video.contrast;
-      case V::Saturation: return app.video.saturation;
+      case V::Brightness: return running.video.brightness;
+      case V::Contrast: return running.video.contrast;
+      case V::Saturation: return running.video.saturation;
       case V::Warmth: return balance.warmth;
       case V::Tint: return balance.tint;
       case V::Exposure: return balance.exposure;
       case V::Sharpen: return settings.sharpen;
-      case V::Zoom: return app.video.zoom * 100.0;
-      case V::Viewpoint: return app.video.originForward * 100.0;
-      case V::ScreenDistance: return app.screen.size.distance * 100.0;
-      case V::ScreenHeight: return app.screen.size.height * 100.0;
-      case V::ScreenCurve: return app.screen.size.curve * 100.0;
-      case V::Scrub: return scrub.on ? scrub.target : player.playback().position;
-      case V::Rating: return library.record(app.currentFile).rating * 2.0;
+      case V::Zoom: return running.video.zoom * 100.0;
+      case V::Viewpoint: return running.video.originForward * 100.0;
+      case V::ScreenDistance: return running.screen.size.distance * 100.0;
+      case V::ScreenHeight: return running.screen.size.height * 100.0;
+      case V::ScreenCurve: return running.screen.size.curve * 100.0;
+      case V::Scrub: return stickSeek.scrubValue();
+      case V::Rating: return library.record(running.currentFile).rating * 2.0;
       case V::ScriptTiming: return settings.scripts.offsetMs;
       case V::SubtitleSize: return settings.subtitleSize;
       case V::SubtitleRaise: return settings.subtitleRaise;
@@ -2509,11 +2071,11 @@ int run(Options opts) {
   };
   gestureHost.write = [&](GestureValue v, double value) {
     if (v == GestureValue::Scrub) {
-      scrub.target = value;
+      stickSeek.scrubTo(value);
     } else if (v == GestureValue::Rating) {
       // As Rating up and down do, by half stars.
-      const int now = static_cast<int>(std::lround(library.record(app.currentFile).rating * 2));
-      menu.stepRating(app.currentFile, static_cast<int>(std::lround(value)) - now);
+      const int now = static_cast<int>(std::lround(library.record(running.currentFile).rating * 2));
+      menu.stepRating(running.currentFile, static_cast<int>(std::lround(value)) - now);
     } else {
       execute({gestureValueInfo(v).command, value});
     }
@@ -2525,21 +2087,16 @@ int run(Options opts) {
   };
   gestureHost.began = [&](GestureValue v) {
     if (v != GestureValue::Scrub) return;
-    scrub.on = true;
-    scrub.sent = false;
-    scrub.from = scrub.target = scrub.picture = player.playback().position;
-    scrub.pictureAt = glfwGetTime();
+    stickSeek.beginScrub(glfwGetTime());
     awaitingResume = false;  // a seek of the user's
   };
   gestureHost.ended = [&](GestureValue v, bool released) {
     if (v != GestureValue::Scrub) return;
-    // Let go: exactly there; the video played on meanwhile.
-    if (released && (scrub.sent || std::abs(scrub.target - scrub.from) > 0.01))
-      player.seekTo(scrub.target, true);
-    scrub.on = false;
+    stickSeek.endScrub(released);
   };
   gestureHost.say = [&](const char* text) { say(text); };
   gestureHost.buzz = [&](int hand, float amplitude, double seconds) { buzz(hand, amplitude, seconds); };
+  stickSeek.buzz = [&](int hand, float amplitude, double seconds) { buzz(hand, amplitude, seconds); };
 
   bool xrQuit = false;
   FrameTimer timer(opts.timing);
@@ -2570,15 +2127,14 @@ int run(Options opts) {
     if (settings.scripts.enabled) {
       // Held too while the headset is taken off, though the video plays on.
       const PlaybackState& p = player.playback();
-      scripts.sync(p.position, !app.currentFile.empty() && !p.paused && !p.endReached &&
+      scripts.sync(p.position, !running.currentFile.empty() && !p.paused && !p.endReached &&
                                    !player.seeking() && !player.loading() && !player.failed() &&
                                    xr.userPresence() != 0);
     }
     if (kStandaloneHeadset && opts.hwdec == "v4l2m2m") {
-      if (!xr.isVisible() && heldSeek.active()) {
-        if (heldSeekPaused) player.command("set pause no");
-        heldSeek.cancel();
-        heldSeekPaused = heldSeekLanding = heldSeekBar = false;
+      if (!xr.isVisible() && stickSeek.active()) {
+        if (stickSeek.pausedVideo()) player.command("set pause no");
+        stickSeek.cancel();
       }
       player.setPresentationActive(xr.isVisible());
     }
@@ -2591,9 +2147,9 @@ int run(Options opts) {
     // A Stash scene's file on a server that doesn't play plays from Stash's
     // stream instead (once: the stream is no server's file), if that serves it.
     // Not one the decoder refused: the stream is the same video.
-    if (player.failed() && !player.decoderRefused() && remote::isRemote(app.currentFile) && stash &&
+    if (player.failed() && !player.decoderRefused() && remote::isRemote(running.currentFile) && stash &&
         stash->catalog())
-      if (const int i = stash->catalog()->sceneByPath(app.currentFile); i >= 0) {
+      if (const int i = stash->catalog()->sceneByPath(running.currentFile); i >= 0) {
         const StashScene& scene = stash->catalog()->scenes()[i];
         if (!scene.oshashes.empty() && scene.oshashes.front() == scene.oshash) {
           std::printf("Server failed: the scene plays from its media server's stream\n");
@@ -2607,10 +2163,10 @@ int run(Options opts) {
     const bool opened = player.takeOpened();
     // Played after freeing the decoder: a later refusal (after a sleep) is asked about again.
     if (opened && player.loadCount() == decoderRescue.retry) decoderRescue.retry = 0;
-    if (opened && setupBanner && !isPhotoFile(app.currentFile)) hideSetupBanner();
-    if (opened && !app.currentFile.empty() && !isStream(app.currentFile) &&
-        !isPhotoFile(app.currentFile)) {
-      library.recordPlay(app.currentFile);
+    if (opened && setupBanner && !isPhotoFile(running.currentFile)) hideSetupBanner();
+    if (opened && !running.currentFile.empty() && !isStream(running.currentFile) &&
+        !isPhotoFile(running.currentFile)) {
+      library.recordPlay(running.currentFile);
       videoOpened = true;
       videoOpenedAt = glfwGetTime();
       resumeSaveAt = glfwGetTime() + 60;
@@ -2620,7 +2176,7 @@ int run(Options opts) {
     if (videoOpened && glfwGetTime() >= resumeSaveAt) saveResume();
     if (videoOpened && !durationKept && player.playback().duration > 0) {
       durationKept = true;
-      library.setDuration(app.currentFile, player.playback().duration);
+      library.setDuration(running.currentFile, player.playback().duration);
     }
 
     if (keys.videoStep != 0) {
@@ -2628,47 +2184,34 @@ int run(Options opts) {
       keys.videoStep = 0;
     }
 
-    if (app.saveAt > 0 && glfwGetTime() >= app.saveAt) {
-      // A zoom still held waits for its letting go.
-      const unsigned held = zoomHold.hand >= 0 ? app.unsavedParts & VideoSettings::kZoom : 0;
-      app.unsavedParts &= ~held;
-      saveUnsaved();
-      app.unsavedParts |= held;
-    }
-    if (const int volume = static_cast<int>(std::lround(player.playback().volume));
-        !volumeApplied)
-      volumeApplied = volume == settings.volume;
-    else if (volume != settings.volume && volumeSaveAt == 0)
-      volumeSaveAt = glfwGetTime() + 1;
-    if (volumeSaveAt > 0 && glfwGetTime() >= volumeSaveAt) keepVolume();
-    if (sharpenSaveAt > 0 && glfwGetTime() >= sharpenSaveAt) keepSharpen();
+    running.saveDue(buttonJobs.zoomHeld());
     // The library's background results; the playing file's record may be
     // among them.
-    if (library.poll() && awaitingRecord && library.known(app.currentFile)) {
+    if (library.poll() && awaitingRecord && library.known(running.currentFile)) {
       awaitingRecord = false;
       if (awaitingResume) {
-        const VideoRecord r = library.record(app.currentFile);
+        const VideoRecord r = library.record(running.currentFile);
         resolvedResume = resumePoint(r.resumeSeconds, r.durationSeconds);
       }
       VideoSettings kept;
-      bool hasSettings = library.settings(app.currentFile, kept);
-      if (!hasSettings && openingRecord == library.record(app.currentFile).id &&
-          memory.get(app.currentFile, kept)) {
-        library.carryOverSettings(app.currentFile, kept);
+      bool hasSettings = library.settings(running.currentFile, kept);
+      if (!hasSettings && openingRecord == library.record(running.currentFile).id &&
+          memory.get(running.currentFile, kept)) {
+        library.carryOverSettings(running.currentFile, kept);
         hasSettings = true;
       }
       // The save timer may still hold user edits when identity arrives.
       // Restore the other fields without replacing those pending changes.
-      if (hasSettings) kept.take(app.video, app.unsavedParts & ~VideoSettings::kScreen);
-      if (hasSettings && kept != app.video) {
+      if (hasSettings) kept.take(running.video, running.unsavedParts & ~VideoSettings::kScreen);
+      if (hasSettings && kept != running.video) {
         // Without a format of its own, the file's is detected again.
-        if (app.video.hasFormat && !kept.hasFormat) {
-          app.formatChosenByUser = false;
+        if (running.video.hasFormat && !kept.hasFormat) {
+          running.formatChosenByUser = false;
           knownWidth = -1;
           formatDetected = false;
         }
-        app.video = kept;
-        applyVideoSettings();
+        running.video = kept;
+        running.applyVideoSettings();
       }
     }
     // Identity can arrive before mpv opens, or shortly after playback starts.
@@ -2689,9 +2232,9 @@ int run(Options opts) {
     }
     if (nextPhoto.valid() &&
         nextPhoto.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
-      photoPreloader.request(app.currentFile, nextPhoto.get());
+      photoPreloader.request(running.currentFile, nextPhoto.get());
     // Sought back from the end, or seeking since: it doesn't go on.
-    if (endStep && (!player.playback().endReached || heldSeek.active() ||
+    if (endStep && (!player.playback().endReached || stickSeek.active() ||
                     player.counts().restarts != endStepRestarts)) {
       neighbor = {};
       neighborStep = 0;
@@ -2714,105 +2257,31 @@ int run(Options opts) {
     // mpv keeps a video that reached its end paused on its last frame. Play
     // the next video and Shuffle go on from there; with no next one, as for
     // Stop, the menu opens.
-    const bool atEnd = player.playback().endReached && !app.currentFile.empty() &&
-                       !isPhotoFile(app.currentFile);
+    const bool atEnd = player.playback().endReached && !running.currentFile.empty() &&
+                       !isPhotoFile(running.currentFile);
     if (atEnd != wasAtEnd) {
       const AfterVideo after = afterVideo();
       if (atEnd && (after == AfterVideo::Next || after == AfterVideo::Shuffle) &&
-          !isStream(app.currentFile))
+          !isStream(running.currentFile))
         stepVideo(1, true);
       else
         menuAtEnd = atEnd;
     }
     wasAtEnd = atEnd;
     // Slideshow: the next photo in the folder, after the last one the first.
-    if (app.slideshowSeconds > 0 && isPhotoFile(app.currentFile) &&
+    if (app.slideshowSeconds > 0 && isPhotoFile(running.currentFile) &&
         glfwGetTime() >= app.nextSlideAt && !neighbor.valid()) {
       neighborStep = 1;
       neighborWrap = true;
-      neighbor = mediaNeighbor(app.currentFile, 1, true);
+      neighbor = mediaNeighbor(running.currentFile, 1, true);
     }
 
-    // The delete dialog's file looked up; a deletion finished.
-    if (deletion.lookup.valid() &&
-        deletion.lookup.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-      const Deletion::Look look = deletion.lookup.get();
-      DeleteInfo& info = deletion.info;
-      const bool stream = isStashScene(deletion.target);
-      DeleteStatus status = look.status;
-      if (status == DeleteStatus::Ok && !stream) {
-        deletion.stamp = look.stamp;
-        info.size = look.stamp.size;
-      }
-      deletion.oshash = look.oshash;
-      // Stash deletes it if a fresh query found the scene's one file with
-      // its path and oshash; its stream's file nobody else can.
-      deletion.throughStash = look.asked && look.stash.file != 0;
-      if (deletion.throughStash) {
-        deletion.sceneFiles = look.stash.files.size();
-        info.stash = DeleteInfo::Stash::Deletes;
-        info.otherFiles = static_cast<int>(look.stash.files.size()) - 1;
-        info.stashTrash = !look.stash.trash.empty();
-      } else if (stream) {
-        if (status == DeleteStatus::Ok)
-          status = !look.asked             ? DeleteStatus::Denied
-                   : !look.stash.answered ? DeleteStatus::Offline
-                   : !look.stash.scene    ? DeleteStatus::Gone
-                                          : DeleteStatus::Changed;
-      } else if (status == DeleteStatus::Ok && deletion.scene &&
-                 !(look.stash.answered && !look.stash.scene)) {
-        info.stash = look.stash.answered ? DeleteInfo::Stash::Unsure : DeleteInfo::Stash::Lists;
-      }
-      // A copy can go without its source.
-      info.sourceFound = !info.source.empty() && status == DeleteStatus::Ok;
-      info.sourceChanged = !info.source.empty() && status == DeleteStatus::Changed;
-      info.ready = status == DeleteStatus::Ok || !info.source.empty();
-      if (info.ready)
-        menu.askDelete(info);
-      else
-        menu.showDeleteError(deleteError(status, std::string()));
-    }
-    if (deletion.result.valid() &&
-        deletion.result.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-      const DeleteOutcome outcome = deletion.result.get();
-      const std::string& target = deletion.target;
-      const bool stream = isStashScene(target);
-      std::printf("Delete: %s%s%s: %s%s%s\n",
-                  stream                ? "a scene's file in Stash"
-                  : remote::isRemote(target) ? "a file on a server"
-                                       : "a file on this device",
-                  deletion.info.source.empty() ? "" : " and its downloaded copy",
-                  deletion.throughStash ? " through Stash" : "", deleteLogged(outcome.status),
-                  outcome.listed ? ", Stash still lists it" : "",
-                  outcome.stashDeleted && outcome.status != DeleteStatus::Ok ? ", Stash deleted its file"
-                                                                             : "");
-      if (outcome.status == DeleteStatus::Ok) {
-        if (!stream) {
-          library.forgetFile(target);
-          libraryIndex.deleted(target);
-        }
-        if (!deletion.info.source.empty()) {
-          offline.remove(deletion.copy);
-          library.forgetFile(deletion.info.file);
-          libraryIndex.deleted(deletion.info.file);
-        }
-        forgetFolderListing();
-      }
-      if (stash && deletion.scene && (outcome.status == DeleteStatus::Ok || outcome.stashDeleted)) {
-        if (deletion.sceneFiles == 1 && !deletion.stashPath.empty()) stash->hideScene(deletion.scene);
-        if (deletion.throughStash) stash->syncNow();
-      }
-      // Once Stash has deleted its file, never "Nothing was deleted".
-      menu.deleteEnded(outcome.status == DeleteStatus::Ok ? std::string()
-                       : outcome.stashDeleted             ? std::string(strings().deletion.stashKeptHere)
-                                                          : deleteError(outcome.status, outcome.error),
-                       outcome.listed ? strings().deletion.stashLists : "");
-    }
+    deletion.poll();
 
     // Re-guess the format once the real frame size is known.
-    if (app.rememberFormat) {  // changed by key
+    if (running.rememberFormat) {  // changed by key
       rememberFormat();
-      app.rememberFormat = false;
+      running.rememberFormat = false;
     }
     // And once mpv says how it decodes a 3D Blu-ray video's two views. Not
     // from the last file's while the next one opens.
@@ -2822,12 +2291,12 @@ int run(Options opts) {
       knownWidth = player.width();
       knownHeight = player.height();
       knownViews = views;
-      if (!app.formatChosenByUser) {
-        const VideoFormat guess = guessVideoFormat(app.currentFile, knownWidth, knownHeight, views);
-        if (!formatDetected || guess.projection != app.format.projection ||
-            guess.stereo != app.format.stereo || guess.packing != app.format.packing)
+      if (!running.formatChosenByUser) {
+        const VideoFormat guess = guessVideoFormat(running.currentFile, knownWidth, knownHeight, views);
+        if (!formatDetected || guess.projection != running.format.projection ||
+            guess.stereo != running.format.stereo || guess.packing != running.format.packing)
           printFormat(guess, "detected");
-        app.format = guess;
+        running.format = guess;
         formatDetected = true;
       }
     }
@@ -2837,27 +2306,7 @@ int run(Options opts) {
     // the runtime must blend, or key green stand in for it.
     const bool passthroughAvailable = xr.alphaBlendSupported() || roomKeyed();
     const bool autoPassthroughOn = settings.autoPassthrough && passthroughAvailable;
-    if (!passthroughSettled && knownWidth > 0 && !awaitingRecord && !app.currentFile.empty()) {
-      passthroughSettled = true;
-      const std::string& path = app.currentFile;
-      if (autoPassthroughOn && !isPhotoFile(path) && !isStream(path))
-        passthroughByItself(autoPassthrough(path, app.format, app.video));
-      // The fill check, for the key's Automatic, also where passthrough is on by hand.
-      const bool fillWanted = fillCheckWanted(path, app.format, app.video) &&
-                              (autoPassthroughOn || app.video.passthrough);
-      if (!greenCheckAsked && !isPhotoFile(path) && !isStream(path) &&
-          ((autoPassthroughOn && greenCheckWanted(path, app.format, app.video)) || fillWanted)) {
-        greenCheckAsked = fillCheckPending = true;
-        videoCheckAt = glfwGetTime() + 2.0;
-        videoCheckKind = VideoCheck::Kind::GreenScreen;
-      }
-      // Whatever the setting: a mask's second layer shows whenever passthrough does.
-      if (!isPhotoFile(path) && !isStream(path) && layerCheckWanted(path, app.format, app.video)) {
-        videoCheckAt = glfwGetTime() + 2.0;
-        videoCheckKind = VideoCheck::Kind::MaskLayers;
-        fillCheckPending = false;  // a green screen check under way is replaced
-      }
-    }
+    passthrough.settle(autoPassthroughOn, knownWidth > 0 && !awaitingRecord);
     if (RemovableDrives::Change change; drives.poll(change)) {
       menu.drivesChanged(change.removed);
       offline.drivesChanged();
@@ -2887,12 +2336,12 @@ int run(Options opts) {
       }
     }
     // Looks for new videos in the pinned folders wait while a video is open.
-    libraryIndex.setVideoOpen(!app.currentFile.empty() && !isPhotoFile(app.currentFile));
+    libraryIndex.setVideoOpen(!running.currentFile.empty() && !isPhotoFile(running.currentFile));
     // ... and so does looking for Stash's folders.
-    if (stash) stash->setVideoOpen(!app.currentFile.empty() && !isPhotoFile(app.currentFile));
+    if (stash) stash->setVideoOpen(!running.currentFile.empty() && !isPhotoFile(running.currentFile));
     // Downloads and new thumbnails wait while a video plays.
     const bool videoPlaying =
-        !app.currentFile.empty() && !isPhotoFile(app.currentFile) && !player.playback().paused;
+        !running.currentFile.empty() && !isPhotoFile(running.currentFile) && !player.playback().paused;
     offline.setPlaying(videoPlaying);
     thumbnailer.setPlaying(videoPlaying);
     std::vector<Offline::Download> downloaded;
@@ -2901,49 +2350,19 @@ int run(Options opts) {
     offline.watchStash(stash && stash->catalog() &&
                        (stash->catalog()->stats().streamed > 0 || !offline.downServers().empty()));
     for (const Offline::Download& d : downloaded) library.addCopy(d.path, d.oshash, d.size, d.mtime);
-    if (videoCheckAt > 0 && glfwGetTime() >= videoCheckAt) {
-      videoCheckAt = 0;
-      videoCheck.start(app.currentFile, app.format, videoCheckKind);
-    }
-    if (VideoCheck::Result checked; videoCheck.result(checked)) {
-      // Kept for the video, even if another plays by now: it runs once.
-      VideoSettings result;
-      const bool current = checked.path == app.currentFile;
-      if (current && checked.kind == VideoCheck::Kind::GreenScreen) fillCheckPending = false;
-      if (!checked.answered) {
-        // None: it runs again next time.
-      } else if (checked.kind == VideoCheck::Kind::GreenScreen) {
-        result.greenCheckVersion = VideoCheck::kGreenVersion;
-        result.greenScreenFound = checked.found;
-        result.fillCheckVersion = VideoCheck::kFillVersion;
-        result.fillFound = checked.fillFound;
-        if (checked.fillFound) result.fillColour = checked.fillColour;
-        const unsigned parts = VideoSettings::kGreenCheck | VideoSettings::kFillCheck;
-        library.setSettings(checked.path, result, parts);
-        if (current) {
-          app.video.take(result, parts);
-          if (autoPassthroughOn)
-            passthroughByItself(autoPassthrough(checked.path, app.format, app.video));
-        }
-      } else if (!layersSeen.count(checked.path)) {  // else found while it played
-        result.maskLayersVersion = VideoCheck::kLayersVersion;
-        result.maskLayersFound = checked.found;
-        library.setSettings(checked.path, result, VideoSettings::kMaskLayers);
-        if (current) app.video.take(result, VideoSettings::kMaskLayers);
-      }
-    }
+    passthrough.poll(autoPassthroughOn);
 
     // 3D and surround video always get floating subtitles (mpv's would be cut
     // in half or end up behind you); for 2D video the setting decides.
     const bool floatingSubtitles =
         settings.floatingSubtitles ||
-        app.format.stereo != StereoLayout::Mono || app.format.projection != Projection::Flat;
+        running.format.stereo != StereoLayout::Mono || running.format.projection != Projection::Flat;
     player.setSubtitlesInFrame(!floatingSubtitles);
     subtitles.setText(floatingSubtitles ? player.playback().subtitleText : "");
     // Until the new file's first frame arrives, the texture still holds the old
     // video, which would show cut apart in the new format; show nothing instead.
-    bool photo = isPhotoFile(app.currentFile);
-    bool loading = !photo && player.loading() && !app.currentFile.empty();
+    bool photo = isPhotoFile(running.currentFile);
+    bool loading = !photo && player.loading() && !running.currentFile.empty();
     if (keys.togglePassthrough && !passthroughAvailable) {
       // The video keeps its choice for a runtime that shows the room.
       keys.togglePassthrough = false;
@@ -2952,47 +2371,26 @@ int run(Options opts) {
     }
     if (keys.togglePassthrough) {
       keys.togglePassthrough = false;
-      app.video.passthrough = !app.video.passthrough;
-      app.video.passthroughChosen = true;  // never switched by itself again
-      passthroughShownUntil = 0;
-      storeVideo(VideoSettings::kPassthrough);
-      std::printf("Passthrough: %s\n", app.video.passthrough ? "on" : "off");
-      // On by hand after the video settled: the fill check its key's
-      // Automatic needs, if it wasn't asked for then.
-      const std::string& path = app.currentFile;
-      if (app.video.passthrough && passthroughSettled && !greenCheckAsked && !path.empty() &&
-          !isPhotoFile(path) && !isStream(path) && fillCheckWanted(path, app.format, app.video)) {
-        greenCheckAsked = fillCheckPending = true;
-        videoCheckAt = glfwGetTime();
-        videoCheckKind = VideoCheck::Kind::GreenScreen;
-      }
+      running.video.passthrough = !running.video.passthrough;
+      running.video.passthroughChosen = true;  // never switched by itself again
+      running.storeVideo(VideoSettings::kPassthrough);
+      std::printf("Passthrough: %s\n", running.video.passthrough ? "on" : "off");
+      passthrough.switchedByHand();
     }
     // Passthrough, where the runtime blends (the Frame itself, or a PC whose
     // runtime shows the headset's camera): the eye images are blended over
     // the camera by their alpha. Where it doesn't there is none, unless a PC
     // is set to draw the room in key green.
     const bool canBlend = xr.alphaBlendSupported();
-    const bool alphaPassthrough = app.video.passthrough && canBlend;
-    const bool keyPassthrough = app.video.passthrough && roomKeyed();
-    const bool blended = roomShown();
+    const bool alphaPassthrough = running.video.passthrough && canBlend;
+    const bool keyPassthrough = running.video.passthrough && roomKeyed();
+    const bool blended = passthrough.roomShown();
     // Peek at the room, held: the video at no opacity over the room, none of
     // its settings changed.
     const bool peek = peeking && canBlend;
     // The room's balance, while the switch is on and the room is shown.
-    const bool roomMatching = roomMatched && blended;
-    // A room reading that ended: kept for the run and matched while the
-    // switch is on (unless the sliders were moved or reset since it was asked
-    // for), or a moment saying it failed. The switch stays as it was set:
-    // with no earlier reading to use nothing is matched yet, and Read again
-    // tries once more.
-    if (std::optional<RoomLight::Reading> reading; roomLight.take(reading)) {
-      if (reading) {
-        roomReading = reading;
-        if (roomAsked == balanceEdits) applyRoomMatch();
-      } else {
-        roomFailedUntil = glfwGetTime() + 4;
-      }
-    }
+    const bool roomMatching = passthrough.matched() && blended;
+    passthrough.pollRoom();
     // Saved on every change of folder, so even a killed player reopens there.
     if (!menu.directory().empty() && menu.directory() != settings.lastFolder) {
       settings.lastFolder = menu.directory();
@@ -3064,15 +2462,15 @@ int run(Options opts) {
     int photoWidth = 0, photoHeight = 0;
     bool stillLoading = false;
     auto choosePicture = [&] {
-      photo = isPhotoFile(app.currentFile);
-      loading = !photo && player.loading() && !app.currentFile.empty();
+      photo = isPhotoFile(running.currentFile);
+      loading = !photo && player.loading() && !running.currentFile.empty();
       videoImage = nullptr;
       videoTexture = 0;
       photoImage = nullptr;
       frameAspect = player.aspect();
       photoWidth = photoHeight = 0;
       if (photo) {
-        photoImage = photoPreloader.image(app.currentFile, photoWidth, photoHeight);
+        photoImage = photoPreloader.image(running.currentFile, photoWidth, photoHeight);
         if (photoImage) {
           videoImage = &photoImage->texture();
           videoTexture = photoImage->glTexture();
@@ -3080,17 +2478,17 @@ int run(Options opts) {
           if (!photoSized) {  // the size is known now: guess the format
             photoSized = true;
             std::printf("Photo size: %dx%d\n", photoWidth, photoHeight);
-            if (!app.formatChosenByUser) {
-              app.format = guessVideoFormat(app.currentFile, photoWidth, photoHeight);
-              printFormat(app.format, "detected");
+            if (!running.formatChosenByUser) {
+              running.format = guessVideoFormat(running.currentFile, photoWidth, photoHeight);
+              printFormat(running.format, "detected");
             }
           }
         }
-      } else if (!loading && !app.currentFile.empty()) {
+      } else if (!loading && !running.currentFile.empty()) {
         videoImage = player.texture();
         videoTexture = player.glTexture();
       }
-      stillLoading = !app.currentFile.empty() && !videoImage && (photo || loading);
+      stillLoading = !running.currentFile.empty() && !videoImage && (photo || loading);
     };
     choosePicture();
 
@@ -3121,16 +2519,16 @@ int run(Options opts) {
       }
       if ((initialRecenter || (keys.recenter && !menu.setupRunning())) && headValid) {
         if (keys.recenter) {
-          if (app.video.originForward != 0)
+          if (running.video.originForward != 0)
             viewpointShownUntil = now + kValueShown;  // "Centered": it did go back
-          app.video.originForward = 0;
+          running.video.originForward = 0;
           // Also mark a provisional zero: a late identity restore must not
           // bring back a remembered origin after an explicit recenter.
-          storeVideoSoon(VideoSettings::kOrigin);
+          running.storeVideoSoon(VideoSettings::kOrigin);
         }
-        app.screen.anchorPosition = headPos;
-        app.screen.anchorRotation = frame;
-        app.screen.turn = 0.0f;
+        running.screen.anchorPosition = headPos;
+        running.screen.anchorRotation = frame;
+        running.screen.turn = 0.0f;
         turnDrag.tracking = false;  // a drag goes on from here, without catching up first
         if (panel.open) panel.placeInFrontOf(headPos, menuAt);  // the menu comes along
         keys.recenter = false;
@@ -3288,11 +2686,7 @@ int run(Options opts) {
         }
       }
       keys.toggleMenu = false;
-      if (app.video.opacity < 100 && !app.currentFile.empty() &&
-          (app.video.opacity != seeThroughSeen || app.currentFile != seeThroughFile))
-        lastSeeThrough[seeThroughKey()] = app.video.opacity;
-      seeThroughFile = app.currentFile;
-      seeThroughSeen = app.video.opacity;
+      buttonJobs.keepSeeThrough();
       // The buttons' other jobs, as the menu's or the strip's controls do
       // them. Menu and Recenter are above and below, Choose is the trigger's.
       // Not while setup's Your controllers shows what each does.
@@ -3304,7 +2698,7 @@ int run(Options opts) {
         buzz(hand, 0.2f, 0.014);
         const JobInfo& info = jobInfo(job);
         const JobStrings& said = strings().jobs;
-        const bool open = !app.currentFile.empty();
+        const bool open = !running.currentFile.empty();
         if ((info.needs == JobNeeds::File || info.needs == JobNeeds::Video) && !open) {
           say(said.nothingOpen);
           continue;
@@ -3313,50 +2707,29 @@ int run(Options opts) {
           say(said.notForPhotos);
           continue;
         }
-        MenuCommand c = info.command;
-        if (info.length != JobLength::None)
-          c.value *= info.length == JobLength::Skip ? settings.skipSeconds : settings.bigSkipSeconds;
-        const PlaybackState& p = player.playback();
+        ButtonJobs::Context context;
+        context.now = now;
+        context.photo = photo;
+        context.slideshow = app.slideshowSeconds > 0;
+        context.passthroughAvailable = passthroughAvailable;
+        context.alphaBlend = xr.alphaBlendSupported();
+        context.roomReadable = passthrough.roomReadable;
+        context.roomShown = passthrough.roomShown();
+        context.roomMatched = passthrough.matched();
+        context.afterVideo = afterVideo();
+        JobAction action = buttonJobs.press(job, hand, context);
+        MenuCommand& c = action.command;
+        // These need the stick's seek or the menu: done here.
         switch (job) {
-          case Job::PlayPause:
-            // A photo's is the slideshow's: it stops one running.
-            if (photo) {
-              c = {};
-              if (app.slideshowSeconds > 0) c = {MenuCommand::SetSlideshow, 0.0};
-              else say(said.notForPhotos);
-            }
-            break;
-          case Job::PreviousChapter:
-          case Job::NextChapter: {
-            if (player.loading()) break;
-            if (p.chapters.empty()) {
-              say(said.noChapters);
-              break;
-            }
-            // Back: to the start of this chapter first, more than 5 s into it.
-            const bool into = job == Job::PreviousChapter && p.chapter >= 0 &&
-                              p.chapter < static_cast<int>(p.chapters.size()) &&
-                              p.position - p.chapters[p.chapter].time > 5;
-            const int to = p.chapter + (job == Job::NextChapter ? 1 : into ? 0 : -1);
-            if (to >= 0 && to < static_cast<int>(p.chapters.size()))
-              c = {MenuCommand::SeekTo, p.chapters[to].time};
-            else
-              say(to < 0 ? said.firstChapter : said.lastChapter);
-            break;
-          }
           case Job::FrameBack:
           case Job::FrameForward:
             // Not while the stick seeks (its release may play on).
-            if (!heldSeek.holding() && !heldSeekLanding && player.frameStep(job == Job::FrameBack))
+            if (!stickSeek.held() && player.frameStep(job == Job::FrameBack))
               awaitingResume = false;  // a seek of the user's
-            break;
-          case Job::AfterVideo:
-            // As the strip's list, the next choice.
-            c = {MenuCommand::SetAfterVideo, static_cast<double>((static_cast<int>(afterVideo()) + 1) % 4)};
             break;
           case Job::RatingUp:
           case Job::RatingDown:
-            if (isStream(app.currentFile)) {
+            if (isStream(running.currentFile)) {
               say(said.notForStreams);
               break;
             }
@@ -3364,8 +2737,8 @@ int run(Options opts) {
               say(said.ratingsLocked);
               break;
             }
-            menu.stepRating(app.currentFile, job == Job::RatingUp ? 1 : -1);
-            if (const float rating = library.record(app.currentFile).rating; rating > 0) {
+            menu.stepRating(running.currentFile, job == Job::RatingUp ? 1 : -1);
+            if (const float rating = library.record(running.currentFile).rating; rating > 0) {
               char stars[16];
               std::snprintf(stars, sizeof(stars), "%g", rating);
               sayf(said.rating, stars);
@@ -3382,10 +2755,10 @@ int run(Options opts) {
               say(said.notInSetup);
               break;
             }
-            if (!menu.canRequestDelete(app.currentFile)) {
+            if (!menu.canRequestDelete(running.currentFile)) {
               using D = MenuView::Deletable;
               const D d = menu.deletable();
-              if (isStream(app.currentFile)) say(said.notForStreams);
+              if (isStream(running.currentFile)) say(said.notForStreams);
               else if (d == D::NeedsSendToStash) say(said.deleteNeedsStash);
               else if (d == D::StashDown) say(strings().deletion.tipStashDown);
               else if (d == D::No) say(said.serverKeeps);
@@ -3399,184 +2772,17 @@ int run(Options opts) {
             if (!app.keyPickFor.empty()) endKeyPick();
             c = menu.requestDelete();
             break;
-          case Job::VolumeUp:
-          case Job::VolumeDown: {
-            // As + and - do, within the volume gesture's 0..100.
-            const long volume = std::lround(p.volume);
-            const long to = job == Job::VolumeUp ? std::max(volume, std::min(volume + 5, 100L))
-                                                 : std::max(volume - 5, 0L);
-            c = {MenuCommand::SetVolume, static_cast<double>(to)};
-            sayf(said.volume, static_cast<int>(to));
-            break;
-          }
-          case Job::NextAudioTrack:
-          case Job::Subtitles: {
-            if (player.loading()) break;  // the last file's tracks until it opens
-            const char* type = job == Job::Subtitles ? "sub" : "audio";
-            std::vector<const Track*> tracks;
-            int chosen = -1;
-            for (const Track& t : p.tracks)
-              if (t.type == type) {
-                if (t.selected) chosen = static_cast<int>(tracks.size());
-                tracks.push_back(&t);
-              }
-            const Strings& words = strings();
-            if (job == Job::NextAudioTrack) {
-              if (tracks.size() > 1) {
-                const Track& next = *tracks[(chosen + 1) % tracks.size()];
-                c = {MenuCommand::SelectAudio, static_cast<double>(next.id)};
-                sayf(said.audioTrack, trackName(next, words).c_str());
-              } else {
-                say(said.noOtherAudio);
-              }
-            } else if (chosen >= 0) {
-              lastSubtitle = tracks[chosen]->id;
-              c = {MenuCommand::SelectSubtitle, 0};
-              sayf(said.switched, words.subtitles, words.off);
-            } else if (!tracks.empty()) {
-              const Track* on = tracks[0];
-              for (const Track* t : tracks)
-                if (t->id == lastSubtitle) on = t;
-              c = {MenuCommand::SelectSubtitle, static_cast<double>(on->id)};
-              sayf(said.switched, words.subtitles, trackName(*on, words).c_str());
-            } else {
-              say(said.noSubtitles);
-            }
-            break;
-          }
-          case Job::Passthrough:
-            if (!passthroughAvailable) {
-              say(said.noRoom);
-              c = {};
-            }
-            break;
-          case Job::PeekRoom:
-            if (!xr.alphaBlendSupported()) say(said.noRoom);
-            break;
-          case Job::SeeThrough:
-            // Solid, and back to the see-through it had.
-            if (!xr.alphaBlendSupported()) {
-              say(said.noRoom);
-              break;
-            }
-            if (app.video.opacity < 100) {
-              c = {MenuCommand::SetOpacity, 100.0};
-            } else {
-              // (stored before the library knew it: by where it is)
-              auto last = lastSeeThrough.find(seeThroughKey());
-              if (last == lastSeeThrough.end()) last = lastSeeThrough.find(app.currentFile);
-              c = {MenuCommand::SetOpacity, last != lastSeeThrough.end() ? last->second : 50.0};
-            }
-            opacityShownUntil = now + kValueShown;
-            break;
-          case Job::MatchRoom:
-            // Where the menu shows its switch: where the room's light is read.
-            if (!roomReadable) {
-              say(said.notOnHeadset);
-              c = {};
-            } else if (!roomShown()) {
-              say(said.needsPassthrough);
-            }
-            break;
-          case Job::ResetScreen:
-            // As Video settings' Screen group: a flat screen's only.
-            if (app.format.projection != Projection::Flat) {
-              say(said.flatOnly);
-              c = {};
-            }
-            break;
-          case Job::RemoveBackground:
-            // Where its switch shows: passthrough on, without the video's own mask.
-            if (!passthroughAvailable)
-              say(said.noRoom);
-            else if (!app.video.passthrough)
-              say(said.needsPassthrough);
-            else if (packedMask(app.currentFile, app.video) && maskFormat(app.format))
-              say(said.ownMask);
-            else
-              c = {MenuCommand::ToggleGreenScreen};
-            break;
-          case Job::ZoomIn:
-          case Job::ZoomOut:
-            if (app.format.projection == Projection::Flat) {
-              say(said.notForFlat);
-              break;
-            }
-            zoomHold = {job, hand, now, now, app.currentFile};
-            zoomBy(job == Job::ZoomIn ? VideoSettings::kZoomStepPercent : -VideoSettings::kZoomStepPercent);
-            gestureInput.show(GestureValue::Zoom, now);
-            break;
-          case Job::StereoFocus:
-          case Job::ShowFocusTarget: {
-            const bool stereo = job == Job::StereoFocus;
-            if (!stereo && !settings.focusPrefs.enabled) {  // its switch is greyed out
-              say(said.needsFocus);
-              break;
-            }
-            c = {MenuCommand::SetFocus,
-                 (stereo ? settings.focusPrefs.enabled : settings.focusPrefs.showTarget) ? 0.0 : 1.0};
-            c.option = static_cast<int>(stereo ? FocusControl::Enabled : FocusControl::ShowTarget);
-            break;
-          }
           default: break;
         }
-        // Mute and passthrough change later (mpv's, and where the settings
-        // are): as they will be.
-        const bool wasMuted = p.muted, hadPassthrough = app.video.passthrough;
+        if (!action.said.empty()) say(std::move(action.said));
+        if (action.showOpacity) opacityShownUntil = now + kValueShown;
+        if (action.showRing != GestureValue::Count) gestureInput.show(action.showRing, now);
         if (c.type != MenuCommand::None) execute(c);
         // The switches whose change doesn't show by itself, as they are now.
-        {
-          const Strings& words = strings();
-          const auto switched = [&](const char* name, bool on) {
-            sayf(said.switched, name, on ? words.on : words.off);
-          };
-          switch (job) {
-            // Not where they said why they do nothing.
-            case Job::Mute: switched(words.jobs.sound, wasMuted); break;
-            case Job::Passthrough:
-              if (c.type != MenuCommand::None) switched(words.jobs.passthrough, !hadPassthrough);
-              break;
-            case Job::MatchRoom:
-              if (c.type != MenuCommand::None && roomShown()) switched(words.colourBalance.matchRoom, roomMatched);
-              break;
-            case Job::RemoveBackground:
-              if (c.type != MenuCommand::None) switched(words.greenScreenOn, app.video.greenScreen.on);
-              break;
-            case Job::ResetPicture: say(said.pictureReset); break;
-            case Job::AfterVideo: say(words.afterVideo.choices[static_cast<int>(afterVideo())]); break;
-            case Job::Scripts: switched(words.scripts.group, settings.scripts.enabled); break;
-            case Job::Motion: switched(words.focus.motion, settings.motionEmulation); break;
-            case Job::ToneLook: switched(words.toneLook, settings.toneLook); break;
-            case Job::TvGamma: switched(words.tvGamma, settings.tvGamma); break;
-            case Job::StereoFocus: switched(words.focus.enabled, settings.focusPrefs.enabled); break;
-            default: break;
-          }
-        }
+        if (std::string text = buttonJobs.saidAfter(job, afterVideo()); !text.empty()) say(std::move(text));
       }
       peeking = !practising && jobs.held[static_cast<int>(Job::PeekRoom)] != 0;
-      if (zoomHold.hand >= 0) {
-        if (app.currentFile != zoomHold.file) {
-          zoomHold.hand = -1;  // stored as the video changed
-        } else if (const int other = 1 - zoomHold.hand;
-                   app.format.projection != Projection::Flat && !jobs.isHeld(zoomHold.job, zoomHold.hand) &&
-                   (jobs.isHeld(Job::ZoomIn, other) || jobs.isHeld(Job::ZoomOut, other))) {
-          // Let go while the other hand holds a zoom too: it goes on with that.
-          zoomHold.job = jobs.isHeld(Job::ZoomIn, other) ? Job::ZoomIn : Job::ZoomOut;
-          zoomHold.hand = other;
-          zoomHold.at = now;
-        } else if (app.format.projection == Projection::Flat || !jobs.isHeld(zoomHold.job, zoomHold.hand)) {
-          // In whole percents, as the slider sets it.
-          app.video.zoom = std::round(app.video.zoom * 100) / 100;
-          app.screen.zoom = app.video.zoom;
-          storeVideoSoon(VideoSettings::kZoom);
-          zoomHold.hand = -1;
-        } else if (now > zoomHold.start + kZoomDelay) {
-          const double from = std::max(zoomHold.at, zoomHold.start + kZoomDelay);
-          zoomBy((zoomHold.job == Job::ZoomIn ? kZoomRate : -kZoomRate) * (now - from));
-          zoomHold.at = now;
-          gestureInput.show(GestureValue::Zoom, now);
-        }
-      }
+      if (buttonJobs.holdZoom(jobs, now)) gestureInput.show(GestureValue::Zoom, now);
       if (jobs.wasPressed(Job::Recenter) && !menu.setupRunning()) {
         keys.recenter = true;
         recentered = true;
@@ -3627,21 +2833,14 @@ int run(Options opts) {
         gestureInput.update(input, settings.gestures, settings.controls, g, controlInput, gestureHost);
         if (gestureInput.changing() && gestureInput.gesture().value == GestureValue::Volume)
           volumeTwisted = true;
-        // Scrub: the picture follows as the stick's held seek's does.
-        if (scrub.on && !player.seeking() && now - scrub.pictureAt >= kHeldPictureEvery &&
-            std::abs(scrub.target - scrub.picture) >= kHeldPictureMove) {
-          player.seekTo(scrub.target, false);
-          scrub.picture = scrub.target;
-          scrub.pictureAt = now;
-          scrub.sent = true;
-        }
+        stickSeek.followScrub(now);
       }
 
       // The trigger off the menu, a corner's handle and stick up/down: the flat screen.
-      if (app.format.projection == Projection::Flat && videoImage && headValid) {
+      if (running.format.projection == Projection::Flat && videoImage && headValid) {
         ScreenControl::Frame screenFrame;
         screenFrame.up = up;
-        screenFrame.aspect = eyeDisplayAspect(app.format, frameAspect);
+        screenFrame.aspect = eyeDisplayAspect(running.format, frameAspect);
         screenFrame.dt = dt;
         screenFrame.now = now;
         screenFrame.onMenu[0] = onMenu[0];
@@ -3650,14 +2849,14 @@ int run(Options opts) {
         screenFrame.sticksFree = !listMode;
         for (int h = 0; h < 2; ++h) screenFrame.triggerTaken[h] = gestureInput.claims(h, Control::Trigger);
         const bool wasHolding = screenControl.holding();
-        if (screenControl.update(input, screenFrame, app.screen)) keepScreenSize();
+        if (screenControl.update(input, screenFrame, running.screen)) running.keepScreenSize();
         if (!wasHolding && screenControl.holding()) buzz(screenControl.hand(), 0.25f, 0.012);
       } else {
         screenControl.reset();
       }
-      if (app.screenChanged) {
-        app.screenChanged = false;
-        keepScreenSize();
+      if (running.screenChanged) {
+        running.screenChanged = false;
+        running.keepScreenSize();
       }
 
       // Picking the key's colour: the trigger away from the menu reads it
@@ -3666,9 +2865,9 @@ int run(Options opts) {
       // picture's axes, and onto its stereo correction's sphere, as
       // surround.frag). The dot is where the laser below draws it.
       if (!app.keyPickFor.empty() &&
-          (app.keyPickFor != app.currentFile || !panel.open || !app.video.passthrough ||
-           !app.video.greenScreen.on || app.format.projection == Projection::Flat ||
-           (packedMask(app.currentFile, app.video) && maskFormat(app.format))))
+          (app.keyPickFor != running.currentFile || !panel.open || !running.video.passthrough ||
+           !running.video.greenScreen.on || running.format.projection == Projection::Flat ||
+           (packedMask(running.currentFile, running.video) && maskFormat(running.format))))
         endKeyPick();
       const bool keyPicking = !app.keyPickFor.empty();
       // Not while the room is peeked at: the video isn't seen.
@@ -3681,9 +2880,9 @@ int run(Options opts) {
         const Mat4 view = rotation(eye.orientation);
         const Vec3 dotAt = t.aimPosition + aimDirection(t) * laserLength;
         Vec3 d = transformDir(transposedRotation(view), normalize(dotAt - eye.position));
-        if (d.z < 0) d = normalize(Vec3{d.x / app.screen.zoom, d.y / app.screen.zoom, d.z});
+        if (d.z < 0) d = normalize(Vec3{d.x / running.screen.zoom, d.y / running.screen.zoom, d.z});
         Vec3 inPicture =
-            transformDir(transposedRotation(app.screen.rotation()), transformDir(view, d));
+            transformDir(transposedRotation(running.screen.rotation()), transformDir(view, d));
         if (shownCorrection.on && shownCorrection.distance > 0) {
           const Vec3 viewer = shownCorrection.viewer - shownCorrection.camera;
           const float along = dot(viewer, inPicture);
@@ -3691,7 +2890,7 @@ int run(Options opts) {
                               shownCorrection.distance * shownCorrection.distance;
           inPicture = normalize(viewer + inPicture * (std::sqrt(std::max(reach, 0.0f)) - along));
         }
-        app.keyPickWanted = KeyPicker::pointOf(app.format, frameAspect, app.flipVideo, inPicture,
+        app.keyPickWanted = KeyPicker::pointOf(running.format, frameAspect, running.flipVideo, inPicture,
                                                app.keyPickUv, app.keyPickPart);
         break;
       }
@@ -3699,7 +2898,7 @@ int run(Options opts) {
       // Trigger away from the menu: drag the 180°/360° picture around you (the
       // flat screen's is ScreenControl's). Releasing stops it where it is
       // shown; what the smoothing had not caught up is dropped.
-      const bool noDrag = screenControl.holding() || app.format.projection == Projection::Flat;
+      const bool noDrag = screenControl.holding() || running.format.projection == Projection::Flat;
       if (turnDrag.hand >= 0 && (!input.hands[turnDrag.hand].select || noDrag ||
                                  menuGrab.hand == turnDrag.hand))
         turnDrag.hand = -1;
@@ -3726,9 +2925,9 @@ int run(Options opts) {
           const double step = std::clamp(time - turnDrag.lastTime, 0.0, kDragMaxStep);
           const float alpha = 1.0f - std::exp(-kDragResponse * static_cast<float>(step));
           const Quat next = slerpShortest(turnDrag.smoothHand, t.aimOrientation, alpha);
-          app.screen.anchorRotation =
-              rotation(next * conjugate(turnDrag.smoothHand)) * app.screen.rotation();
-          app.screen.turn = 0.0f;
+          running.screen.anchorRotation =
+              rotation(next * conjugate(turnDrag.smoothHand)) * running.screen.rotation();
+          running.screen.turn = 0.0f;
           turnDrag.smoothHand = next;
         }
         turnDrag.lastTime = time;
@@ -3756,7 +2955,7 @@ int run(Options opts) {
                     std::abs(h.stickY) < adjust::kStickRelease;
         }
         if (!panel.open || typing || centred) valueStick = false;
-        if (!valueStick && panel.open && !typing && !heldSeek.active() &&
+        if (!valueStick && panel.open && !typing && !stickSeek.active() &&
             std::abs(x) >= adjust::kStickPress && menu.pointedValue())
           valueStick = true;
         if (valueLess.update(valueStick && x <= -adjust::kStickPress, now)) execute(menu.stepValue(-1));
@@ -3764,99 +2963,20 @@ int run(Options opts) {
       }
 
       {
-        const bool seekable = !app.currentFile.empty() && !photo;
-        const PlaybackState& p = player.playback();
-        // A stick counts sideways once it is mostly sideways; then all of its
-        // sideways push, so a thumb drifting up or down keeps the hold. Of
-        // the two, the one pushed further sideways seeks, until it lets go.
-        if (!heldSeek.active()) {
-          float most = 0.0f;
-          for (int h = 0; h < 2; ++h) {
-            const HandState& g = input.hands[h];
-            if (std::abs(g.stickX) > std::abs(g.stickY) && std::abs(g.stickX) > most) {
-              most = std::abs(g.stickX);
-              heldSeekHand = h;
-            }
-          }
-        }
-        const HandState& seekStick = input.hands[heldSeekHand];
-        const float x = typing || valueStick ? 0.0f : seekStick.stickX;
-        const float sideways =
-            heldSeek.active() || std::abs(x) > std::abs(seekStick.stickY) ? x : 0.0f;
-        const float back = seekable ? std::max(keys.seekBackKey ? 1.0f : 0.0f, -sideways) : 0.0f;
-        const float forward = seekable ? std::max(keys.seekForwardKey ? 1.0f : 0.0f, sideways) : 0.0f;
-        // Its limits from where it started: the video plays on until a hold.
-        const double from = heldSeek.active() ? heldSeekFrom : p.position;
-        // A tap goes Skip's length by the stick, the keyboard's arrows 10 s:
-        // by the input that starts it.
-        if (!heldSeek.active())
-          heldSeek.setTap(std::abs(sideways) >= HeldSeek::kPress ? settings.skipSeconds : 10);
-        const HeldSeek::Step step =
-            heldSeek.update(back, forward, now, -from,
-                            p.duration > 0 ? p.duration - kSeekEndMargin - from : 1e9, p.duration);
-        if (step.pressed) {
-          awaitingResume = false;
-          heldSeekFrom = p.position;
-          heldSeekBar = false;  // a tap shows none
-          heldSeekStick = std::abs(sideways) >= HeldSeek::kPress;
-          heldSeekAtLimit = false;
-          if (heldSeekStick) buzz(heldSeekHand, 0.15f, 0.010);
-        }
-        if (step.holdStarted) {
-          // The picture waits, and is silent, until the stick lets go; with
-          // the menu closed, the strip alone shows where it goes meanwhile.
-          heldSeekPaused = !p.paused;
-          if (heldSeekPaused) player.command("set pause yes");
-          heldSeekBar = !panel.open && headValid;
-          if (heldSeekBar) panel.placeInFrontOf(headPos, menuAt);
-          heldSeekPicture = heldSeekFrom;
-          heldSeekPictureAt = now;
-          heldSeekTens = std::floor(std::abs(heldSeek.distance()) / 10);
-        }
-        if (heldSeek.holding()) {
-          heldSeekTarget = heldSeekFrom + heldSeek.distance();
-          if (!player.seeking() && now - heldSeekPictureAt >= kHeldPictureEvery &&
-              std::abs(heldSeekTarget - heldSeekPicture) >= kHeldPictureMove) {
-            player.seekTo(heldSeekTarget, false);
-            heldSeekPicture = heldSeekTarget;
-            heldSeekPictureAt = now;
-          }
-          if (heldSeekStick) {
-            const double end = p.duration > 0 ? p.duration - kSeekEndMargin : 1e9;
-            const bool atLimit = heldSeekTarget <= 0.01 || heldSeekTarget >= end - 0.01;
-            const double tens = std::floor(std::abs(heldSeek.distance()) / 10);
-            if (atLimit && !heldSeekAtLimit) {
-              buzz(heldSeekHand, 0.3f, 0.020);
-            } else if (tens != heldSeekTens && now - heldSeekTickAt >= 0.125) {
-              buzz(heldSeekHand, 0.1f, 0.006);
-              heldSeekTickAt = now;
-            }
-            heldSeekAtLimit = atLimit;
-            heldSeekTens = tens;
-          }
-        }
-        if (step.released) {
-          // A tap jumps on from where the video is now; a hold lands on the
-          // keyframe before its target, never past it into the end, unless
-          // its last picture is already there.
-          if (step.held && heldSeekStick) buzz(heldSeekHand, 0.2f, 0.014);
-          bool sent = step.distance != 0;
-          if (step.held) {
-            const double target = heldSeekFrom + step.distance;
-            sent = std::abs(target - heldSeekPicture) > 0.01;
-            if (sent) player.seekTo(target, false);
-          } else if (sent) {
-            player.seekBy(step.distance);
-          }
-          if (heldSeekPaused) player.command("set pause no");
-          heldSeekPaused = false;
-          heldSeekLanding = step.held && (sent || player.seeking());
-          heldSeekBarUntil = now + kSeekBarLinger;
-        }
-        if (heldSeekLanding && !player.seeking()) heldSeekLanding = false;
+        StickSeek::Frame seekFrame;
+        seekFrame.now = now;
+        seekFrame.seekable = !running.currentFile.empty() && !photo;
+        seekFrame.sticksTaken = typing || valueStick;
+        seekFrame.backKey = keys.seekBackKey;
+        seekFrame.forwardKey = keys.seekForwardKey;
+        seekFrame.skipSeconds = settings.skipSeconds;
+        seekFrame.headValid = headValid;
+        seekFrame.headPos = headPos;
+        seekFrame.menuAt = menuAt;
+        if (stickSeek.update(input, seekFrame)) awaitingResume = false;
       }
-      if (turnLeft.update(keys.turnLeftKey, now)) app.screen.turn = wrapAngle(app.screen.turn - kTurnStep);
-      if (turnRight.update(keys.turnRightKey, now)) app.screen.turn = wrapAngle(app.screen.turn + kTurnStep);
+      if (turnLeft.update(keys.turnLeftKey, now)) running.screen.turn = wrapAngle(running.screen.turn - kTurnStep);
+      if (turnRight.update(keys.turnRightKey, now)) running.screen.turn = wrapAngle(running.screen.turn + kTurnStep);
       if (listMode) {
         // Lists glide: the further the stick is tilted, the faster (up to
         // ~14 rows a second), with a small dead zone around the middle.
@@ -3889,7 +3009,7 @@ int run(Options opts) {
       } else {
         listPushSeconds = 0;
         listPushSign = 0;
-        if (app.format.projection != Projection::Flat && videoImage &&
+        if (running.format.projection != Projection::Flat && videoImage &&
             !input.hands[0].grip && !input.hands[1].grip) {
           int direction = 0;
           for (int i = 0; i < 2; ++i)
@@ -3897,9 +3017,9 @@ int run(Options opts) {
               direction += input.hands[i].stickY > 0 ? 1 : -1;
           if (direction) {
             constexpr float kMax = VideoSettings::kMaxOriginForward;
-            app.video.originForward =
-                std::clamp(app.video.originForward + direction * 0.05f * dt, -kMax, kMax);
-            storeVideoSoon(VideoSettings::kOrigin);
+            running.video.originForward =
+                std::clamp(running.video.originForward + direction * 0.05f * dt, -kMax, kMax);
+            running.storeVideoSoon(VideoSettings::kOrigin);
             viewpointShownUntil = now + kValueShown;
           }
         }
@@ -3925,11 +3045,11 @@ int run(Options opts) {
 
       // Stereo focus: the video's own settings, else the defaults; none while
       // it is off for all videos.
-      const FocusSettings& focusSettings = app.video.hasFocus ? app.video.focus : settings.focus;
+      const FocusSettings& focusSettings = running.video.hasFocus ? running.video.focus : settings.focus;
       FocusInput focusIn;
       focusIn.settings = focusSettings;
-      focusIn.format = app.format;
-      focusIn.video = app.currentFile;
+      focusIn.format = running.format;
+      focusIn.video = running.currentFile;
       focusIn.shown = videoImage != nullptr;
       focusIn.texture = videoTexture;
       if (photoImage)
@@ -3937,7 +3057,7 @@ int run(Options opts) {
       else if (!photo)
         focusIn.prepareRead = [&player] { return player.prepareRead(); };
       if (!photo && !videoTexture) focusIn.drawer = directDepth.source(player.directCurrent());
-      focusIn.flip = app.flipVideo;
+      focusIn.flip = running.flipVideo;
       focusIn.position = photo ? 0.0 : player.playback().position;
       focusIn.paused = photo || player.playback().paused;
       focusIn.headValid = headValid && xr.eyeCount() == 2;
@@ -3949,35 +3069,35 @@ int run(Options opts) {
       if (!settings.focusPrefs.autoIpd) focusIn.viewerIpd = settings.focusPrefs.ipdTenthMm / 1e4f;
       if (headValid)
         focusIn.motion = emulatedMotion(settings.motionEmulation, settings.motionDistance, headPos,
-                                        app.screen.anchorPosition);
+                                        running.screen.anchorPosition);
       focusIn.head = headRot;
-      focusIn.picture = app.screen.rotation();
+      focusIn.picture = running.screen.rotation();
       // Static placement and head motion share the correction's sphere limit.
-      if (app.format.projection != Projection::Flat && app.video.originForward != 0)
+      if (running.format.projection != Projection::Flat && running.video.originForward != 0)
         focusIn.motion = focusIn.motion +
-                         transformDir(focusIn.picture, {0, 0, -app.video.originForward});
-      focusIn.zoom = app.screen.zoom;
+                         transformDir(focusIn.picture, {0, 0, -running.video.originForward});
+      focusIn.zoom = running.screen.zoom;
       // Only passthrough the eye images show: without alpha blending or
       // key green the video is drawn whole.
       focusIn.seeThrough = seeThrough(alphaPassthrough || keyPassthrough,
-                                      packedMask(app.currentFile, app.video), app.format,
-                                      app.video, !photo && player.tvGammaImage(), keyPicking);
+                                      packedMask(running.currentFile, running.video), running.format,
+                                      running.video, !photo && player.tvGammaImage(), keyPicking);
       // A second layer not found yet (by the keyframe check, which may not
       // have run or answered): looked for while the video plays.
       const bool probeWanted =
           maskProbeReady && !photo && focusIn.seeThrough.packedAlpha &&
-          !app.video.maskLayersFound && !player.playback().paused && !player.seeking() &&
+          !running.video.maskLayersFound && !player.playback().paused && !player.seeking() &&
           !player.loading();
       DepthPatchDrawer* probeDrawer =
           !photo && !videoTexture && maskProbeDirectReady && !keyPicker.busy()
               ? maskProbeDirect.source(player.directCurrent())
               : nullptr;
-      if (maskProbe.update(now, app.currentFile, probeWanted, videoTexture,
+      if (maskProbe.update(now, running.currentFile, probeWanted, videoTexture,
                            [&player] { return player.prepareFullSizeRead(); }, probeDrawer)) {
-        app.video.maskLayersVersion = VideoCheck::kLayersVersion;
-        app.video.maskLayersFound = true;
-        layersSeen.insert(app.currentFile);
-        storeVideo(VideoSettings::kMaskLayers);
+        running.video.maskLayersVersion = VideoCheck::kLayersVersion;
+        running.video.maskLayersFound = true;
+        passthrough.layersFound();
+        running.storeVideo(VideoSettings::kMaskLayers);
       }
       // The key's colour where it was pointed at: read once, then taken as
       // the video's background, and the menu comes back. A frame that stays
@@ -4003,9 +3123,9 @@ int run(Options opts) {
       KeyColour picked;
       switch (keyPicker.result(picked)) {
         case KeyPicker::Result::Picked:
-          app.video.greenScreen.source = KeySource::Picked;
-          app.video.greenScreen.picked = picked;
-          storeVideoSoon(VideoSettings::kGreenScreen);
+          running.video.greenScreen.source = KeySource::Picked;
+          running.video.greenScreen.picked = picked;
+          running.storeVideoSoon(VideoSettings::kGreenScreen);
           endKeyPick();
           std::printf("Background key: picked %d, %d, %d\n", picked.r, picked.g, picked.b);
           break;
@@ -4033,11 +3153,11 @@ int run(Options opts) {
         auto ready = [](const auto& f) {
           return f.valid() && f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
         };
-        const bool refused = player.decoderRefused() && !app.currentFile.empty();
+        const bool refused = player.decoderRefused() && !running.currentFile.empty();
         const uint64_t opening = player.loadCount();
         if (refused && r.handled != opening && !r.holders.valid() && !r.freed.valid()) {
           r.handled = opening;
-          r.path = app.currentFile;
+          r.path = running.currentFile;
           r.at = player.refusedAt();
           r.ask = false;
           // Refused again once freed: not Steam's doing, or not only.
@@ -4078,7 +3198,7 @@ int run(Options opts) {
         if (ready(r.freed)) {
           r.freed.get();
           r.busy = Busy::No;
-          if (current && app.currentFile == r.path) {
+          if (current && running.currentFile == r.path) {
             r.retry = opening + 1;  // load() counts one more
             player.load(r.path, r.at);
           }
@@ -4139,10 +3259,7 @@ int run(Options opts) {
           previousRunCrashed() && diagnostics.state() != DiagnosticsExport::State::Saved;
       view.playback = player.playback();
       view.hardwareAv1 = player.hardwareAv1();
-      if (heldSeek.holding() || heldSeekLanding) {
-        view.playback.position = heldSeekTarget;
-        if (heldSeekPaused) view.playback.paused = false;  // only waiting for the stick
-      }
+      stickSeek.fill(view.playback);
       // Software decoding the strip warns of, once it has lasted a second
       // (not a decoder restarting after a seek).
       if (photo || loading || !videoImage || player.counts().decoder != "no")
@@ -4152,48 +3269,47 @@ int run(Options opts) {
       view.softwareDecoding = softwareSince >= 0 && now - softwareSince >= 1.0;
       view.scripts = settings.scripts;
       view.scriptStatus = scripts.status();
-      view.format = app.format;
-      view.halfPacked = isHalfPacked(app.format);
-      view.screen = ScreenView::of(app.screen.size);
-      view.currentFile = app.currentFile;
+      view.format = running.format;
+      view.halfPacked = isHalfPacked(running.format);
+      view.screen = ScreenView::of(running.screen.size);
+      view.currentFile = running.currentFile;
       view.playbackFailed = player.failed();
-      view.discEncrypted = player.failed() && bdmv::isEncrypted(app.currentFile);
-      view.decoderBusy = player.decoderRefused() && decoderRescue.path == app.currentFile &&
+      view.discEncrypted = player.failed() && bdmv::isEncrypted(running.currentFile);
+      view.decoderBusy = player.decoderRefused() && decoderRescue.path == running.currentFile &&
                          (decoderRescue.busy == decoder_holders::Busy::Steam ||
                           decoderRescue.busy == decoder_holders::Busy::StillBusy);
       view.accent = settings.accent;
       view.floatingSubtitles = settings.floatingSubtitles;
-      view.streaming = isStream(app.currentFile);
+      view.streaming = isStream(running.currentFile);
       view.videoWidth = photo ? photoWidth : player.width();
       view.videoHeight = photo ? photoHeight : player.height();
-      if (photo) view.playback.title = std::filesystem::path(app.currentFile).filename().string();
+      if (photo) view.playback.title = std::filesystem::path(running.currentFile).filename().string();
       view.background = settings.background;
       view.autoPassthrough = settings.autoPassthrough;
       view.keyGreen = settings.keyGreen;
       view.passthroughAvailable = passthroughAvailable;
       view.passthrough = alphaPassthrough || keyPassthrough;
-      view.greenScreen = app.video.greenScreen;
-      view.colourKey = app.video.colourKeyed();
-      view.keyColour = app.video.keyColour();
+      view.greenScreen = running.video.greenScreen;
+      view.colourKey = running.video.colourKeyed();
+      view.keyColour = running.video.keyColour();
       view.keyPicking = !app.keyPickFor.empty();
       view.keyPickNote = app.keyPickNote;
-      view.fillChecked = app.video.fillCheckVersion > 0;
-      view.fillChecking = fillCheckPending;
-      view.greenScreenFound = app.video.greenCheckVersion > 0 && app.video.greenScreenFound;
-      view.packedAlpha = packedMask(app.currentFile, app.video);
-      view.maskFormat = maskFormat(app.format);
-      view.maskLayers = app.video.maskLayersFound;
-      view.secondLayerHidden = app.video.secondLayerHidden;
-      view.opacity = app.video.opacity;
+      view.fillChecked = running.video.fillCheckVersion > 0;
+      view.greenScreenFound = running.video.greenCheckVersion > 0 && running.video.greenScreenFound;
+      view.packedAlpha = packedMask(running.currentFile, running.video);
+      view.maskFormat = maskFormat(running.format);
+      view.maskLayers = running.video.maskLayersFound;
+      view.secondLayerHidden = running.video.secondLayerHidden;
+      view.opacity = running.video.opacity;
       view.opacityApplies = canBlend;
       view.subtitleSize = settings.subtitleSize;
       view.subtitleRaise = settings.subtitleRaise;
       view.subtitleDistance = settings.subtitleDistance;
-      view.photo = !app.currentFile.empty() && isPhotoFile(app.currentFile);
+      view.photo = !running.currentFile.empty() && isPhotoFile(running.currentFile);
       // A scene from Stash's stream only through Stash (docs/alpha/delete-file.md).
       // A scene played from its server: only through a server that deletes.
-      view.deletable = app.currentFile.empty() || view.streaming ? MenuView::Deletable::No
-                       : !isStashScene(app.currentFile)         ? MenuView::Deletable::Yes
+      view.deletable = running.currentFile.empty() || view.streaming ? MenuView::Deletable::No
+                       : !isStashScene(running.currentFile)         ? MenuView::Deletable::Yes
                        : !mediaServer(settings.stash.kind).abilities().deleteFiles
                            ? MenuView::Deletable::No
                        : !settings.stash.writeBack              ? MenuView::Deletable::NeedsSendToStash
@@ -4201,21 +3317,15 @@ int run(Options opts) {
                                                                 : MenuView::Deletable::Yes;
       view.slideshowSeconds = app.slideshowSeconds;
       view.afterVideo = afterVideo();
-      view.brightness = app.video.brightness;
-      view.contrast = app.video.contrast;
-      view.saturation = app.video.saturation;
-      view.balance = roomMatching ? roomBalance : app.video.balance;
-      view.roomMatch = !roomReadable            ? RoomMatch::Hidden
-                       : !blended               ? RoomMatch::Off
-                       : roomLight.reading()    ? RoomMatch::Reading
-                       : now < roomFailedUntil ? RoomMatch::Failed
-                                                : RoomMatch::Ready;
-      view.roomMatched = roomMatched;
+      view.brightness = running.video.brightness;
+      view.contrast = running.video.contrast;
+      view.saturation = running.video.saturation;
+      passthrough.fill(view, blended, roomMatching, now);
       view.matchColour = settings.matchColour;
       view.matchBrightness = settings.matchBrightness;
       view.tvGamma = settings.tvGamma;
-      view.zoom = app.video.zoom;
-      view.originForward = static_cast<int>(std::lround(app.video.originForward * 100));
+      view.zoom = running.video.zoom;
+      view.originForward = static_cast<int>(std::lround(running.video.originForward * 100));
       view.videoMipmaps = settings.videoMipmaps;
       view.antiShimmer = antiShimmer;
       view.sharpen = settings.sharpen;
@@ -4257,8 +3367,8 @@ int run(Options opts) {
       view.resolutionNotice = settings.resolutionNotice;
       view.focus.settings = focusSettings;
       view.focus.preferences = settings.focusPrefs;
-      view.focus.own = app.video.hasFocus;
-      view.focus.supported = stereoCorrectionSupported(app.format) && xr.eyeCount() == 2;
+      view.focus.own = running.video.hasFocus;
+      view.focus.supported = stereoCorrectionSupported(running.format) && xr.eyeCount() == 2;
       view.focus.unavailable = !autofocus.available();
       view.focus.targetNotice = targetNotice(focusTargets.status());
       view.motionEmulation = settings.motionEmulation;
@@ -4377,7 +3487,7 @@ int run(Options opts) {
                           menu.pointingAtVolume();
         if (videoImage && !photo && !player.playback().paused && !panel.open && headValid) {
           const Vec3 ahead = transformDir(rotation(headRot), {0.0f, 0.0f, -1.0f});
-          const Vec3 centre = transformDir(app.screen.rotation(), {0.0f, 0.0f, -1.0f});
+          const Vec3 centre = transformDir(running.screen.rotation(), {0.0f, 0.0f, -1.0f});
           // Only where something recenters (a hint names it).
           const int recenter = static_cast<int>(ControlAction::Recenter);
           f.videoAway = dot(ahead, centre) < std::cos(70.0f * kPi / 180) &&
@@ -4403,7 +3513,7 @@ int run(Options opts) {
       // menu closed, in place of the menu's (which goes at once).
       const bool panelOn[2] = {panel.open && menu.panelShown(Menu::kMain),
                                panel.open && menu.panelShown(Menu::kBrowser)};
-      const bool heldStrip = !panel.open && heldSeekBar && (heldSeek.holding() || now < heldSeekBarUntil);
+      const bool heldStrip = !panel.open && stickSeek.stripShown(now);
       if (heldStrip) {
         menuFade.hide();
         for (PanelFade& f : panelFades) {
@@ -4413,13 +3523,13 @@ int run(Options opts) {
       }
       // The seek bar preview: a frame of the video where the pointer is.
       double hoverFraction = 0;
-      if (panel.open && !loading && !app.currentFile.empty() && menu.seekHover(hoverFraction)) {
+      if (panel.open && !loading && !running.currentFile.empty() && menu.seekHover(hoverFraction)) {
         SeekPreview::Playing playing;
-        playing.location = app.currentFile;
+        playing.location = running.currentFile;
         playing.duration = player.playback().duration;
-        playing.format = app.format;
+        playing.format = running.format;
         playing.views = player.playback().views;
-        playing.flip = app.flipVideo;
+        playing.flip = running.flipVideo;
         seekPreview.show(hoverFraction, playing, panel.panel(menu, Menu::kMain));
       } else if (panelOn[Menu::kMain] || !panelFades[Menu::kMain].fade.drawn()) {  // it fades with the strip
         seekPreview.hide();
@@ -4428,41 +3538,41 @@ int run(Options opts) {
                     : keyPassthrough ? ClearMode::KeyGreen
                                      : ClearMode::Dark;
       // The night sky around the flat screen (with passthrough: the room).
-      scene.sky = app.format.projection == Projection::Flat && settings.background &&
+      scene.sky = running.format.projection == Projection::Flat && settings.background &&
                   scene.clear == ClearMode::Dark;
       VideoDraw& video = scene.video.emplace();
       video.texture = videoImage;
-      video.format = app.format;
+      video.format = running.format;
       video.frameAspect = frameAspect;
-      video.flip = app.flipVideo;
-      video.screen = app.screen;
+      video.flip = running.flipVideo;
+      video.screen = running.screen;
       video.photo = photo;
       video.seeThrough = focusIn.seeThrough;
-      video.opacity = peek ? 0 : app.video.opacity;
-      const std::array<float, 3> gains = (roomMatching ? roomBalance : app.video.balance).gains();
+      video.opacity = peek ? 0 : running.video.opacity;
+      const std::array<float, 3> gains = passthrough.balance(roomMatching).gains();
       for (int i = 0; i < 3; ++i) video.balance[i] = gains[i] - 1.0f;
       // Brightness etc. are applied while drawing to photos, and to videos
       // while a mask or key reads the frame; else mpv (or YuvColor) does it.
       const bool readsFrame = video.readsFrame(scene.clear);
       player.setPlainPicture(readsFrame);
       if (photo || readsFrame) {
-        video.adjust[0] = app.video.brightness / 100.0f;
-        video.adjust[1] = app.video.contrast / 100.0f;
-        video.adjust[2] = app.video.saturation / 100.0f;
+        video.adjust[0] = running.video.brightness / 100.0f;
+        video.adjust[1] = running.video.contrast / 100.0f;
+        video.adjust[2] = running.video.saturation / 100.0f;
       }
       video.tvGamma = !photo && player.tvGammaImage();
       video.mipmaps = photo || settings.videoMipmaps;  // photos always have theirs
       video.antiShimmer = antiShimmer;
       video.look = settings.toneLook;
       video.sharpen = settings.sharpen / 100.0f;
-      video.key = app.video.keySliders();
+      video.key = running.video.keySliders();
       video.correction = focusOut.correction;
       shownCorrection = focusOut.correction.eyes[0];
       if (videoImage && xr.eyeCount() > 0) {
-        const ScreenSurface screen(app.screen, eyeDisplayAspect(app.format, frameAspect));
-        samplingLog.update(describeEyeSampling(app.format, photo ? photoWidth : player.width(),
+        const ScreenSurface screen(running.screen, eyeDisplayAspect(running.format, frameAspect));
+        samplingLog.update(describeEyeSampling(running.format, photo ? photoWidth : player.width(),
                                                photo ? photoHeight : player.height(),
-                                               app.screen.zoom,
+                                               running.screen.zoom,
                                                screen.width() / screen.distance(),
                                                xr.eyePixelsPerDegree(0, false),
                                                photo || settings.videoMipmaps),
@@ -4484,12 +3594,12 @@ int run(Options opts) {
         overlays.push_back(item);
       };
       if (!subtitles.empty() && headValid && !loading)
-        addText(subtitles, subtitlePlacement.update(app, player.aspect(), headPos,
-                                                    yawFromQuat(headRot), settings));
+        addText(subtitles, subtitlePlacement.update(running, player.aspect(), headPos,
+                                                        yawFromQuat(headRot), settings));
       if ((stillLoading || (!photo && player.failed())) && headValid) {
         // Where the picture will be, the size of the messages in front of the eyes.
         using decoder_holders::Busy;
-        const Busy busy = player.decoderRefused() && decoderRescue.path == app.currentFile
+        const Busy busy = player.decoderRefused() && decoderRescue.path == running.currentFile
                               ? decoderRescue.busy
                               : Busy::No;
         // While the decoder's holders are found or freed, it isn't a failure yet.
@@ -4497,7 +3607,7 @@ int run(Options opts) {
         loadingText.set(menu, failed ? NoticeIcon::Warning : NoticeIcon::None,
                         busy == Busy::Freeing                ? strings().decoderBusy.freeing
                         : !failed                            ? strings().loading
-                        : bdmv::isEncrypted(app.currentFile) ? strings().discEncrypted
+                        : bdmv::isEncrypted(running.currentFile) ? strings().discEncrypted
                         : busy != Busy::No                   ? strings().decoderBusy.busy
                                                              : strings().playbackFailed);
         constexpr float kAt = 2.0f, kScale = kAt / notice_place::kNear * notice_place::kScale;
@@ -4509,7 +3619,7 @@ int run(Options opts) {
           PerformanceReadout::State state;
           const double period = xr.displayPeriod();
           state.displayRate = period > 0 ? 1.0 / period : 0;
-          state.video = !photo && !app.currentFile.empty();
+          state.video = !photo && !running.currentFile.empty();
           state.paused = player.playback().paused;
           state.waiting = loading || player.seeking();
           state.sourceFps = player.playback().fps;
@@ -4640,7 +3750,7 @@ int run(Options opts) {
       // One at a time, the newest: a gesture's value shows on the flat
       // screen too, as does the screen's distance or height the stick sets.
       // The flat screen has no viewpoint, but See-through's opacity.
-      const bool flat = app.format.projection == Projection::Flat;
+      const bool flat = running.format.projection == Projection::Flat;
       const double valueUntil =
           flat ? opacityShownUntil : std::max(viewpointShownUntil, opacityShownUntil);
       const bool screenNewer = screenControl.shown() != GestureValue::Count &&
@@ -4688,17 +3798,17 @@ int run(Options opts) {
         char text[160];
         const bool opacity = flat || opacityShownUntil > viewpointShownUntil;
         if (opacity) {
-          std::snprintf(text, sizeof(text), strings().opacityOverlay, app.video.opacity);
+          std::snprintf(text, sizeof(text), strings().opacityOverlay, running.video.opacity);
         } else {
-          const int percent = static_cast<int>(std::lround(app.video.originForward * 100));
+          const int percent = static_cast<int>(std::lround(running.video.originForward * 100));
           std::snprintf(text, sizeof(text), strings().viewpoint.overlay,
                         viewpointText(percent).c_str());
         }
         notices.show(menu, Notices::Value, opacity ? NoticeIcon::None : NoticeIcon::Viewpoint, text);
       }
-      if (now < passthroughShownUntil && passthroughWhy && app.video.passthrough && headValid)
+      if (const char* why = passthrough.notice(now); why && headValid)
         notices.show(menu, Notices::Passthrough, NoticeIcon::Passthrough,
-                     std::string(passthroughWhy) + "\n" + strings().autoPassthrough.undo);
+                     std::string(why) + "\n" + strings().autoPassthrough.undo);
       if (now < driveShownUntil && headValid)
         notices.show(menu, Notices::Drive, driveIcon, driveText);
       if (headValid) {
@@ -4711,7 +3821,7 @@ int run(Options opts) {
     }
     // Match the room reads the view: nothing drawn meanwhile, so it shows the
     // room alone.
-    const bool roomBlank = roomLight.blank();
+    const bool roomBlank = passthrough.roomBlank();
     if (roomBlank) {
       scene.video.reset();
       scene.overlays.clear();
@@ -4812,7 +3922,7 @@ int run(Options opts) {
       }
     }
     gpu.collect();
-    if (drawn && roomBlank) roomLight.blankSubmitted();
+    if (drawn && roomBlank) passthrough.blankSubmitted();
     xr.setAlphaBlend(blended || peek || roomBlank);
     xr.releaseEyes();
     if (shownAgain) xr.endFrameShownAgain();
@@ -4838,9 +3948,9 @@ int run(Options opts) {
   }
   if (quitSignal) std::printf("Quitting (signal %d)\n", static_cast<int>(quitSignal));
   if (opts.timing) std::printf("Frame reuse: frames %s\n", reuseReport(nullptr).c_str());
-  saveUnsaved();
-  keepVolume();
-  keepSharpen();
+  running.saveUnsaved();
+  running.keepVolume();
+  running.keepSharpen();
   keepResume();
   gazeCorrection.endSitting();
   if (gazeCorrection.takeChanged()) {

@@ -39,11 +39,6 @@ bool mentions(const std::string& body, const char* word) {
   return lower.find(word) != std::string::npos;
 }
 
-size_t appendToString(char* data, size_t size, size_t count, void* target) {
-  static_cast<std::string*>(target)->append(data, size * count);
-  return size * count;
-}
-
 // One request's progress: what it adds to the client's bytes received, and
 // whether the client was cancelled.
 struct Transfer {
@@ -91,7 +86,7 @@ bool MediaClient::send(const Call& call, long& status, std::string& body, std::s
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, call.body.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(call.body.size()));
   }
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stashAppend<>);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
   curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");  // compressed if the server can
   curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, quick_ ? kQuickConnectSeconds : kConnectSeconds);

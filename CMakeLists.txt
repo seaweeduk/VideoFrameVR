@@ -34,10 +34,13 @@ add_executable(videoframevr
   src/xbvr_server.cpp
   src/video_player.cpp
   src/decoder_holders.cpp
+  src/deletion.cpp
+  src/passthrough.cpp
   src/gl_util.cpp
   src/autofocus.cpp
   src/bluray.cpp
   src/bluray_disc.cpp
+  src/button_jobs.cpp
   src/cairo_canvas.cpp
   src/colour_balance.cpp
   src/controller_guide.cpp
@@ -62,6 +65,7 @@ add_executable(videoframevr
   src/foveation.cpp
   src/frame_reuse.cpp
   src/frame_grabber.cpp
+  src/frame_scaler.cpp
   src/funscript.cpp
   src/gl_interop.cpp
   src/gpu_context.cpp
@@ -142,6 +146,7 @@ add_executable(videoframevr
   src/removable_drives.cpp
   src/room_light.cpp
   src/run_log.cpp
+  src/running_video.cpp
   src/scene_renderer.cpp
   src/screen_control.cpp
   src/script_player.cpp
@@ -154,8 +159,10 @@ add_executable(videoframevr
   src/setup_places.cpp
   src/sftp.cpp
   src/smb.cpp
+  src/sqlite_util.cpp
   src/stash.cpp
   src/stash_catalog.cpp
+  src/stash_diagnostic.cpp
   src/stash_similarity.cpp
   src/stash_client.cpp
   src/stash_server.cpp
@@ -163,6 +170,7 @@ add_executable(videoframevr
   src/stash_folders.cpp
   src/stash_http.cpp
   src/stash_images.cpp
+  src/stash_outbox.cpp
   src/stash_preview.cpp
   src/stash_query.cpp
   src/stash_settings.cpp
@@ -172,6 +180,7 @@ add_executable(videoframevr
   src/stash_text.cpp
   src/stash_write_back.cpp
   src/stereo_correction.cpp
+  src/stick_seek.cpp
   src/strings.cpp
   src/strings_de.cpp
   src/strings_es.cpp

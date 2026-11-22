@@ -2,6 +2,8 @@
 
 #include <curl/curl.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -76,6 +78,17 @@ std::string stashUnreachable(CURLcode code, const StashSetupStrings& text);
 // Whether a transfer failed on the server's certificate alone (self-signed,
 // another issuer, expired, another name), which the user may accept.
 bool stashUntrusted(CURLcode code);
+// A curl write callback: appends to the std::string in CURLOPT_WRITEDATA,
+// and aborts the transfer if that would make it longer than kMax bytes.
+template <size_t kMax = SIZE_MAX>
+size_t stashAppend(char* data, size_t size, size_t count, void* to) {
+  auto& bytes = *static_cast<std::string*>(to);
+  const size_t n = size * count;
+  if (bytes.size() + n > kMax) return 0;
+  bytes.append(data, n);
+  return n;
+}
+
 // The host a typed address names, in lower case: what a certificate
 // accepted unverified is kept for (StashSettings::unverifiedHost).
 std::string stashHost(const std::string& typed);

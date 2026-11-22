@@ -1,6 +1,7 @@
 #include "stash_write_back.h"
 
 #include "media_client.h"
+#include "stash_outbox.h"
 #include "stash_store.h"
 
 #include <algorithm>

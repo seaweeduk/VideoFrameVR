@@ -1,6 +1,7 @@
 #include "controller_guide.h"
 
 #include "platform.h"
+#include "server_json.h"
 #include "strings.h"
 
 #include <cairo.h>
@@ -21,6 +22,7 @@ namespace {
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 using Source = ControllerBindings::Source;
+using server_json::text;
 
 const char* const kFrameProfile = "/interaction_profiles/valve/frame_controller_valve";
 // SteamVR's profile for each interaction profile the app suggests bindings
@@ -49,11 +51,6 @@ std::string readFile(const fs::path& path) {
 
 // Discarded (not an object) if missing or not JSON; SteamVR's may have comments.
 json readJson(const fs::path& path) { return json::parse(readFile(path), nullptr, false, true); }
-
-std::string text(const json& j, const char* key) {
-  const auto it = j.is_object() ? j.find(key) : j.end();
-  return j.is_object() && it != j.end() && it->is_string() ? it->get<std::string>() : std::string();
-}
 
 // SteamVR's folder, as it registers itself in OpenVR's paths file, else the
 // Steam Frame's.
