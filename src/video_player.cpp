@@ -201,6 +201,9 @@ bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, const MpvGl
   if (!glContext.configure(mpv_)) return false;
   mpv_set_option_string(mpv_, "vo", "libmpv");
   mpv_set_option_string(mpv_, "hwdec", hwdec.c_str());
+  // mpv 0.42 shows only one program's tracks of a multi-program MPEG-TS,
+  // and the menus have no program picker: list them all, as before.
+  mpv_set_option_string(mpv_, "flatten-editions", "yes");
   v4l2_ = hwdec == "v4l2m2m";
   if (hwdec == "v4l2m2m-copy" || hwdec == "v4l2m2m") {
     if (kStandaloneHeadset && decoderQueue) {

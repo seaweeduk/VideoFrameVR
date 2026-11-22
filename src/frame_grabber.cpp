@@ -30,6 +30,8 @@ bool FrameGrabber::init(GlInterop& interop, const std::string& hwdec, int maxWid
   if (!glContext.configure(mpv_)) return false;
   mpv_set_option_string(mpv_, "vo", "libmpv");
   mpv_set_option_string(mpv_, "hwdec", hwdec.c_str());
+  // The same video track as the player's (VideoPlayer::init).
+  mpv_set_option_string(mpv_, "flatten-editions", "yes");
   mpv_set_option_string(mpv_, "pause", "yes");
   mpv_set_option_string(mpv_, "keep-open", "yes");
   mpv_set_option_string(mpv_, "idle", "yes");

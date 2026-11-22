@@ -6,8 +6,8 @@
     "amd64": {"path":"dists/trixie/main/binary-amd64/Packages.xz", "sha256":"7778d3e3f303b7ddb8ce0fe7c8d57473a076c6bf2e8f241f75421d2396352498"},
     "source": {"path":"dists/trixie/main/source/Sources.xz", "sha256":"6002f81f463a2d976d84b34170367cc16da2d60bd0ba9ab9d868d6e1c1a935d9"}
   },
-  "runtime": ["libglfw3", "libass9", "libplacebo349", "liblcms2-2", "librsvg2-2", "libunibreak6", "libdisplay-info2"],
-  "development": ["libglfw3-dev", "libass-dev", "libplacebo-dev", "liblcms2-dev", "librsvg2-dev", "libunibreak-dev", "libxxhash-dev", "libdisplay-info-dev", "libopengl-dev", "libopengl0"],
-  "build_tools": ["nasm"],
-  "static_sources": ["glslang", "spirv-tools", "spirv-headers", "xxhash"]
+  "runtime": ["libglfw3", "libass9", "liblcms2-2", "librsvg2-2", "libunibreak6", "libdisplay-info2"],
+  "development": ["libglfw3-dev", "libass-dev", "liblcms2-dev", "librsvg2-dev", "libunibreak-dev", "libxxhash-dev", "libdisplay-info-dev", "libopengl-dev", "libopengl0"],
+  "build_tools": ["nasm", "python3-jinja2", "python3-markupsafe"],
+  "static_sources": ["xxhash"]
 }

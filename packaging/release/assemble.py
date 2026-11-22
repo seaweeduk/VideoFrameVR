@@ -154,6 +154,7 @@ def assemble(bundle, app, work, sdk, cache, supplement, metadata, source_name):
         "libssh": ["COPYING", "BSD"],
         "libudfread": ["COPYING"],
         "libbluray": ["COPYING"],
+        "libplacebo": ["LICENSE"],
         "json": ["LICENSE.MIT"],
         "mpv": ["LICENSE*", "Copyright"],
         "ffmpeg": ["COPYING*", "LICENSE*"],
@@ -166,6 +167,9 @@ def assemble(bundle, app, work, sdk, cache, supplement, metadata, source_name):
         "libudfread": "LGPL-2.1-or-later; shared, replaceable; unmodified; examples disabled",
         "libbluray": ("LGPL-2.1-or-later; shared, replaceable; unmodified; used to read disc playlists only; "
                       "BD-J (Java), tools, FreeType, fontconfig and libxml2 disabled; no AACS or BD+ library bundled"),
+        "libplacebo": ("LGPL-2.1-or-later with per-file notices; shared, replaceable; unmodified; colour code only: "
+                       "Vulkan, OpenGL, Direct3D 11, shader compilers, libdovi and demos disabled; "
+                       "Glumpy (BSD-3-Clause), zlib-licensed and public-domain parts in share/licenses/libplacebo/NOTICE"),
         "json": "MIT; compiled-in header library, unmodified",
         "mpv": ("upstream GPL-2.0-or-later, combined under GPLv3; both builds modified by mpv-mvc.patch and the "
                 "packaging/mpv/mvc sources (3D Blu-ray, GPL-3.0); Frame build also by mpv-v4l2-reset.patch, "
@@ -196,15 +200,15 @@ def assemble(bundle, app, work, sdk, cache, supplement, metadata, source_name):
                 copied += 1
         if not copied:
             raise RuntimeError("Missing licence files for " + item["name"])
-        if item["name"] == "libsmb2":
-            shutil.copy2(app / "packaging/libsmb2/NOTICE", destination / "NOTICE")
-        if item["name"] in ("mpv", "ffmpeg"):
+        if item["name"] in ("libsmb2", "mpv", "libplacebo"):
+            shutil.copy2(app / "packaging" / item["name"] / "NOTICE", destination / "NOTICE")
+        if item["name"] in ("mpv", "ffmpeg", "libplacebo"):
             per_file_notices(source, destination / "PER-FILE-NOTICES")
         notices.append(f"{item['name']} {item['version']}: {item['url']}; {descriptions[item['name']]}")
     # Debian's copyright includes librsvg's vendored Rust grants. Preserve the
     # complete file rather than inventing one top-level licence for all crates.
     packages = {x["name"]: x for x in supplement["binaries"] if x["role"] == "runtime"}
-    for name in ["glslang-dev", "spirv-tools", "spirv-headers", "libxxhash-dev"]:
+    for name in ["libxxhash-dev"]:
         packages.setdefault(name, {"version": "see SDK package inventory", "homepage": "https://sources.debian.org/"})
     for name, item in sorted(packages.items()):
         copyright_file = rooted(sdk, Path("usr/share/doc") / name / "copyright")
@@ -220,8 +224,11 @@ def assemble(bundle, app, work, sdk, cache, supplement, metadata, source_name):
     crate_notices(rsvg[0], licenses / "librsvg2-2/crates")
     notices.append("librsvg's vendored Rust crates (including ICU4X under Unicode-3.0): each crate's licence "
                    "files and declared licence in share/licenses/librsvg2-2/crates/.")
-    notices.append("mpv and FFmpeg files with their own BSD, MIT, ISC or IJG grants: share/licenses/mpv/PER-FILE-NOTICES "
-                   "and share/licenses/ffmpeg/PER-FILE-NOTICES.")
+    notices.append("mpv, FFmpeg and libplacebo files with their own BSD, MIT, ISC or IJG grants: "
+                   "share/licenses/mpv/PER-FILE-NOTICES, share/licenses/ffmpeg/PER-FILE-NOTICES "
+                   "and share/licenses/libplacebo/PER-FILE-NOTICES. Glumpy's filter code in mpv and libplacebo "
+                   "(BSD-3-Clause) and the Fluent UI System Icons in mpv's OSD font (MIT, Microsoft): "
+                   "share/licenses/mpv/NOTICE and share/licenses/libplacebo/NOTICE.")
     notices.append("This software is based in part on the work of the Independent JPEG Group.")
     common = sdk / "usr/share/common-licenses"
     shutil.copytree(common, licenses / "common-licenses")
