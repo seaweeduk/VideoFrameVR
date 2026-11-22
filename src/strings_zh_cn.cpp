@@ -1480,5 +1480,13 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.gesturePage.gripTriggerHandsTip = "先按住握持键，再按扳机键并转动手腕：左手柄为%s，右手柄为%s。可在“手势”中更改。";
   s.gesturePage.moveTwist = "同时按住扳机键并转动手腕：%s。";
   s.gesturePage.volumeOneHint = "按住%s，然后转动手腕";
+  s.decoderBusy.title = "Steam 正在使用视频解码器";
+  s.decoderBusy.explain = "释放会关闭 Steam 的一个后台进程，Steam 会自动重新启动它。";
+  s.decoderBusy.free = "释放并播放";
+  s.decoderBusy.freeing = "正在释放视频解码器…";
+  s.decoderBusy.busy = "视频解码器正忙。请重启 Steam 或头显。";
+  s.decoderBusy.always = "始终释放";
+  s.decoderBusy.setting = "始终释放视频解码器";
+  s.decoderBusy.settingHint = "Steam 占用时不再询问，直接释放。Steam 会自动重新启动其后台进程。";
   return s;
 }

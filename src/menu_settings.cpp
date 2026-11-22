@@ -155,6 +155,10 @@ void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsSho
   {
     GroupLayout playback = page.group(1, t.groupPlayback);
     playback.toggle(t.resume, view_.resume, command(MenuCommand::ToggleResume)).tip(t.resumeHint);
+    if (kStandaloneHeadset)
+      playback
+          .toggle(t.decoderBusy.setting, view_.freeDecoder, command(MenuCommand::ToggleFreeDecoder))
+          .tip(t.decoderBusy.settingHint);
     if (view_.seekPreviewAvailable)
       playback.toggle(t.seekPreview, view_.seekPreview, command(MenuCommand::ToggleSeekPreview))
           .tip(t.seekPreviewHint);

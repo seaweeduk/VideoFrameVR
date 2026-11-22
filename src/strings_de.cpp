@@ -1480,5 +1480,13 @@ Strings germanStrings(const Strings& english) {
   s.gesturePage.gripTriggerHandsTip = "Grifftaste halten, dann den Trigger, und das Handgelenk drehen: %s mit dem linken Controller, %s mit dem rechten. Ändern unter Gesten.";
   s.gesturePage.moveTwist = "Trigger dazu und drehen: %s.";
   s.gesturePage.volumeOneHint = "%s gedrückt halten, dann das Handgelenk drehen";
+  s.decoderBusy.title = "Steam nutzt den Videodecoder";
+  s.decoderBusy.explain = "Beim Freigeben wird ein Hintergrundprozess von Steam beendet, den Steam selbst neu startet.";
+  s.decoderBusy.free = "Freigeben und abspielen";
+  s.decoderBusy.freeing = "Videodecoder wird freigegeben …";
+  s.decoderBusy.busy = "Der Videodecoder ist belegt. Steam oder Headset neu starten.";
+  s.decoderBusy.always = "Immer freigeben";
+  s.decoderBusy.setting = "Videodecoder immer freigeben";
+  s.decoderBusy.settingHint = "Ohne Nachfrage freigeben, wenn Steam ihn nutzt. Steam startet seinen Hintergrundprozess selbst neu.";
   return s;
 }

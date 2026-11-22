@@ -1480,5 +1480,13 @@ Strings spanishStrings(const Strings& english) {
   s.gesturePage.gripTriggerHandsTip = "Mantén el agarre, luego el gatillo y gira la muñeca: %s con el mando izquierdo, %s con el derecho. Cámbialos en Gestos.";
   s.gesturePage.moveTwist = "Añade el gatillo y gira: %s.";
   s.gesturePage.volumeOneHint = "Mantén pulsado %s y gira la muñeca";
+  s.decoderBusy.title = "Steam está usando el decodificador de vídeo";
+  s.decoderBusy.explain = "Al liberarlo se cierra un proceso en segundo plano de Steam, que Steam vuelve a iniciar solo.";
+  s.decoderBusy.free = "Liberar y reproducir";
+  s.decoderBusy.freeing = "Liberando el decodificador de vídeo …";
+  s.decoderBusy.busy = "El decodificador de vídeo está ocupado. Reinicia Steam o el visor.";
+  s.decoderBusy.always = "Liberar siempre";
+  s.decoderBusy.setting = "Liberar siempre el decodificador de vídeo";
+  s.decoderBusy.settingHint = "Liberarlo sin preguntar cuando Steam lo esté usando. Steam reinicia solo su proceso en segundo plano.";
   return s;
 }

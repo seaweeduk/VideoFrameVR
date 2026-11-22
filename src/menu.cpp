@@ -174,7 +174,7 @@ void Menu::update(const MenuView& view) {
       view.format.projection != view_.format.projection ||
       view.format.stereo != view_.format.stereo || view.halfPacked != view_.halfPacked ||
       view.currentFile != view_.currentFile || view.playbackFailed != view_.playbackFailed ||
-      view.discEncrypted != view_.discEncrypted ||
+      view.discEncrypted != view_.discEncrypted || view.decoderBusy != view_.decoderBusy ||
       accent != view_.accent ||
       a.videoCodec != b.videoCodec ||
       a.pixelFormat != b.pixelFormat || a.fps != b.fps || a.audioCodec != b.audioCodec ||
@@ -207,7 +207,7 @@ void Menu::update(const MenuView& view) {
       view.keyPicking != view_.keyPicking || view.keyPickNote != view_.keyPickNote ||
       view.fillChecked != view_.fillChecked || view.fillChecking != view_.fillChecking ||
       view.greenScreenFound != view_.greenScreenFound ||
-      view.resume != view_.resume ||
+      view.resume != view_.resume || view.freeDecoder != view_.freeDecoder ||
       view.seekPreview != view_.seekPreview || view.thumbnails != view_.thumbnails ||
       view.showPerformance != view_.showPerformance || view.vibration != view_.vibration ||
       view.releaseUpdate != view_.releaseUpdate || view.releaseVersion != view_.releaseVersion ||
@@ -1083,6 +1083,22 @@ void Menu::layoutDialog() {
     layoutDeleteDialog(dialog);
   } else if (dialog_ == Dialog::Update) {
     layoutUpdateDialog(dialog);
+  } else if (dialog_ == Dialog::DecoderBusy) {
+    dialog.title(t.decoderBusy.title);
+    dialog.line(t.decoderBusy.explain, DialogLayout::Ink::Dim, 4);
+    // Always: this time, and from now on without asking (value 1).
+    auto free = [this](bool always) {
+      return [this, always] {
+        dialog_ = Dialog::None;
+        MenuCommand c;
+        c.type = MenuCommand::FreeDecoder;
+        c.value = always ? 1 : 0;
+        return c;
+      };
+    };
+    dialog.button(textButton(t.cancel, Icon::None, close));
+    dialog.button(textButton(t.decoderBusy.always, Icon::None, free(true)));
+    dialog.button(textButton(t.decoderBusy.free, Icon::None, free(false), true));
   } else if (dialog_ == Dialog::StashCertificate) {
     // Like an SFTP server's changed key: connecting anyway is left of Don't
     // connect, the one to take, and red only when pointed.

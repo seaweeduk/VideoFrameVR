@@ -383,7 +383,8 @@ void VideoPlayer::load(const std::string& path, double start) {
   ++loadRequest_;
   path_ = path;
   remoteFailed_ = false;
-  hardwareRefused_ = false;
+  hardwareRefused_ = decoderRefused_ = false;
+  lastPosition_ = start;
   discChapters_ = false;
   sidecarSubtitles_ = {};
   if (remote::isRemote(path) || isStashScene(path)) {
@@ -464,7 +465,7 @@ void VideoPlayer::stop() {
   deferredStop_ = false;
   cancelVideoSleep();
   remoteFailed_ = false;
-  hardwareRefused_ = false;
+  hardwareRefused_ = decoderRefused_ = false;
   sidecarSubtitles_ = {};
   ++sizeRequest_;
   ++loadRequest_;
@@ -1083,6 +1084,7 @@ void VideoPlayer::pollEvents() {
             if (videoSleep_ == VideoSleep::Awake) {
               playback_.position = v;
               positionKnown_ = current_;
+              if (current_) lastPosition_ = v;
               updateDiscChapter();
             }
           }
@@ -1275,8 +1277,11 @@ void VideoPlayer::pollEvents() {
   // plays a video the hardware decoder refused as sound alone.
   // The refusal stops the sound even after another failure was reported.
   if ((remoteFailed_.load(std::memory_order_relaxed) && !failed_) || hardwareRefused_) {
-    if (hardwareRefused_)
+    if (hardwareRefused_) {
       std::fprintf(stderr, "Playback failed: the hardware decoder can't start this video\n");
+      decoderRefused_ = true;
+      refusedAt_ = lastPosition_;
+    }
     hardwareRefused_ = false;
     const char* cmd[] = {"stop", nullptr};
     mpv_command_async(mpv_, 0, cmd);

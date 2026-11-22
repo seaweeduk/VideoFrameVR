@@ -169,6 +169,12 @@ class VideoPlayer {
   // texture still holds the previous video meanwhile.
   bool loading() const { return loading_; }
   bool failed() const { return failed_; }
+  // ... because the hardware decoder refused the video (on the Frame), at
+  // refusedAt() seconds.
+  bool decoderRefused() const { return failed_ && decoderRefused_; }
+  double refusedAt() const { return refusedAt_; }
+  // Counts load() and stop(): which opening a failure belongs to.
+  uint64_t loadCount() const { return loadRequest_; }
   // The headset's decoder takes AV1 (SteamOS 0.5.10 and later).
   bool hardwareAv1() const { return hardwareAv1_; }
   // Whether width() and height() (and playback().views) are this file's,
@@ -264,6 +270,9 @@ class VideoPlayer {
   bool hardwareAv1_ = false;  // hwdec-codecs includes AV1
   std::atomic<bool> remoteFailed_{false};  // a remote file's read, or Stash's stream
   bool hardwareRefused_ = false;  // the headset's decoder can't start the video
+  bool decoderRefused_ = false;   // ... and playback failed for it
+  // Where the video last was (from the last load()'s start), where the decoder refused it.
+  double lastPosition_ = 0, refusedAt_ = 0;
   bool logReachedLoad_ = false;   // mpv's log has listed the last loaded file's tracks
   bool discChapters_ = false;  // the chapters are a disc playlist's, not mpv's
   std::vector<Chapter> mpvChapters_;  // as mpv last told them (chapter-list, chapter)

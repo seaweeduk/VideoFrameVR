@@ -33,6 +33,7 @@ add_executable(videoframevr
   src/xbvr_client.cpp
   src/xbvr_server.cpp
   src/video_player.cpp
+  src/decoder_holders.cpp
   src/gl_util.cpp
   src/autofocus.cpp
   src/bluray.cpp

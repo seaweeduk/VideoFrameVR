@@ -1480,5 +1480,13 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.gesturePage.gripTriggerHandsTip = "Segure o grip, depois o gatilho, e gire o pulso: %s com o controle esquerdo, %s com o direito. Mude em Gestos.";
   s.gesturePage.moveTwist = "Adicione o gatilho e gire: %s.";
   s.gesturePage.volumeOneHint = "Segure %s, depois gire o pulso";
+  s.decoderBusy.title = "O Steam está usando o decodificador de vídeo";
+  s.decoderBusy.explain = "Liberá-lo fecha um processo em segundo plano do Steam, que o Steam reinicia sozinho.";
+  s.decoderBusy.free = "Liberar e reproduzir";
+  s.decoderBusy.freeing = "Liberando o decodificador de vídeo …";
+  s.decoderBusy.busy = "O decodificador de vídeo está ocupado. Reinicie o Steam ou o headset.";
+  s.decoderBusy.always = "Sempre liberar";
+  s.decoderBusy.setting = "Sempre liberar o decodificador de vídeo";
+  s.decoderBusy.settingHint = "Liberá-lo sem perguntar quando o Steam estiver usando. O Steam reinicia sozinho seu processo em segundo plano.";
   return s;
 }

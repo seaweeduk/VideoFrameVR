@@ -1407,6 +1407,16 @@ const Strings kEnglish = {
         "Add the trigger and twist: %s.",
         "Hold %s, then twist your wrist",
     },
+    {
+        "Steam is using the video decoder",
+        "Freeing it closes a Steam background process, which Steam restarts by itself.",
+        "Free and play",
+        "Freeing the video decoder …",
+        "The video decoder is busy. Restart Steam or the headset.",
+        "Always free",
+        "Always free the video decoder",
+        "Free it without asking when Steam is using it. Steam restarts its background process by itself.",
+    },
 };
 
 const Strings kGerman = germanStrings(kEnglish);
