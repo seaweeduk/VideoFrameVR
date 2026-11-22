@@ -191,6 +191,9 @@ int stashSceneAt(const StashCatalog& catalog, const std::string& location);
 // stashStreamOf() requires); empty if not known for sure.
 std::string stashFilePathAt(const StashCatalog& catalog, const std::string& location);
 
+// The library's history of each of the catalog's scenes, in its order.
+std::vector<StashHistory> historyOf(const StashCatalog& catalog, const Library& library);
+
 // --stash-sync: one sync without the headset, with the settings (Stash on
 // for this run whatever they say), printing what it found and how long each
 // step and a few queries took. The exit code.

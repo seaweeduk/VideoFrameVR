@@ -3,6 +3,7 @@
 #include "file_util.h"
 #include "app_dirs.h"
 #include "remote.h"
+#include "sqlite_util.h"
 #include "stash_catalog.h"
 
 #include <algorithm>
@@ -30,6 +31,9 @@ namespace fs = std::filesystem;
 using File = LibraryIndex::File;
 
 namespace {
+
+using sqlite::exec;
+using sqlite::userVersion;
 
 // The index is a disposable path cache, separate from playback history.
 constexpr int kVersion = 2;
@@ -69,10 +73,6 @@ bool under(const std::string& path, const std::string& root) {
 
 std::string parentOf(const std::string& path) {
   return remote::isRemote(path) ? remote::parent(path) : fs::path(path).parent_path().string();
-}
-
-bool exec(sqlite3* db, const char* sql) {
-  return sqlite3_exec(db, sql, nullptr, nullptr, nullptr) == SQLITE_OK;
 }
 
 // Hidden folders are looked into, bins and lost+found aren't; hidden files
@@ -311,22 +311,13 @@ void LibraryIndex::Shared::load() {
     return exec(db, "PRAGMA locking_mode = EXCLUSIVE") && exec(db, "BEGIN EXCLUSIVE") &&
            exec(db, "COMMIT");
   };
-  auto version = [&] {
-    sqlite3_stmt* st = nullptr;
-    int v = -1;
-    if (sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &st, nullptr) == SQLITE_OK &&
-        sqlite3_step(st) == SQLITE_ROW)
-      v = sqlite3_column_int(st, 0);
-    sqlite3_finalize(st);
-    return v;
-  };
   if (!open()) {
     std::fprintf(stderr, "Library index: library_index.db not usable; kept in memory only\n");
     sqlite3_close(db);
     db = nullptr;
     return;
   }
-  if (version() == 1) {
+  if (userVersion(db) == 1) {
     if (!exec(db, "BEGIN") || !exec(db, kUpgrade) ||
         !exec(db, "PRAGMA user_version = 2") || !exec(db, "COMMIT")) {
       exec(db, "ROLLBACK");
@@ -336,7 +327,7 @@ void LibraryIndex::Shared::load() {
       return;
     }
   }
-  if (version() != kVersion) {
+  if (userVersion(db) != kVersion) {
     // Another layout, or not a database: made anew (it is only a cache).
     sqlite3_close(db);
     db = nullptr;

@@ -1,6 +1,7 @@
 #include "intiface.h"
 
 #include "platform.h"
+#include "server_json.h"
 
 #include <glib.h>
 #include <nlohmann/json.hpp>
@@ -341,8 +342,7 @@ void Intiface::handle(const std::string& text) {
     } else if (type == "Error" && !errorShown_) {
       // The first of a connection's only: a device refusing commands says so each time.
       errorShown_ = true;
-      const auto why = body.find("ErrorMessage");
-      const std::string reason = why != body.end() && why->is_string() ? why->get<std::string>() : "";
+      const std::string reason = server_json::text(body, "ErrorMessage");
       std::fprintf(stderr, "Intiface: %.200s\n", reason.c_str());
     }
   }

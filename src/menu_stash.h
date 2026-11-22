@@ -444,15 +444,12 @@ struct StashPages {
   // false if neither is open.
   static bool layoutSettingsPanel(Menu& m);
   static void layoutSendPanel(Menu& m);
-  static void leavePage(Menu& m);  // showPage(): before another page shows
   // Settings' section left, or another server chosen in it: a Save under
   // way saves nothing, and what the last one found is no longer said.
   static void leaveSettings(Menu& m);
   // Menu::showListPage(): a Stash list page shown again as it was left;
   // false for none of Stash's.
   static bool showAgain(Menu& m, Menu::Page page);
-  static void layoutPage(Menu& m);  // layoutBrowser(): the Stash page shown
-  static void drawHeading(const Menu& m, cairo_t* cr);  // drawBrowser(): ... under its buttons
   static void drawButton(const Menu& m, cairo_t* cr, const Button& b, const double ink[4]);
   static void setText(Menu& m, const std::string& text);
   static MenuCommand submitText(Menu& m);

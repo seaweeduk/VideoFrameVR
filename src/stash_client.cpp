@@ -18,6 +18,7 @@
 
 using json = nlohmann::json;
 using server_json::array;
+using server_json::flag;
 using server_json::member;
 using server_json::number;
 using server_json::text;
@@ -141,11 +142,6 @@ bool publicRefusal(long status, const std::string& body) {
 // Signing in: connecting may take this long.
 constexpr long kConnectSeconds = 10;
 
-size_t appendToString(char* data, size_t size, size_t count, void* target) {
-  static_cast<std::string*>(target)->append(data, size * count);
-  return size * count;
-}
-
 // An id, which GraphQL sends as a string; 0 if there is none.
 int64_t id(const json& object) {
   const auto it = object.find("id");
@@ -214,8 +210,7 @@ void readRest(const json& d, StashData& data) {
     if (const auto ui = c->find("ui"); ui != c->end() && ui->is_object())
       if (const std::string tag = text(*ui, "vrTag"); !tag.empty()) data.vrTag = tag;
   for (const json& f : array(member(member(d, "configuration"), "general"), "stashes")) {
-    const auto exclude = f.find("excludeVideo");
-    const bool videos = exclude == f.end() || !exclude->is_boolean() || !exclude->get<bool>();
+    const bool videos = !flag(f, "excludeVideo");
     if (const std::string path = text(f, "path"); videos && !path.empty())
       data.libraryFolders.push_back(path);
   }
@@ -241,8 +236,7 @@ void readRest(const json& d, StashData& data) {
     p.careerStart = text(j, "career_start");
     p.careerEnd = text(j, "career_end");
     p.image = image(j, "image_path");
-    const auto favorite = j.find("favorite");
-    p.favorite = favorite != j.end() && favorite->is_boolean() && favorite->get<bool>();
+    p.favorite = flag(j, "favorite");
     data.performers.push_back(std::move(p));
   }
   for (const json& j : array(member(d, "findStudios"), "studios"))
@@ -532,7 +526,7 @@ bool StashClient::signIn(const std::string& user, const std::string& password, s
   std::string body;
   char message[CURL_ERROR_SIZE] = "";
   curl_easy_setopt(curl, CURLOPT_COOKIEFILE, "");  // the session cookie, for the requests after
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendToString);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stashAppend<>);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
   curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
   curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectSeconds);

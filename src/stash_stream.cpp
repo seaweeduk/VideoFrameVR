@@ -440,13 +440,6 @@ std::string httpDate(int64_t seconds) {
   return text;
 }
 
-size_t keep(char* data, size_t size, size_t count, void* to) {
-  auto& bytes = *static_cast<std::string*>(to);
-  const size_t n = size * count;
-  if (bytes.size() + n > 64 * 1024) return 0;  // a range was asked for
-  bytes.append(data, n);
-  return n;
-}
 }  // namespace
 
 std::string stashSource(std::string_view locator) {
@@ -485,7 +478,8 @@ FileFingerprint stashFingerprint(const std::string& source, bool& gone) {
   uint64_t length = 0;
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, contentRange);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, &length);
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, keep);
+  // A range was asked for.
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stashAppend<64 * 1024>);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &bytes);
   curl_easy_setopt(curl, CURLOPT_FILETIME, 1L);
   curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);

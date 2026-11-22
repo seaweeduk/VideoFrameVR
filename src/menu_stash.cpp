@@ -52,25 +52,6 @@ void StashPages::attach(Menu& m) {
   }
 }
 
-void StashPages::leavePage(Menu& m) {
-  if (m.page_ == Menu::Page::StashScenes)
-    leaveScenes(m);
-  else if (m.page_ == Menu::Page::StashPerformers)
-    leavePerformers(m);
-  else if (m.page_ == Menu::Page::StashPerformer)
-    leavePerformer(m);
-  else if (m.page_ == Menu::Page::StashStudios)
-    leaveStudios(m);
-  else if (m.page_ == Menu::Page::StashStudio)
-    leaveStudio(m);
-  else if (m.page_ == Menu::Page::StashSceneDetails)
-    leaveSceneDetails(m);
-  else if (m.page_ == Menu::Page::StashHome)
-    leaveHome(m);
-  else if (m.page_ == Menu::Page::Settings)
-    leaveSettings(m);
-}
-
 void StashPages::leaveSettings(Menu& m) {
   if (!m.stashMenu_) return;
   StashMenu& st = state(m);
@@ -87,32 +68,6 @@ bool StashPages::showAgain(Menu& m, Menu::Page page) {
     case Menu::Page::StashStudios: showStudios(m); return true;
     case Menu::Page::StashStudio: showStudio(m, state(m).studio); return true;
     default: return false;
-  }
-}
-
-void StashPages::layoutPage(Menu& m) {
-  switch (m.page_) {
-    case Menu::Page::StashHome: layoutHome(m); break;
-    case Menu::Page::StashScenes: layoutScenes(m); break;
-    case Menu::Page::StashPerformers: layoutPerformers(m); break;
-    case Menu::Page::StashPerformer: layoutPerformer(m); break;
-    case Menu::Page::StashStudios: layoutStudios(m); break;
-    case Menu::Page::StashStudio: layoutStudio(m); break;
-    case Menu::Page::StashSceneDetails: layoutSceneDetails(m); break;
-    default: break;
-  }
-}
-
-void StashPages::drawHeading(const Menu& m, cairo_t* cr) {
-  switch (m.page_) {
-    case Menu::Page::StashHome: drawHomeHeading(m, cr); break;
-    case Menu::Page::StashScenes: drawScenesHeading(m, cr); break;
-    case Menu::Page::StashPerformers: drawPerformersHeading(m, cr); break;
-    case Menu::Page::StashPerformer: drawPerformerHeading(m, cr); break;
-    case Menu::Page::StashStudios: drawStudiosHeading(m, cr); break;
-    case Menu::Page::StashStudio: drawStudioHeading(m, cr); break;
-    case Menu::Page::StashSceneDetails: drawSceneDetailsHeading(m, cr); break;
-    default: break;
   }
 }
 

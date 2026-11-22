@@ -5,6 +5,8 @@
 #include "library_schema.h"  // kLibrarySchema, made from library_schema.sql at build time
 #include "oshash.h"
 #include "app_dirs.h"
+#include "server_json.h"
+#include "sqlite_util.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -28,6 +30,8 @@
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
+using server_json::flag;
+using server_json::number;
 
 namespace {
 
@@ -158,19 +162,13 @@ std::string settingsJson(const VideoSettings& s) {
   return j.dump();
 }
 
-template <typename T>
-T field(const json& object, const char* key, T fallback) {
-  const auto it = object.find(key);
-  return it != object.end() && it->is_number() ? it->get<T>() : fallback;
-}
-
 bool parseSettings(const std::string& text, VideoSettings& s) {
   const json j = json::parse(text, nullptr, false);
   if (j.is_discarded() || !j.is_object()) return false;
   s = VideoSettings{};
   if (const auto format = j.find("format"); format != j.end() && format->is_object()) {
-    const int projection = field(*format, "projection", 0), stereo = field(*format, "stereo", 0),
-              packing = field(*format, "packing", 0);
+    const int projection = number(*format, "projection", 0), stereo = number(*format, "stereo", 0),
+              packing = number(*format, "packing", 0);
     if (projection >= 0 && projection < static_cast<int>(Projection::kCount) && stereo >= 0 &&
         stereo < static_cast<int>(StereoLayout::kCount) && packing >= 0 &&
         packing < static_cast<int>(Packing::kCount)) {
@@ -180,57 +178,52 @@ bool parseSettings(const std::string& text, VideoSettings& s) {
       s.format.packing = static_cast<Packing>(packing);
     }
   }
-  s.brightness = field(j, "brightness", 0);
-  s.contrast = field(j, "contrast", 0);
-  s.saturation = field(j, "saturation", 0);
-  s.balance.warmth = std::clamp(field(j, "warmth", 0), -100, 100);
-  s.balance.tint = std::clamp(field(j, "tint", 0), -100, 100);
-  s.balance.exposure = std::clamp(field(j, "exposure", 0), -100, 100);
-  s.zoom = field(j, "zoom", 1.0f);
-  s.originForward = std::clamp(field(j, "origin_forward", 0.0f), -VideoSettings::kMaxOriginForward,
+  s.brightness = number(j, "brightness", 0);
+  s.contrast = number(j, "contrast", 0);
+  s.saturation = number(j, "saturation", 0);
+  s.balance.warmth = std::clamp(number(j, "warmth", 0), -100, 100);
+  s.balance.tint = std::clamp(number(j, "tint", 0), -100, 100);
+  s.balance.exposure = std::clamp(number(j, "exposure", 0), -100, 100);
+  s.zoom = number(j, "zoom", 1.0f);
+  s.originForward = std::clamp(number(j, "origin_forward", 0.0f), -VideoSettings::kMaxOriginForward,
                                VideoSettings::kMaxOriginForward);
   if (const auto p = j.find("passthrough"); p != j.end() && p->is_boolean()) {
     s.passthrough = p->get<bool>();
     s.passthroughChosen = true;  // (older versions stored it only when on)
   }
   if (const auto g = j.find("green_check"); g != j.end() && g->is_object()) {
-    s.greenCheckVersion = field(*g, "version", 0);
-    const auto found = g->find("found");
-    s.greenScreenFound = found != g->end() && found->is_boolean() && found->get<bool>();
+    s.greenCheckVersion = number(*g, "version", 0);
+    s.greenScreenFound = flag(*g, "found");
   }
   if (const auto fill = j.find("fill_check"); fill != j.end() && fill->is_object()) {
-    s.fillCheckVersion = field(*fill, "version", 0);
-    const auto found = fill->find("found");
-    s.fillFound = found != fill->end() && found->is_boolean() && found->get<bool>() &&
-                  colourField(*fill, "colour", s.fillColour);
+    s.fillCheckVersion = number(*fill, "version", 0);
+    s.fillFound = flag(*fill, "found") && colourField(*fill, "colour", s.fillColour);
   }
   if (const auto mask = j.find("packed_mask"); mask != j.end() && mask->is_boolean())
     s.packedMask = mask->get<bool>();
   if (const auto layers = j.find("mask_layers"); layers != j.end() && layers->is_object()) {
-    s.maskLayersVersion = field(*layers, "version", 0);
-    const auto found = layers->find("found");
-    s.maskLayersFound = found != layers->end() && found->is_boolean() && found->get<bool>();
+    s.maskLayersVersion = number(*layers, "version", 0);
+    s.maskLayersFound = flag(*layers, "found");
   }
   if (const auto hidden = j.find("second_layer_hidden"); hidden != j.end() && hidden->is_boolean())
     s.secondLayerHidden = hidden->get<bool>();
-  s.opacity = std::clamp(field(j, "opacity", 100), 0, 100);
+  s.opacity = std::clamp(number(j, "opacity", 100), 0, 100);
   if (const auto tv = j.find("tv_gamma"); tv != j.end() && tv->is_boolean())
     s.legacyTvGamma = tv->get<bool>();
-  s.volume = field(j, "volume", -1);
+  s.volume = number(j, "volume", -1);
   if (const auto key = j.find("green_screen"); key != j.end() && key->is_object()) {
     GreenScreen& g = s.greenScreen;
-    const auto on = key->find("on");
-    g.on = on != key->end() && on->is_boolean() && on->get<bool>();
-    const int source = field(*key, "background", 0);
+    g.on = flag(*key, "on");
+    const int source = number(*key, "background", 0);
     if (source > 0 && source < static_cast<int>(KeySource::kCount))
       g.source = static_cast<KeySource>(source);
     if (g.source == KeySource::Picked && !colourField(*key, "picked", g.picked))
       g.source = KeySource::Automatic;
     auto sliders = [](const json& object, KeySliders& k) {
-      k.strength = field(object, "strength", k.strength);
-      k.softness = field(object, "softness", k.softness);
-      k.spill = field(object, "spill", k.spill);
-      k.shrink = field(object, "shrink", k.shrink);
+      k.strength = number(object, "strength", k.strength);
+      k.softness = number(object, "softness", k.softness);
+      k.spill = number(object, "spill", k.spill);
+      k.shrink = number(object, "shrink", k.shrink);
     };
     sliders(*key, g.green);
     if (const auto c = key->find("colour_key"); c != key->end() && c->is_object())
@@ -238,26 +231,26 @@ bool parseSettings(const std::string& text, VideoSettings& s) {
   }
   if (const auto focus = j.find("focus"); focus != j.end() && focus->is_object()) {
     FocusSettings f;
-    const int mode = field(*focus, "mode", static_cast<int>(f.mode));
+    const int mode = number(*focus, "mode", static_cast<int>(f.mode));
     if (mode >= 0 && mode < static_cast<int>(FocusMode::kCount))
       f.mode = static_cast<FocusMode>(mode);
-    f.distanceCm = field(*focus, "distance_cm", f.distanceCm);
-    f.baselineMm = field(*focus, "baseline_mm", f.baselineMm);
-    f.minCm = field(*focus, "min_cm", f.minCm);
-    f.maxCm = field(*focus, "max_cm", f.maxCm);
-    f.speed = field(*focus, "speed", f.speed);
-    f.sensitivity = field(*focus, "sensitivity", f.sensitivity);
-    f.accuracy = field(*focus, "accuracy", f.accuracy);
-    f.pitchDeg = field(*focus, "pitch_deg", f.pitchDeg);
-    f.yawDeg = field(*focus, "yaw_deg", f.yawDeg);
+    f.distanceCm = number(*focus, "distance_cm", f.distanceCm);
+    f.baselineMm = number(*focus, "baseline_mm", f.baselineMm);
+    f.minCm = number(*focus, "min_cm", f.minCm);
+    f.maxCm = number(*focus, "max_cm", f.maxCm);
+    f.speed = number(*focus, "speed", f.speed);
+    f.sensitivity = number(*focus, "sensitivity", f.sensitivity);
+    f.accuracy = number(*focus, "accuracy", f.accuracy);
+    f.pitchDeg = number(*focus, "pitch_deg", f.pitchDeg);
+    f.yawDeg = number(*focus, "yaw_deg", f.yawDeg);
     // Through the videos.conf form, which keeps each value in its range.
     s.hasFocus = parseFocusToken(focusToken(f), s.focus);
   }
   if (const auto screen = j.find("screen"); screen != j.end() && screen->is_object()) {
     ScreenSize size;
-    size.distance = field(*screen, "distance_m", size.distance);
-    size.height = field(*screen, "height_m", size.height);
-    size.curve = field(*screen, "curve", size.curve);
+    size.distance = number(*screen, "distance_m", size.distance);
+    size.height = number(*screen, "height_m", size.height);
+    size.curve = number(*screen, "curve", size.curve);
     s.hasScreen = true;
     s.screen = size.clamped();
   }
@@ -266,10 +259,8 @@ bool parseSettings(const std::string& text, VideoSettings& s) {
 
 // Runs SQL without results; false (and logged) on an error.
 bool exec(sqlite3* db, const char* sql) {
-  char* error = nullptr;
-  if (sqlite3_exec(db, sql, nullptr, nullptr, &error) == SQLITE_OK) return true;
-  std::fprintf(stderr, "Library: %s\n", error ? error : sqlite3_errmsg(db));
-  sqlite3_free(error);
+  if (sqlite::exec(db, sql)) return true;
+  std::fprintf(stderr, "Library: %s\n", sqlite3_errmsg(db));
   return false;
 }
 

@@ -277,48 +277,7 @@ void Menu::update(const MenuView& view) {
     sliderChanged(MenuCommand::SetScriptRangeLow);
     sliderChanged(MenuCommand::SetScriptRangeHigh);
   }
-  // The eye size can change while playing (a later Auto resolution, or
-  // --resolution-cycle, or the Resolution slider, which redraws nothing
-  // itself): only the video settings page shows it.
-  if (page_ == Page::VideoSettings && videoSection_ == VideoSection::Display) {
-    const ResolutionStatus status = resolutionStatus(view);
-    const ResolutionStatus was = resolutionStatus(view_);
-    if (status != was || view.videoResolution != view_.videoResolution ||
-        view.videoResolutionEffective != view_.videoResolutionEffective ||
-        view.resolutionOverride != view_.resolutionOverride ||
-        view.resolutionNotice != view_.resolutionNotice) {
-      // Its note coming or going, or taking a line more or less, moves the
-      // rows under it, so all of the page is drawn again; a new text in it
-      // only its own rows.
-      const int lines = resolutionNoteLines(view);
-      if (lines != resolutionNoteLines(view_))
-        browserChanged();
-      else
-        sliderChanged(MenuCommand::SetVideoResolution, kit::kRowStep + lines * kit::kNoteLine);
-    }
-  }
-  // The presets: only Video settings' Display shows them. Which one is
-  // lit changes only their group (unless the list is open); a new listing
-  // also the list, or the name being typed's check.
-  if (page_ == Page::VideoSettings) {
-    const bool lit = view.performancePreset != view_.performancePreset ||
-                     view.userPresetShown != view_.userPresetShown;
-    if (view.userPresetsListed != view_.userPresetsListed ||
-        (lit && dropdown_ == Dropdown::Presets))
-      browserChanged();
-    else if (lit && presetBox_[2] > 0)
-      browserChanged(presetBox_[1] - 4, presetBox_[1] + presetBox_[3] + 4, presetBox_[0] - 4,
-                     presetBox_[0] + presetBox_[2] + 4);
-  }
-  // ... and the Library's banner names it.
-  if (page_ == Page::Library && view.setupBanner &&
-      view.performancePreset != view_.performancePreset)
-    dirty_ = true;
-  if (page_ == Page::Focus) {
-    if (!(view.focus == view_.focus)) focusChanged(view.focus);
-    if (view.motionEmulation != view_.motionEmulation) browserChanged();
-    if (view.motionDistance != view_.motionDistance) sliderChanged(MenuCommand::SetMotionDistance);
-  }
+  if (const auto pageUpdate = pageKind().update) pageUpdate(*this, view);
   updateControls(view);
   if (library_ && (changed || library_->generation() != currentGeneration_)) {
     const VideoRecord current = library_->record(view.currentFile);
@@ -350,9 +309,7 @@ void Menu::update(const MenuView& view) {
   // New thumbnails only matter while the file browser shows them. They are
   // drawn in batches: each redraw of the browser costs a little.
   const bool newThumbnails = thumbnailer_ && thumbnailer_->update();
-  if (newThumbnails &&
-      (page_ == Page::Files || page_ == Page::Library || page_ == Page::Offline || stashPage()))
-    thumbnailsPending_ = true;
+  if (newThumbnails && pageIs(PageKind::kThumbnails)) thumbnailsPending_ = true;
   if (setup_) SetupPages::update(*this);
   if (stashCovers_) updateStash();
   if (thumbnailsPending_ && browserRow_ < 0) {
@@ -432,6 +389,40 @@ void Menu::update(const MenuView& view) {
     refreshLibraryRecords();
     browserChanged();
   }
+}
+
+void Menu::updateVideoSettings(const MenuView& view) {
+  // The eye size can change while playing (a later Auto resolution, or
+  // --resolution-cycle, or the Resolution slider, which redraws nothing
+  // itself): only the video settings page shows it.
+  if (videoSection_ == VideoSection::Display) {
+    const ResolutionStatus status = resolutionStatus(view);
+    const ResolutionStatus was = resolutionStatus(view_);
+    if (status != was || view.videoResolution != view_.videoResolution ||
+        view.videoResolutionEffective != view_.videoResolutionEffective ||
+        view.resolutionOverride != view_.resolutionOverride ||
+        view.resolutionNotice != view_.resolutionNotice) {
+      // Its note coming or going, or taking a line more or less, moves the
+      // rows under it, so all of the page is drawn again; a new text in it
+      // only its own rows.
+      const int lines = resolutionNoteLines(view);
+      if (lines != resolutionNoteLines(view_))
+        browserChanged();
+      else
+        sliderChanged(MenuCommand::SetVideoResolution, kit::kRowStep + lines * kit::kNoteLine);
+    }
+  }
+  // The presets: only Video settings' Display shows them. Which one is
+  // lit changes only their group (unless the list is open); a new listing
+  // also the list, or the name being typed's check.
+  const bool lit = view.performancePreset != view_.performancePreset ||
+                   view.userPresetShown != view_.userPresetShown;
+  if (view.userPresetsListed != view_.userPresetsListed ||
+      (lit && dropdown_ == Dropdown::Presets))
+    browserChanged();
+  else if (lit && presetBox_[2] > 0)
+    browserChanged(presetBox_[1] - 4, presetBox_[1] + presetBox_[3] + 4, presetBox_[0] - 4,
+                   presetBox_[0] + presetBox_[2] + 4);
 }
 
 bool Menu::panelShown(PanelId panel) const {
@@ -1003,13 +994,90 @@ void Menu::glideList() {
   if (!listOpen() || atEnd || std::abs(d.velocity) < kGlideStop) d.gliding = false;
 }
 
+// By Page, in its order: flags, layout, drawHeading, leave, update.
+const Menu::PageKind Menu::kPages[] = {
+    {0, nullptr, nullptr, nullptr, nullptr},  // Main: no page in the browser
+    {PageKind::kGrouped | PageKind::kKept,  // Settings
+     [](Menu& m) {
+       const size_t first = m.buttons_.size();
+       m.layoutSettings();
+       m.scrollGroups(first);
+     },
+     nullptr, StashPages::leaveSettings, nullptr},
+    {PageKind::kAlone | PageKind::kGrouped,  // VideoSettings
+     [](Menu& m) { m.layoutVideoSettings(); }, nullptr, nullptr,
+     [](Menu& m, const MenuView& view) { m.updateVideoSettings(view); }},
+    {PageKind::kList | PageKind::kPictures | PageKind::kThumbnails | PageKind::kKept,  // Files
+     [](Menu& m) { m.layoutFilesPage(); },
+     [](Menu& m, cairo_t* cr) {
+       m.drawFilesHeading(cr);
+       m.drawGroups(cr);  // the SMB form's
+     },
+     [](Menu& m) { m.saveBrowsing(); }, nullptr},
+    {PageKind::kList | PageKind::kPictures | PageKind::kThumbnails | PageKind::kKept,  // Library
+     [](Menu& m) { m.layoutLibraryPage(); },
+     [](Menu& m, cairo_t* cr) { m.drawLibraryHeading(cr); },
+     [](Menu& m) { m.libraryPlace_ = m.listPlace(m.libraryPaths(), m.gallery_ ? kGalleryColumns : 1); },
+     [](Menu& m, const MenuView& view) {
+       // Its banner names the performance preset.
+       if (view.setupBanner && view.performancePreset != m.view_.performancePreset) m.dirty_ = true;
+     }},
+    {PageKind::kAlone | PageKind::kGrouped,  // Focus
+     [](Menu& m) { m.layoutFocus(); }, nullptr, nullptr,
+     [](Menu& m, const MenuView& view) {
+       if (!(view.focus == m.view_.focus)) m.focusChanged(view.focus);
+       if (view.motionEmulation != m.view_.motionEmulation) m.browserChanged();
+       if (view.motionDistance != m.view_.motionDistance) m.sliderChanged(MenuCommand::SetMotionDistance);
+     }},
+    {PageKind::kStash | PageKind::kList | PageKind::kPictures | PageKind::kThumbnails |
+         PageKind::kKept,  // StashScenes
+     StashPages::layoutScenes,
+     [](Menu& m, cairo_t* cr) { StashPages::drawScenesHeading(m, cr); }, StashPages::leaveScenes,
+     nullptr},
+    {PageKind::kStash | PageKind::kList | PageKind::kThumbnails | PageKind::kKept,  // StashHome
+     StashPages::layoutHome, [](Menu& m, cairo_t* cr) { StashPages::drawHomeHeading(m, cr); },
+     StashPages::leaveHome, nullptr},
+    {PageKind::kStash | PageKind::kList | PageKind::kThumbnails | PageKind::kKept,  // StashPerformers
+     StashPages::layoutPerformers,
+     [](Menu& m, cairo_t* cr) { StashPages::drawPerformersHeading(m, cr); },
+     StashPages::leavePerformers, nullptr},
+    {PageKind::kStash | PageKind::kList | PageKind::kThumbnails | PageKind::kKept,  // StashPerformer
+     StashPages::layoutPerformer,
+     [](Menu& m, cairo_t* cr) { StashPages::drawPerformerHeading(m, cr); },
+     StashPages::leavePerformer, nullptr},
+    {PageKind::kStash | PageKind::kList | PageKind::kThumbnails | PageKind::kKept,  // StashStudios
+     StashPages::layoutStudios, [](Menu& m, cairo_t* cr) { StashPages::drawStudiosHeading(m, cr); },
+     StashPages::leaveStudios, nullptr},
+    {PageKind::kStash | PageKind::kList | PageKind::kThumbnails | PageKind::kKept,  // StashStudio
+     StashPages::layoutStudio, [](Menu& m, cairo_t* cr) { StashPages::drawStudioHeading(m, cr); },
+     StashPages::leaveStudio, nullptr},
+    {PageKind::kList | PageKind::kKept,  // Network
+     [](Menu& m) { m.layoutNetworkPage(); }, nullptr, nullptr, nullptr},
+    {PageKind::kList | PageKind::kPictures | PageKind::kThumbnails | PageKind::kKept,  // Offline
+     [](Menu& m) { m.layoutOfflinePage(); },
+     [](Menu& m, cairo_t* cr) { m.drawOfflineHeading(cr); },
+     [](Menu& m) { m.offlineScroll_ = m.scrollOffset_ + m.scrollFraction_; }, nullptr},
+    {PageKind::kGrouped,  // Places
+     [](Menu& m) {
+       const size_t first = m.buttons_.size();
+       m.layoutPlacesPage();
+       if (m.placeRename_.path.empty())
+         m.scrollGroups(first);
+       else
+         m.pageScrollMax_ = 0;  // over the keyboard, it fits
+     },
+     nullptr, nullptr, nullptr},
+    {PageKind::kStash | PageKind::kThumbnails,  // StashSceneDetails
+     StashPages::layoutSceneDetails,
+     [](Menu& m, cairo_t* cr) { StashPages::drawSceneDetailsHeading(m, cr); },
+     StashPages::leaveSceneDetails, nullptr},
+};
+
 void Menu::showPage(Page page) {
+  static_assert(std::size(kPages) == static_cast<size_t>(Page::StashSceneDetails) + 1);
   stopPreview();
-  if (page_ == Page::Files) saveBrowsing();
-  if (page_ == Page::Library)
-    libraryPlace_ = listPlace(libraryPaths(), gallery_ ? kGalleryColumns : 1);
-  if (page_ == Page::Offline) offlineScroll_ = scrollOffset_ + scrollFraction_;
-  if (stashMenu_) StashPages::leavePage(*this);
+  // Stash's pages are left only while its menu is there.
+  if (const auto leave = pageKind().leave; leave && (stashMenu_ || !stashPage())) leave(*this);
   // The folder's list keeps its place (openDirectory() restores it); the
   // other list pages restore theirs once shown (showListPage()).
   if (page != Page::Files) {
@@ -1027,9 +1095,7 @@ void Menu::showPage(Page page) {
   // A change's notice on the Controls page is for the visit it was made in.
   if (controls_) controls_->noticeShown = false;
   page_ = page;
-  if (page == Page::Files || page == Page::Library || page == Page::Network ||
-      page == Page::Settings || page == Page::Offline || stashListPage())
-    lastBrowserPage_ = page;
+  if (pageIs(PageKind::kKept)) lastBrowserPage_ = page;
   editing_ = false;
   smbForm_ = {};
   placeRename_ = {};
@@ -1271,12 +1337,7 @@ void Menu::layoutBrowser() {
     const bool naming = page_ == Page::VideoSettings && presetName_.open;
     pageTop_ = naming ? 0 : pageAloneTop();
     const size_t first = buttons_.size();
-    auto layoutAlone = [&] {
-      if (page_ == Page::VideoSettings)
-        layoutVideoSettings();
-      else
-        layoutFocus();
-    };
+    auto layoutAlone = [&] { pageKind().layout(*this); };
     layoutAlone();
     // A row the every-row measure missed: the kept top rises by what is
     // missing, once, and the page is laid out again from there.
@@ -1299,38 +1360,7 @@ void Menu::layoutBrowser() {
     return;
   }
   layoutNavigation();
-  if (page_ == Page::Settings) {
-    const size_t first = buttons_.size();
-    layoutSettings();
-    scrollGroups(first);
-    return;
-  }
-  if (page_ == Page::Files) {
-    layoutFilesPage();
-    return;
-  }
-  if (page_ == Page::Library) {
-    layoutLibraryPage();
-    return;
-  }
-  if (page_ == Page::Network) {
-    layoutNetworkPage();
-    return;
-  }
-  if (page_ == Page::Offline) {
-    layoutOfflinePage();
-    return;
-  }
-  if (page_ == Page::Places) {
-    const size_t first = buttons_.size();
-    layoutPlacesPage();
-    if (placeRename_.path.empty())
-      scrollGroups(first);
-    else
-      pageScrollMax_ = 0;  // over the keyboard, it fits
-    return;
-  }
-  if (stashPage()) StashPages::layoutPage(*this);
+  pageKind().layout(*this);
 }
 
 // The navigation column (the kit's): File explorer with the places under it
@@ -1891,15 +1921,8 @@ void Menu::drawBrowser(cairo_t* cr) {
   }
   drawKeyboard(cr);
   // Headings and labels.
-  if (page_ == Page::Files) {
-    drawFilesHeading(cr);
-    drawGroups(cr);  // the SMB form's
-  } else if (page_ == Page::Library) {
-    drawLibraryHeading(cr);
-  } else if (page_ == Page::Offline) {
-    drawOfflineHeading(cr);
-  } else if (stashPage()) {
-    StashPages::drawHeading(*this, cr);
+  if (const auto heading = pageKind().drawHeading) {
+    heading(*this, cr);
   } else {
     drawGroups(cr);
     if (controlsShown()) drawControls(cr);

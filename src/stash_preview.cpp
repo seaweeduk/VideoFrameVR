@@ -1,7 +1,7 @@
 #include "stash_preview.h"
 
 #include "media_server.h"
-#include "thumbnailer.h"  // frameScaler
+#include "frame_scaler.h"
 
 #include <cairo.h>
 #include <curl/curl.h>

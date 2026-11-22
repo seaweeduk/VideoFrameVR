@@ -1,6 +1,6 @@
 #include "photo_preloader.h"
 
-#include "thumbnailer.h"  // frameScaler, scaleInto
+#include "frame_scaler.h"
 #include "remote_avio.h"
 
 extern "C" {

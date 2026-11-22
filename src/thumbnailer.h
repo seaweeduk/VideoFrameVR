@@ -12,24 +12,6 @@
 #include <vector>
 
 typedef struct _cairo_surface cairo_surface_t;
-struct SwsContext;
-struct AVFrame;
-
-// A swscale context (`cached` reused when it fits, as sws_getCachedContext)
-// converting the left `srcWidth` columns of a decoded frame to `width` ×
-// `height` pixels of `dstFormat`, with the frame's own range and matrix.
-// FFmpeg's deprecated full-range formats (yuvj*, e.g. from JPEGs) are given
-// as their plain formats with full range, which swscale otherwise warns
-// about for every image. Null on failure. Also used by PhotoPreloader and
-// Stash's images and previews.
-SwsContext* frameScaler(SwsContext* cached, const AVFrame* frame, int srcWidth, int width,
-                        int height, int dstFormat, int flags);
-
-// Scales a decoded frame with `sws` into tightly packed 32-bit pixels
-// (width × height), safely: swscale may write past a row's end. Also used
-// by PhotoPreloader.
-bool scaleInto(SwsContext* sws, const AVFrame* frame, int width, int height,
-               std::vector<uint32_t>& pixels);
 
 // A file the app deleted (with the size and date it had): its picture in
 // the disk cache goes too. Workers only.

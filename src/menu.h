@@ -366,8 +366,7 @@ class Menu {
   bool listOpen() const {
     if (view_.keyPicking) return false;  // the page is hidden
     if (dialog_ == Dialog::WhatsNew) return whatsNew_.max > 0;  // its notes, over the page
-    return page_ == Page::Files || page_ == Page::Library || page_ == Page::Network ||
-           page_ == Page::Offline || stashListPage() || (groupedPage() && pageScrollMax_ > 0) ||
+    return pageIs(PageKind::kList) || (groupedPage() && pageScrollMax_ > 0) ||
            (page_ == Page::StashSceneDetails && side_.w > 0 && side_.max > 0);
   }
 
@@ -446,6 +445,28 @@ class Menu {
   enum class Page { Main, Settings, VideoSettings, Files, Library, Focus, StashScenes, StashHome, StashPerformers, StashPerformer,
                     StashStudios, StashStudio, Network, Offline, Places,
                     StashSceneDetails };  // the strip's Scene tab (menu_stash_scene.cpp)
+  // What each page is and does, by Page (kPages, menu.cpp).
+  struct PageKind {
+    enum : unsigned {
+      kAlone = 1,         // pageAlone()
+      kGrouped = 2,       // groupedPage()
+      kList = 4,          // a scrolling list or grid (listOpen())
+      kStash = 8,         // stashPage()
+      kPictures = 16,     // picturesAlone()
+      kThumbnails = 32,   // shows the thumbnailer's pictures (update())
+      kKept = 64,         // the browser where it was last (lastBrowserPage_)
+    };
+    unsigned is;
+    void (*layout)(Menu&);  // layoutBrowser(): the page under the navigation column, or alone
+    // drawBrowser(): its headings and labels under its buttons; none: its groups.
+    void (*drawHeading)(Menu&, cairo_t*);
+    void (*leave)(Menu&);  // showPage(): before another page shows
+    // update(): the new view, before it is kept (view_ is the last).
+    void (*update)(Menu&, const MenuView&);
+  };
+  static const PageKind kPages[];
+  const PageKind& pageKind() const { return kPages[static_cast<int>(page_)]; }
+  bool pageIs(unsigned flags) const { return (pageKind().is & flags) == flags; }
   enum class FileKind { Video, Subtitle };
   enum class Icon { None, Play, Pause, Stop, Previous, Next, Back10, Forward10, VolumeUp,
                     Mute, Folder, FolderUp, Settings, Recenter, Trash, Power,
@@ -641,6 +662,7 @@ class Menu {
   // The settings pages (menu_settings.cpp, menu_video_settings.cpp, menu_focus.cpp).
   void layoutSettings();
   void layoutVideoSettings();
+  void updateVideoSettings(const MenuView& view);  // its eye size and presets changed (update())
   // The menu's parts (menu_parts.h): a page alone, its groups, their rows.
   class Row;
   class GroupLayout;
@@ -763,7 +785,7 @@ class Menu {
   void drawBrowser(cairo_t* cr);
   // Video settings and stereo focus show on the page alone, without the
   // sources column.
-  bool pageAlone() const { return page_ == Page::VideoSettings || page_ == Page::Focus; }
+  bool pageAlone() const { return pageIs(PageKind::kAlone); }
   // ... and only as tall as their content needs: the panel's bottom where
   // it always is, its top lower. The page is laid out from pageTop_ down
   // (0 on the other pages); the panel starts at panelTop_, higher than that
@@ -790,9 +812,7 @@ class Menu {
   // doesn't fit (the debug fit check).
   double videoSettingsBottom(bool advanced, bool check);
   double focusBottom(bool advanced, bool check);
-  bool groupedPage() const {
-    return page_ == Page::Settings || page_ == Page::Places || pageAlone();
-  }
+  bool groupedPage() const { return pageIs(PageKind::kGrouped); }
   void layoutNavigation();
   Places places_;
   LibraryIndex* index_ = nullptr;
@@ -1197,10 +1217,7 @@ class Menu {
   Painted paintedPart(cairo_t* cr, double x, double y, double w, double h) const;
   mutable std::unordered_set<std::string> logosComing_;  // tiles drawn before their studio's logo
   // Pages whose only pictures are those of pictureOf().
-  bool picturesAlone() const {
-    return page_ == Page::Files || page_ == Page::Library || page_ == Page::StashScenes ||
-           page_ == Page::Offline;
-  }
+  bool picturesAlone() const { return pageIs(PageKind::kPictures); }
   // New thumbnails or covers: redraws only the rows and cards on screen whose
   // picture changed. False on pages that also show pictures of other kinds.
   bool picturesChanged();
@@ -2007,12 +2024,8 @@ class Menu {
     return stashMenu_ && (stashPage() || page_ == Page::Settings);
   }
   // Stash's pages with a scrolling list or grid (and a side column).
-  bool stashListPage() const {
-    return page_ == Page::StashScenes || page_ == Page::StashPerformers ||
-           page_ == Page::StashPerformer || page_ == Page::StashStudios ||
-           page_ == Page::StashStudio || page_ == Page::StashHome;
-  }
-  bool stashPage() const { return stashListPage() || page_ == Page::StashSceneDetails; }
+  bool stashListPage() const { return pageIs(PageKind::kStash | PageKind::kList); }
+  bool stashPage() const { return pageIs(PageKind::kStash); }
   const std::string& stashText() const;
 
   // First-run setup's pages, laid out and drawn by SetupPages (menu_setup.h)

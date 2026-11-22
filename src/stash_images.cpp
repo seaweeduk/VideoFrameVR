@@ -1,7 +1,7 @@
 #include "stash_images.h"
 
 #include "media_server.h"
-#include "thumbnailer.h"  // scaleInto
+#include "frame_scaler.h"
 
 #include <cairo.h>
 #include <curl/curl.h>
@@ -526,13 +526,6 @@ bool encodePng(const Picture& p, std::string& out) {
   const bool ok = cairo_surface_write_to_png_stream(surface, appendBytes, &out) == CAIRO_STATUS_SUCCESS;
   cairo_surface_destroy(surface);
   return ok;
-}
-
-size_t appendDownload(char* data, size_t size, size_t count, void* target) {
-  auto* body = static_cast<std::string*>(target);
-  if (body->size() + size * count > kMaxDownload) return 0;  // too big: aborts
-  body->append(data, size * count);
-  return size * count;
 }
 
 int stopWhenQuitting(void* quit, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
@@ -1233,7 +1226,7 @@ void StashImages::State::downloadLoop() {
     CURLcode code = CURLE_FAILED_INIT;
     if (curl) {
       curl_easy_reset(curl);  // keeps the connection
-      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendDownload);
+      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stashAppend<kMaxDownload>);
       curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
       curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
       curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);

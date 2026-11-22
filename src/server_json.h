@@ -6,9 +6,8 @@
 #include <cstdio>
 #include <string>
 
-// Reading a media server's JSON answers without trusting their shape, for
-// the kinds' clients: a member that is missing or of another type reads as
-// empty.
+// Reading JSON without trusting its shape, a media server's answers or a
+// file's: a member that is missing or of another type reads as empty.
 namespace server_json {
 
 using json = nlohmann::json;

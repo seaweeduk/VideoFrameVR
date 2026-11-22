@@ -1,6 +1,7 @@
 #include "funscript.h"
 
 #include "remote.h"
+#include "server_json.h"
 #include "stash_stream.h"
 
 #include <nlohmann/json.hpp>
@@ -39,8 +40,7 @@ bool parseFunscript(const std::string& text, Funscript& script) {
   if (!j.is_object()) return false;
   const auto actions = j.find("actions");
   if (actions == j.end() || !actions->is_array()) return false;
-  const auto flag = j.find("inverted");
-  const bool inverted = flag != j.end() && flag->is_boolean() && flag->get<bool>();
+  const bool inverted = server_json::flag(j, "inverted");
   script.actions.reserve(actions->size());
   for (const nlohmann::json& a : *actions) {
     if (!a.is_object()) continue;
