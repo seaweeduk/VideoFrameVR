@@ -2775,6 +2775,8 @@ int run(Options opts) {
     // A play counts each time a video file opens (a resumed
     // one too; pausing, looping and seeking don't). Streams and photos don't.
     const bool opened = player.takeOpened();
+    // Played after freeing the decoder: a later refusal (after a sleep) is asked about again.
+    if (opened && player.loadCount() == decoderRescue.retry) decoderRescue.retry = 0;
     if (opened && setupBanner && !isPhotoFile(app.currentFile)) hideSetupBanner();
     if (opened && !app.currentFile.empty() && !isStream(app.currentFile) &&
         !isPhotoFile(app.currentFile)) {
@@ -4231,12 +4233,14 @@ int run(Options opts) {
           }
           r.ask = r.busy == Busy::Steam;
         }
-        // Not over another question, nor first-run setup.
-        if (r.ask && current && !menu.dialogOpen() && !menu.setupRunning()) {
+        // Not over another question, nor first-run setup. A dialog left in a
+        // closed menu is gone once it opens, as with the menu button.
+        if (r.ask && current && !(panel.open && menu.dialogOpen()) && !menu.setupRunning()) {
           r.ask = false;
           r.openedMenu = !panel.open;
           if (!panel.open) {
             panel.open = true;
+            menu.showMainPage();
             if (headValid) panel.placeInFrontOf(headPos, menuAt);
           }
           menu.showDecoderBusy();
