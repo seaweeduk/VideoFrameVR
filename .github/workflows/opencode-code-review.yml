@@ -5,158 +5,100 @@ on:
     types: [opened, ready_for_review]
 
 jobs:
-  settings:
-    uses: ./.github/workflows/opencode-settings.yml
-
   review:
-    needs: settings
-    if: |
-      !github.event.pull_request.draft &&
-      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      id-token: write
-      contents: read
-      pull-requests: write
-      issues: write
-      actions: read
+    permissions: { id-token: write, contents: write, pull-requests: write, issues: write, actions: read }
+    uses: ./.github/workflows/opencode-pr-review.yml
+    secrets: inherit
+    with:
+      references: |
+        {
+          "mpv": {
+            "repository": "mpv-player/mpv",
+            "description": "Consult only when libmpv client or render API, property, event, hardware decoding, or OpenGL interop behavior needs source verification"
+          },
+          "ffmpeg": {
+            "repository": "FFmpeg/FFmpeg",
+            "description": "Consult only when FFmpeg demuxing, decoding, hardware acceleration, or codec behavior behind libmpv needs source verification"
+          },
+          "openxr": {
+            "repository": "KhronosGroup/OpenXR-SDK-Source",
+            "description": "Consult only when OpenXR loader, session lifecycle, swapchain, action, or extension behavior needs source verification"
+          },
+          "vulkan-docs": {
+            "repository": "KhronosGroup/Vulkan-Docs",
+            "description": "Consult only when a Vulkan specification rule, valid usage, synchronization, external memory, or semaphore contract needs verification"
+          },
+          "monado": {
+            "repository": "https://gitlab.freedesktop.org/monado/monado.git",
+            "description": "Consult only when OpenXR runtime behavior on Linux needs source verification"
+          },
+          "stash": {
+            "repository": "stashapp/stash",
+            "description": "Consult only when Stash GraphQL API, scene, marker, stream, or authentication behavior needs source verification"
+          }
+        }
+      prompt: |
+        Review this pull request.
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-          persist-credentials: false
+        Review the diff in the context of the full codebase, including unchanged code it interacts with or affects.
 
-      - name: Prepare OpenCode auth
-        shell: bash
-        env:
-          OPENCODE_AUTH_CONTENT: ${{ secrets.OPENCODE_AUTH_CONTENT }}
-        run: |
-          set -euo pipefail
-          umask 077
+        Relevant upstream source repositories may be available as project references in the system context. Use them selectively when a finding depends on framework, SDK, protocol, or library behavior that needs source-level verification. Do not inspect every reference.
 
-          auth_dir="$HOME/.local/share/opencode"
-          auth_file="$auth_dir/auth.json"
-          install -d -m 700 "$auth_dir"
-          printf '%s' "$OPENCODE_AUTH_CONTENT" | jq -e . > "$auth_file"
-          chmod 600 "$auth_file"
-          access="$(jq -r '.openai.access // empty' "$auth_file")"
-          if [ -n "$access" ]; then
-            echo "::add-mask::$access"
-          fi
+        Infer the pull request's intended scope from its title, description, linked issue, changed documentation, and the established behavior of the affected code. Review whether the patch correctly implements that scope. Do not invent additional requirements. An enhancement that might be useful, a more general design, or behavior outside the stated scope is not a defect.
 
-      - name: Run OpenCode PR review
-        uses: anomalyco/opencode/github@latest
-        env:
-          OPENCODE_PERMISSION: '{"*":"allow","doom_loop":"deny","question":"deny"}'
-          OPENCODE_CONFIG_CONTENT: |
-            {
-              "references": {
-                "mpv": {
-                  "repository": "mpv-player/mpv",
-                  "description": "Consult only when libmpv client or render API, property, event, hardware decoding, or OpenGL interop behavior needs source verification"
-                },
-                "openxr": {
-                  "repository": "KhronosGroup/OpenXR-SDK-Source",
-                  "description": "Consult only when OpenXR loader, session lifecycle, swapchain, action, or extension behavior needs source verification"
-                },
-                "vulkan-docs": {
-                  "repository": "KhronosGroup/Vulkan-Docs",
-                  "description": "Consult only when a Vulkan specification rule, valid usage, synchronization, external memory, or semaphore contract needs verification"
-                },
-                "monado": {
-                  "repository": "https://gitlab.freedesktop.org/monado/monado.git",
-                  "description": "Consult only when OpenXR runtime behavior on Linux needs source verification"
-                },
-                "stash": {
-                  "repository": "stashapp/stash",
-                  "description": "Consult only when Stash GraphQL API, scene, marker, stream, or authentication behavior needs source verification"
-                },
-                "opencode": {
-                  "repository": "anomalyco/opencode",
-                  "description": "Consult only when OpenCode internals, config, agents, tools, or GitHub workflow behavior need source verification"
-                }
-              },
-              "provider": {
-                "openai": {
-                  "models": {
-                    "${{ needs.settings.outputs.model }}": {
-                      "options": {
-                        "reasoningEffort": "${{ needs.settings.outputs.variant }}"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-        with:
-          model: openai/${{ needs.settings.outputs.model }}
-          variant: ${{ needs.settings.outputs.variant }}
-          share: false
-          prompt: |
-            Review this pull request.
+        Report only high-confidence, actionable findings that the author should address before merging:
+        - Correctness bugs and behavioral regressions
+        - Security, privacy, permission, or data-loss risks
+        - Material performance or reliability regressions, including frame-time regressions in the render loop
+        - Material unnecessary complexity introduced by this pull request when a concrete simpler implementation satisfies all current requirements
 
-            Review the diff in the context of the full codebase, including unchanged code it interacts with or affects.
+        Before reporting a finding, establish all of the following:
+        - The pull request introduces the problem or makes a pre-existing problem materially worse or newly reachable
+        - The behavior violates a stated requirement, established repository behavior, or an authoritative external contract
+        - The trigger is reachable in a supported and realistic workflow
+        - The impact is concrete and material enough to interrupt the author
+        - The suggested fix is proportionate and remains within the pull request's scope
 
-            Relevant upstream source repositories may be available as project references in the system context. Use them selectively when a finding depends on framework, SDK, protocol, or library behavior that needs source-level verification. Do not inspect every reference.
+        Trace the relevant callers, validation, state transitions, threads, synchronization, lifecycle, and external contracts. Actively look for constraints that invalidate each candidate concern. A clear deterministic path or authoritative contract is sufficient evidence; a reproduction is not required. If any material premise remains uncertain, omit the finding rather than speculate.
 
-            Infer the pull request's intended scope from its title, description, linked issue, changed documentation, and the established behavior of the affected code. Review whether the patch correctly implements that scope. Do not invent additional requirements. An enhancement that might be useful, a more general design, or behavior outside the stated scope is not a defect.
+        Project constraints to check changes against:
+        - VideoFrameVR is one C++17 executable for Linux VR headsets through OpenXR, built for x86_64 desktops and ARM64 standalone headsets. CMake lists sources and shaders explicitly; a new `.cpp` file or `shaders/` stage that is not added to `CMakeLists.txt` is a build break.
+        - The scene renders with Vulkan straight into the OpenXR swapchain images. libmpv, seek previews, photo uploads, autofocus, and depth estimation run on OpenGL in Vulkan-allocated images shared through external memory and timeline semaphores. Missing or misordered waits and signals, layout transitions, or ownership changes across that boundary are real defects.
+        - `VideoPlayer` and `FrameGrabber` calls belong on the GL-context thread. Slow file or network work, fingerprinting, database writes, and depth estimation must not block the render loop.
+        - Library identity is content-based (oshash for files, the address for links); paths are a cache. Watch-history must survive moves and copies, and folder listing must not fingerprint every file.
+        - Changes to `src/library_schema.sql` must update `kSchemaVersion` and `kMigrations` in `src/library.cpp`, and existing databases must keep working. Numerically persisted enum values such as `FolderListing::Order` may only be appended, never reordered.
+        - Console output redacts media paths; a change that logs full paths or other user data is a privacy finding.
 
-            Report only high-confidence, actionable findings that the author should address before merging:
-            - Correctness bugs and behavioral regressions
-            - Security, privacy, permission, or data-loss risks
-            - Material performance or reliability regressions, including frame-time regressions in the render loop
-            - Material unnecessary complexity introduced by this pull request when a concrete simpler implementation satisfies all current requirements
+        Some behavior can only be established on a VR headset, a specific OpenXR runtime, or specific GPU and decoder hardware: motion, stereo comfort, sharpness, spatial UI, frame pacing, and driver-specific Vulkan, OpenGL, or hardware-decoding behavior. Do not imply that you reproduced behavior with resources that are unavailable. If the code and available contracts establish the defect, report it normally. If a concrete candidate materially depends on hardware, runtime, or driver behavior and remains ambiguous after scoped research, do not assign it a severity or present it as a confirmed finding. Instead, add a brief `User verification needed` section naming the exact ambiguity and the most direct check on a headset or the relevant hardware. Use this only for a specific plausible concern that could materially affect the change, not for generic untested scenarios.
 
-            Before reporting a finding, establish all of the following:
-            - The pull request introduces the problem or makes a pre-existing problem materially worse or newly reachable
-            - The behavior violates a stated requirement, established repository behavior, or an authoritative external contract
-            - The trigger is reachable in a supported and realistic workflow
-            - The impact is concrete and material enough to interrupt the author
-            - The suggested fix is proportionate and remains within the pull request's scope
+        Do not report concerns that depend only on manually corrupted trusted state, violated upstream invariants, unsupported usage, abrupt termination outside the documented recovery model, or extremely unlikely timing. For malformed or adversarial input, identify the actual untrusted boundary that permits it, such as media files, network shares, or server responses. For race conditions, show that concurrency can occur in the current system and describe a plausible ordering through existing call paths. For security findings, identify a credible attacker-controlled path.
 
-            Trace the relevant callers, validation, state transitions, threads, synchronization, lifecycle, and external contracts. Actively look for constraints that invalidate each candidate concern. A clear deterministic path or authoritative contract is sufficient evidence; a reproduction is not required. If any material premise remains uncertain, omit the finding rather than speculate.
+        Calibrate severity using both practical likelihood and impact:
+        - High: a normal supported workflow or credible attacker is likely to cause security compromise, data loss, a crash, or failure of core functionality
+        - Medium: a realistically reachable defect with material but bounded impact
+        - Low: a localized, realistically reachable defect that clearly warrants a code change
 
-            Project constraints to check changes against:
-            - VideoFrameVR is one C++17 executable for Linux VR headsets through OpenXR, built for x86_64 desktops and ARM64 standalone headsets. CMake lists sources and shaders explicitly; a new `.cpp` file or `shaders/` stage that is not added to `CMakeLists.txt` is a build break.
-            - The scene renders with Vulkan straight into the OpenXR swapchain images. libmpv, seek previews, photo uploads, autofocus, and depth estimation run on OpenGL in Vulkan-allocated images shared through external memory and timeline semaphores. Missing or misordered waits and signals, layout transitions, or ownership changes across that boundary are real defects.
-            - `VideoPlayer` and `FrameGrabber` calls belong on the GL-context thread. Slow file or network work, fingerprinting, database writes, and depth estimation must not block the render loop.
-            - Library identity is content-based (oshash for files, the address for links); paths are a cache. Watch-history must survive moves and copies, and folder listing must not fingerprint every file.
-            - Changes to `src/library_schema.sql` must update `kSchemaVersion` and `kMigrations` in `src/library.cpp`, and existing databases must keep working. Numerically persisted enum values such as `FolderListing::Order` may only be appended, never reordered.
-            - Console output redacts media paths; a change that logs full paths or other user data is a privacy finding.
+        Rare preconditions or theoretical worst cases are not High severity. Do not raise severity based only on the maximum imaginable consequence. When uncertain between two levels, use the lower one.
 
-            Some behavior can only be established on a VR headset, a specific OpenXR runtime, or specific GPU and decoder hardware: motion, stereo comfort, sharpness, spatial UI, frame pacing, and driver-specific Vulkan, OpenGL, or hardware-decoding behavior. Do not imply that you reproduced behavior with resources that are unavailable. If the code and available contracts establish the defect, report it normally. If a concrete candidate materially depends on hardware, runtime, or driver behavior and remains ambiguous after scoped research, do not assign it a severity or present it as a confirmed finding. Instead, add a brief `User verification needed` section naming the exact ambiguity and the most direct check on a headset or the relevant hardware. Use this only for a specific plausible concern that could materially affect the change, not for generic untested scenarios.
+        Prefer the smallest proportionate fix that fully implements the intended behavior. Do not request new abstractions, compatibility layers, fallbacks, validation, configurability, or generalized hardening unless a current requirement or demonstrated reachable defect needs them. Report complexity only when the pull request itself adds material unnecessary machinery and a concrete simpler alternative preserves all requirements. Do not turn subjective design preferences into findings or use a narrow defect to justify a broader refactor.
 
-            Do not report concerns that depend only on manually corrupted trusted state, violated upstream invariants, unsupported usage, abrupt termination outside the documented recovery model, or extremely unlikely timing. For malformed or adversarial input, identify the actual untrusted boundary that permits it, such as media files, network shares, or server responses. For race conditions, show that concurrency can occur in the current system and describe a plausible ordering through existing call paths. For security findings, identify a credible attacker-controlled path.
+        Do not require compatibility with prior development revisions unless the behavior shipped in a release or is persisted state that must remain supported.
 
-            Calibrate severity using both practical likelihood and impact:
-            - High: a normal supported workflow or credible attacker is likely to cause security compromise, data loss, a crash, or failure of core functionality
-            - Medium: a realistically reachable defect with material but bounded impact
-            - Low: a localized, realistically reachable defect that clearly warrants a code change
+        Keep recommendations within scope. Do not request unrelated cleanup, feature enhancements, future-proofing, support for hypothetical callers, or changes that merely make the system more robust in theory.
 
-            Rare preconditions or theoretical worst cases are not High severity. Do not raise severity based only on the maximum imaginable consequence. When uncertain between two levels, use the lower one.
+        This repository has no test code by policy. Never request or recommend adding unit tests, regression tests, test targets, or test files, as a finding or as part of a fix. Do not run builds or test suites. You may recommend a focused manual check as a user-verification step.
 
-            Prefer the smallest proportionate fix that fully implements the intended behavior. Do not request new abstractions, compatibility layers, fallbacks, validation, configurability, or generalized hardening unless a current requirement or demonstrated reachable defect needs them. Report complexity only when the pull request itself adds material unnecessary machinery and a concrete simpler alternative preserves all requirements. Do not turn subjective design preferences into findings or use a narrow defect to justify a broader refactor.
+        There is no target number of findings, and an LGTM review is a normal successful outcome. Combine findings with the same root cause. Do not list every observation: report at most the five most consequential findings unless additional independent High-severity defects would otherwise be omitted.
 
-            Do not require compatibility with prior development revisions unless the behavior shipped in a release or is persisted state that must remain supported.
+        Do not report formatting, lint, naming, generic style preferences, speculative concerns, or pre-existing issues unless this pull request makes them materially worse or newly reachable.
 
-            Keep recommendations within scope. Do not request unrelated cleanup, feature enhancements, future-proofing, support for hypothetical callers, or changes that merely make the system more robust in theory.
+        Do not narrate the review process or mention instructions, tools, files that were absent, or checks you did not run. In particular, do not mention whether builds or tests were run or whether project references were consulted. Discuss only the changed code, its behavior, actionable findings, and any concrete user verification that is needed.
 
-            This repository has no test code by policy. Never request or recommend adding unit tests, regression tests, test targets, or test files, as a finding or as part of a fix. Do not run builds or test suites. You may recommend a focused manual check as a user-verification step.
+        Output format:
+        - Use clean GitHub-flavored Markdown
+        - If findings exist, list them first by number and in descending severity
+        - For each finding, include severity, file/line, the realistic trigger, concrete impact, supporting evidence, and the smallest proportionate fix
+        - After the findings, optionally add one concise paragraph summarizing the changed behavior and overall assessment
+        - Avoid generic filler and repeated summaries
 
-            There is no target number of findings, and an LGTM review is a normal successful outcome. Combine findings with the same root cause. Do not list every observation: report at most the five most consequential findings unless additional independent High-severity defects would otherwise be omitted.
-
-            Do not report formatting, lint, naming, generic style preferences, speculative concerns, or pre-existing issues unless this pull request makes them materially worse or newly reachable.
-
-            Do not narrate the review process or mention instructions, tools, files that were absent, or checks you did not run. In particular, do not mention whether builds or tests were run or whether project references were consulted. Discuss only the changed code, its behavior, actionable findings, and any concrete user verification that is needed.
-
-            Output format:
-            - Use clean GitHub-flavored Markdown
-            - If findings exist, list them first by number and in descending severity
-            - For each finding, include severity, file/line, the realistic trigger, concrete impact, supporting evidence, and the smallest proportionate fix
-            - After the findings, optionally add one concise paragraph summarizing the changed behavior and overall assessment
-            - Avoid generic filler and repeated summaries
-
-            If there are no actionable findings and no user verification is needed, respond with "LGTM 👍" on its own line, then leave a blank line before adding a concise explanation of why the changed behavior appears correct. Discuss the code and behavior, not the review process.
+        If there are no actionable findings and no user verification is needed, respond with "LGTM 👍" on its own line, then leave a blank line before adding a concise explanation of why the changed behavior appears correct. Discuss the code and behavior, not the review process.

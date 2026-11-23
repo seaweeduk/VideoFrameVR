@@ -7,11 +7,7 @@ on:
     types: [created]
 
 jobs:
-  settings:
-    uses: ./.github/workflows/opencode-settings.yml
-
   opencode:
-    needs: settings
     if: |
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
       (
@@ -20,75 +16,39 @@ jobs:
         contains(github.event.comment.body, ' /opencode') ||
         startsWith(github.event.comment.body, '/opencode')
       )
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      id-token: write
-      contents: read
-      actions: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Prepare OpenCode auth
-        shell: bash
-        env:
-          OPENCODE_AUTH_CONTENT: ${{ secrets.OPENCODE_AUTH_CONTENT }}
-        run: |
-          set -euo pipefail
-          umask 077
-
-          auth_dir="$HOME/.local/share/opencode"
-          auth_file="$auth_dir/auth.json"
-          install -d -m 700 "$auth_dir"
-          printf '%s' "$OPENCODE_AUTH_CONTENT" | jq -e . > "$auth_file"
-          chmod 600 "$auth_file"
-          access="$(jq -r '.openai.access // empty' "$auth_file")"
-          if [ -n "$access" ]; then
-            echo "::add-mask::$access"
-          fi
-
-      # The comment is the agent's prompt, so repository rules go in an instructions file.
-      - name: Prepare repository instructions
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cat > "$RUNNER_TEMP/opencode-repository-instructions.md" <<'EOF'
-          # Repository instructions
-
-          - Never add unit tests, regression tests, test targets, test frameworks or fixtures. The project has no test code by policy.
-          - Keep changes consistent with the surrounding code. The app is one C++17 executable; CMake lists every source file and shader explicitly, so new `.cpp` files and `shaders/` stages must be added to `CMakeLists.txt`.
-          - Write pull request titles as user-facing changes; release notes are generated from them.
-          - Every pull request body must disclose AI use, or the PR checks fail. Use the template in `.github/pull_request_template.md`, tick "AI used" and name the model and harness on that line, for example `- [x] AI used. Model and harness: <model> in OpenCode (GitHub Actions)`.
-          - Say in the pull request body that the change has not been tested on a headset when it affects playback, rendering, input or the menu.
-          EOF
-
-      - name: Run OpenCode
-        uses: anomalyco/opencode/github@latest
-        env:
-          OPENCODE_PERMISSION: '{"*":"allow","doom_loop":"deny","question":"deny"}'
-          OPENCODE_CONFIG_CONTENT: |
-            {
-              "instructions": ["${{ runner.temp }}/opencode-repository-instructions.md"],
-              "provider": {
-                "openai": {
-                  "models": {
-                    "${{ needs.settings.outputs.model }}": {
-                      "options": {
-                        "reasoningEffort": "${{ needs.settings.outputs.variant }}"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-        with:
-          model: openai/${{ needs.settings.outputs.model }}
-          variant: ${{ needs.settings.outputs.variant }}
-          mentions: /opencode,/oc
-          share: false
+    permissions: { id-token: write, contents: write, pull-requests: write, issues: write, actions: read }
+    uses: ./.github/workflows/opencode-comment-agent.yml
+    secrets: inherit
+    with:
+      references: |
+        {
+          "mpv": {
+            "repository": "mpv-player/mpv",
+            "description": "Consult only when libmpv client or render API, property, event, hardware decoding, or OpenGL interop behavior needs source verification"
+          },
+          "ffmpeg": {
+            "repository": "FFmpeg/FFmpeg",
+            "description": "Consult only when FFmpeg demuxing, decoding, hardware acceleration, or codec behavior behind libmpv needs source verification"
+          },
+          "openxr": {
+            "repository": "KhronosGroup/OpenXR-SDK-Source",
+            "description": "Consult only when OpenXR loader, session lifecycle, swapchain, action, or extension behavior needs source verification"
+          },
+          "vulkan-docs": {
+            "repository": "KhronosGroup/Vulkan-Docs",
+            "description": "Consult only when a Vulkan specification rule, valid usage, synchronization, external memory, or semaphore contract needs verification"
+          },
+          "monado": {
+            "repository": "https://gitlab.freedesktop.org/monado/monado.git",
+            "description": "Consult only when OpenXR runtime behavior on Linux needs source verification"
+          },
+          "stash": {
+            "repository": "stashapp/stash",
+            "description": "Consult only when Stash GraphQL API, scene, marker, stream, or authentication behavior needs source verification"
+          }
+        }
+      extra-instructions: |
+        - Never add unit tests, regression tests, test targets, test frameworks or fixtures. The project has no test code by policy.
+        - Keep changes consistent with the surrounding code. The app is one C++17 executable; CMake lists every source file and shader explicitly, so new `.cpp` files and `shaders/` stages must be added to `CMakeLists.txt`.
+        - Write pull request titles as user-facing changes; release notes are generated from them.
+        - Say in the pull request body that the change has not been tested on a headset when it affects playback, rendering, input or the menu.
