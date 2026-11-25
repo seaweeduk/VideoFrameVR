@@ -73,6 +73,24 @@ def elf(path):
             "interpreter": interpreter[0] if interpreter else None}
 
 
+def symbols(path):
+    """The names an object must be given and the names it provides. A versioned
+    import is name@VERSION and needs that version; a plain one takes any."""
+    wanted, provided = set(), set()
+    table = subprocess.check_output(["readelf", "--dyn-syms", "-W", str(path)], text=True)
+    for line in table.splitlines():
+        # Num: Value Size Type Bind Vis [other] Ndx Name
+        row = re.match(r"\s*\d+:\s+\S+\s+\S+\s+\S+\s+(\S+)\s+\S+(?:\s+\[[^\]]*\])?\s+(\S+)\s+(\S+)", line)
+        if not row or row[1] == "LOCAL":
+            continue
+        name = row[3].replace("@@", "@")
+        if row[2] != "UND":
+            provided.update({name, name.split("@")[0]})
+        elif row[1] == "GLOBAL":
+            wanted.add(name)
+    return wanted, provided
+
+
 def audit(bundle, platform, architecture):
     bundle, platform = Path(bundle).resolve(), Path(platform).resolve()
     expected = MACHINES[architecture]
@@ -144,9 +162,17 @@ def audit(bundle, platform, architecture):
             queue.append(provider)
         if bundled:
             report.append({"file": str(path.relative_to(bundle)), "needed": edges})
+    # Most Platform libraries have no symbol versions, so a function a newer SDK
+    # added is only caught by name.
+    tables = {path: symbols(path) for path in seen}
+    provided = set().union(*(names for _, names in tables.values()))
+    for path, (wanted, _) in tables.items():
+        if path.is_relative_to(bundle) and wanted - provided:
+            errors.append(str(path) + ": nothing provides " + ", ".join(sorted(wanted - provided)))
     result = {"schema": 1, "architecture": architecture, "objects": sorted(report, key=lambda x: x["file"]),
               "errors": sorted(set(errors)),
-              "scope": "DT_NEEDED, architecture and GNU symbol versions; not a GPU or dlopen execution check"}
+              "scope": "DT_NEEDED, architecture, GNU symbol versions and symbol names; "
+                       "not a GPU or dlopen execution check"}
     if not roots:
         result["errors"].append("Bundle contains no ELF objects")
     return result

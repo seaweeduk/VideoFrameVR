@@ -13,10 +13,14 @@ SDK_REPOSITORY = "steamrt/steamrt4/sdk/arm64-on-amd64"
 SDK_DIGEST = "713141e5e6644bae33260477d42e71d596e451b58c54274ae4b181fca8c7840c"
 SDK_CREATED = "2026-10-07T19:59:51.855740+00:00"
 REGISTRY = "https://registry.gitlab.steamos.cloud/v2/" + SDK_REPOSITORY
-IMAGE_BASE = "https://repo.steampowered.com/steamrt4/images/" + SDK_VERSION + "/"
+# The oldest runtime a release must start on: the first public Steam Linux
+# Runtime 4.0. Steam can leave a runtime weeks behind, so launch.sh accepts any
+# 4.0 and the closure audit checks each bundle against this Platform instead.
+PLATFORM_VERSION = "4.0.20251111.181352"
+IMAGE_BASE = "https://repo.steampowered.com/steamrt4/images/" + PLATFORM_VERSION + "/"
 PLATFORM_DIGESTS = {
-    "arm64": "9d9c4f33756da063b1cf943207f2b3cbcce3e795892988fda6bc4b72bb14fbf1",
-    "amd64,i386": "6358160bb1cbb0354770505f0fb099fe11da29608252e4072fa481841d646af8",
+    "arm64": "a318183de381537c45fdc9bc67a7e1c3a6e1cf198fec37ce2a9fad1b76bb13f3",
+    "amd64,i386": "f890e1f5964bb44054fc26872547f4e184cf5f5be934b03c4396d4640df13eac",
 }
 
 
@@ -95,10 +99,10 @@ def platform(cache, architecture, offline=False):
     if (root / ".complete").exists():
         return root
     file = "com.valvesoftware.SteamRuntime.Platform-" + name + "-steamrt4-sysroot.tar.gz"
-    archive = fetch(IMAGE_BASE + file, cache / "downloads" / file, digest, offline=offline)
+    archive = fetch(IMAGE_BASE + file, cache / "downloads" / (PLATFORM_VERSION + "-" + file), digest, offline=offline)
     root.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["tar", "-xzf", str(archive), "-C", str(root),
-                    "--no-same-owner", "--no-same-permissions", "--exclude=./dev/*"], check=True)
+    subprocess.run(["tar", "-xzf", str(archive), "-C", str(root), "--no-same-owner", "--no-same-permissions",
+                    "--anchored", "--exclude=./dev/*", "--exclude=dev/*"], check=True)
     (root / ".complete").touch()
     return root
 
