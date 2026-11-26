@@ -5,6 +5,8 @@ Strings japaneseStrings(const Strings& english) {
   s.noVideo = "ファイルを選んでください";
   s.loading = "読み込み中…";
   s.playbackFailed = "この動画を再生できません。別のファイルをお試しください。";
+  s.gpuMemoryWarningTitle = "GPUメモリ不足";
+  s.gpuMemoryWarningDetail = "この動画を再生するためのGPUメモリが足りません。";
   s.discEncrypted = "このディスクイメージは暗号化されているため再生できません。";
   s.format = "形式";
   s.projections[0] = "スクリーン";

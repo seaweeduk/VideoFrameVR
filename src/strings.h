@@ -1303,6 +1303,8 @@ struct Strings {
   const char* noVideo;
   const char* loading;
   const char* playbackFailed;
+  const char* gpuMemoryWarningTitle;
+  const char* gpuMemoryWarningDetail;
   const char* discEncrypted;  // instead of playbackFailed: an encrypted Blu-ray disc image
   const char* format;
   const char* projections[7];  // by Projection value

@@ -5,6 +5,8 @@ Strings germanStrings(const Strings& english) {
   s.noVideo = "Kein Video. Datei wählen";
   s.loading = "Lädt …";
   s.playbackFailed = "Dieses Video kann nicht abgespielt werden. Versuche eine andere Datei.";
+  s.gpuMemoryWarningTitle = "Zu wenig Grafikspeicher";
+  s.gpuMemoryWarningDetail = "Der Grafikspeicher reicht nicht aus, um dieses Video abzuspielen.";
   s.discEncrypted = "Dieses Disc-Abbild ist verschlüsselt und kann nicht abgespielt werden.";
   s.format = "Format";
   s.projections[0] = "Leinwand";

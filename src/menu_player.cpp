@@ -578,7 +578,8 @@ void Menu::drawMainPage(cairo_t* cr) {
   }
   cairo_new_path(cr);
   const std::string title = view_.currentFile.empty() ? t.noVideo
-                            : view_.playbackFailed    ? (view_.discEncrypted ? t.discEncrypted
+                            : view_.playbackFailed    ? (view_.gpuMemoryFailed ? t.gpuMemoryWarningTitle
+                                                         : view_.discEncrypted ? t.discEncrypted
                                                          : view_.decoderBusy ? t.decoderBusy.busy
                                                                              : t.playbackFailed)
                             : p.title.empty()         ? t.loading

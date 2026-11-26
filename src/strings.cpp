@@ -28,6 +28,8 @@ constexpr Strings englishStrings() {
   s.noVideo = "No video – choose a file";
   s.loading = "Loading …";
   s.playbackFailed = "Can't play this video. Try another file.";
+  s.gpuMemoryWarningTitle = "Not enough GPU memory";
+  s.gpuMemoryWarningDetail = "There isn't enough GPU memory to play this video.";
   s.discEncrypted = "This disc image is encrypted and can't be played.";
   s.format = "Format";
   s.projections[0] = "Screen";

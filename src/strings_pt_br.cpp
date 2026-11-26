@@ -5,6 +5,8 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.noVideo = "Nenhum vídeo. Escolha um arquivo";
   s.loading = "Carregando …";
   s.playbackFailed = "Não foi possível reproduzir este vídeo. Tente outro arquivo.";
+  s.gpuMemoryWarningTitle = "Memória da GPU insuficiente";
+  s.gpuMemoryWarningDetail = "Não há memória suficiente na GPU para reproduzir este vídeo.";
   s.discEncrypted = "Esta imagem de disco está criptografada e não pode ser reproduzida.";
   s.format = "Formato";
   s.projections[0] = "Tela";

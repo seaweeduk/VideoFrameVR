@@ -5,6 +5,8 @@ Strings frenchStrings(const Strings& english) {
   s.noVideo = "Aucune vidéo. Choisir un fichier";
   s.loading = "Chargement …";
   s.playbackFailed = "Impossible de lire cette vidéo. Essayez un autre fichier.";
+  s.gpuMemoryWarningTitle = "Mémoire graphique insuffisante";
+  s.gpuMemoryWarningDetail = "Il n'y a pas assez de mémoire graphique pour lire cette vidéo.";
   s.discEncrypted = "Cette image disque est chiffrée et ne peut pas être lue.";
   s.format = "Format";
   s.projections[0] = "Écran";

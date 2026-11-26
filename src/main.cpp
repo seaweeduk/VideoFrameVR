@@ -2360,6 +2360,7 @@ int run(Options opts) {
       case Menu::Feel::None: break;
     }
     quality.afterMenu(menu.draggingSlider());
+    session.updateFailureDialog(panel, {headValid && !keyPicking && !hand.select, headPos, menuAt});
   };
 
   auto showHints = [&](const ControllerState& input) {
@@ -2507,6 +2508,7 @@ int run(Options opts) {
       loadingText.set(menu, failed ? NoticeIcon::Warning : NoticeIcon::None,
                       busy == Busy::Freeing                ? strings().decoderBusy.freeing
                       : !failed                            ? strings().loading
+                      : player.gpuMemoryFailed()           ? strings().gpuMemoryWarningTitle
                       : bdmv::isEncrypted(running.currentFile) ? strings().discEncrypted
                       : busy != Busy::No                   ? strings().decoderBusy.busy
                                                            : strings().playbackFailed);

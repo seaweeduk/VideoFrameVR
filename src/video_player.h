@@ -149,8 +149,9 @@ class VideoPlayer {
   bool failed() const { return failed_; }
   // ... because the hardware decoder refused the video (on the Frame), at
   // refusedAt() seconds.
-  bool decoderRefused() const { return failed_ && decoderRefused_; }
+  bool decoderRefused() const { return failed_ && decoderRefused_ && !gpuMemoryFailed_; }
   double refusedAt() const { return refusedAt_; }
+  bool gpuMemoryFailed() const { return failed_ && gpuMemoryFailed_; }
   // Counts load() and stop(): which opening a failure belongs to.
   uint64_t loadCount() const { return loadRequest_; }
   // The headset's decoder takes AV1 (SteamOS 0.5.10 and later).
@@ -194,6 +195,7 @@ class VideoPlayer {
   void onCommandReply(const mpv_event* ev);
   void onPlaybackRestart();
   void runDeferred();
+  void retryVideoTarget();
   void stopFailedPlayback();
   void addSidecarSubtitles();
   bool updateVideoSize(const mpv_node& params, bool preparing = false);
@@ -270,6 +272,8 @@ class VideoPlayer {
   std::atomic<bool> remoteFailed_{false};  // a remote file's read, or Stash's stream
   bool hardwareRefused_ = false;  // the headset's decoder can't start the video
   bool decoderRefused_ = false;   // ... and playback failed for it
+  bool gpuMemoryFailed_ = false;  // the final video target could not fit in GPU memory
+  double gpuMemoryRetryAt_ = 0;   // seconds, steady clock; negative after asking for the size again
   // Where the video last was (from the last load()'s start), where the decoder refused it.
   double lastPosition_ = 0, refusedAt_ = 0;
   bool logReachedLoad_ = false;   // mpv's log has listed the last loaded file's tracks
