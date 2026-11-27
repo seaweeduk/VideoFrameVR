@@ -1252,6 +1252,17 @@ Strings japaneseStrings(const Strings& english) {
   s.scripts.label = "Funscript";
   s.scripts.tipPlaying = "この動画のFunscriptを%sで再生中。";
   s.scripts.tipNoDevice = "この動画にはFunscriptがありますが、デバイスが接続されていません。";
+  s.remoteControl.group = "リモートコントロール";
+  s.remoteControl.use = "他のアプリから再生を操作できるようにする";
+  s.remoteControl.hint = "DeoVRのリモートコントロールに対応したアプリから、動画を開く、シーク、一時停止、再生ができ、再生位置も伝わります。オンの間は、ネットワーク上のどのデバイスからもサインインなしで使えます。";
+  s.remoteControl.starting = "開始中…";
+  s.remoteControl.listening = "%s、ポート %d";
+  s.remoteControl.port = "ポート %d";
+  s.remoteControl.noApp = "接続中のアプリはありません";
+  s.remoteControl.oneApp = "1個のアプリが接続中";
+  s.remoteControl.apps = "%d個のアプリが接続中";
+  s.remoteControl.portInUse = "ポート %d は他のアプリが使用中です";
+  s.remoteControl.failed = "ネットワークで待ち受けできません";
   s.jobs.nothing = "なし";
   s.jobs.back = "%s戻る";
   s.jobs.forward = "%s進む";

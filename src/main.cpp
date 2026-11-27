@@ -4,6 +4,7 @@
 #include "button_jobs.h"
 #include "command_inbox.h"
 #include "control_socket.h"
+#include "deo_remote.h"
 #include "direct_depth.h"
 #include "direct_video.h"
 #include "eye_targets.h"
@@ -737,6 +738,7 @@ int run(Options opts) {
   CommandInbox inbox;  // the keyboard's and the control socket's commands, run in poll
   ControlSocket control;
   if (!opts.control.empty()) control.listen(opts.control);
+  DeoRemote deoRemote;  // other apps' remote control (deo_remote.h): nothing runs while off
   KeyboardInput keys{inbox, player, running};
   glfwSetWindowUserPointer(input, &keys);
   glfwSetKeyCallback(input, [](GLFWwindow* window, int key, int /*scancode*/, int action, int mods) {
@@ -1042,6 +1044,7 @@ int run(Options opts) {
       case MenuCommand::SetStashSections: case MenuCommand::SetStashFormat:
       case MenuCommand::SetStashScenesSort: case MenuCommand::SetStashPerformersSort:
       case MenuCommand::SetStashStudiosSort: case MenuCommand::ToggleFreeDecoder:
+      case MenuCommand::ToggleRemoteControl:
       // Quality
       case MenuCommand::ToggleTvGamma: case MenuCommand::ToggleVideoMipmaps:
       case MenuCommand::SetAntiShimmer: case MenuCommand::SetVideoResolution:
@@ -1323,6 +1326,9 @@ int run(Options opts) {
     if (opened && setupBanner && !isPhotoFile(running.currentFile)) hideSetupBanner();
     session.countPlay(opened);
 
+    deoRemote.update({settings.remoteControl, session.status(), menu.setupRunning(),
+                      stash ? stash->catalog().get() : nullptr},
+                     inbox);
     control.update(inbox, {session, player, panel.open});
     for (MenuCommand c; inbox.take(c);) execute(c);
 
@@ -2056,6 +2062,7 @@ int run(Options opts) {
     stickSeek.fill(view.playback);
     view.softwareDecoding = softwareSince >= 0 && now - softwareSince >= 1.0;
     view.scriptStatus = scripts.status();
+    deoRemote.fill(view);
     view.playbackFailed = player.failed();
     view.discEncrypted = player.failed() && bdmv::isEncrypted(running.currentFile);
     view.decoderBusy = player.decoderRefused() && decoderRescue.path == running.currentFile &&

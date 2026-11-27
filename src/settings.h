@@ -80,6 +80,7 @@ struct Settings {
   bool thumbnails = true;         // file browser and library: video thumbnails, else a video icon
   bool showPerformance = false;   // frame rates and drops shown over the video (performance_readout.h)
   bool vibration = true;          // controllers buzz on clicks, seeks, turns and grabs (main.cpp)
+  bool remoteControl = false;     // other apps control playback over DeoVR's protocol (deo_remote.h)
   int volume = 100;               // mpv's 0..130 for all videos: the last one set
   // Passthrough switches itself on for videos made for it (see_through.h),
   // where the runtime shows the room or keyGreen stands in for it.

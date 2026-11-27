@@ -53,6 +53,8 @@ add_executable(videoframevr
   src/control_socket.cpp
   src/gesture_input.cpp
   src/density_map.cpp
+  src/deo_protocol.cpp
+  src/deo_remote.cpp
   src/depth_estimator.cpp
   src/diagnostics.cpp
   src/direct_depth.cpp

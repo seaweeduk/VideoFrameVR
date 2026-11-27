@@ -1252,6 +1252,17 @@ Strings germanStrings(const Strings& english) {
   s.scripts.label = "Funscript";
   s.scripts.tipPlaying = "Das Funscript dieses Videos läuft auf %s.";
   s.scripts.tipNoDevice = "Dieses Video hat ein Funscript, aber kein Gerät ist verbunden.";
+  s.remoteControl.group = "Fernsteuerung";
+  s.remoteControl.use = "Andere Apps die Wiedergabe steuern lassen";
+  s.remoteControl.hint = "Apps für die Fernsteuerung von DeoVR können hier Videos öffnen, spulen, anhalten und abspielen und verfolgen, wo sie gerade sind. Solange sie an ist, kann jedes Gerät in deinem Netzwerk sie nutzen, ohne Anmeldung.";
+  s.remoteControl.starting = "Startet …";
+  s.remoteControl.listening = "%s, Port %d";
+  s.remoteControl.port = "Port %d";
+  s.remoteControl.noApp = "Keine App verbunden";
+  s.remoteControl.oneApp = "1 App verbunden";
+  s.remoteControl.apps = "%d Apps verbunden";
+  s.remoteControl.portInUse = "Port %d wird von einer anderen App benutzt";
+  s.remoteControl.failed = "Kann nicht im Netzwerk lauschen";
   s.jobs.nothing = "Nichts";
   s.jobs.back = "%s zurück";
   s.jobs.forward = "%s vor";

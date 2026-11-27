@@ -369,6 +369,7 @@ void VideoPlayer::load(const std::string& path, double start) {
     sleep_.deferLoad(path, start);
     loading_ = true;
     opened_ = false;
+    current_ = positionKnown_ = false;  // what is loaded isn't what is asked for
     newVideoSized_ = false;
     return;
   }

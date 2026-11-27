@@ -67,13 +67,16 @@ FileFingerprint fingerprintFile(const std::string& path) {
     print.size = remote->size();
     print.mtime = st.modified;
   } else {
-    fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    // Never waits for a pipe's writer; only a regular file is read.
+    fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NONBLOCK);
     if (fd < 0) return print;
     struct stat st;
-    if (::fstat(fd, &st) != 0) {
+    if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
       ::close(fd);
       return print;
     }
+    if (const int flags = ::fcntl(fd, F_GETFL); flags >= 0)
+      ::fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);  // a file on a network mount reads as before
     print.size = static_cast<uint64_t>(st.st_size);
     print.mtime = st.st_mtime;
   }

@@ -155,6 +155,7 @@ const char* commandName(MenuCommand::Type type) {
     case C::OpenFileAt: return "OpenFileAt";
     case C::FrameStep: return "FrameStep";
     case C::StepRating: return "StepRating";
+    case C::ToggleRemoteControl: return "ToggleRemoteControl";
   }
   return nullptr;
 }
@@ -274,7 +275,7 @@ bool commandInRange(const MenuCommand& c) {
     case C::SetScriptRangeLow: case C::SetScriptRangeHigh: case C::ResetButtons:
     case C::SetSkipSeconds: case C::SetBigSkipSeconds: case C::RemoveGesture:
     case C::RestoreGestures: case C::ToggleMenu: case C::SetPaused: case C::OpenFileAt:
-    case C::FrameStep: case C::StepRating:
+    case C::FrameStep: case C::StepRating: case C::ToggleRemoteControl:
       return true;
   }
   return false;

@@ -84,6 +84,10 @@ bool applySettingCommand(const MenuCommand& c, Settings& settings) {
       settings.showWhatsNew = !settings.showWhatsNew;
       saveSettings(settings);
       break;
+    case MenuCommand::ToggleRemoteControl:  // DeoRemote starts or stops in its update()
+      settings.remoteControl = !settings.remoteControl;
+      saveSettings(settings);
+      break;
     case MenuCommand::ToggleFloatingSubtitles:
       settings.floatingSubtitles = !settings.floatingSubtitles;
       saveSettings(settings);
@@ -215,6 +219,7 @@ void fillSettings(MenuView& view, const Settings& settings) {
   view.seekPreview = settings.seekPreview;
   view.thumbnails = settings.thumbnails;
   view.vibration = settings.vibration;
+  view.remoteControl = settings.remoteControl;
   view.controls.map = &settings.controls;
   view.controls.gestures = &settings.gestures;
   view.controls.skipSeconds = settings.skipSeconds;

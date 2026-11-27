@@ -1252,6 +1252,17 @@ Strings spanishStrings(const Strings& english) {
   s.scripts.label = "Funscript";
   s.scripts.tipPlaying = "Reproduciendo el funscript de este vídeo en %s.";
   s.scripts.tipNoDevice = "Este vídeo tiene un funscript, pero no hay ningún dispositivo conectado.";
+  s.remoteControl.group = "Control remoto";
+  s.remoteControl.use = "Dejar que otras apps controlen la reproducción";
+  s.remoteControl.hint = "Las apps hechas para el control remoto de DeoVR pueden abrir vídeos aquí, saltar, pausar y reproducir, y seguir por dónde van. Mientras está activado, cualquier dispositivo de tu red puede usarlo, sin iniciar sesión.";
+  s.remoteControl.starting = "Iniciando …";
+  s.remoteControl.listening = "%s, puerto %d";
+  s.remoteControl.port = "Puerto %d";
+  s.remoteControl.noApp = "Ninguna app conectada";
+  s.remoteControl.oneApp = "1 app conectada";
+  s.remoteControl.apps = "%d apps conectadas";
+  s.remoteControl.portInUse = "Otra app está usando el puerto %d";
+  s.remoteControl.failed = "No se puede escuchar en la red";
   s.jobs.nothing = "Nada";
   s.jobs.back = "Retroceder %s";
   s.jobs.forward = "Avanzar %s";

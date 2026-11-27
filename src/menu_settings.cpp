@@ -24,6 +24,28 @@ std::string metres(int cm, bool unit = true) {
   return text;
 }
 
+// The remote control's state, and what to type into the other app.
+std::string remoteControlText(const RemoteControlStrings& t, const RemoteControlStatus& s) {
+  using Link = RemoteControlStatus::Link;
+  char text[256];
+  switch (s.link) {
+    case Link::Off: return {};
+    case Link::Starting: return t.starting;
+    case Link::PortInUse:
+      std::snprintf(text, sizeof(text), t.portInUse, deo::kPort);
+      return text;
+    case Link::Failed: return t.failed;
+    case Link::Listening: break;
+  }
+  char apps[128];
+  if (s.clients == 1) std::snprintf(apps, sizeof(apps), "%s", t.oneApp);
+  else if (s.clients > 1) std::snprintf(apps, sizeof(apps), t.apps, s.clients);
+  else std::snprintf(apps, sizeof(apps), "%s", t.noApp);
+  if (s.address.empty()) std::snprintf(text, sizeof(text), t.port, deo::kPort);
+  else std::snprintf(text, sizeof(text), t.listening, s.address.c_str(), deo::kPort);
+  return std::string(text) + " · " + apps;
+}
+
 }  // namespace
 
 void Menu::layoutSettings() {
@@ -128,6 +150,25 @@ void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsSho
       look.value(at.saturation, MenuCommand::SetAccentSaturation, saturation, value_range::kPercent.least,
                  value_range::kPercent.most, std::to_string(saturation) + " %")
           .format(withUnit(" %"));
+    }
+  }
+
+  // Remote control (deo_remote.h): the switch; while on, this device's
+  // address and port, for the other app, and how many are connected.
+  {
+    const RemoteControlStrings& rt = t.remoteControl;
+    GroupLayout remote = page.group(0, rt.group);
+    remote.toggle(rt.use, view_.remoteControl, command(MenuCommand::ToggleRemoteControl)).tip(rt.hint);
+    if (view_.remoteControl) {
+      using Link = RemoteControlStatus::Link;
+      const RemoteControlStatus& s = view_.remoteControlStatus;
+      const Lamp lamp = s.link == Link::Listening   ? (s.clients > 0 ? Lamp::Ok : Lamp::None)
+                        : s.link == Link::Starting  ? Lamp::Busy
+                        : s.link == Link::Off       ? Lamp::None
+                                                    : Lamp::Failed;
+      remote.status(lamp, remoteControlText(rt, s));
+    } else {
+      remote.note(rt.hint);
     }
   }
 
@@ -275,6 +316,8 @@ void Menu::checkSettingsFit() {
   v.seekPreviewAvailable = true;
   v.diagnostics = DiagnosticsExport::State::Saved;
   v.diagnosticsFile = "videoframevr-diagnostics-20261116-214032.zip";
+  v.remoteControl = true;
+  v.remoteControlStatus = {RemoteControlStatus::Link::Listening, "192.168.100.200", 8};
   dropdown_ = Dropdown::None;
   fitCase_ = " (General, every row)";
   layoutSettingsSection(SettingsSection::General);
