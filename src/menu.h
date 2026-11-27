@@ -201,7 +201,7 @@ class Menu {
   // does, with a tick in the controller (a knock at either end).
   MenuCommand stepValue(int direction);
   // While the pointer is over the strip's seek bar: where it points,
-  // 0..1 of the video. For the preview frame.
+  // 0..1 of the video, steadied as a click there is. For the preview frame.
   bool seekHover(double& fraction) const;
   // Where the seek bar is at `fraction` (0..1) of the video, as setPointer()
   // takes it on the strip (Menu::kMain).
@@ -1646,6 +1646,7 @@ class Menu {
     bool draggingVolume = false;
     bool draggingSeek = false;  // the seek bar follows the pointer while the trigger is held
     double lastScrub = -1;      // seconds last sent while dragging it
+    double seekX = -1;  // where on the seek bar the pointer counts as being (steadySeek()); < 0 = off it
   } strip_;
   void tickBoxes(bool band, bool clock);
   // What the strip's laid-out controls show (redraw() checks that the
@@ -1676,6 +1677,8 @@ class Menu {
                  const std::function<double(double)>& fraction);
   static double sliderFraction(const Button& slider, double value);
   double seekAtPointer() const;  // seconds under the pointer on the seek bar
+  void steadySeek();
+  double seekX() const { return strip_.seekX >= 0 ? strip_.seekX : pointerX_; }
   Dropdown dropdown_ = Dropdown::None;
   bool thumbnailsPending_ = false;  // new thumbnails wait for the next redraw
   double lastThumbnailRedraw_ = 0;  // seconds, steady clock

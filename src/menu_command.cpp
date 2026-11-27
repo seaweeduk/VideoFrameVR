@@ -83,6 +83,7 @@ const char* commandName(MenuCommand::Type type) {
     case C::Stop: return "Stop";
     case C::ToggleTvGamma: return "ToggleTvGamma";
     case C::ToggleSeekPreview: return "ToggleSeekPreview";
+    case C::ToggleSeekPreview3d: return "ToggleSeekPreview3d";
     case C::ToggleThumbnails: return "ToggleThumbnails";
     case C::ToggleShowPerformance: return "ToggleShowPerformance";
     case C::SetScreenDistance: return "SetScreenDistance";
@@ -257,7 +258,7 @@ bool commandInRange(const MenuCommand& c) {
     case C::ToggleFoveationRing: case C::SetFoveationOutside: case C::ToggleAdvancedSettings:
     case C::ToggleMotion: case C::SetMotionDistance: case C::ToggleResume: case C::ToggleToneLook:
     case C::ToggleFrameReuse: case C::Stop: case C::ToggleTvGamma: case C::ToggleSeekPreview:
-    case C::ToggleThumbnails: case C::ToggleShowPerformance: case C::ResetScreen:
+    case C::ToggleSeekPreview3d: case C::ToggleThumbnails: case C::ToggleShowPerformance: case C::ResetScreen:
     case C::SetOriginForward: case C::SetWarmth: case C::SetTint: case C::SetExposure:
     case C::ToggleMatchRoom: case C::ReadRoomAgain: case C::SetMatchColour:
     case C::SetMatchBrightness: case C::ToggleAutoPassthrough: case C::ToggleKeyGreen:

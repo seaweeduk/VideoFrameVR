@@ -190,10 +190,9 @@ void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsSho
           .tip(pt.keyGreenHint);
   }
 
-  // Playback: resuming where videos were left, the timeline's preview
-  // (left out where there is no second decoder for it: the Frame), the
-  // performance readout, controller vibration, and the drive offline
-  // downloads go to (menu_offline.cpp), from a list.
+  // Playback: resuming where videos were left, the performance readout,
+  // controller vibration, and the drive offline downloads go to
+  // (menu_offline.cpp), from a list.
   {
     GroupLayout playback = page.group(1, t.groupPlayback);
     playback.toggle(t.resume, view_.resume, command(MenuCommand::ToggleResume)).tip(t.resumeHint);
@@ -201,9 +200,6 @@ void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsSho
       playback
           .toggle(t.decoderBusy.setting, view_.freeDecoder, command(MenuCommand::ToggleFreeDecoder))
           .tip(t.decoderBusy.settingHint);
-    if (view_.seekPreviewAvailable)
-      playback.toggle(t.seekPreview, view_.seekPreview, command(MenuCommand::ToggleSeekPreview))
-          .tip(t.seekPreviewHint);
     playback
         .toggle(t.showPerformance, view_.showPerformance,
                 command(MenuCommand::ToggleShowPerformance))
@@ -239,6 +235,18 @@ void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsSho
         addDropdownBelow(opener, std::move(entries), true);
       }
     }
+  }
+
+  // The timeline's preview, and 3D videos' in 3D; on the Frame, what it
+  // costs, said under it.
+  {
+    GroupLayout preview = page.group(2, t.seekPreview);
+    preview.toggle(t.seekPreviewShow, view_.seekPreview, command(MenuCommand::ToggleSeekPreview))
+        .tip(t.seekPreviewHint);
+    if (kStandaloneHeadset) preview.note(t.seekPreviewHintFrame);
+    preview.toggle(t.seekPreview3d, view_.seekPreview3d, command(MenuCommand::ToggleSeekPreview3d))
+        .tip(t.seekPreview3dHint)
+        .disable(!view_.seekPreview);
   }
 
   // Subtitles: floating (2D video's), their size, height and distance.
@@ -313,7 +321,6 @@ void Menu::checkSettingsFit() {
   // General: a colour of one's own, the timeline preview, the downloads'
   // drive (fitCase_), where diagnostics were saved.
   v.accent.preset = kAccentCustom;
-  v.seekPreviewAvailable = true;
   v.diagnostics = DiagnosticsExport::State::Saved;
   v.diagnosticsFile = "videoframevr-diagnostics-20261116-214032.zip";
   v.remoteControl = true;

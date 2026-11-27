@@ -9,8 +9,10 @@
 
 #include <algorithm>
 #include <clocale>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <utility>
 
 FrameGrabber::~FrameGrabber() {
@@ -74,6 +76,10 @@ bool FrameGrabber::init(GlInterop& interop, const std::string& hwdec, int maxWid
   mpv_observe_property(mpv_, 0, "dwidth", MPV_FORMAT_INT64);
   mpv_observe_property(mpv_, 0, "dheight", MPV_FORMAT_INT64);
   mpv_observe_property(mpv_, 0, "video-out-params/rotate", MPV_FORMAT_INT64);
+  // A stream that can't seek (a server without ranges), or only within what
+  // is cached, can't show other places: it fails rather than wait forever.
+  mpv_observe_property(mpv_, 0, "seekable", MPV_FORMAT_FLAG);
+  mpv_observe_property(mpv_, 0, "partially-seekable", MPV_FORMAT_FLAG);
   if (!glContext.createRenderContext(mpv_, &render_)) {
     std::fprintf(stderr, "Frame grabber: mpv_render_context_create failed\n");
     return false;
@@ -81,7 +87,31 @@ bool FrameGrabber::init(GlInterop& interop, const std::string& hwdec, int maxWid
   return true;
 }
 
-void FrameGrabber::open(const std::string& path, const std::string& start) {
+void FrameGrabber::setVideo(const std::string& location, bool stream) {
+  video_ = location;
+  unavailable_ = false;
+  lastUse_ = std::chrono::steady_clock::now();
+  if (!location.empty() && stream) {
+    open(location, 0);
+    asked_ = 0;
+  } else {
+    close();
+  }
+}
+
+void FrameGrabber::point(double seconds, double) {
+  lastUse_ = std::chrono::steady_clock::now();
+  if (video_.empty() || unavailable_) return;
+  if (path_ != video_)
+    open(video_, seconds);
+  else if (std::abs(seconds - asked_) > 0.5)
+    seek(seconds);
+  else
+    return;
+  asked_ = seconds;
+}
+
+void FrameGrabber::open(const std::string& path, double start) {
   wake();
   path_ = path;
   fileLoaded_ = false;
@@ -92,11 +122,22 @@ void FrameGrabber::open(const std::string& path, const std::string& start) {
   exact_ = true;
   hasFrame_ = false;
   failed_ = false;
-  const std::string options = "start=" + start;
+  started_ = false;
+  entry_ = 0;
+  const std::string options = "start=" + std::to_string(start);
   // A 3D Blu-ray's base view, as thumbnails show: half the reading and decoding.
   const std::string url = bdmv::isDiscImage(path) ? bdmv::mpvUrl(path, true) : remote::mpvUrl(path);
   const char* cmd[] = {"loadfile", url.c_str(), "replace", "-1", options.c_str(), nullptr};
-  mpv_command(mpv_, cmd);  // returns at once; mpv opens the file in its own thread
+  // Returns at once; mpv opens the file in its own thread. What it still has
+  // to say of the video before is told from this one's by its number.
+  mpv_node result;
+  if (mpv_command_ret(mpv_, cmd, &result) < 0) return;
+  if (result.format == MPV_FORMAT_NODE_MAP)
+    for (int i = 0; i < result.u.list->num; ++i)
+      if (std::strcmp(result.u.list->keys[i], "playlist_entry_id") == 0 &&
+          result.u.list->values[i].format == MPV_FORMAT_INT64)
+        entry_ = result.u.list->values[i].u.int64;
+  mpv_free_node_contents(&result);
 }
 
 void FrameGrabber::close() {
@@ -130,7 +171,9 @@ void FrameGrabber::setVideoTrack(const char* track) {
   mpv_set_property_async(mpv_, 0, "vid", MPV_FORMAT_STRING, &track);
 }
 
-void FrameGrabber::sleep() {
+bool FrameGrabber::baseViewOnly() const { return bdmv::isDiscImage(video_); }
+
+void FrameGrabber::rest() {
   if (path_.empty() || asleep_ || busy()) return;
   setVideoTrack("no");
   asleep_ = true;
@@ -154,13 +197,27 @@ void FrameGrabber::seek(double seconds) {
     sendSeek(seconds);
 }
 
-bool FrameGrabber::update() {
-  if (!mpv_) return false;
+void FrameGrabber::update(const PlaybackState&) {
+  poll();
+  // One that can't show other places (a stream that can't seek) lets its
+  // connection go.
+  if (failed_ && !path_.empty()) {
+    close();
+    unavailable_ = true;
+  }
+  if (std::chrono::steady_clock::now() - lastUse_ > kIdle) rest();
+}
+
+void FrameGrabber::poll() {
   bool sizeChanged = false;
   while (true) {
     mpv_event* ev = mpv_wait_event(mpv_, 0);
     if (ev->event_id == MPV_EVENT_NONE) break;
     switch (ev->event_id) {
+      case MPV_EVENT_START_FILE:
+        started_ = !entry_ ||
+                   static_cast<mpv_event_start_file*>(ev->data)->playlist_entry_id == entry_;
+        break;
       case MPV_EVENT_FILE_LOADED:
         fileLoaded_ = true;
         if (pendingSeek_ >= 0 && !seeking_) {
@@ -170,8 +227,16 @@ bool FrameGrabber::update() {
         break;
       case MPV_EVENT_PROPERTY_CHANGE: {
         const auto* prop = static_cast<mpv_event_property*>(ev->data);
-        const int64_t value = prop->format == MPV_FORMAT_INT64 ? *static_cast<int64_t*>(prop->data) : 0;
         const std::string name = prop->name;
+        if (name == "seekable" || name == "partially-seekable") {
+          // Without a value (no file open) it says nothing, nor of the
+          // video before.
+          if (prop->format != MPV_FORMAT_FLAG || !started_) break;
+          const bool on = *static_cast<int*>(prop->data) != 0;
+          if (name == "seekable" ? !on : on) failed_ = true;
+          break;
+        }
+        const int64_t value = prop->format == MPV_FORMAT_INT64 ? *static_cast<int64_t*>(prop->data) : 0;
         (name == "dwidth" ? videoWidth_ : name == "dheight" ? videoHeight_ : rotate_) = value;
         sizeChanged = true;
         break;
@@ -188,7 +253,12 @@ bool FrameGrabber::update() {
         break;
       case MPV_EVENT_END_FILE: {
         const auto* end = static_cast<mpv_event_end_file*>(ev->data);
-        if (end->reason == MPV_END_FILE_REASON_ERROR) failed_ = true;
+        if (end->reason == MPV_END_FILE_REASON_ERROR &&
+            (!entry_ || end->playlist_entry_id == entry_))
+          failed_ = true;
+        // A playlist: what it holds comes under numbers of its own.
+        if (end->reason == MPV_END_FILE_REASON_REDIRECT && end->playlist_entry_id == entry_)
+          entry_ = 0;
         break;
       }
       default:
@@ -196,10 +266,9 @@ bool FrameGrabber::update() {
     }
   }
   if (sizeChanged) updateVideoSize();
-  if (!render_) return false;
   if (mpv_render_context_update(render_) & MPV_RENDER_UPDATE_FRAME) framePending_ = true;
   // Before the first restart there is no frame of this file yet.
-  if (!framePending_ || !image_ || !restarted_) return false;
+  if (!framePending_ || !image_ || !restarted_) return;
   framePending_ = false;
 
   // After the frames that showed the last one are done with it.
@@ -217,7 +286,6 @@ bool FrameGrabber::update() {
   mpv_render_context_render(render_, params);
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   hasFrame_ = true;
-  return true;
 }
 
 void FrameGrabber::updateVideoSize() {

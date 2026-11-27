@@ -527,7 +527,10 @@ int run(Options opts) {
   if (!xr.init(requirements)) return 1;
   const bool amd = xr.gpuDevice().caps.vendorId == 0x1002;
   if (opts.hwdec.empty()) opts.hwdec = amd ? "vaapi,vaapi-copy" : "nvdec,nvdec-copy";
-  if (opts.previewHwdec.empty()) opts.previewHwdec = amd ? "vaapi-copy" : "nvdec-copy";
+  // The Frame's previews decode in software: a second full-size hardware
+  // decoder beside playback fails there.
+  if (opts.previewHwdec.empty())
+    opts.previewHwdec = kStandaloneHeadset ? "no" : amd ? "vaapi-copy" : "nvdec-copy";
   if (opts.hwdec == "no") opts.previewHwdec = "no";
   if (amd)
     std::printf("AMD support is experimental: use Mesa 26.1+ radeonsi and RADV\n");
@@ -613,11 +616,7 @@ int run(Options opts) {
   if (!loadingText.init(uploader)) return 1;
   loadingText.set(menu, NoticeIcon::None, strings().loading);
   SeekPreview seekPreview;
-  // Not on the Frame: a second full-size decoder beside playback fails there
-  // (docs/frame-plan.md, W4). Without init() it never shows.
-  if (!kStandaloneHeadset &&
-      !seekPreview.init(interop, opts.previewHwdec, uploader, glContext))
-    return 1;
+  if (!seekPreview.init(interop, opts.previewHwdec, uploader, glContext)) return 1;
   // "Recentering in 2 …"; "Viewpoint: 15 % closer" while the stick moves it,
   // a gesture's value in its ring while a twist changes it, or what a
   // button's job said, whichever changed last;
@@ -1044,7 +1043,7 @@ int run(Options opts) {
       case MenuCommand::SetStashSections: case MenuCommand::SetStashFormat:
       case MenuCommand::SetStashScenesSort: case MenuCommand::SetStashPerformersSort:
       case MenuCommand::SetStashStudiosSort: case MenuCommand::ToggleFreeDecoder:
-      case MenuCommand::ToggleRemoteControl:
+      case MenuCommand::ToggleRemoteControl: case MenuCommand::ToggleSeekPreview3d:
       // Quality
       case MenuCommand::ToggleTvGamma: case MenuCommand::ToggleVideoMipmaps:
       case MenuCommand::SetAntiShimmer: case MenuCommand::SetVideoResolution:
@@ -1440,7 +1439,7 @@ int run(Options opts) {
     scene.overlays.clear();
     timer.lap(FrameTimer::XrWait);
     if (!earlyVideo) player.render();
-    seekPreview.poll();
+    seekPreview.poll(player.playback());
     photoPreloader.update();
     timer.lap(FrameTimer::Mpv);
     return true;
@@ -2092,7 +2091,6 @@ int run(Options opts) {
     view.focus.supported = stereoCorrectionSupported(running.format) && xr.eyeCount() == 2;
     view.focus.unavailable = !autofocus.available();
     view.focus.targetNotice = targetNotice(focusTargets.status());
-    view.seekPreviewAvailable = !kStandaloneHeadset;
     view.showPerformance = showPerformance;
     view.controls.type = shownControllerType();
     view.setupBanner = setupBanner;
@@ -2220,6 +2218,7 @@ int run(Options opts) {
       playing.format = running.format;
       playing.views = player.playback().views;
       playing.flip = running.flipVideo;
+      playing.stereo = settings.seekPreview3d;
       seekPreview.show(hoverFraction, playing, panel.panel(menu, Menu::kMain));
     } else if (!panelFades.stripFading()) {  // it fades with the strip
       seekPreview.hide();

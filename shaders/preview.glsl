@@ -7,12 +7,13 @@ struct PreviewDraw {
   vec4 model1;
   vec4 model2;
   vec4 picture;  // the eye's part of the frame it shows: scale xy, offset xy
-  vec4 view;     // surround: x, y the tangents of the view's half width and height,
-                 // z the fisheye's field of view (radians); w its opacity (fading out toward 0)
-  uvec4 mode;    // x projection (projection.glsl), y flags (below)
+  vec4 view;     // curved: x the radius, y the half angle (radians), around
+                 // the model's Y axis; z the fisheye's field of view (radians);
+                 // w its opacity (fading out toward 0)
+  uvec4 mode;    // x projection (projection.glsl, surround), y flags (below)
 };
 DECLARE_PUSH(PreviewDraw)
 
 // PreviewFlag in scene_renderer.h.
 const uint kPreviewFlip = 1u;      // the picture is shown upside down
-const uint kPreviewSurround = 2u;  // the view straight ahead into a surround picture
+const uint kPreviewSurround = 2u;  // the middle 16:9 of the front 180°, as a 180° video stores it

@@ -21,7 +21,7 @@ struct MenuCommand {
               SetFoveation, ToggleShowFoveation, ToggleFoveationLearned, SetSharpBins, ToggleFoveationRing,
               SetFoveationOutside, ToggleAdvancedSettings, SetRefreshRate, SetFocus,
               ToggleMotion, SetMotionDistance, ToggleResume, ToggleToneLook, ToggleFrameReuse, Stop,
-              ToggleTvGamma, ToggleSeekPreview, ToggleThumbnails, ToggleShowPerformance, SetScreenDistance,
+              ToggleTvGamma, ToggleSeekPreview, ToggleSeekPreview3d, ToggleThumbnails, ToggleShowPerformance, SetScreenDistance,
               SetScreenHeight, SetScreenCurve, ResetScreen, SetOriginForward, SetOpacity,
               SetWarmth, SetTint, SetExposure, ToggleMatchRoom, ReadRoomAgain,
               SetMatchColour, SetMatchBrightness,

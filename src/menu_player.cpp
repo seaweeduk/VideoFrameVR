@@ -459,8 +459,23 @@ double Menu::seekLineY() const { return strip::kBandY + strip::kBandH / 2; }
 
 double Menu::seekAtPointer() const {
   const double fraction =
-      std::clamp((pointerX_ - strip::kLeft) / (strip::kRight - strip::kLeft), 0.0, 1.0);
+      std::clamp((seekX() - strip::kLeft) / (strip::kRight - strip::kLeft), 0.0, 1.0);
   return fraction * view_.playback.duration;
+}
+
+// On the seek bar the pointer stays where it was until it is more than
+// strip::kSeekSteady from there, then follows that far behind. The preview,
+// its time, the dragged knob and where a click lands all go by it, so the
+// video jumps to the time the preview showed.
+void Menu::steadySeek() {
+  if (!strip_.draggingSeek && !onSeekBand()) {
+    strip_.seekX = -1;
+    return;
+  }
+  if (pointerPanel_ != kMain) return;  // dragged off the strip: where it was
+  strip_.seekX = strip_.seekX < 0 ? pointerX_
+                                  : std::clamp(strip_.seekX, pointerX_ - strip::kSeekSteady,
+                                               pointerX_ + strip::kSeekSteady);
 }
 
 // Popups (an open list's entries and the pane behind them, a dialog's
@@ -480,7 +495,7 @@ bool Menu::seekHover(double& fraction) const {
     return false;
   // While dragging the knob, the preview stays even if the pointer drifts off the bar.
   if (!strip_.draggingSeek && !onSeekBand()) return false;
-  fraction = std::clamp((pointerX_ - strip::kLeft) / (strip::kRight - strip::kLeft), 0.0, 1.0);
+  fraction = std::clamp((seekX() - strip::kLeft) / (strip::kRight - strip::kLeft), 0.0, 1.0);
   return true;
 }
 

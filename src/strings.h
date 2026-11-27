@@ -1503,8 +1503,12 @@ struct Strings {
   const char* groupPlayback;
   const char* resume;  // the setting
   const char* resumeHint;
-  const char* seekPreview;  // the setting
+  const char* seekPreview;  // the settings' group
+  const char* seekPreviewShow;  // the setting
   const char* seekPreviewHint;
+  const char* seekPreviewHintFrame;  // under it on the Frame, where it decodes on the CPU
+  const char* seekPreview3d;         // the setting: 3D videos' previews in 3D
+  const char* seekPreview3dHint;
   const char* showPerformance;  // the setting: the performance readout (performance_readout.h)
   const char* showPerformanceHint;
   const char* vibration;  // the setting: controllers buzz on clicks, seeks and grabs

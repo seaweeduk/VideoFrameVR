@@ -104,6 +104,7 @@ std::string allLines(const Settings& s) {
   out << "free_decoder_from_steam=" << (s.freeDecoder ? 1 : 0) << "\n";
   out << "after_video=" << (s.afterVideo == AfterVideo::Stop ? "stop" : "next") << "\n";
   out << "seek_preview=" << (s.seekPreview ? 1 : 0) << "\n";
+  out << "seek_preview_3d=" << (s.seekPreview3d ? 1 : 0) << "\n";
   out << "auto_passthrough=" << (s.autoPassthrough ? 1 : 0) << "\n";
   out << "key_green=" << (s.keyGreen ? 1 : 0) << "\n";
   out << "passthrough_notice_seen=" << (s.passthroughNoticeSeen ? 1 : 0) << "\n";
@@ -191,7 +192,6 @@ Settings defaultSettings() {
   // The Frame's own (docs/frame-plan.md, W4); its resolutions are in eye_resolution.h.
   if (kStandaloneHeadset) {
     s.videoMipmaps = false;  // at 2160 they cost 8K playback's headroom; 2592 drops frames
-    s.seekPreview = false;   // not available there (main.cpp)
     s.background = false;    // the night sky: a non-essential cost behind flat videos
   }
   return s;
@@ -300,6 +300,7 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
     else if (key == "free_decoder_from_steam") s.freeDecoder = value != "0";
     else if (key == "after_video") s.afterVideo = value == "stop" ? AfterVideo::Stop : AfterVideo::Next;
     else if (key == "seek_preview") s.seekPreview = value != "0";
+    else if (key == "seek_preview_3d") s.seekPreview3d = value != "0";
     else if (key == "auto_passthrough") s.autoPassthrough = value != "0";
     else if (key == "key_green") s.keyGreen = value == "1";
     else if (key == "passthrough_notice_seen") s.passthroughNoticeSeen = value == "1";

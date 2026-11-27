@@ -1,7 +1,9 @@
 #pragma once
 
 #include "gl_interop.h"
+#include "preview_source.h"
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -10,51 +12,53 @@ struct mpv_handle;
 struct mpv_render_context;
 class MpvGlContext;
 
-// A second, silent mpv instance that shows single frames on request, for the
-// seek bar preview (it opens links too). Frames are scaled into an image
-// shared with Vulkan (docs/vulkan-renderer.md, 3.5), sRGB: sampling returns
-// linear colour. Nothing is logged.
-// All methods must be called on the thread that owns the GL context; update()
-// inside GL's access window (gl_interop.h), before GlInterop::publish().
-class FrameGrabber {
+// The seek preview's pictures from a hardware decoder: a second, silent mpv
+// instance that shows single frames on request (it opens links too). Frames
+// are scaled into an image shared with Vulkan (docs/vulkan-renderer.md,
+// 3.5), sRGB: sampling returns linear colour. Nothing is logged.
+// A frame costs little here, so every place pointed at gets one: first a
+// quick keyframe, then, once no other is asked for, the exact frame.
+class FrameGrabber : public PreviewSource {
  public:
   FrameGrabber() = default;
   FrameGrabber(const FrameGrabber&) = delete;
   FrameGrabber& operator=(const FrameGrabber&) = delete;
-  ~FrameGrabber();
+  ~FrameGrabber() override;
 
   // Frames are scaled down to fit maxWidth x maxHeight on the CPU. Pass a
-  // copy-back hwdec (e.g. "nvdec-copy", "v4l2m2m-copy") or "no".
+  // copy-back hwdec (e.g. "nvdec-copy", "vaapi-copy"). False: unusable.
   bool init(GlInterop& interop, const std::string& hwdec, int maxWidth, int maxHeight,
             const MpvGlContext& glContext);
-  // Opens a file or stream, paused at `start` (mpv syntax: seconds or "20%").
-  void open(const std::string& path, const std::string& start);
-  void close();
-  const std::string& path() const { return path_; }
-  // Stops the decoder, which frees its GPU memory (about 1.8 GB for 8K HEVC
-  // with NVDEC), and keeps the file open; the next seek() starts it again,
-  // which takes about as long as a seek. Only while not busy().
-  void sleep();
-  bool asleep() const { return asleep_; }
-  // Shows the frame near `seconds`. While a seek runs, only the latest request is kept.
-  void seek(double seconds);
-  // Polls mpv and renders a new frame if one is ready. True if the image changed.
-  bool update();
-  // A frame of the current file is in image().
-  bool hasFrame() const { return hasFrame_; }
-  // The current file could not be opened.
-  bool failed() const { return failed_; }
+
+  // Streams take seconds to open, so one opens right away; a file opens
+  // fast enough when first pointed at.
+  void setVideo(const std::string& location, bool stream) override;
+  void point(double seconds, double fraction) override;
+  // Polls mpv and renders a new frame if one is ready.
+  void update(const PlaybackState& playback) override;
+  State state() const override {
+    return unavailable_ ? State::Unavailable : hasFrame_ ? State::Ready : State::Loading;
+  }
   // Includes an outstanding exact seek even after the preview is hidden.
-  bool busy() const {
+  bool busy() const override {
     return !path_.empty() && !failed_ && (!restarted_ || seeking_ || pendingSeek_ >= 0);
   }
-  // The whole frame (both eyes of a 3D video; the scene picks one), while
-  // hasFrame(). It stays valid until the next update().
-  const Texture* image() const { return hasFrame_ ? &image_->texture() : nullptr; }
-  int width() const { return width_; }
-  int height() const { return height_; }
+  // A 3D disc's base view alone (open()): half the reading and decoding.
+  bool baseViewOnly() const override;
+  const Texture* image() const override { return hasFrame_ ? &image_->texture() : nullptr; }
+  int width() const override { return width_; }
+  int height() const override { return height_; }
 
  private:
+  // Opens a file or stream, paused at `start`.
+  void open(const std::string& path, double start);
+  void close();
+  void seek(double seconds);
+  void poll();
+  // Stops the decoder, which frees its GPU memory, and keeps the file open;
+  // the next seek() starts it again, which takes about as long as a seek.
+  // Not while busy().
+  void rest();
   void updateVideoSize();
   void releaseTarget();
   void sendSeek(double seconds, bool exact = false);
@@ -65,7 +69,11 @@ class FrameGrabber {
   mpv_render_context* render_ = nullptr;
   GlInterop* interop_ = nullptr;
   int maxWidth_ = 0, maxHeight_ = 0;
-  std::string path_;
+  std::string video_;  // the playing video (setVideo()), opened or not yet
+  std::string path_;   // the one open
+  double asked_ = -1;  // seconds: where a frame was last asked for
+  bool unavailable_ = false;  // the playing video failed, and was closed
+  std::chrono::steady_clock::time_point lastUse_;  // pointed at, or the video changed
   std::unique_ptr<SharedImage> image_;  // one level
   int width_ = 0, height_ = 0;
   int64_t videoWidth_ = 0, videoHeight_ = 0, rotate_ = 0;  // observed; 0 = no video
@@ -78,5 +86,7 @@ class FrameGrabber {
   bool framePending_ = false;
   bool hasFrame_ = false;
   bool failed_ = false;
+  int64_t entry_ = 0;     // mpv's number for the video opened last (0: not known)
+  bool started_ = false;  // ... which mpv has begun to open
   bool asleep_ = false;  // vid=no: the file is open, nothing decodes
 };

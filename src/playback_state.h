@@ -25,6 +25,7 @@ struct PlaybackState {
   double position = 0;  // seconds
   double duration = 0;  // seconds, 0 if unknown
   double bufferedUntil = 0;  // seconds: how far ahead the stream is already downloaded
+  bool readAhead = false;  // it has read as far ahead as it keeps, and waits (mpv's demuxer-cache-idle)
   bool paused = false;
   double volume = 100;
   bool muted = false;

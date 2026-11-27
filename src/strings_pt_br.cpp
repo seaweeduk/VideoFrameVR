@@ -222,6 +222,10 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.resumeHint = "Continua de onde parou. Perto do fim, recomeça do início.";
   s.seekPreview = "Prévia na linha do tempo";
   s.seekPreviewHint = "Aponte à linha do tempo para ver a prévia. Miniaturas de arquivos: em Menu.";
+  s.seekPreviewShow = "Mostrar prévias";
+  s.seekPreviewHintFrame = "Aumenta a carga da CPU enquanto você aponta para a linha do tempo; a ventoinha pode ficar mais barulhenta.";
+  s.seekPreview3d = "Prévia em 3D";
+  s.seekPreview3dHint = "Mostra em 3D as prévias de vídeos 3D.";
   s.showPerformance = "Mostrar desempenho";
   s.showPerformanceHint = "Taxas de quadros e perdas no canto inferior esquerdo, mesmo sem menus.";
   s.vibration = "Vibração do controle";

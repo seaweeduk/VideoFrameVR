@@ -721,7 +721,7 @@ void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
       const Texture* t = preview->texture;
       if (!t || (t->shared && t->shared->inGl())) continue;
       bind(Pipelines::kPreview);
-      drawPreview(cmd, *preview);
+      drawPreview(cmd, static_cast<int>(eye.position[3]), *preview);
     }
   }
 }
@@ -793,11 +793,11 @@ void SceneRenderer::drawPointer(VkCommandBuffer cmd, const Quad& corners, uint32
   vkCmdDraw(cmd, 4, 1, 0, 0);
 }
 
-void SceneRenderer::drawPreview(VkCommandBuffer cmd, const PreviewItem& preview) {
+void SceneRenderer::drawPreview(VkCommandBuffer cmd, int eye, const PreviewItem& preview) {
   PreviewPush p{};
   for (int r = 0; r < 3; ++r)
     for (int c = 0; c < 4; ++c) p.model[r][c] = preview.model.m[c * 4 + r];
-  stereoRect(preview.format.stereo, 0, p.picture);  // the left eye
+  stereoRect(preview.format.stereo, preview.stereo ? eye : 0, p.picture);
   uint32_t flags = 0;
   if (preview.flip) flags |= kPreviewFlip;
   if (preview.format.projection != Projection::Flat) {
@@ -806,14 +806,16 @@ void SceneRenderer::drawPreview(VkCommandBuffer cmd, const PreviewItem& preview)
     const float eyeAspect = static_cast<float>(t.width) * p.picture[0] /
                             (static_cast<float>(t.height) * p.picture[1]);
     p.mode[0] = static_cast<uint32_t>(surroundProjection(preview.format, eyeAspect, p.view[2]));
-    p.view[0] = preview.aheadTangents[0];
-    p.view[1] = preview.aheadTangents[1];
   }
+  p.view[0] = preview.radius;
+  p.view[1] = preview.halfAngle;
   p.view[3] = preview.opacity;
   p.mode[1] = flags;
   pipelines_.bindTextures(cmd, preview.texture, Pipelines::kVideoBase);
   pushDraw(cmd, p);
-  vkCmdDraw(cmd, 4, 1, 0, 0);
+  // Curved: kColumns columns between pairs of vertices, as preview.vert counts them.
+  constexpr uint32_t kPreviewColumns = 16;
+  vkCmdDraw(cmd, preview.radius > 0 ? 2 * (kPreviewColumns + 1) : 4, 1, 0, 0);
 }
 
 bool SceneRenderer::readTimes(const GpuContext::FrameSlot& slot, GpuTimes& times) {

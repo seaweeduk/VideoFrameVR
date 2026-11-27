@@ -222,6 +222,10 @@ Strings frenchStrings(const Strings& english) {
   s.resumeHint = "Reprendre au dernier arrêt. Vers la fin : recommencer au début.";
   s.seekPreview = "Aperçu sur la timeline";
   s.seekPreviewHint = "Pointer la timeline pour un aperçu. Miniatures des fichiers : sous Menu.";
+  s.seekPreviewShow = "Afficher les aperçus";
+  s.seekPreviewHintFrame = "Charge le processeur tant que la timeline est pointée ; le ventilateur peut devenir plus bruyant.";
+  s.seekPreview3d = "Aperçu en 3D";
+  s.seekPreview3dHint = "Affiche en 3D les aperçus des vidéos 3D.";
   s.showPerformance = "Afficher les performances";
   s.showPerformanceHint = "Cadences et images perdues en bas à gauche, même avec les menus fermés.";
   s.vibration = "Vibration des manettes";

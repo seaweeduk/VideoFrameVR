@@ -222,6 +222,10 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.resumeHint = "从停止的位置继续；接近片尾时则从头播放。";
   s.seekPreview = "进度条预览";
   s.seekPreviewHint = "指向进度条可预览。文件缩略图在“菜单”中设置。";
+  s.seekPreviewShow = "显示预览";
+  s.seekPreviewHintFrame = "指向进度条时会增加 CPU 负载，风扇声可能变大。";
+  s.seekPreview3d = "3D 预览";
+  s.seekPreview3dHint = "以 3D 显示 3D 视频的预览。";
   s.showPerformance = "显示性能数据";
   s.showPerformanceHint = "在左下角显示帧率和丢帧，关闭菜单后仍显示。";
   s.vibration = "手柄震动";

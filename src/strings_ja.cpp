@@ -222,6 +222,10 @@ Strings japaneseStrings(const Strings& english) {
   s.resumeHint = "停止位置から再開。終わりに近い場合は最初から再生。";
   s.seekPreview = "シークプレビュー";
   s.seekPreviewHint = "再生バーを指すとプレビュー。ファイルのサムネイルは「メニュー」で設定。";
+  s.seekPreviewShow = "プレビューを表示";
+  s.seekPreviewHintFrame = "再生バーを指している間はCPU負荷が増え、ファンの音が大きくなることがあります。";
+  s.seekPreview3d = "3Dでプレビュー";
+  s.seekPreview3dHint = "3D動画のプレビューを3Dで表示します。";
   s.showPerformance = "性能情報を表示";
   s.showPerformanceHint = "メニューを閉じても左下にフレームレートとコマ落ちを表示。";
   s.vibration = "コントローラーの振動";
