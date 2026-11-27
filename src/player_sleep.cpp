@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
-#include <cstring>
 #include <utility>
 
 namespace {
@@ -27,18 +26,20 @@ void setPause(mpv_handle* mpv, bool paused) {
 
 }  // namespace
 
-bool PlayerSleep::command(const char* cmd, PlaybackState& shown) {
+bool PlayerSleep::togglePause(PlaybackState& shown) {
   if (videoSleep_ != VideoSleep::Awake) {
-    if (std::strcmp(cmd, "cycle pause") == 0) {
-      sleepPaused_ = !sleepPaused_;
-      shown.paused = sleepPaused_;
-      return true;
-    }
-    if (std::strcmp(cmd, "set pause yes") == 0 || std::strcmp(cmd, "set pause no") == 0) {
-      sleepPaused_ = std::strcmp(cmd, "set pause yes") == 0;
-      shown.paused = sleepPaused_;
-      return true;
-    }
+    sleepPaused_ = !sleepPaused_;
+    shown.paused = sleepPaused_;
+    return true;
+  }
+  return false;
+}
+
+bool PlayerSleep::setPaused(bool paused, PlaybackState& shown) {
+  if (videoSleep_ != VideoSleep::Awake) {
+    sleepPaused_ = paused;
+    shown.paused = sleepPaused_;
+    return true;
   }
   return false;
 }

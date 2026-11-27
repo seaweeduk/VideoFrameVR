@@ -98,7 +98,7 @@ bool Deletion::request(const MenuCommand& c, const std::string& currentFile,
       if (isStashScene(target_) && source.empty()) info_.size = s.size;
     }
   resume_ = !info_.photo && !player_.playback().paused;
-  if (resume_) player_.command("set pause yes");
+  if (resume_) player_.setPaused(true);
   lookup_ = detached([file = target_, stream, check = stream || !source.empty(),
                       expected = expected_,
                       ask = settings_.stash.writeBack && scene_ != 0 &&
@@ -126,7 +126,7 @@ bool Deletion::request(const MenuCommand& c, const std::string& currentFile,
 
 void Deletion::cancel(const std::string& currentFile) {
   lookup_ = {};
-  if (resume_ && currentFile == info_.file) player_.command("set pause no");
+  if (resume_ && currentFile == info_.file) player_.setPaused(false);
   resume_ = false;
 }
 

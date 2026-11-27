@@ -72,7 +72,12 @@ struct MenuCommand {
               // the index-th removed (option: the ControllerType, value: the
               // index); a whole list put back, for Undo (option: the
               // ControllerType, path: GestureMap::listLine()).
-              AddGesture, ChangeGesture, RemoveGesture, RestoreGestures };
+              AddGesture, ChangeGesture, RemoveGesture, RestoreGestures,
+              ToggleMenu,  // open or close the menu
+              SetPaused,   // value 1 paused, 0 playing
+              OpenFileAt,  // OpenFile, starting at `value` seconds
+              FrameStep,   // the paused video a frame back (value -1) or forward (1)
+              StepRating };  // the open video's rating by `value` half stars
   Type type = None;
   // seconds (Seek, SeekTo), enum index, track id (0 = off), volume 0..100,
   // 1 = only the downloaded copy (DeleteFile), picture value
@@ -82,9 +87,10 @@ struct MenuCommand {
   // screen setting 0..100, Packing (SetPacking), the flat screen's distance
   // and height in centimeters, its curve in percent, StashFormat
   // (SetStashFormat), PerformancePreset (ApplyPreset), ServerKind
-  // (SetStashServer, SetupStash; UseServer, -1 for none)
+  // (SetStashServer, SetupStash; UseServer, -1 for none), Recenter: 1 at
+  // once, 0 after two seconds to look where the front should be
   double value = 0;
-  // OpenFile, LoadSubtitle, RequestDelete and DeleteFile.
+  // OpenFile, OpenFileAt, LoadSubtitle, RequestDelete and DeleteFile.
   // RequestDelete: the strip's delete button, the dialog open (the app
   // looks the file up and calls askDelete()); DeleteFile: confirmed;
   // CancelDelete: not. SetStashServer: the URL and the API key, one per
@@ -101,6 +107,17 @@ struct MenuCommand {
   // SetKeyboardLayout: the layout and the other one, one per line.
   std::string path;
   // SetFocus: the FocusControl; SeekTo: 1 = from the seek bar; SetupStash,
-  // SetStashServer; OpenFile: 1 = Shuffle from it, for the list it is opened from
+  // SetStashServer; OpenFile, OpenFileAt: 1 = Shuffle from it, for the list it is
+  // opened from
   int option = 0;
 };
+
+// The type's name as written above ("TogglePause"), for what sends commands
+// by name; nullptr past the last type.
+const char* commandName(MenuCommand::Type type);
+// ... and the type of a name; false if no type has it.
+bool commandType(const char* name, MenuCommand::Type& type);
+// Whether its value and option are ones its handler can take. The menu sends
+// only those; what sends commands from outside (the control socket) checks
+// with this first. A value a handler clamps itself is always in range.
+bool commandInRange(const MenuCommand& c);

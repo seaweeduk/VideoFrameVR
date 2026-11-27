@@ -50,6 +50,7 @@ add_executable(videoframevr
   src/controller_guide.cpp
   src/control_rules.cpp
   src/controls.cpp
+  src/control_socket.cpp
   src/gesture_input.cpp
   src/density_map.cpp
   src/depth_estimator.cpp
@@ -77,12 +78,14 @@ add_executable(videoframevr
   src/hints.cpp
   src/intiface.cpp
   src/key_mask.cpp
+  src/key_pick.cpp
   src/key_picker.cpp
   src/key_share.cpp
   src/focus_settings.cpp
   src/video_check.cpp
   src/library.cpp
   src/library_index.cpp
+  src/list_scroll.cpp
   src/location.cpp
   src/accent.cpp
   src/mask_probe.cpp
@@ -92,6 +95,8 @@ add_executable(videoframevr
   src/menu.cpp
   src/menu_adjust.cpp
   src/menu_browser.cpp
+  src/menu_command.cpp
+  src/menu_grab.cpp
   src/menu_controls.cpp
   src/menu_delete.cpp
   src/menu_feel.cpp
@@ -143,6 +148,8 @@ add_executable(videoframevr
   src/panel_fades.cpp
   src/performance_readout.cpp
   src/photo_preloader.cpp
+  src/picture_drag.cpp
+  src/value_stick.cpp
   src/pipelines.cpp
   src/places.cpp
   src/playback_session.cpp
@@ -167,6 +174,7 @@ add_executable(videoframevr
   src/seek_preview.cpp
   src/setting_commands.cpp
   src/settings.cpp
+  src/setup_input.cpp
   src/setup_intro.cpp
   src/setup_placement.cpp
   src/setup_places.cpp

@@ -113,6 +113,29 @@ void RunningVideo::saveDue(bool zoomHeld) {
   if (sharpenSaveAt > 0 && glfwGetTime() >= sharpenSaveAt) keepSharpen();
 }
 
+void RunningVideo::moveViewpoint(int direction, float dt) {
+  constexpr float kMax = VideoSettings::kMaxOriginForward;
+  video.originForward = std::clamp(video.originForward + direction * 0.05f * dt, -kMax, kMax);
+  storeVideoSoon(VideoSettings::kOrigin);
+}
+
+void RunningVideo::applyPassthroughToggle(bool available, Passthrough& passthrough) {
+  if (togglePassthrough && !available) {
+    // The video keeps its choice for a runtime that shows the room.
+    togglePassthrough = false;
+    std::printf("Passthrough: the runtime offers no alpha blending, so the camera cannot "
+                "show\n");
+  }
+  if (togglePassthrough) {
+    togglePassthrough = false;
+    video.passthrough = !video.passthrough;
+    video.passthroughChosen = true;  // never switched by itself again
+    storeVideo(VideoSettings::kPassthrough);
+    std::printf("Passthrough: %s\n", video.passthrough ? "on" : "off");
+    passthrough.switchedByHand();
+  }
+}
+
 bool RunningVideo::handle(const MenuCommand& c, Passthrough& passthrough) {
   switch (c.type) {
     case MenuCommand::SetBrightness:
@@ -224,6 +247,7 @@ bool RunningVideo::handle(const MenuCommand& c, Passthrough& passthrough) {
       storeVideoSoon(parts);
       break;
     }
+    case MenuCommand::TogglePassthrough: togglePassthrough = true; break;
     case MenuCommand::SetFocus:
       if (applyFocusControl(static_cast<FocusControl>(c.option), c.value, video.hasFocus,
                             video.focus, settings.focus, settings.focusPrefs)) {

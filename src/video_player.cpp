@@ -476,8 +476,33 @@ void VideoPlayer::stop() {
   releaseTarget();  // no stale frame from the closed file
 }
 
+void VideoPlayer::setPaused(bool paused) {
+  if (sleep_.setPaused(paused, playback_)) return;
+  command(paused ? "set pause yes" : "set pause no");
+}
+
+void VideoPlayer::togglePause() {
+  if (sleep_.togglePause(playback_)) return;
+  command("cycle pause");
+}
+
+void VideoPlayer::toggleMute() { command("cycle mute"); }
+
+void VideoPlayer::setMuted(bool muted) { command(muted ? "set mute yes" : "set mute no"); }
+
+void VideoPlayer::setVolume(int volume) { command(("set volume " + std::to_string(volume)).c_str()); }
+
+void VideoPlayer::addVolume(int step) { command(("add volume " + std::to_string(step)).c_str()); }
+
+void VideoPlayer::setLoop(bool loop) { command(loop ? "set loop-file inf" : "set loop-file no"); }
+
+void VideoPlayer::selectAudio(int64_t id) { command(("set aid " + std::to_string(id)).c_str()); }
+
+void VideoPlayer::selectSubtitle(int64_t id) {
+  command(id > 0 ? ("set sid " + std::to_string(id)).c_str() : "set sid no");
+}
+
 void VideoPlayer::command(const char* cmd) {
-  if (sleep_.command(cmd, playback_)) return;
   // Words separated by spaces, as all callers write them: mpv_command_string()
   // has no asynchronous form.
   std::vector<std::string> words;

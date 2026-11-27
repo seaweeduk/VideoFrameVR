@@ -62,7 +62,7 @@ void PlaybackSession::startShuffle() {
 
 // mpv starts a repeated video over by itself; it never reaches its end.
 void PlaybackSession::applyAfterVideo() {
-  player.command(afterVideo() == AfterVideo::Repeat ? "set loop-file inf" : "set loop-file no");
+  player.setLoop(afterVideo() == AfterVideo::Repeat);
 }
 
 // Keeps where the running video is (none near either end), once mpv has
@@ -82,7 +82,7 @@ void PlaybackSession::keepResume() {
   videoOpened = false;
 }
 
-bool PlaybackSession::open(const std::string& requested) {
+bool PlaybackSession::open(const std::string& requested, double startAt) {
   // A video downloaded to this device plays from its copy, however it was chosen.
   std::string oshash = library.oshashOf(requested);
   if (oshash.empty() && stash && stash->catalog())
@@ -100,6 +100,7 @@ bool PlaybackSession::open(const std::string& requested) {
   const std::string copy = offline.copyOf(requested, oshash);
   const std::string path = copy.empty() ? requested : copy;
   openedAs = requested;
+  openedAt = startAt;
   neighbor = {};
   nextPhoto = {};
   neighborStep = 0;
@@ -127,7 +128,8 @@ bool PlaybackSession::open(const std::string& requested) {
       if (!openingRecord || !awaitingRecord) running.video = legacy;
     }
   }
-  awaitingResume = awaitingRecord && settings.resume && !isLink(path) && !isPhotoFile(path);
+  awaitingResume =
+      awaitingRecord && settings.resume && !isLink(path) && !isPhotoFile(path) && startAt < 0;
   resolvedResume = -1;
   passthrough.videoChanged(isLink(path));
   videoChanged();
@@ -146,15 +148,17 @@ bool PlaybackSession::open(const std::string& requested) {
     photoSized = false;
   } else {
     // A newly chosen video always plays, even if the last one was paused,
-    // from where it was left if the library knows (streams start over).
-    double start = -1;
-    if (settings.resume && !isLink(path)) {
+    // from where it was asked to start, else where it was left if the
+    // library knows (streams start over).
+    double start = startAt;
+    if (startAt < 0 && settings.resume && !isLink(path)) {
       const VideoRecord r = library.record(path);
       start = resumePoint(r.resumeSeconds, r.durationSeconds);
     }
-    player.command("set pause no");
+    player.setPaused(false);
     player.load(path, std::max(0.0, start));
-    if (start > 0) std::printf("Resuming at %s\n", clockTime(start).c_str());
+    if (startAt >= 0) std::printf("Starting at %s\n", clockTime(start).c_str());
+    else if (start > 0) std::printf("Resuming at %s\n", clockTime(start).c_str());
   }
   durationKept = false;
   // As for links, Stash's stream opens its preview at once: the first one
@@ -260,9 +264,37 @@ void PlaybackSession::setSlideshow(const MenuCommand& c) {
   nextSlideAt = glfwGetTime() + slideshowSeconds;
 }
 
+void PlaybackSession::stepRating(int halves) {
+  const JobStrings& said = strings().jobs;
+  if (isLink(running.currentFile)) {
+    say(said.notForStreams);
+    return;
+  }
+  if (!library.available()) {
+    say(said.ratingsLocked);
+    return;
+  }
+  menu.stepRating(running.currentFile, halves);
+  if (const float rating = library.record(running.currentFile).rating; rating > 0) {
+    char stars[16];
+    std::snprintf(stars, sizeof(stars), "%g", rating);
+    std::string text(std::max(std::snprintf(nullptr, 0, said.rating, stars), 0), '\0');
+    std::snprintf(text.data(), text.size() + 1, said.rating, stars);
+    say(std::move(text));
+  } else {
+    say(said.notRated);
+  }
+}
+
 bool PlaybackSession::handle(const MenuCommand& c) {
   switch (c.type) {
-    case MenuCommand::TogglePause: player.command("cycle pause"); break;
+    case MenuCommand::TogglePause: player.togglePause(); break;
+    case MenuCommand::SetPaused: player.setPaused(c.value != 0); break;
+    case MenuCommand::FrameStep:
+      // Not while the stick seeks (its release may play on).
+      if (!stickSeek.held() && player.frameStep(c.value < 0)) userSeeked();
+      break;
+    case MenuCommand::StepRating: stepRating(c.value < 0 ? -1 : 1); break;
     case MenuCommand::Stop:
       close();
       menu.showPlayedFrom();
@@ -282,10 +314,10 @@ bool PlaybackSession::handle(const MenuCommand& c) {
       player.seekTo(c.value, !fromBar || std::abs(c.value - player.playback().position) <= kExactJump);
       break;
     }
-    case MenuCommand::ToggleMute: player.command("cycle mute"); break;
+    case MenuCommand::ToggleMute: player.toggleMute(); break;
     case MenuCommand::SetVolume:
-      player.command(("set volume " + std::to_string(static_cast<int>(c.value))).c_str());
-      if (player.playback().muted) player.command("set mute no");  // a volume set is heard
+      player.setVolume(static_cast<int>(c.value));
+      if (player.playback().muted) player.setMuted(false);  // a volume set is heard
       break;
     case MenuCommand::PreviousVideo: step(-1); break;
     case MenuCommand::NextVideo: step(1); break;
@@ -307,12 +339,10 @@ bool PlaybackSession::handle(const MenuCommand& c) {
     case MenuCommand::SetSlideshow: setSlideshow(c); break;
     case MenuCommand::SetAfterVideo: chooseAfterVideo(c); break;
     case MenuCommand::SelectAudio:
-      player.command(("set aid " + std::to_string(static_cast<int64_t>(c.value))).c_str());
+      player.selectAudio(static_cast<int64_t>(c.value));
       break;
     case MenuCommand::SelectSubtitle:
-      player.command(c.value > 0
-                         ? ("set sid " + std::to_string(static_cast<int64_t>(c.value))).c_str()
-                         : "set sid no");
+      player.selectSubtitle(static_cast<int64_t>(c.value));
       break;
     case MenuCommand::LoadSubtitle: player.addSubtitle(c.path); break;
     case MenuCommand::RequestDelete:
@@ -336,7 +366,7 @@ void PlaybackSession::pollFailure() {
       if (!scene.oshashes.empty() && scene.oshashes.front() == scene.oshash) {
         std::printf("Server failed: the scene plays from its media server's stream\n");
         const std::string listed = openedAs;
-        open(stashStream(scene));
+        open(stashStream(scene), openedAt);
         openedAs = listed;
       }
     }
@@ -456,10 +486,6 @@ void PlaybackSession::poll() {
 
 void PlaybackSession::detectFormat() {
   // Re-guess the format once the real frame size is known.
-  if (running.rememberFormat) {  // changed by key
-    rememberFormat();
-    running.rememberFormat = false;
-  }
   // And once mpv says how it decodes a 3D Blu-ray video's two views. Not
   // from the last file's while the next one opens.
   const TwoViews views = player.playback().views;
@@ -488,6 +514,15 @@ void PlaybackSession::photoShown(int photoWidth, int photoHeight) {
       printFormat(running.format, "detected");
     }
   }
+}
+
+PlaybackStatus PlaybackSession::status() const {
+  const PlaybackState& p = player.playback();
+  const bool open = !running.currentFile.empty(), photo = isPhotoFile(running.currentFile);
+  return {running.currentFile, openedAs, open, photo, open && !photo, p.position, p.duration,
+          p.paused, p.endReached, player.loading(), player.failed(), player.seeking(),
+          open && !p.paused && !p.endReached && !player.seeking() && !player.loading() &&
+              !player.failed()};
 }
 
 void PlaybackSession::fill(MenuView& view) const {

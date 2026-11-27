@@ -49,6 +49,7 @@ struct Options {
   int sharpBins = 0, ring = -1;  // run-only overrides
   bool firstRun = false;  // --first-run: setup whatever the profile has
   bool stashSync = false;  // --stash-sync
+  std::string control;  // --control: the control socket's path; empty = none
 };
 
 // What the desktop and Frame video paths differ by outside the player,
