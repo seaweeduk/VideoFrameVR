@@ -108,7 +108,8 @@ class PlaybackSession {
   PlaybackStatus status() const;
   // What plays has a record of its own: a file, a server's scene, or a
   // link recognised by its content. Resume, plays and rating need one; any
-  // other link is kept by its address, with its settings alone.
+  // other link, and a partial download, is kept by its address, with its
+  // settings alone.
   bool recognised() const;
 
  private:

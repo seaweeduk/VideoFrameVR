@@ -37,7 +37,9 @@ double resumePoint(double position, double duration);
 // link, by its address, so a moved or renamed file keeps its history and
 // copies of one file share it. An http(s) link is known by its content
 // while it is open, once its fingerprint (range_fingerprint.h) says what
-// that is; by its address a link keeps its settings alone. Records earlier
+// that is; by its address a link keeps its settings alone. So does a
+// browser's unfinished download (isPartialDownload()), under its path: it is
+// never fingerprinted, as its content keeps changing. Records earlier
 // versions kept for YouTube videos ("youtube:<id>") stay in the file as
 // they are; no address matches them, and the lists show no links.
 //
@@ -86,7 +88,7 @@ class Library {
   bool known(const std::string& location) const;
   // Whether its record is still to come: a file the library doesn't know
   // (yet: open() asks for its fingerprint), or the open link until its
-  // fingerprint's answer.
+  // fingerprint's answer. Never a partial download.
   bool awaited(const std::string& location) const;
   // When a video of the library was first seen (Unix seconds), 0 if not known.
   int64_t addedAt(int64_t id) const;

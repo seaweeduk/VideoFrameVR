@@ -4,8 +4,11 @@ Strings japaneseStrings(const Strings& english) {
   Strings s = english;
   s.noVideo = "ファイルを選んでください";
   s.loading = "読み込み中…";
+  s.buffering = "バッファリング中…";
+  s.waitingDownload = "ダウンロードを待っています…";
   s.playbackFailed = "この動画を再生できません。別のファイルをお試しください。";
   s.discEncrypted = "このディスクイメージは暗号化されているため再生できません。";
+  s.partialFailed = "このダウンロードはまだ再生できません。完了すると再生できる場合があります。";
   s.format = "形式";
   s.projections[0] = "スクリーン";
   s.projections[1] = "180°";
@@ -1336,6 +1339,7 @@ Strings japaneseStrings(const Strings& english) {
   s.jobs.flatOnly = "平面スクリーン専用です";
   s.jobs.needsFocus = "先に立体フォーカスをオンにしてください";
   s.jobs.notForStreams = "ストリームには使えません";
+  s.jobs.notForDownloads = "ダウンロード中は使えません";
   s.jobs.notForFlat = "平面動画には使えません";
   s.jobs.ratingsLocked = "現在、評価を保存できません";
   s.jobs.firstVideo = "これが最初の動画です";

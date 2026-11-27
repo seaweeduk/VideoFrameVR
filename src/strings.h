@@ -964,6 +964,7 @@ struct JobStrings {
   const char* nothingOpen;
   const char* notForPhotos;
   const char* notForStreams;
+  const char* notForDownloads;   // rating or deleting a video whose download is still running
   const char* noRoom;            // the headset can't show the room
   const char* needsPassthrough;  // Remove background, Match the room
   const char* ownMask;           // Remove background: the video has its own
@@ -1319,8 +1320,11 @@ struct RemoteControlStrings {
 struct Strings {
   const char* noVideo;
   const char* loading;
+  const char* buffering;  // over the picture while a video waits for data
+  const char* waitingDownload;  // ... a partial download, for data its download hasn't brought yet
   const char* playbackFailed;
   const char* discEncrypted;  // instead of playbackFailed: an encrypted Blu-ray disc image
+  const char* partialFailed;  // instead of playbackFailed: a partial download
   const char* format;
   const char* projections[7];  // by Projection value
   const char* stereo[3];

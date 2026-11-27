@@ -301,18 +301,12 @@ Status remove(const std::string& locator, uint64_t size, int64_t modified) {
 
 std::vector<std::string> subtitlesBeside(const std::string& locator) {
   const std::string folder = parent(locator);
-  const std::string base = foldFileName(std::filesystem::path(locator).stem().string());
-  const std::string prefix = base + ".";
   std::vector<Entry> entries;
   std::vector<std::string> paths;
   if (list(folder, entries) != Status::Ok) return paths;
-  for (const auto& entry : entries) {
-    if (entry.folder || !isSubtitleFile(entry.name)) continue;
-    const std::string name = foldFileName(std::filesystem::path(entry.name).stem().string());
-    if (name == base || (name.size() > prefix.size() &&
-                        name.compare(0, prefix.size(), prefix) == 0))
+  for (const auto& entry : entries)
+    if (!entry.folder && isSubtitleFile(entry.name) && subtitleBelongsTo(locator, entry.name))
       paths.push_back(folder + "/" + entry.name);
-  }
   std::sort(paths.begin(), paths.end());
   return paths;
 }
@@ -352,10 +346,35 @@ int64_t File::read(uint64_t offset, void* out, uint64_t count) {
 
 namespace {
 // The next bytes of a stream's window; -1 once it failed or was cancelled.
+// A growing one's end waits for more (Stream::growing).
 int64_t readStream(Connection& c, Stream& s, void* out, uint64_t count) {
   std::unique_lock lock(s.mutex);
+  auto askAt = Clock::now();
+  bool askedOnce = false;
   while (!s.cancelled && !s.failed) {
-    if (s.position >= s.handle.length) return 0;
+    if (s.position >= s.handle.length) {
+      if (!s.growing || s.complete) return 0;
+      const auto now = Clock::now();
+      if (s.handle.length > s.lengthSeen) {
+        s.lengthSeen = s.handle.length;
+        s.grewAt = now;
+      }
+      // Past the end, a demuxer looks for what isn't there yet (an index at
+      // the end of the file), and a download that stalled may have gone on
+      // since (a seek after its end): its length is asked once, never
+      // waited for.
+      if (s.position > s.handle.length || now - s.grewAt >= kPartialStall) {
+        if (askedOnce && !s.askLength && !s.refreshing) return 0;
+        askedOnce = true;
+      }
+      if (!s.askLength && !s.refreshing && now >= askAt) {
+        s.askLength = true;
+        askAt = now + std::chrono::milliseconds(250);
+        c.notify();
+      }
+      s.cv.wait_for(lock, std::chrono::milliseconds(50));
+      continue;
+    }
     if (const size_t n = s.take(out, count)) {
       if (s.wantsBlocks(s.handle.length)) c.notify();  // the worker has a block to ask for
       return n;
@@ -434,6 +453,7 @@ bool openMpvStream(const std::string& locator, bool background, std::atomic<bool
     if (p->failed) *p->failed = false;
     p->stream = std::make_shared<Stream>();
     p->stream->locator = locator;
+    p->stream->growing = isPartialDownload(locator);
     if (openStream(*p->connection, p->stream, true) != Status::Ok) return false;
   }
   info->cookie = p.release();

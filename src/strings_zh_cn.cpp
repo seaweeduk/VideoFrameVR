@@ -4,8 +4,11 @@ Strings simplifiedChineseStrings(const Strings& english) {
   Strings s = english;
   s.noVideo = "尚未播放视频，请选择文件";
   s.loading = "正在加载…";
+  s.buffering = "正在缓冲…";
+  s.waitingDownload = "正在等待下载…";
   s.playbackFailed = "无法播放此视频，请尝试其他文件。";
   s.discEncrypted = "此光盘映像已加密，无法播放。";
+  s.partialFailed = "暂时无法播放此下载内容。下载完成后可能可以播放。";
   s.format = "格式";
   s.projections[0] = "屏幕";
   s.projections[1] = "180°";
@@ -1336,6 +1339,7 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.jobs.flatOnly = "仅适用于平面屏幕";
   s.jobs.needsFocus = "请先开启立体对焦";
   s.jobs.notForStreams = "不适用于流媒体";
+  s.jobs.notForDownloads = "下载期间不可用";
   s.jobs.notForFlat = "不适用于平面视频";
   s.jobs.ratingsLocked = "目前无法保存评分";
   s.jobs.firstVideo = "已是第一个视频";

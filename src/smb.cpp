@@ -185,15 +185,7 @@ class Smb : public Backend {
     req.create_disposition = SMB2_FILE_OPEN;
     req.create_options = SMB2_FILE_NON_DIRECTORY_FILE | SMB2_FILE_OPEN_REPARSE_POINT;
     req.name = loc.path.c_str();
-    struct Opened {
-      Result result;
-      smb2_create_reply reply{};
-      static void cb(smb2_context* ctx, int status, void* data, void* opaque) {
-        auto& o = *static_cast<Opened*>(opaque);
-        if (status == 0) o.reply = *static_cast<smb2_create_reply*>(data);
-        Result::treeCb(ctx, status, nullptr, &o.result);
-      }
-    } opened;
+    Opened opened;
     const int rc = send(opened.result, smb2_cmd_create_async(ctx_, &req, Opened::cb, &opened));
     if (rc < 0) {
       switch (opened.result.nt) {
@@ -238,10 +230,17 @@ class Smb : public Backend {
     const Location loc(locator);
     Status status = connect(loc.share);
     if (status != Status::Ok) return status;
-    Result opened;
-    int rc = wait(opened, smb2_open_async(ctx_, loc.path.c_str(), O_RDONLY, Result::cb, &opened));
+    void* file = nullptr;
+    int rc = 0;
+    if (isPartialDownload(locator)) {
+      rc = openGrowing(loc.path, file);
+    } else {
+      Result opened;
+      rc = wait(opened, smb2_open_async(ctx_, loc.path.c_str(), O_RDONLY, Result::cb, &opened));
+      file = opened.data;
+    }
     if (rc < 0) return statusOf(rc);
-    h = {opened.data, serviceTree_, c.epoch, 0};
+    h = {file, serviceTree_, c.epoch, 0};
     smb2_stat_64 st{};
     Result r;
     rc = wait(r, smb2_fstat_async(ctx_, fh(h), &st, Result::cb, &r));
@@ -302,6 +301,26 @@ class Smb : public Backend {
     const int rc = smb2_close_async(ctx_, fh(s.handle),
         [](smb2_context*, int, void*, void* p) { static_cast<Stream*>(p)->closed = true; }, &s);
     if (rc < 0) s.closed = true;
+  }
+
+  void refresh(const std::shared_ptr<Stream>& s) override {
+    smb2_query_info_request req{};
+    req.info_type = SMB2_0_INFO_FILE;
+    req.file_info_class = SMB2_FILE_ALL_INFORMATION;  // its length, and its name now
+    req.output_buffer_length = 0xffff;
+    std::memcpy(req.file_id, *smb2_get_file_id(fh(s->handle)), SMB2_FD_SIZE);
+    smb2_select_tree_id(ctx_, s->handle.tree);
+    auto* asked = new Asked{s, *this};
+    auto* pdu = smb2_cmd_query_info_async(ctx_, &req, Asked::answered, asked);
+    if (!pdu) {
+      delete asked;
+      s->broke(false);
+      return;
+    }
+    s->refreshing = true;
+    ++awaited_;
+    lowWater(1);
+    smb2_queue_pdu(ctx_, pdu);
   }
 
   bool connected() const override { return ctx_; }
@@ -455,6 +474,67 @@ class Smb : public Backend {
       auto* d = static_cast<Directory*>(opaque);
       if (d->aborted(status)) return;
       d->finish(status == SMB2_STATUS_SUCCESS ? d->result.status : Status::Offline);
+    }
+  };
+
+  struct Opened {
+    Result result;
+    smb2_create_reply reply{};
+    static void cb(smb2_context* ctx, int status, void* data, void* opaque) {
+      auto& o = *static_cast<Opened*>(opaque);
+      if (status == 0) o.reply = *static_cast<smb2_create_reply*>(data);
+      Result::treeCb(ctx, status, nullptr, &o.result);
+    }
+  };
+
+  // A partial download, opened to read as O_RDONLY does, but letting its
+  // browser go on writing it and rename it once it finishes (O_RDONLY's
+  // open refuses that rename). Every open of one comes here: playback's,
+  // and any other reader's.
+  int openGrowing(const std::string& path, void*& file) {
+    smb2_create_request req{};
+    req.impersonation_level = SMB2_IMPERSONATION_IMPERSONATION;
+    req.desired_access = SMB2_FILE_READ_DATA | SMB2_FILE_READ_EA | SMB2_FILE_READ_ATTRIBUTES;
+    req.share_access = SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE | SMB2_FILE_SHARE_DELETE;
+    req.create_disposition = SMB2_FILE_OPEN;
+    req.create_options = SMB2_FILE_NON_DIRECTORY_FILE;
+    req.name = path.c_str();
+    Opened opened;
+    const int rc = send(opened.result, smb2_cmd_create_async(ctx_, &req, Opened::cb, &opened));
+    if (rc < 0) return rc;
+    file = smb2_fh_from_file_id(ctx_, &opened.reply.file_id);
+    return file ? 0 : -ENOMEM;
+  }
+
+  // A growing stream's length asked (refresh()); its stream kept until the
+  // answer, which comes also when the connection ends (SHUTDOWN).
+  struct Asked {
+    std::shared_ptr<Stream> stream;
+    Smb& smb;
+    static void answered(smb2_context* ctx, int status, void* data, void* opaque) {
+      const std::unique_ptr<Asked> asked(static_cast<Asked*>(opaque));
+      Stream& s = *asked->stream;
+      --asked->smb.awaited_;
+      const auto* reply = static_cast<smb2_query_info_reply*>(data);
+      auto* info = status == SMB2_STATUS_SUCCESS && reply
+                       ? static_cast<smb2_file_all_info*>(reply->output_buffer) : nullptr;
+      std::lock_guard lock(s.mutex);
+      s.refreshing = false;
+      // Closed already when the connection ended (a growing stream isn't
+      // reopened): nothing more to read.
+      if (!info && !s.closed) s.broke(connectionLost(-nterror_to_errno(status), status));
+      if (info && !s.closed) {
+        s.handle.length = std::max<uint64_t>(s.handle.length, info->standard.end_of_file);
+        // Its browser renamed it: finished, this is all of it. A share
+        // that doesn't say ends it by the wait for more instead.
+        if (info->name) {
+          std::string name = reinterpret_cast<const char*>(info->name);
+          std::replace(name.begin(), name.end(), '\\', '/');
+          s.complete = !isPartialDownload(name);
+        }
+      }
+      if (info) smb2_free_data(ctx, info);
+      s.cv.notify_all();
     }
   };
 

@@ -1,6 +1,7 @@
 #include "seek_preview.h"
 
 #include "bluray.h"
+#include "file_util.h"
 #include "menu.h"
 #include "strings.h"
 
@@ -51,7 +52,9 @@ void SeekPreview::poll() {
 }
 
 void SeekPreview::show(double fraction, const Playing& playing, const CurvedPanel& strip) {
-  shown_ = ready_ && enabled_;
+  // None for a partial download: another reader of a growing file, which
+  // may have no data where it points.
+  shown_ = ready_ && enabled_ && !isPartialDownload(playing.location);
   if (!shown_) return;
   lastUse_ = std::chrono::steady_clock::now();
   const double target = fraction * playing.duration;

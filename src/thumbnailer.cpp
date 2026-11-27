@@ -311,6 +311,10 @@ cairo_surface_t* Thumbnailer::find(const std::string& path) const {
   return it != done_.end() ? it->second : nullptr;
 }
 
+bool Thumbnailer::tried(const std::string& path) const {
+  return done_.count(path) > 0 || isPartialDownload(path);
+}
+
 void Thumbnailer::want(const std::vector<std::string>& paths, int width) {
   request(paths, paths.size(), width, false);
 }
@@ -328,7 +332,16 @@ void Thumbnailer::wantAhead(const std::vector<std::string>& paths, size_t shown,
   request(paths, shown, width, true);
 }
 
-void Thumbnailer::request(const std::vector<std::string>& paths, size_t shown, int width, bool exact) {
+void Thumbnailer::request(const std::vector<std::string>& listed, size_t shown, int width, bool exact) {
+  // Never a partial download: its frames would be of a file still growing,
+  // and its reading another handle on a file its browser must rename. It
+  // keeps the placeholder of a video without one.
+  std::vector<std::string> paths;
+  paths.reserve(listed.size());
+  for (size_t i = 0; i < listed.size(); ++i) {
+    if (!isPartialDownload(listed[i])) paths.push_back(listed[i]);
+    else if (i < shown) --shown;
+  }
   wanted_ = std::set<std::string>(paths.begin(), paths.end());
   if (!state_) return;
   {

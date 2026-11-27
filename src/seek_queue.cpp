@@ -37,7 +37,7 @@ void SeekQueue::add(const SeekRequest& request) {
   }
 }
 
-bool SeekQueue::send(bool ready, double position, double duration) {
+bool SeekQueue::send(bool ready, double position, double duration, bool dropFirst) {
   const double now = nowSeconds();
   if (seekStage_ != SeekStage::None && now - seekSentAt_ > kSeekGiveUp) {
     if (timing_)
@@ -50,6 +50,13 @@ bool SeekQueue::send(bool ready, double position, double duration) {
   if (seekStage_ != SeekStage::None && !seekExact_ && now - seekSentAt_ < kSeekPatience) return false;
   SeekRequest r = waitingSeek_;
   seekWaiting_ = false;
+  // Dropping its buffers loses where mpv is: a distance goes from here, as
+  // the keyframe seek it would have been.
+  if (dropFirst && !r.absolute) {
+    r.amount += position;
+    r.absolute = true;
+    r.exact = false;
+  }
   if (r.absolute) {
     r.amount = std::max(0.0, r.amount);  // mpv counts negative times from the end
     if (duration > 0) r.amount = std::min(r.amount, duration);
@@ -57,6 +64,10 @@ bool SeekQueue::send(bool ready, double position, double duration) {
   const std::string amount = std::to_string(r.amount);
   const char* flags = !r.absolute ? "relative+keyframes" : r.exact ? "absolute+exact" : "absolute+keyframes";
   const char* cmd[] = {"seek", amount.c_str(), flags, nullptr};
+  if (dropFirst) {  // asynchronous too: mpv runs both in order
+    const char* drop[] = {"drop-buffers", nullptr};
+    mpv_command_async(mpv_, 0, drop);
+  }
   // Asynchronous: mpv's core may be busy, and the frame loop never waits for it.
   if (mpv_command_async(mpv_, kSeekReply + seekCount_ + 1, cmd) < 0) return false;
   ++seekCount_;

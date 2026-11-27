@@ -57,23 +57,6 @@ std::string fileName(const std::string& location) {
 
 std::string stem(const std::string& name) { return fs::path(name).stem().string(); }
 
-// The subtitles beside a local video, as remote::subtitlesBeside() finds them.
-std::vector<std::string> localSubtitles(const std::string& video) {
-  const fs::path folder = fs::path(video).parent_path();
-  const std::string base = foldFileName(stem(fileName(video))), prefix = base + ".";
-  std::vector<std::string> paths;
-  std::error_code ec;
-  for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
-    const std::string name = it->path().filename().string();
-    if (!isSubtitleFile(name)) continue;
-    const std::string folded = foldFileName(stem(name));
-    if (folded == base || (folded.size() > prefix.size() && folded.compare(0, prefix.size(), prefix) == 0))
-      paths.push_back(it->path().string());
-  }
-  std::sort(paths.begin(), paths.end());
-  return paths;
-}
-
 // A small file's bytes; false if it can't be read.
 bool readWhole(const std::string& location, std::string& bytes) {
   if (!remote::isRemote(location)) {

@@ -1144,7 +1144,8 @@ int run(Options opts) {
         if (player.loading() || player.playback().duration <= kSeekEndMargin || stickSeek.active()) return "";
         break;
       case V::Rating:
-        if (!session.recognised()) return said.notForStreams;
+        if (!session.recognised())
+          return isPartialDownload(running.currentFile) ? said.notForDownloads : said.notForStreams;
         if (!library.available()) return said.ratingsLocked;
         if (!library.known(running.currentFile)) return "";  // its rating isn't read yet
         break;
@@ -1646,6 +1647,7 @@ int run(Options opts) {
             using D = MenuView::Deletable;
             const D d = menu.deletable();
             if (isLink(running.currentFile)) say(said.notForStreams);
+            else if (isPartialDownload(running.currentFile)) say(said.notForDownloads);
             else if (d == D::NeedsSendToStash) say(said.deleteNeedsStash);
             else if (d == D::StashDown) say(strings().deletion.tipStashDown);
             else if (d == D::No) say(said.serverKeeps);
@@ -2295,7 +2297,7 @@ int run(Options opts) {
         pictureSubtitles.addTo(overlays, subtitlePlacement.canvasAhead(headPos, yawFromQuat(headRot),
                                                                        eyeAspect, settings));
     }
-    if ((stillLoading || (!photo && player.failed())) && headValid) {
+    if ((stillLoading || (!photo && (player.failed() || player.waiting()))) && headValid) {
       // Where the picture will be, the size of the messages in front of the eyes.
       using decoder_holders::Busy;
       const Busy busy = player.decoderRefused() && decoderRescue.path == running.currentFile
@@ -2305,9 +2307,12 @@ int run(Options opts) {
       const bool failed = player.failed() && busy != Busy::Checking && busy != Busy::Freeing;
       loadingText.set(menu, failed ? NoticeIcon::Warning : NoticeIcon::None,
                       busy == Busy::Freeing                ? strings().decoderBusy.freeing
+                      : player.waiting() && isPartialDownload(running.currentFile) ? strings().waitingDownload
+                      : player.waiting()                   ? strings().buffering
                       : !failed                            ? strings().loading
                       : bdmv::isEncrypted(running.currentFile) ? strings().discEncrypted
                       : busy != Busy::No                   ? strings().decoderBusy.busy
+                      : isPartialDownload(running.currentFile) ? strings().partialFailed
                                                            : strings().playbackFailed);
       constexpr float kAt = 2.0f, kScale = kAt / notice_place::kNear * notice_place::kScale;
       const Vec3 center = headPos + transformDir(frame, {0.0f, 0.0f, -kAt});

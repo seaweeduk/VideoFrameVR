@@ -60,9 +60,10 @@ void PlaybackSession::startShuffle() {
   playStartFile = running.currentFile;
 }
 
-// mpv starts a repeated video over by itself; it never reaches its end.
+// mpv starts a repeated video over by itself; it never reaches its end. Not
+// a partial download: the end of its data isn't its end.
 void PlaybackSession::applyAfterVideo() {
-  player.setLoop(afterVideo() == AfterVideo::Repeat);
+  player.setLoop(afterVideo() == AfterVideo::Repeat && !isPartialDownload(running.currentFile));
 }
 
 // Keeps where the running video is (none near either end), once mpv has
@@ -136,7 +137,7 @@ bool PlaybackSession::open(const std::string& requested, double startAt) {
   }
   awaitingResume = awaitingRecord && settings.resume && !isPhotoFile(path) && startAt < 0;
   resolvedResume = -1;
-  passthrough.videoChanged(isLink(path));
+  passthrough.videoChanged(isLink(path) || isPartialDownload(path));
   videoChanged();
   running.applyVideoSettings();
   knownWidth = knownHeight = 0;  // re-detect the format once the size is known
@@ -161,6 +162,7 @@ bool PlaybackSession::open(const std::string& requested, double startAt) {
       start = resumePoint(r.resumeSeconds, r.durationSeconds);
     }
     player.setPaused(false);
+    applyAfterVideo();
     player.load(path, std::max(0.0, start));
     if (startAt >= 0) std::printf("Starting at %s\n", clockTime(start).c_str());
     else if (start > 0) std::printf("Resuming at %s\n", clockTime(start).c_str());
@@ -221,11 +223,11 @@ void PlaybackSession::step(int step, bool atEnd) {
   const bool shuffle = afterVideo() == AfterVideo::Shuffle && !isPhotoFile(running.currentFile);
   // Opened from a list in the menu (Stash's scenes): through that list.
   std::string next;
-  if (!menu.listNeighbor(openedAs, step, next, {shuffle ? shuffleSeed : 0, playStart})) {
+  if (!menu.listNeighbor(openedAs, step, next, {shuffle ? shuffleSeed : 0, playStart, atEnd})) {
     neighborStep = neighbor.valid() && !neighborWrap && !replaced ? neighborStep + step : step;
     neighborWrap = false;
     neighbor = mediaNeighbor(running.currentFile, neighborStep, false,
-                             {shuffle ? shuffleSeed : 0, playStartFile});
+                             {shuffle ? shuffleSeed : 0, playStartFile, atEnd});
     endStep = atEnd;
     endStepRestarts = player.counts().restarts;
     return;
@@ -273,7 +275,7 @@ void PlaybackSession::setSlideshow(const MenuCommand& c) {
 void PlaybackSession::stepRating(int halves) {
   const JobStrings& said = strings().jobs;
   if (!recognised()) {
-    say(said.notForStreams);
+    say(isPartialDownload(running.currentFile) ? said.notForDownloads : said.notForStreams);
     return;
   }
   if (!library.available()) {
@@ -379,7 +381,8 @@ void PlaybackSession::pollFailure() {
 }
 
 bool PlaybackSession::recognised() const {
-  return !isLink(running.currentFile) || !library.oshashOf(running.currentFile).empty();
+  const std::string& f = running.currentFile;
+  return (!isLink(f) && !isPartialDownload(f)) || !library.oshashOf(f).empty();
 }
 
 void PlaybackSession::countPlay(bool opened) {
@@ -486,8 +489,9 @@ void PlaybackSession::poll() {
                      !isPhotoFile(running.currentFile);
   if (atEnd != wasAtEnd) {
     const AfterVideo after = afterVideo();
+    // Not at the end of a partial download's data: the rest may still come.
     if (atEnd && (after == AfterVideo::Next || after == AfterVideo::Shuffle) &&
-        !isLink(running.currentFile))
+        !isLink(running.currentFile) && !isPartialDownload(running.currentFile))
       step(1, true);
     else
       menuAtEnd = atEnd;
@@ -547,7 +551,7 @@ PlaybackStatus PlaybackSession::status() const {
 }
 
 void PlaybackSession::fill(MenuView& view) const {
-  view.streaming = isLink(running.currentFile);
+  view.streaming = isLink(running.currentFile) || isPartialDownload(running.currentFile);
   view.recordless = !recognised();
   // A scene from Stash's stream only through Stash (docs/alpha/delete-file.md).
   // A scene played from its server: only through a server that deletes.

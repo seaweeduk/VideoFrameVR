@@ -29,7 +29,7 @@ void Connection::post(std::function<void()> job, bool priority) {
 void Connection::destroy(bool retry) {
   for (auto& s : streams) {
     std::lock_guard lock(s->mutex);
-    s->reconnecting = retry && !s->failed && !s->cancelled && !s->closing;
+    s->reconnecting = retry && !s->failed && !s->cancelled && !s->closing && !s->growing;
     if (!s->reconnecting) s->failed = s->closed = true;
     if (s->reconnecting && s->retryUntil == Clock::time_point{})
       s->retryUntil = Clock::now() + std::chrono::seconds(10);
@@ -84,11 +84,16 @@ void Connection::fill() {
     std::lock_guard lock(s->mutex);
     if (s->closed || s->closing || s->reconnecting) continue;
     if (s->cancelled || s->failed) {
-      if (std::any_of(s->blocks.begin(), s->blocks.end(), [](auto& b) { return b.pending; }))
+      if (s->refreshing ||
+          std::any_of(s->blocks.begin(), s->blocks.end(), [](auto& b) { return b.pending; }))
         continue;
       s->closing = true;
       backend_->closeStream(*s);
       continue;
+    }
+    if (s->askLength && !s->refreshing) {
+      s->askLength = false;
+      backend_->refresh(s);
     }
     if (s->windows.empty()) s->seek(s->position);
     s->retire();

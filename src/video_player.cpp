@@ -1,7 +1,9 @@
 #include "video_player.h"
 #include "bluray.h"
+#include "file_util.h"
 #include "location.h"
 #include "mpv_gl_context.h"
+#include "partial_stream.h"
 #include "remote.h"
 #include "stash_stream.h"
 
@@ -43,10 +45,16 @@ constexpr uint64_t kTracksReply = uint64_t(1) << 34;
 constexpr uint64_t kLoadReply = uint64_t(1) << 37;
 constexpr uint64_t kViewsReply = uint64_t(1) << 38;
 constexpr uint64_t kTitleReply = uint64_t(1) << 39;
+constexpr uint64_t kDurationReply = uint64_t(1) << 40;
 constexpr uint64_t kPixelPathReply = 2;
 constexpr uint64_t kCommandReply = 3;
 // How long the last file may take to close before a switch counts as failed.
 constexpr double kCloseTimeout = 10.0;
+// A wait for data shorter than this isn't shown (waiting()).
+constexpr double kWaitShown = 0.5;
+// ... nor a partial download's seek shorter than this: one that finds its
+// data is done well inside it, one waiting for the download isn't.
+constexpr double kSeekWaitShown = 2.0;
 
 // Whether the headset's decoder takes AV1: the upstream Iris driver in
 // SteamOS 0.5.10 does, the vendor driver before it didn't. Only the
@@ -309,6 +317,7 @@ bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, const MpvGl
     return false;
   }
   remote::addTo(mpv_, false, &remoteFailed_);
+  partial_stream::addTo(mpv_);
   addStashStreams(mpv_, false, &remoteFailed_);
   bdmv::addTo(mpv_, false, &remoteFailed_);
   // This app's own mpv decodes both views of 3D Blu-ray (MVC) video.
@@ -328,6 +337,8 @@ bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, const MpvGl
   // Available even while mpv itself does not draw the subtitles.
   mpv_observe_property(mpv_, 0, "sub-text", MPV_FORMAT_STRING);
   mpv_observe_property(mpv_, 0, "eof-reached", MPV_FORMAT_FLAG);
+  mpv_observe_property(mpv_, 0, "paused-for-cache", MPV_FORMAT_FLAG);
+  mpv_observe_property(mpv_, 0, "seeking", MPV_FORMAT_FLAG);  // DownloadEdge's
   mpv_observe_property(mpv_, 0, "video-format", MPV_FORMAT_STRING);
   mpv_observe_property(mpv_, 0, "video-params", MPV_FORMAT_NODE);
   mpv_observe_property(mpv_, 0, "video-params/pixelformat", MPV_FORMAT_STRING);
@@ -392,11 +403,16 @@ void VideoPlayer::load(const std::string& path, double start) {
   lastPosition_ = start;
   discChapters_ = false;
   sidecarSubtitles_ = {};
-  if (remote::isRemote(path) || isStashScene(path)) {
-    std::packaged_task<std::vector<Sidecar>()> find([path] {
+  // A partial download here plays through its own reader (partial_stream),
+  // so mpv doesn't find the subtitles beside it itself.
+  const bool localPartial = isPartialDownload(path) && !remote::isRemote(path);
+  if (remote::isRemote(path) || isStashScene(path) || localPartial) {
+    std::packaged_task<std::vector<Sidecar>()> find([path, localPartial] {
       std::vector<Sidecar> subtitles;
       const std::string stem = std::filesystem::path(path).stem().string();
-      if (remote::isRemote(path))
+      if (localPartial)
+        for (const std::string& sub : localSubtitles(path)) subtitles.push_back({sub});
+      else if (remote::isRemote(path))
         for (const std::string& sub : remote::subtitlesBeside(path)) subtitles.push_back({remote::mpvUrl(sub, true)});
       else
         for (const StashCaption& c : stashCaptions(path))
@@ -409,6 +425,8 @@ void VideoPlayer::load(const std::string& path, double start) {
   }
   loading_ = true;
   failed_ = false;
+  cacheWaitSince_ = -1;
+  edge_.load(path);
   playback_.title.clear();  // "Loading …" until this file's title, not the last one's
   playback_.views = TwoViews::No;  // until mpv says (setViews())
   exportRefused_ = compressedRefused_ = false;
@@ -433,7 +451,9 @@ void VideoPlayer::load(const std::string& path, double start) {
   // %n% quotes n bytes as they are.
   if (const std::string title = linkTitle(path); !title.empty())
     startOption += ",force-media-title=%" + std::to_string(title.size()) + "%" + title;
-  const std::string url = bdmv::isDiscImage(path) ? bdmv::mpvUrl(path) : remote::mpvUrl(path);
+  const std::string url = bdmv::isDiscImage(path) ? bdmv::mpvUrl(path)
+                          : localPartial          ? partial_stream::mpvUrl(path)
+                                                  : remote::mpvUrl(path);
   const char* resumed[] = {"loadfile", url.c_str(), "replace", "-1", startOption.c_str(), nullptr};
   loadFile(resumed);
 }
@@ -451,6 +471,14 @@ void VideoPlayer::loadFile(const char** cmd) {
     failed_ = true;
     loading_ = false;
   }
+}
+
+bool VideoPlayer::waiting() const {
+  if (!current_ || loading_ || failed_ || !sleep_.awake() || playback_.endReached) return false;
+  const double now = nowSeconds();
+  // A partial download's seek past what has arrived, paused or playing.
+  if (edge_.seekWaits(now, kSeekWaitShown)) return true;
+  return cacheWaitSince_ >= 0 && now - cacheWaitSince_ > kWaitShown && !seeks_.onItsWay() && !playback_.paused;
 }
 
 bool VideoPlayer::takeOpened() {
@@ -480,6 +508,8 @@ void VideoPlayer::stop() {
   updateChapters();
   loading_ = false;
   failed_ = false;
+  cacheWaitSince_ = -1;
+  edge_.stop();
   countedEntry_ = -1;
   loadReplyPending_ = false;
   loadSentAt_ = 0;
@@ -716,7 +746,9 @@ void VideoPlayer::requestSeek(const SeekQueue::SeekRequest& request) {
 }
 
 void VideoPlayer::sendSeek() {
-  if (!seeks_.send(!loading_ && fileLoaded_, playback_.position, playback_.duration)) return;
+  if (!seeks_.send(!loading_ && fileLoaded_, playback_.position, playback_.duration,
+                   edge_.dropBeforeSeek(playback_.endReached)))
+    return;
   ++counts_.restarts;
   counts_.seek = true;
 }
@@ -950,6 +982,9 @@ void VideoPlayer::onFileLoaded() {
     // mpv tells of a title only when it changes: one equal to the last
     // file's (the same file again) would leave it at "Loading ...".
     mpv_get_property_async(mpv_, kTitleReply + loadRequest_, "media-title", MPV_FORMAT_STRING);
+    // Nor of a duration: a partial download's own may have come before this.
+    if (edge_.partial())
+      mpv_get_property_async(mpv_, kDurationReply + loadRequest_, "duration", MPV_FORMAT_DOUBLE);
   }
 }
 
@@ -998,6 +1033,11 @@ void VideoPlayer::onGetPropertyReply(const mpv_event* ev) {
   if (ev->reply_userdata == kTitleReply + loadRequest_ && ev->error >= 0) {
     const auto* prop = static_cast<mpv_event_property*>(ev->data);
     if (prop->format == MPV_FORMAT_STRING) playback_.title = *static_cast<char**>(prop->data);
+  }
+  if (ev->reply_userdata == kDurationReply + loadRequest_ && ev->error >= 0) {
+    const auto* prop = static_cast<mpv_event_property*>(ev->data);
+    if (prop->format == MPV_FORMAT_DOUBLE)
+      edge_.grow(playback_.duration, *static_cast<double*>(prop->data), current_);
   }
   if (ev->reply_userdata == kViewsReply + loadRequest_ && !path_.empty()) {
     const auto* prop = static_cast<mpv_event_property*>(ev->data);
@@ -1062,10 +1102,17 @@ void VideoPlayer::onPropertyValue(const std::string& name, const mpv_event_prope
         positionKnown_ = current_;
         if (current_) lastPosition_ = v;
         updateDiscChapter();
+        edge_.grow(playback_.duration, v, current_);
       }
     }
-    else if (name == "duration") playback_.duration = v;
-    else if (name == "demuxer-cache-time") playback_.bufferedUntil = v;
+    else if (name == "duration") {
+      if (!edge_.partial()) playback_.duration = v;
+      edge_.grow(playback_.duration, v, current_);
+    }
+    else if (name == "demuxer-cache-time") {
+      playback_.bufferedUntil = v;
+      edge_.grow(playback_.duration, v, current_);
+    }
     else if (name == "volume") playback_.volume = v;
     else if (name == "container-fps") playback_.fps = v;
   } else if (prop->format == MPV_FORMAT_INT64) {
@@ -1080,6 +1127,9 @@ void VideoPlayer::onPropertyValue(const std::string& name, const mpv_event_prope
     if (name == "pause") playback_.paused = sleep_.awake() ? v : sleep_.paused();
     else if (name == "mute") playback_.muted = v;
     else if (name == "eof-reached") playback_.endReached = v;
+    else if (name == "paused-for-cache")
+      cacheWaitSince_ = !v ? -1 : cacheWaitSince_ >= 0 ? cacheWaitSince_ : nowSeconds();
+    else if (name == "seeking") edge_.seeking(v, nowSeconds());
   } else if (prop->format == MPV_FORMAT_STRING) {
     const char* s = *static_cast<char**>(prop->data);
     if (name == "media-title") playback_.title = s;
@@ -1128,6 +1178,8 @@ void VideoPlayer::onPropertyGone(const std::string& name) {
   }
   else if (name == "sub-text") playback_.subtitleText.clear();
   else if (name == "eof-reached") playback_.endReached = false;
+  else if (name == "paused-for-cache") cacheWaitSince_ = -1;
+  else if (name == "seeking") edge_.seeking(false, 0);
   else if (name == "video-format") playback_.videoCodec.clear();
   else if (name == "video-params/pixelformat") playback_.pixelFormat.clear();
   else if (name == "video-params/gamma") sourceTrc_.clear();

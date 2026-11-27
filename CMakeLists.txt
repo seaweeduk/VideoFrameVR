@@ -37,6 +37,8 @@ add_executable(videoframevr
   src/video_player.cpp
   src/seek_queue.cpp
   src/player_sleep.cpp
+  src/partial_stream.cpp
+  src/download_edge.cpp
   src/decoder_holders.cpp
   src/deletion.cpp
   src/passthrough.cpp

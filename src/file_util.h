@@ -12,6 +12,24 @@ bool isVideoFile(const std::filesystem::path& p);
 bool isPhotoFile(const std::filesystem::path& p);
 bool isPhotoFile(const std::string& p);
 bool isSubtitleFile(const std::filesystem::path& p);
+// A browser's unfinished download of a video, here or on a share: its name
+// ends in .part, .crdownload or .opdownload after a video's (not a disc
+// image's). Not a link, and not the app's own in an Offline videos folder.
+bool isPartialDownload(const std::string& location);
+// At the end of a partial download's data, how long a read waits without it
+// growing: a browser can hold back what it fetched for a while, a share's
+// writer longer. After it, the video ends where its data does.
+constexpr std::chrono::seconds kPartialStall{30};
+// A partial download the browser lists, and Previous and Next go through:
+// one its reader follows as it grows, here or on an SMB share.
+bool isListedPartial(const std::string& location);
+// Whether a subtitle file's name goes with a video's: "movie.srt" or
+// "movie.en.srt" for "movie.mp4", and for its partial download
+// "movie.mp4.part".
+bool subtitleBelongsTo(const std::string& video, const std::string& subtitle);
+// The subtitles beside a local video, as remote::subtitlesBeside() finds
+// them beside a share's: sorted paths. Lists its folder.
+std::vector<std::string> localSubtitles(const std::string& video);
 
 // ASCII case-insensitive name order.
 bool fileNameLess(const std::string& a, const std::string& b);
@@ -35,9 +53,13 @@ void forgetFolderListing();
 // shuffled (shuffle != 0, the seed of the random order), round the list once
 // from `start`, the entry opened by hand: Next ends before coming back to
 // it, Previous at it.
+// Going on by itself (at a video's end, `byItself`), never to a partial
+// download (isPartialDownload()): its data may end before it does. Previous
+// and Next by hand still go to one.
 struct PlayOrder {
   uint64_t shuffle = 0;
   std::string start;
+  bool byItself = false;
 };
 // The entry `step` places from `current` in `list` that way. An empty string
 // past its end, or if `current` isn't in it.

@@ -3,6 +3,7 @@
 #include "gl_util.h"
 #include "playback_state.h"
 #include "player_sleep.h"
+#include "download_edge.h"
 #include "seek_queue.h"
 #include "subtitle_picture.h"
 #include "video_format.h"
@@ -160,6 +161,13 @@ class VideoPlayer {
   // texture still holds the previous video meanwhile.
   bool loading() const { return loading_; }
   bool failed() const { return failed_; }
+  // A video that has shown a frame stands still for its data (mpv's
+  // paused-for-cache), for longer than a moment: not while it loads, a
+  // seek is on its way, it sleeps or wakes, is paused or at its end. Also a
+  // partial download's seek past what has arrived (DownloadEdge), paused
+  // or not: told from a seek that is only slow by time alone, as one that
+  // has gone on for longer than a seek finding its data takes.
+  bool waiting() const;
   // ... because the hardware decoder refused the video (on the Frame), at
   // refusedAt() seconds.
   bool decoderRefused() const { return failed_ && decoderRefused_; }
@@ -302,6 +310,7 @@ class VideoPlayer {
   SubtitleExport subtitles_;
   bool loading_ = false;
   bool failed_ = false;
+  double cacheWaitSince_ = -1;  // seconds, steady clock: mpv paused for its cache, -1 = not
   bool fileLoaded_ = false;     // the new file has been opened
   bool newVideoSized_ = false;  // ...and its video has been configured
   bool loadRestarted_ = false;  // its first decoded frame has reached the render API
@@ -333,6 +342,7 @@ class VideoPlayer {
   bool shutdown_ = false;
   PlayerSleep sleep_{export_};
   SeekQueue seeks_;
+  DownloadEdge edge_;
   bool timing_ = false;
   bool counting_ = false;        // --timing or the performance readout
   bool countsObserved_ = false;  // mpv's properties for counts_ are observed

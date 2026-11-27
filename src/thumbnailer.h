@@ -41,8 +41,9 @@ class Thumbnailer {
   void start();
   // The thumbnail if it is ready, else null. Failed files also give null.
   cairo_surface_t* find(const std::string& path) const;
-  // Whether the file's thumbnail was made or failed (until the cache drops it).
-  bool tried(const std::string& path) const { return done_.count(path) > 0; }
+  // Whether the file's thumbnail was made or failed (until the cache drops
+  // it). A partial download's is never made (request()): as one failed.
+  bool tried(const std::string& path) const;
   // The files that should get thumbnails, most urgent first (e.g. the rows on
   // screen, then those around them), drawn `width` pixels wide: at the
   // list's size up to its width, else the gallery's. Replaces earlier

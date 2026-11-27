@@ -132,7 +132,9 @@ struct MenuViewLayout {
   bool discEncrypted = false;   // ... because it is an encrypted disc image
   bool decoderBusy = false;     // ... because the decoder is busy (decoder_holders.h)
   bool floatingSubtitles = false;
-  bool streaming = false;  // the current video is a link, not a file
+  // The current video is a link or a partial download: no file to delete or
+  // find in Stash, and its data arrives as it plays (the strip's buffered band).
+  bool streaming = false;
   bool recordless = false;  // ... one without a record of its own: no rating (PlaybackSession::recognised())
   int videoWidth = 0, videoHeight = 0;
   bool background = true;  // night sky around the flat screen

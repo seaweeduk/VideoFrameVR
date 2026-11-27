@@ -27,8 +27,11 @@ constexpr Strings englishStrings() {
   Strings s{};
   s.noVideo = "No video – choose a file";
   s.loading = "Loading …";
+  s.buffering = "Buffering …";
+  s.waitingDownload = "Waiting for the download …";
   s.playbackFailed = "Can't play this video. Try another file.";
   s.discEncrypted = "This disc image is encrypted and can't be played.";
+  s.partialFailed = "Can't play this download yet. It may play once it finishes.";
   s.format = "Format";
   s.projections[0] = "Screen";
   s.projections[1] = "180°";
@@ -1361,6 +1364,7 @@ constexpr Strings englishStrings() {
   s.jobs.nothingOpen = "Nothing is playing";
   s.jobs.notForPhotos = "Not for photos";
   s.jobs.notForStreams = "Not for streams";
+  s.jobs.notForDownloads = "Not while it downloads";
   s.jobs.noRoom = "This headset doesn't show the room";
   s.jobs.needsPassthrough = "Turn on passthrough first";
   s.jobs.ownMask = "This video has its own mask";
