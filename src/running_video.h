@@ -29,7 +29,6 @@ class RunningVideo {
   ScreenPlacement screen;
   VideoFormat format;
   bool formatChosenByUser = false;  // stops auto-detection from overriding the user
-  bool rememberFormat = false;      // the user changed the format by key: store it
   VideoSettings video;  // what is remembered about the running video
   // Settings (VideoSettings::Part) of the running video changed in a run of
   // small steps (a slider, a held stick, a drag), stored at glfwGetTime()
@@ -37,6 +36,7 @@ class RunningVideo {
   unsigned unsavedParts = 0;
   double saveAt = 0;
   bool screenChanged = false;  // by key: keep the flat screen's new size
+  bool togglePassthrough = false;  // asked for: applyPassthroughToggle() does it
   bool flipVideo = false;
 
   // After a covered setting changes: the preset they now match, else
@@ -44,6 +44,9 @@ class RunningVideo {
   std::function<void()> matchPreset;
 
   void zoomBy(double percent);
+  // The viewpoint moved forward (direction 1) or back (-1) for `dt` seconds
+  // of the stick held.
+  void moveViewpoint(int direction, float dt);
   // Stores these parts (VideoSettings::Part) of the running video's
   // settings: only what the user changed, so the rest of a record still
   // being found stays as it is.
@@ -70,6 +73,9 @@ class RunningVideo {
   void keepSharpen();
   // Each frame: what is due to be stored. `zoomHeld`: a zoom is still held.
   void saveDue(bool zoomHeld);
+  // Passthrough on or off as asked, once the frame knows whether it is
+  // `available` (the runtime blends, or key green stands in for it).
+  void applyPassthroughToggle(bool available, Passthrough& passthrough);
   // The command, if it changes the running video's settings, Sharpen or
   // the flat screen's size; false for any other.
   bool handle(const MenuCommand& c, Passthrough& passthrough);

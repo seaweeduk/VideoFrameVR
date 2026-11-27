@@ -35,7 +35,8 @@ class PlayerSleep {
 
   // Asleep, pause commands and seeks change what it restores, and `shown`:
   // true if it took the command.
-  bool command(const char* cmd, PlaybackState& shown);
+  bool togglePause(PlaybackState& shown);
+  bool setPaused(bool paused, PlaybackState& shown);
   bool seek(const SeekQueue::SeekRequest& request, PlaybackState& shown);
 
   // Before the track closes: the track, position and pause to restore.

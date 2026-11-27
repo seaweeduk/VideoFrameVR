@@ -22,11 +22,13 @@ void printUsage(const char* argv0) {
               "          [--show-foveation]\n"
               "          [--sharp-bins=1|3] [--ring=on|off]\n"
               "          [--first-run] [--stash-sync] [--save-diagnostics] [--version]\n"
-              "          [video file or URL]\n"
+              "          [--control=PATH] [video file or URL]\n"
               "Without a video the file browser opens. --stash-sync syncs from Stash once, without\n"
               "the headset, and prints what it found and how long it took. --save-diagnostics saves\n"
               "the logs and settings, anonymised, in one zip in Downloads and prints its path.\n"
               "--first-run shows the first-run setup, changing nothing in the profile until it ends.\n"
+              "--control=PATH listens on a Unix socket at PATH for scripts on this machine: one JSON\n"
+              "object a line, {\"command\": \"TogglePause\"} or {\"get\": \"status\"}, each answered.\n"
               "For repeatable measurements without anyone wearing the headset: --fixed-view draws\n"
               "the scene in front of the view wherever the headset points; --open-menu opens the\n"
               "menu at start on PAGE: strip, browser, settings, or seek (the strip with the pointer\n"
@@ -216,6 +218,8 @@ std::optional<int> parseOptions(int argc, char** argv, Options& opts) {
       opts.firstRun = true;
     } else if (arg == "--stash-sync") {
       opts.stashSync = true;
+    } else if (arg.rfind("--control=", 0) == 0) {
+      opts.control = arg.substr(10);
     } else if (arg == "--save-diagnostics") {
       // No log of its own: it would add one to what it saves.
       std::string error;

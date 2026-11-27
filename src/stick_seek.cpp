@@ -62,7 +62,7 @@ bool StickSeek::update(const ControllerState& input, const Frame& frame) {
     // The picture waits, and is silent, until the stick lets go; with
     // the menu closed, the strip alone shows where it goes meanwhile.
     heldSeekPaused = !p.paused;
-    if (heldSeekPaused) player.command("set pause yes");
+    if (heldSeekPaused) player.setPaused(true);
     heldSeekBar = !panel.open && frame.headValid;
     if (heldSeekBar) panel.placeInFrontOf(*frame.headPos, *frame.menuAt);
     heldSeekPicture = heldSeekFrom;
@@ -104,7 +104,7 @@ bool StickSeek::update(const ControllerState& input, const Frame& frame) {
     } else if (sent) {
       player.seekBy(step.distance);
     }
-    if (heldSeekPaused) player.command("set pause no");
+    if (heldSeekPaused) player.setPaused(false);
     heldSeekPaused = false;
     heldSeekLanding = step.held && (sent || player.seeking());
     heldSeekBarUntil = now + kSeekBarLinger;

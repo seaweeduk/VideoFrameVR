@@ -48,8 +48,17 @@ class VideoPlayer {
   bool positionKnown() const { return positionKnown_; }
   // Stops playback and closes the file (e.g. before deleting it).
   void stop();
-  // Runs an mpv input command, e.g. "osd-msg cycle pause".
-  void command(const char* cmd);
+  // Pause, mute, volume, looping and track selection. While the video
+  // sleeps, a pause changes what it wakes up with (PlayerSleep).
+  void setPaused(bool paused);
+  void togglePause();
+  void toggleMute();
+  void setMuted(bool muted);
+  void setVolume(int volume);
+  void addVolume(int step);
+  void setLoop(bool loop);
+  void selectAudio(int64_t id);
+  void selectSubtitle(int64_t id);  // 0 or less: none
   // Seeks never queue behind one still on its way: one asked for meanwhile
   // waits until the first frame of the last has arrived, merged with any
   // others asked for since, so a held stick keeps the picture changing. An
@@ -130,6 +139,7 @@ class VideoPlayer {
     std::string hwPixelFormat;  // the decoded format under a hardware one (PlaybackState::pixelFormat)
   };
   void setCounting(bool on);
+  bool counting() const { return counting_; }
   const Counts& counts() const { return counts_; }
   // A seek is on its way or waiting.
   bool seeking() const { return seeks_.busy(); }
@@ -200,6 +210,8 @@ class VideoPlayer {
   void logPixelPath(int64_t displayW, int64_t displayH, int maxSize, int levels);
   void updateMipmaps(SharedImage* image);
   void applyTargetTrc();
+  // Runs an mpv input command, e.g. "osd-msg cycle pause".
+  void command(const char* cmd);
   void sendPicture();  // to mpv: picture_, or none with plainPicture_
   void releaseTarget();
   bool wantExport() const;

@@ -26,6 +26,22 @@ class VideoPlayer;
 struct MenuCommand;
 struct MenuView;
 
+// What is open and how it is going (PlaybackSession::status()).
+struct PlaybackStatus {
+  const std::string& file;  // what plays, empty if nothing
+  // While something is open: what it was opened as, before a downloaded
+  // copy or a media server's stream took its place.
+  const std::string& asked;
+  bool open;      // something is
+  bool photo;     // ... a photo
+  bool video;     // ... a video
+  double position, duration;  // seconds
+  bool paused, ended, loading, failed, seeking;
+  // Something open that goes on now: not paused, at its end, seeking,
+  // loading or failed.
+  bool moving;
+};
+
 // What plays: opening and closing videos and photos, Previous and Next
 // through a folder or a list, what happens at a video's end, the slideshow,
 // resuming, play counts, the record a file is kept under arriving, and its
@@ -47,9 +63,10 @@ class PlaybackSession {
   // catalog is there.
   void start(const std::string& file);
   // Opens a video with what is remembered about it. True if its format was
-  // remembered.
-  bool open(const std::string& requested);
-  // ... chosen in the menu (MenuCommand::OpenFile), after open().
+  // remembered. A video given `startAt` (seconds, 0 or more) starts there,
+  // and is not resumed where it was left.
+  bool open(const std::string& requested, double startAt = -1);
+  // ... chosen in the menu (MenuCommand::OpenFile, OpenFileAt), after open().
   void openedByHand(const MenuCommand& c);
   // Closes the running video or photo and leaves the scene empty, keeping
   // where it was left as switching to another would.
@@ -79,6 +96,9 @@ class PlaybackSession {
   // A photo's pixels are there (photoWidth x photoHeight).
   void photoShown(int photoWidth, int photoHeight);
   void fill(MenuView& view) const;
+  // Worked out when asked: a command earlier in the frame may have opened
+  // or closed a file.
+  PlaybackStatus status() const;
 
  private:
   VideoPlayer& player;
@@ -101,6 +121,9 @@ class PlaybackSession {
   ControlInput& controlInput;
 
   void say(std::string text);
+  // The open video's rating up or down a half star (MenuCommand::StepRating),
+  // and what it is now said.
+  void stepRating(int halves);
   // Another video, or none: what the last one had going on ends.
   void videoChanged();
   void startShuffle();
@@ -125,6 +148,7 @@ class PlaybackSession {
   // What the playing video was opened as, before a copy or Stash's stream
   // took its place: Previous and Next go on from there through a list.
   std::string openedAs;
+  double openedAt = -1;  // ... and the start it was given (open()'s startAt)
   int neighborStep = 0;
   bool neighborWrap = false;
   // What happens when a video ends: the setting, or Repeat or Shuffle once

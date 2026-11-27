@@ -73,3 +73,10 @@ seek previews use `vaapi-copy`. Hardware codec and resolution limits depend on
 the GPU. `--hwdec=vaapi-copy` selects copy-back decoding for troubleshooting;
 `--hwdec=no` disables hardware decoding for playback and previews. AMD library
 thumbnails currently use software decoding.
+
+`--control=PATH` lets scripts on this machine drive the app through a Unix
+socket at PATH: one JSON object a line, a command by its `MenuCommand` name
+(`{"command": "Seek", "value": 10}`) or `{"get": "status"}`, each answered.
+A command with a value its handler can't take is refused, and so is
+deleting (`RequestDelete`, `DeleteFile`, `CancelDelete`): that is done in
+the menu's dialog, by a person.
