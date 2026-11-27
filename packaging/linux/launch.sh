@@ -4,8 +4,14 @@
 set -euo pipefail
 
 app_id=videoframevr
-runtime_min=4.0.20261007.263973
-fail() { printf '%s\n' "$app_id: $*" >&2; exit 1; }
+fail() {
+  printf '%s\n' "$app_id: $*" >&2 || :
+  # Steam shows no output, so without a terminal also say it in a window.
+  if [[ ! -t 2 ]] && command -v zenity >/dev/null; then
+    zenity --error --no-markup --title VideoFrameVR --width 460 --timeout 60 --text "$*" 2>/dev/null || true
+  fi
+  exit 1
+}
 os_value() {
   # Read data, not shell code. os-release values used here contain no escapes.
   sed -n "s/^$2=//p" "$1" 2>/dev/null | tr -d '\"' | head -n 1
@@ -43,9 +49,12 @@ case $(uname -m) in
   x86_64) arch=x86_64; runtime_name=SteamLinuxRuntime_4; runtime_app=4183110 ;;
   *) fail 'This release requires an ARM64 or x86-64 Linux host.' ;;
 esac
+# runtime_title is the tool's name in the Steam library.
 case $arch in
-  aarch64) runtime_variant=com.valvesoftware.steamruntime.platform-arm64-steamrt4 ;;
-  x86_64) runtime_variant=com.valvesoftware.steamruntime.platform-amd64_i386-steamrt4 ;;
+  aarch64) runtime_variant=com.valvesoftware.steamruntime.platform-arm64-steamrt4
+           runtime_title='Steam Linux Runtime 4.0 - Arm64' ;;
+  x86_64) runtime_variant=com.valvesoftware.steamruntime.platform-amd64_i386-steamrt4
+          runtime_title='Steam Linux Runtime 4.0' ;;
 esac
 [[ $(json_identifier architecture) == "$arch" ]] || fail 'Release metadata does not match the host architecture.'
 # Fail before entering a container when a bundle of the other architecture was
@@ -63,31 +72,17 @@ if [[ ${container:-} == pressure-vessel ]]; then
     fail 'This release needs Steam Linux Runtime 4.0. Do not force an older compatibility tool.'
   [[ $(os_value "$os" VARIANT_ID) == "$runtime_variant" ]] ||
     fail 'The active Steam Linux Runtime platform does not match this release architecture.'
-  runtime_version=$(os_value "$os" BUILD_ID)
-  [[ $runtime_version =~ ^4\.0\.[0-9]+\.[0-9]+$ ]] ||
-    fail 'Cannot identify the active Steam Linux Runtime version.'
-  [[ $(printf '%s\n' "$runtime_min" "$runtime_version" | sort -V | head -n 1) == "$runtime_min" ]] ||
-    fail 'Update Steam Linux Runtime 4.0 before launching this release.'
 else
   [[ ${VIDEOFRAMEVR_SLR_ENTERED:-0} != 1 ]] ||
     fail 'Steam Linux Runtime did not enter the expected container.'
   [[ -z ${container:-} ]] || fail 'Start this release outside other containers.'
 
-  valid_runtime() {
-    local dir=$1 metadata version
-    [[ -x $dir/run && -r $dir/VERSIONS.txt ]] || return 1
-    version=$(awk '$1 == "depot" { print $2; exit }' "$dir/VERSIONS.txt")
-    [[ $version =~ ^4\.0\.[0-9]+\.[0-9]+$ ]] || return 1
-    [[ $(printf '%s\n' "$runtime_min" "$version" | sort -V | head -n 1) == "$runtime_min" ]] || return 1
-    metadata="$dir/steamrt4_platform_$version/files/lib/os-release"
-    [[ -r $metadata ]] || return 1
-    [[ $(os_value "$metadata" ID) == steamrt && $(os_value "$metadata" VERSION_ID) == 4 ]] || return 1
-    [[ $(os_value "$metadata" VARIANT_ID) == "$runtime_variant" ]]
-  }
-
+  # Any 4.0 runtime will do, however old: Steam can leave it weeks behind, and
+  # the release build checks the bundle against the first public 4.0. What was
+  # entered is checked above, from inside.
   runtime=
   if [[ -n ${VIDEOFRAMEVR_SLR_ROOT:-} ]]; then
-    valid_runtime "$VIDEOFRAMEVR_SLR_ROOT" || fail 'VIDEOFRAMEVR_SLR_ROOT is not a complete matching Steam Linux Runtime 4.0 installation.'
+    [[ -x $VIDEOFRAMEVR_SLR_ROOT/run ]] || fail 'VIDEOFRAMEVR_SLR_ROOT is not a Steam Linux Runtime installation.'
     runtime=$VIDEOFRAMEVR_SLR_ROOT
   else
     roots=("${STEAM_COMPAT_CLIENT_INSTALL_PATH:-}" "$HOME/.steam/root" "$HOME/.steam/steam"
@@ -111,10 +106,10 @@ else
     done
     for library in "${libraries[@]}"; do
       candidate="$library/steamapps/common/$runtime_name"
-      if valid_runtime "$candidate"; then runtime=$candidate; break; fi
+      if [[ -x $candidate/run ]]; then runtime=$candidate; break; fi
     done
   fi
-  [[ -n $runtime ]] || fail "Install or update Steam Linux Runtime 4.0 in Steam, app $runtime_app. No system packages are required."
+  [[ -n $runtime ]] || fail "\"$runtime_title\" is not installed. Install it from your Steam library (steam://install/$runtime_app), then start again."
   # Only the payload gets our library directory. pressure-vessel must start with
   # its own libraries. Keep Steam's process ancestry, overlay and app identity.
   export VIDEOFRAMEVR_SLR_ENTERED=1

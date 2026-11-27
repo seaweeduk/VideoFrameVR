@@ -36,6 +36,11 @@ To check an extracted app folder without running it:
 bash packaging/release/build.sh check --bundle /path/to/release --arch aarch64 --offline
 ```
 
+The check, which every build also runs, compares the app's libraries with the
+first public Steam Linux Runtime 4.0 (`PLATFORM_VERSION` in `artifacts.py`), not
+with the SDK's own version. The app starts on any 4.0 runtime, so a dependency
+that an old one lacks has to fail here.
+
 ## Rebuilding from a source archive
 
 A source archive holds the app's source in `app/`, every third-party source in
