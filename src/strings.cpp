@@ -989,8 +989,10 @@ constexpr Strings englishStrings() {
   s.places.renameHint = "Leave it empty for its own name.";
   s.places.save = "Save";
   s.accent.group = "Appearance";
+  s.accent.menu = "Menu";
+  s.accent.pointer = "Pointer";
   s.accent.names[0] = "Blue";
-  s.accent.names[1] = "Teal";
+  s.accent.names[1] = "Sky blue";
   s.accent.names[2] = "Green";
   s.accent.names[3] = "Orange";
   s.accent.names[4] = "Red";

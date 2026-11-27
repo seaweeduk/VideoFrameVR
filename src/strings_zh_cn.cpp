@@ -960,8 +960,10 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.places.renameHint = "留空则恢复原始名称。";
   s.places.save = "保存";
   s.accent.group = "外观";
+  s.accent.menu = "菜单";
+  s.accent.pointer = "指针";
   s.accent.names[0] = "蓝色";
-  s.accent.names[1] = "青色";
+  s.accent.names[1] = "天蓝色";
   s.accent.names[2] = "绿色";
   s.accent.names[3] = "橙色";
   s.accent.names[4] = "红色";

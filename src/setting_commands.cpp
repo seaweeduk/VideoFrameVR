@@ -27,6 +27,14 @@ bool applySettingCommand(const MenuCommand& c, Settings& settings) {
       saveSettings(settings);
       break;
     }
+    case MenuCommand::SetPointerColour:
+      settings.pointer.preset = std::clamp(static_cast<int>(c.value), 0, kAccentCustom);
+      saveSettings(settings);
+      break;
+    case MenuCommand::SetPointerHue:
+      settings.pointer.hue = (static_cast<int>(c.value) % 360 + 360) % 360;
+      saveSettings(settings);
+      break;
     case MenuCommand::ToggleBackground:
       settings.background = !settings.background;
       saveSettings(settings);
@@ -209,6 +217,8 @@ void changeScripts(const MenuCommand& c, Settings& settings) {
 void fillSettings(MenuView& view, const Settings& settings) {
   view.scripts = settings.scripts;
   view.accent = settings.accent;
+  view.pointerColour = settings.pointer.preset;
+  view.pointerHue = settings.pointer.hue;
   view.floatingSubtitles = settings.floatingSubtitles;
   view.background = settings.background;
   view.subtitleSize = settings.subtitleSize;

@@ -52,7 +52,7 @@ constexpr ValueRange kKeptVolume{0, 130, 1};  // mpv's, as settings.conf keeps i
 // Opacity, Match the room's strengths, the key's sliders, the menu colour's
 // brightness and saturation.
 constexpr ValueRange kPercent{0, 100, 1};
-constexpr ValueRange kAccentHue{0, 359, 1};  // the menu's own colour, degrees around the circle
+constexpr ValueRange kAccentHue{0, 359, 1};  // the menu's and the pointer's own colour, degrees
 // Brightness, contrast, saturation (mpv's), warmth, tint and exposure.
 constexpr ValueRange kPicture{-100, 100, 1};
 constexpr ValueRange kSharpen{0, 300, 1};  // hundredths

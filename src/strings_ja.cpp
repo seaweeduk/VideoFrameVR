@@ -960,8 +960,10 @@ Strings japaneseStrings(const Strings& english) {
   s.places.renameHint = "空欄にすると元の名前に戻ります。";
   s.places.save = "保存";
   s.accent.group = "外観";
+  s.accent.menu = "メニュー";
+  s.accent.pointer = "ポインター";
   s.accent.names[0] = "青";
-  s.accent.names[1] = "ティール";
+  s.accent.names[1] = "スカイブルー";
   s.accent.names[2] = "緑";
   s.accent.names[3] = "オレンジ";
   s.accent.names[4] = "赤";

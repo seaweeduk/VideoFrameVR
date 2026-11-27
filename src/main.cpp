@@ -1033,6 +1033,7 @@ int run(Options opts) {
       // applySettingCommand
       case MenuCommand::SetAccent: case MenuCommand::SetAccentHue:
       case MenuCommand::SetAccentBrightness: case MenuCommand::SetAccentSaturation:
+      case MenuCommand::SetPointerColour: case MenuCommand::SetPointerHue:
       case MenuCommand::ToggleBackground: case MenuCommand::ToggleAdvancedSettings:
       case MenuCommand::StashCard: case MenuCommand::SetKeyboardLayout:
       case MenuCommand::ToggleMotion: case MenuCommand::SetMotionDistance:
@@ -2230,6 +2231,7 @@ int run(Options opts) {
     // The night sky around the flat screen (with passthrough: the room).
     scene.sky = running.format.projection == Projection::Flat && settings.background &&
                 scene.clear == ClearMode::Dark;
+    pointerLinear(settings.pointer, scene.pointer);
     VideoDraw& video = scene.video.emplace();
     video.texture = videoImage;
     video.format = running.format;

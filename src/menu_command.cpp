@@ -45,6 +45,8 @@ const char* commandName(MenuCommand::Type type) {
     case C::SetAccentHue: return "SetAccentHue";
     case C::SetAccentBrightness: return "SetAccentBrightness";
     case C::SetAccentSaturation: return "SetAccentSaturation";
+    case C::SetPointerColour: return "SetPointerColour";
+    case C::SetPointerHue: return "SetPointerHue";
     case C::SetSlideshow: return "SetSlideshow";
     case C::SetAfterVideo: return "SetAfterVideo";
     case C::ToggleBackground: return "ToggleBackground";
@@ -249,7 +251,8 @@ bool commandInRange(const MenuCommand& c) {
     case C::SelectAudio: case C::SelectSubtitle: case C::LoadSubtitle:
     case C::ToggleFloatingSubtitles: case C::RequestDelete: case C::CancelDelete: case C::Quit:
     case C::ResetPicture: case C::Paste: case C::SetAccent: case C::SetAccentHue:
-    case C::SetAccentBrightness: case C::SetAccentSaturation: case C::SetAfterVideo:
+    case C::SetAccentBrightness: case C::SetAccentSaturation: case C::SetPointerColour:
+    case C::SetPointerHue: case C::SetAfterVideo:
     case C::ToggleBackground: case C::TogglePassthrough: case C::ToggleGreenScreen:
     case C::SetKeyBackground: case C::PickKeyColour: case C::CancelKeyPick:
     case C::ResetPassthrough: case C::ToggleVideoMipmaps: case C::SetAntiShimmer:

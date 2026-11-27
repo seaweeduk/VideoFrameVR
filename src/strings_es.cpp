@@ -960,8 +960,10 @@ Strings spanishStrings(const Strings& english) {
   s.places.renameHint = "Déjalo vacío para usar su propio nombre.";
   s.places.save = "Guardar";
   s.accent.group = "Apariencia";
+  s.accent.menu = "Menú";
+  s.accent.pointer = "Puntero";
   s.accent.names[0] = "Azul";
-  s.accent.names[1] = "Verde azulado";
+  s.accent.names[1] = "Azul cielo";
   s.accent.names[2] = "Verde";
   s.accent.names[3] = "Naranja";
   s.accent.names[4] = "Rojo";

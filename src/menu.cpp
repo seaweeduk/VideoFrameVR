@@ -225,7 +225,7 @@ void Menu::update(const MenuView& view) {
   // These values change only their slider rows, not the strip or the page's layout.
   const auto& [brightness, contrast, saturation, balance, matchColour, matchBrightness, zoom,
                originForward, opacity, sharpen, screen, subtitleSize, subtitleRaise, subtitleDistance,
-               appFps] = static_cast<const MenuViewRows&>(view);
+               pointerHue, appFps] = static_cast<const MenuViewRows&>(view);
   if (brightness != view_.brightness) sliderChanged(MenuCommand::SetBrightness);
   if (contrast != view_.contrast) sliderChanged(MenuCommand::SetContrast);
   if (saturation != view_.saturation) sliderChanged(MenuCommand::SetSaturation);
@@ -250,6 +250,7 @@ void Menu::update(const MenuView& view) {
   if (subtitleSize != view_.subtitleSize) sliderChanged(MenuCommand::SetSubtitleSize);
   if (subtitleRaise != view_.subtitleRaise) sliderChanged(MenuCommand::SetSubtitleRaise);
   if (subtitleDistance != view_.subtitleDistance) sliderChanged(MenuCommand::SetSubtitleDistance);
+  if (pointerHue != view_.pointerHue) sliderChanged(MenuCommand::SetPointerHue);
   if (view.scripts.offsetMs != view_.scripts.offsetMs) sliderChanged(MenuCommand::SetScriptOffset);
   // One pushes the other along to keep their gap.
   if (view.scripts.rangeLow != view_.scripts.rangeLow || view.scripts.rangeHigh != view_.scripts.rangeHigh) {

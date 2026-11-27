@@ -584,6 +584,7 @@ class Menu {
     // out, kPendingKeySwatch: none yet, an empty dashed ring) in a
     // swatch before its label.
     int keySwatch = -1;
+    int swatchColour = -1;      // a swatch's colour (0xRRGGBB), else its accent preset's
     bool alignLeft = false;     // its label from the left (a list of names)
     bool faint = false;         // a label (staticText) in the faint colour: a note
     bool dimInk = false;        // its text in the dim colour (a flush − or +, a group's Reset)

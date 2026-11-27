@@ -27,6 +27,7 @@ enum class AfterVideo { Stop, Repeat, Next, Shuffle };
 // User preferences, kept in settings.conf in configDir().
 struct Settings {
   Accent accent;                  // the menu's colour
+  PointerColour pointer;          // the pointer's
   std::string language = "auto";
   // The on-screen keyboard's layout and the other one its layout key
   // switches to ("en", "de", "fr", "es", "pt"; empty follows the language).
