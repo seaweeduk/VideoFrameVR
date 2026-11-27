@@ -54,3 +54,29 @@ bool decodeFirstFrame(AVFormatContext* format, AVCodecContext* codec, int stream
   }
   return got && !Interrupt::check(&interrupt);
 }
+
+bool decodeKeyframe(AVFormatContext* format, AVCodecContext* codec, int stream, AVPacket* packet,
+                    AVFrame* frame, int limit, Interrupt& interrupt) {
+  int reads = 0;
+  for (;; ++reads) {
+    if (reads >= limit || Interrupt::check(&interrupt) || av_read_frame(format, packet) < 0)
+      return false;
+    if (packet->stream_index == stream) break;
+    av_packet_unref(packet);
+  }
+  avcodec_send_packet(codec, packet);
+  bool got = avcodec_receive_frame(codec, frame) == 0;
+  if (!got) {
+    avcodec_send_packet(codec, nullptr);
+    // One field of two comes out as a picture with every other row missing.
+    got = avcodec_receive_frame(codec, frame) == 0 && !(frame->flags & AV_FRAME_FLAG_INTERLACED);
+    if (!got) {
+      av_frame_unref(frame);
+      avcodec_flush_buffers(codec);
+      avcodec_send_packet(codec, packet);
+    }
+  }
+  av_packet_unref(packet);
+  if (got) return !Interrupt::check(&interrupt);
+  return decodeFirstFrame(format, codec, stream, packet, frame, limit - reads, interrupt);
+}
