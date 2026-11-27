@@ -32,8 +32,10 @@ namespace fs = std::filesystem;
 namespace {
 
 // The extension as fs::path::extension() finds it (none for ".bashrc"), in
-// any case. Without making a path: the frame loop asks every frame.
+// any case; a link's in its file name, not in its query. Without making a
+// path: the frame loop asks every frame.
 bool hasExtension(const std::string& p, std::initializer_list<const char*> extensions) {
+  if (isLink(p)) return hasExtension(linkFileName(p), extensions);
   const size_t name = p.find_last_of('/') + 1, dot = p.find_last_of('.');
   if (dot == std::string::npos || dot <= name) return false;
   return std::any_of(extensions.begin(), extensions.end(), [&](const char* e) {

@@ -1,6 +1,7 @@
 #include "bluray.h"
 
 #include "file_util.h"
+#include "location.h"
 #include "remote.h"
 
 #include <mpv/client.h>
@@ -277,7 +278,8 @@ int openClipUrl(void* data, char* uri, mpv_stream_cb_info* info) {
 }  // namespace
 
 bool isDiscImage(const std::string& path) {
-  return lowerCase(std::filesystem::path(path).extension().string()) == ".iso";
+  const std::string name = isLink(path) ? linkFileName(path) : path;
+  return lowerCase(std::filesystem::path(name).extension().string()) == ".iso";
 }
 
 std::shared_ptr<const Disc> read(const std::string& path) {

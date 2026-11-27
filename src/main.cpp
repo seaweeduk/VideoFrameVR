@@ -2070,7 +2070,10 @@ int run(Options opts) {
                         decoderRescue.busy == decoder_holders::Busy::StillBusy);
     view.videoWidth = photo ? photoWidth : player.width();
     view.videoHeight = photo ? photoHeight : player.height();
-    if (photo) view.playback.title = std::filesystem::path(running.currentFile).filename().string();
+    if (photo)
+      view.playback.title = isLink(running.currentFile)
+                                ? linkTitle(running.currentFile)
+                                : std::filesystem::path(running.currentFile).filename().string();
     view.passthroughAvailable = passthroughAvailable;
     view.passthrough = alphaPassthrough || keyPassthrough;
     keyPick.fill(view);

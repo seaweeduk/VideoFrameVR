@@ -1,5 +1,6 @@
 #include "video_player.h"
 #include "bluray.h"
+#include "location.h"
 #include "mpv_gl_context.h"
 #include "remote.h"
 #include "stash_stream.h"
@@ -23,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -40,6 +42,7 @@ constexpr uint64_t kTracksReply = uint64_t(1) << 34;
 // 1 << 35 and 1 << 36: PlayerSleep's. 1 << 32: SeekQueue's.
 constexpr uint64_t kLoadReply = uint64_t(1) << 37;
 constexpr uint64_t kViewsReply = uint64_t(1) << 38;
+constexpr uint64_t kTitleReply = uint64_t(1) << 39;
 constexpr uint64_t kPixelPathReply = 2;
 constexpr uint64_t kCommandReply = 3;
 // How long the last file may take to close before a switch counts as failed.
@@ -86,6 +89,12 @@ void replaceAll(std::string& text, const std::string& from, const std::string& t
 // Keeps file names and folder structure out of the console output: the
 // loaded file becomes <video>, any other absolute path becomes <path>.
 std::string redactPaths(std::string text, const std::string& videoPath) {
+  // A link's title (load()) is its file's name: nothing after it is kept.
+  constexpr std::string_view kTitle = "force-media-title";
+  if (const size_t at = text.find(kTitle); at != std::string::npos) {
+    const bool line = text.back() == '\n';
+    text.replace(at + kTitle.size(), std::string::npos, line ? " <title>\n" : " <title>");
+  }
   replaceAll(text, videoPath, "<video>");
   // A track's title, quoted in mpv's track lines, can be a file's or a
   // scene's name.
@@ -418,8 +427,12 @@ void VideoPlayer::load(const std::string& path, double start) {
   // sleeping file's vid=no must never disable the next file or reopen the old.
   const std::string discOptions = bdmv::mpvOptions(path);
   baseViewRight_ = !discOptions.empty();
-  const std::string startOption = "start=" + std::to_string(start) + ",vid=auto,pause=" +
+  std::string startOption = "start=" + std::to_string(start) + ",vid=auto,pause=" +
       (wasAsleep && sleep_.paused() ? "yes" : "no") + discOptions;
+  // A link is titled by its file name, not by its address and query.
+  // %n% quotes n bytes as they are.
+  if (const std::string title = linkTitle(path); !title.empty())
+    startOption += ",force-media-title=%" + std::to_string(title.size()) + "%" + title;
   const std::string url = bdmv::isDiscImage(path) ? bdmv::mpvUrl(path) : remote::mpvUrl(path);
   const char* resumed[] = {"loadfile", url.c_str(), "replace", "-1", startOption.c_str(), nullptr};
   loadFile(resumed);
@@ -934,6 +947,9 @@ void VideoPlayer::onFileLoaded() {
     countedEntry_ = -1;
     opened_ = current_ = true;
     mpv_get_property_async(mpv_, kTracksReply + loadRequest_, "track-list", MPV_FORMAT_NODE);
+    // mpv tells of a title only when it changes: one equal to the last
+    // file's (the same file again) would leave it at "Loading ...".
+    mpv_get_property_async(mpv_, kTitleReply + loadRequest_, "media-title", MPV_FORMAT_STRING);
   }
 }
 
@@ -978,6 +994,10 @@ void VideoPlayer::onGetPropertyReply(const mpv_event* ev) {
         }
       }
     }
+  }
+  if (ev->reply_userdata == kTitleReply + loadRequest_ && ev->error >= 0) {
+    const auto* prop = static_cast<mpv_event_property*>(ev->data);
+    if (prop->format == MPV_FORMAT_STRING) playback_.title = *static_cast<char**>(prop->data);
   }
   if (ev->reply_userdata == kViewsReply + loadRequest_ && !path_.empty()) {
     const auto* prop = static_cast<mpv_event_property*>(ev->data);
