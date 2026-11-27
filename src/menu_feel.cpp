@@ -41,6 +41,9 @@ constexpr FeelKey kFeelKeys[] = {
     {"close_out", &MenuFeel::closeOut},
     {"dot_ease", &MenuFeel::dotEase},
     {"dot_pressed", &MenuFeel::dotPressed},
+    {"point_min_cutoff", &MenuFeel::pointMinCutoff},
+    {"point_beta", &MenuFeel::pointBeta},
+    {"point_speed_cutoff", &MenuFeel::pointSpeedCutoff},
 };
 
 std::string trimmed(const std::string& s) {

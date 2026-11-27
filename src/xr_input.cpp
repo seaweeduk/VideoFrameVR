@@ -1,6 +1,7 @@
 #include "xr_input.h"
 
 #include "platform.h"
+#include "vr_input.h"
 #include "xr_util.h"
 
 #include <cmath>
@@ -202,6 +203,7 @@ void XrInput::updateControllers(bool focused, XrTime time) {
     controllers_ = {};
     controllers_.focusLosses = losses;
     inputHeld_ = true;
+    for (PointerFilter& f : pointFilters_) f.reset();
     return;
   }
   bool held = false;
@@ -248,6 +250,9 @@ void XrInput::updateControllers(bool focused, XrTime time) {
     if (hand.poseValid) {
       hand.aimPosition = toVec3(location.pose.position);
       hand.aimOrientation = toQuat(location.pose.orientation);
+      hand.pointDir = pointFilters_[h].update(aimDirection(hand), time * 1e-9);
+    } else {
+      pointFilters_[h].reset();
     }
     held = held || hand.controls || std::abs(hand.stickX) > 0.15f || std::abs(hand.stickY) > 0.15f;
   }

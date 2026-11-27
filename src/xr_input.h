@@ -3,6 +3,7 @@
 #include "controller_state.h"
 #include "controls.h"
 #include "eye_state.h"
+#include "pointer_filter.h"
 
 #include <openxr/openxr.h>
 
@@ -84,6 +85,7 @@ class XrInput {
   std::string handProfileNames_[2];
   uint64_t profilesVersion_ = 1;
   ControllerState controllers_;
+  PointerFilter pointFilters_[2];  // each hand's pointDir
   bool inputHeld_ = true;  // since focus came back, something is still held
   bool gazeExtension_ = false;  // XR_EXT_eye_gaze_interaction enabled
   bool frameControllerExtension_ = false;  // XR_VALVE_frame_controller_interaction enabled

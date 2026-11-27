@@ -56,7 +56,7 @@ void KeyPick::update(const ControllerState& input, const Frame& frame, const Run
     if (h != frame.activeHand || !t.selectPressed || !t.poseValid || frame.onMenu[h]) continue;
     const EyeMatrices& eye = *frame.leftEye;
     const Mat4 view = rotation(eye.orientation);
-    const Vec3 dotAt = t.aimPosition + aimDirection(t) * frame.laserLength;
+    const Vec3 dotAt = t.aimPosition + t.pointDir * frame.laserLength;
     Vec3 d = transformDir(transposedRotation(view), normalize(dotAt - eye.position));
     if (d.z < 0) d = normalize(Vec3{d.x / running.screen.zoom, d.y / running.screen.zoom, d.z});
     Vec3 inPicture =

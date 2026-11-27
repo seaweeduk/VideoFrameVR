@@ -408,7 +408,7 @@ void takeGestureRecordingPresses(const ControllerState& raw, const MenuPanels& p
         if (!(g.pressed & bit)) continue;
         float u, v, d;
         if (static_cast<Control>(c) == Control::Trigger && !(g.controls & ~bit) && g.poseValid &&
-            menuHitTest(panel, menu, g.aimPosition, aimDirection(g), u, v, d) >= 0)
+            menuHitTest(panel, menu, g.aimPosition, g.pointDir, u, v, d) >= 0)
           continue;
         controlInput.consume(h, static_cast<Control>(c));
       }
@@ -1687,7 +1687,7 @@ int run(Options opts) {
     for (int h = 0; h < 2; ++h) {
       const HandState& g = input.hands[h];
       float u, v, d;
-      onMenu[h] = g.poseValid && menuHitTest(panel, menu, g.aimPosition, aimDirection(g), u, v,
+      onMenu[h] = g.poseValid && menuHitTest(panel, menu, g.aimPosition, g.pointDir, u, v,
                                              d) >= 0;
     }
 
@@ -1846,7 +1846,7 @@ int run(Options opts) {
     pointing = panel.open && hand.poseValid && !setupPlacement.fading();
     if (pointing) {
       rayOrigin = hand.aimPosition;
-      rayDir = aimDirection(hand);
+      rayDir = hand.pointDir;
       float distance = 0;
       hitPanelId = menuHitTest(panel, menu, rayOrigin, rayDir, hitU, hitV, distance);
       if (hitPanelId >= 0) {
