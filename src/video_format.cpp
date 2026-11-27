@@ -2,6 +2,7 @@
 
 #include "bluray.h"
 #include "file_util.h"
+#include "location.h"
 
 #include <algorithm>
 #include <cctype>
@@ -9,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
+#include <string_view>
 
 namespace {
 
@@ -55,6 +57,14 @@ bool containsAngle(const std::string& s, const char* angle) {
     return true;
   }
   return false;
+}
+
+// The name a format is read from: a link's file name (none without one),
+// kept in `linked`, else what follows the path's last /, read in place.
+std::string_view nameOf(const std::string& path, std::string& linked) {
+  if (!isLink(path)) return std::string_view(path).substr(path.find_last_of('/') + 1);
+  linked = linkFileName(path);
+  return linked;
 }
 
 }  // namespace
@@ -115,7 +125,8 @@ VideoFormat guessVideoFormat(const std::string& path, int width, int height, Two
   // A disc image is flat; a 3D title shows in 3D once mpv says it decodes
   // both views (above).
   if (bdmv::isDiscImage(path)) return {};
-  std::string name = path.substr(path.find_last_of('/') + 1);
+  std::string linked;
+  std::string name(nameOf(path, linked));
   std::transform(name.begin(), name.end(), name.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
@@ -216,7 +227,8 @@ bool hasVrNameTag(const std::string& path) {
       "lr",        "rl",         "sbs",        "tb",         "ou",      "oculus", "oculusrift",
       "gearvr",    "psvr",       "vr",         "mkx200",     "fisheye", "fisheye180",
       "fisheye190", "fisheye200", "rf52",      "eac"};
-  const std::string name = lowerCase(path.substr(path.find_last_of('/') + 1));
+  std::string linked;
+  const std::string name = lowerCase(std::string(nameOf(path, linked)));
   size_t start = 0;
   for (size_t i = 0; i <= name.size(); ++i) {
     const bool end = i == name.size() || std::strchr(" _-.[]()", name[i]) != nullptr;
@@ -243,12 +255,13 @@ float eyeDisplayAspect(const VideoFormat& format, float frameAspect) {
 }
 
 bool hasPackedAlpha(const std::string& path) {
-  const auto name = path.begin() + static_cast<std::ptrdiff_t>(path.find_last_of('/') + 1);
+  std::string linked;
+  const std::string_view name = nameOf(path, linked);
   const auto same = [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == b; };
   for (const char* tag : {"_alpha", "-alpha", " alpha"}) {
-    const auto at = std::search(name, path.end(), tag, tag + 6, same);
-    if (at == path.end()) continue;
-    const char after = path.end() - at > 6 ? at[6] : '.';
+    const auto at = std::search(name.begin(), name.end(), tag, tag + 6, same);
+    if (at == name.end()) continue;
+    const char after = name.end() - at > 6 ? at[6] : '.';
     if (!std::isalnum(static_cast<unsigned char>(after))) return true;  // not "_alphabet"
   }
   return false;
