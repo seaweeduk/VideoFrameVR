@@ -6,6 +6,7 @@
 #include "library_schema.h"  // kLibrarySchema, made from library_schema.sql at build time
 #include "oshash.h"
 #include "app_dirs.h"
+#include "range_fingerprint.h"
 #include "server_json.h"
 #include "sqlite_util.h"
 
@@ -593,6 +594,7 @@ Library::~Library() {
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     poll();
+    close(openLink_);
     const size_t lost = std::count_if(pending_.begin(), pending_.end(),
                                       [](const auto& p) { return !p.second.empty(); });
     if (lost)
@@ -757,13 +759,13 @@ bool Library::load() {
 
 bool Library::poll() {
   if (!checker_) return false;
+  const uint64_t before = generation_;
+  takeLinkPrint();
   std::vector<Checker::Result> results;
   {
     std::lock_guard<std::mutex> lock(checker_->mutex);
-    if (checker_->results.empty()) return false;
     results.swap(checker_->results);
   }
-  const uint64_t before = generation_;
   for (const Checker::Result& r : results) {
     const Checker::Job& job = r.job;
     const FileFingerprint& p = r.print;
@@ -786,6 +788,41 @@ bool Library::poll() {
     }
   }
   return generation_ != before;
+}
+
+// The open link's fingerprint has come. With one, the link is its
+// content's video until it closes, and what waited is that video's; without
+// one, it is its address's, which keeps what waited by its rule.
+void Library::takeLinkPrint() {
+  if (!linkPrint_.valid() || linkPrint_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+    return;
+  const FileFingerprint print = linkPrint_.get();
+  linkCancel_.reset();
+  const auto waiting = pending_.find(openLink_);
+  Change c = waiting != pending_.end() ? waiting->second : Change{};
+  pending_.erase(openLink_);
+  ++generation_;
+  if (print.oshash.empty()) {
+    std::printf("Library: the link is kept by its address (no fingerprint)\n");
+  } else {
+    const auto same = byHash_.find(print.oshash);
+    std::printf("Library: the link recognised by its content%s\n",
+                same != byHash_.end() ? ", a video the library has" : "");
+    // Settings kept under its address carry over once to a content without
+    // any; the address's row stays as it is.
+    const auto address = byStream_.find(openLink_);
+    if (address != byStream_.end() && videos_.at(address->second).hasSettings &&
+        (same == byHash_.end() || !videos_.at(same->second).hasSettings)) {
+      Change carried;
+      carried.carryOver = true;
+      carried.carriedValue = videos_.at(address->second).settings;
+      carried.merge(c);
+      c = carried;
+    }
+    located_[openLink_] = print.oshash;
+  }
+  // A link that never played and was never changed leaves no row.
+  if (!c.empty()) change(openLink_, c);
 }
 
 // Files the library did not know (opened, rated or played) get their record
@@ -965,6 +1002,7 @@ bool Library::checkDue(const std::string& path, const FolderListing::Entry& e) {
 }
 
 const Library::Video* Library::videoAt(const std::string& key, bool stream) const {
+  if (pending_.count(key)) return nullptr;
   if (stream) {
     if (const auto located = located_.find(key); located != located_.end()) {
       const auto it = byHash_.find(located->second);
@@ -973,7 +1011,6 @@ const Library::Video* Library::videoAt(const std::string& key, bool stream) cons
     const auto it = byStream_.find(key);
     return it != byStream_.end() ? &videos_.at(it->second) : nullptr;
   }
-  if (pending_.count(key)) return nullptr;
   const auto it = files_.find(key);
   return it != files_.end() ? &videos_.at(it->second.videoId) : nullptr;
 }
@@ -990,6 +1027,11 @@ VideoRecord Library::record(const std::string& location) const {
 
 bool Library::known(const std::string& location) const {
   return available_ && !location.empty() && videoAt(keyOf(location), isStream(location)) != nullptr;
+}
+
+bool Library::awaited(const std::string& location) const {
+  if (!available_ || location.empty()) return false;
+  return isLink(location) ? pending_.count(location) > 0 : !known(location);
 }
 
 int64_t Library::addedAt(int64_t id) const {
@@ -1011,11 +1053,17 @@ bool Library::settings(const std::string& location, VideoSettings& settings) con
     return true;
   }
   const auto waiting = pending_.find(key);
-  if (waiting == pending_.end() ||
-      (!waiting->second.settingsParts &&
-       (!waiting->second.carryOver || waiting->second.carriedRecord)))
+  if (waiting == pending_.end()) return false;
+  // The awaited link is its address's until the answer, with what waits
+  // over that.
+  const Video* address = nullptr;
+  if (const auto row = isStream(location) ? byStream_.find(key) : byStream_.end();
+      row != byStream_.end() && videos_.at(row->second).hasSettings)
+    address = &videos_.at(row->second);
+  if (!address && !waiting->second.settingsParts &&
+      (!waiting->second.carryOver || waiting->second.carriedRecord))
     return false;
-  settings = waiting->second.settingsOver(nullptr);
+  settings = waiting->second.settingsOver(address ? &address->settings : nullptr);
   return true;
 }
 
@@ -1085,6 +1133,19 @@ std::vector<std::pair<std::string, VideoRecord>> Library::ratedOrPlayed() const 
 }
 
 void Library::open(const std::string& location) {
+  if (available_) close(openLink_);
+  if (available_ && isLink(location)) {
+    if (!isHttpLink(location)) return;  // nothing to find: its address's
+    openLink_ = location;
+    pending_[location] = Change{};
+    ++generation_;
+    linkCancel_ = std::make_shared<std::atomic<bool>>(false);
+    std::packaged_task<FileFingerprint()> task(
+        [location, cancel = linkCancel_] { return linkFingerprint(location, *cancel); });
+    linkPrint_ = task.get_future();
+    std::thread(std::move(task)).detach();
+    return;
+  }
   // A path is only a cache: even a same-size, same-date replacement must
   // resolve before its settings, resume or new plays can use the record.
   if (available_ && !location.empty() && !isStream(location)) {
@@ -1095,12 +1156,37 @@ void Library::open(const std::string& location) {
   change(location, Change{});
 }
 
+void Library::close(const std::string& location) {
+  if (openLink_.empty() || location != openLink_) return;
+  const std::string link = std::move(openLink_);
+  openLink_.clear();
+  if (linkCancel_) *linkCancel_ = true;  // its thread ends at its next check
+  linkCancel_.reset();
+  linkPrint_ = {};
+  located_.erase(link);
+  ++generation_;
+  const auto waiting = pending_.find(link);
+  if (waiting == pending_.end()) return;
+  const Change c = waiting->second;
+  pending_.erase(waiting);
+  change(link, c);  // its address's now
+}
+
 namespace {
 
 Library::Change ratingChange(float rating) {
   Library::Change c;
   c.rating = true;
   c.ratingValue = rating <= 0 ? 0.0f : std::clamp(std::round(rating * 2.0f) / 2.0f, 0.5f, 5.0f);
+  return c;
+}
+
+// What a link's address keeps of a change: its settings.
+Library::Change addressPart(Library::Change c) {
+  c.rating = false;
+  c.plays = 0;
+  c.resume = false;
+  c.duration = false;
   return c;
 }
 
@@ -1153,7 +1239,7 @@ void Library::carryOverSettings(const std::string& location, const VideoSettings
 }
 
 // Applies a change to the location's record; one for a file new to the
-// library waits for its fingerprint.
+// library, or for the awaited link, waits for its fingerprint.
 void Library::change(const std::string& location, const Change& c) {
   if (!available_ || location.empty()) return;
   if (const auto located = located_.find(location); located != located_.end()) {
@@ -1163,8 +1249,16 @@ void Library::change(const std::string& location, const Change& c) {
     return;
   }
   if (isStream(location)) {
+    if (const auto waiting = pending_.find(location); waiting != pending_.end()) {
+      waiting->second.merge(c);
+      if (!c.empty()) ++generation_;  // record() shows it already
+      return;
+    }
+    // A link by its address keeps its settings alone.
+    const Change kept = isLink(location) ? addressPart(c) : c;
+    if (isLink(location) && kept.empty()) return;
     const auto it = byStream_.find(location);
-    apply(it != byStream_.end() ? it->second : addVideo("", location), c);
+    apply(it != byStream_.end() ? it->second : addVideo("", location), kept);
     return;
   }
   const std::string path = normalPath(location);

@@ -319,9 +319,13 @@ void Menu::layoutTools(StripLayout& strip) {
     };
   };
   tool(Icon::Recenter, t.recenter, command(MenuCommand::Recenter), false);
-  if (!view_.currentFile.empty() && !view_.streaming && !view_.photo && library_ &&
-      library_->available()) {
-    strip.stars(x, view_.currentFile, current_.rating);
+  // A link is its content's video only while it plays: its stars rate that
+  // video by its id, so stars let go of after it closes don't rate the
+  // address, and wait for the record (its first play makes it).
+  if (!view_.currentFile.empty() && !view_.recordless && !view_.photo && library_ &&
+      library_->available() && (!view_.streaming || current_.id)) {
+    Button& stars = strip.stars(x, view_.currentFile, current_.rating);
+    if (view_.streaming) stars.ratingVideo = current_.id;
     x += StripLayout::kStarsW + strip::kButtonGap;
   }
 

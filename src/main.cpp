@@ -1144,7 +1144,7 @@ int run(Options opts) {
         if (player.loading() || player.playback().duration <= kSeekEndMargin || stickSeek.active()) return "";
         break;
       case V::Rating:
-        if (isLink(running.currentFile)) return said.notForStreams;
+        if (!session.recognised()) return said.notForStreams;
         if (!library.available()) return said.ratingsLocked;
         if (!library.known(running.currentFile)) return "";  // its rating isn't read yet
         break;

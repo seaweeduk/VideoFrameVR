@@ -51,8 +51,8 @@ struct PlaybackStatus {
 
 // What plays: opening and closing videos and photos, Previous and Next
 // through a folder or a list, what happens at a video's end, the slideshow,
-// resuming, play counts, the record a file is kept under arriving, and its
-// format found from its size. Main thread only.
+// resuming, play counts, the record a file or a link is kept under arriving
+// (Library::awaited()), and its format found from its size. Main thread only.
 class PlaybackSession {
  public:
   PlaybackSession(VideoPlayer& player, Settings& settings, Library& library, VideoMemory& memory,
@@ -106,6 +106,10 @@ class PlaybackSession {
   // Worked out when asked: a command earlier in the frame may have opened
   // or closed a file.
   PlaybackStatus status() const;
+  // What plays has a record of its own: a file, a server's scene, or a
+  // link recognised by its content. Resume, plays and rating need one; any
+  // other link is kept by its address, with its settings alone.
+  bool recognised() const;
 
  private:
   VideoPlayer& player;
@@ -136,6 +140,9 @@ class PlaybackSession {
   void startShuffle();
   void applyAfterVideo();
   void saveResume();
+  // The playing video's record is known now: what it remembers applies,
+  // but for the parts the user is changing (RunningVideo::unsavedParts).
+  void recordArrived();
 
   double nextSlideAt = 0;    // glfwGetTime() when it does
   bool photoSized = false;  // the current photo's size is known (its format guessed)

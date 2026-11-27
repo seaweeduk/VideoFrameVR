@@ -133,6 +133,7 @@ struct MenuViewLayout {
   bool decoderBusy = false;     // ... because the decoder is busy (decoder_holders.h)
   bool floatingSubtitles = false;
   bool streaming = false;  // the current video is a link, not a file
+  bool recordless = false;  // ... one without a record of its own: no rating (PlaybackSession::recognised())
   int videoWidth = 0, videoHeight = 0;
   bool background = true;  // night sky around the flat screen
   bool autoPassthrough = false;  // passthrough switches itself on for videos made for it
@@ -189,7 +190,7 @@ inline bool operator==(const MenuViewLayout& a, const MenuViewLayout& b) {
     const auto& [halfPacked, passthrough, colourKey, keyColour, fillChecked, fillChecking,
                  greenScreenFound, keyPicking, keyPickNote, packedAlpha, maskFormat, maskLayers,
                  secondLayerHidden, opacityApplies, currentFile, playbackFailed, discEncrypted,
-                 decoderBusy, floatingSubtitles, streaming, videoWidth, videoHeight, background,
+                 decoderBusy, floatingSubtitles, streaming, recordless, videoWidth, videoHeight, background,
                  autoPassthrough, keyGreen, passthroughAvailable, photo, slideshowSeconds, afterVideo,
                  roomMatch, roomMatched, tvGamma, videoMipmaps, toneLook, foveationAvailable, foveation,
                  showFoveation, foveationLearned, sharpBins, foveationRing, foveationOutside,
@@ -201,7 +202,7 @@ inline bool operator==(const MenuViewLayout& a, const MenuViewLayout& b) {
     return std::tie(halfPacked, passthrough, colourKey, keyColour, fillChecked, fillChecking,
                     greenScreenFound, keyPicking, keyPickNote, packedAlpha, maskFormat, maskLayers,
                     secondLayerHidden, opacityApplies, currentFile, playbackFailed, discEncrypted,
-                    decoderBusy, floatingSubtitles, streaming, videoWidth, videoHeight, background,
+                    decoderBusy, floatingSubtitles, streaming, recordless, videoWidth, videoHeight, background,
                     autoPassthrough, keyGreen, passthroughAvailable, photo, slideshowSeconds, afterVideo,
                     roomMatch, roomMatched, tvGamma, videoMipmaps, toneLook, foveationAvailable, foveation,
                     showFoveation, foveationLearned, sharpBins, foveationRing, foveationOutside,

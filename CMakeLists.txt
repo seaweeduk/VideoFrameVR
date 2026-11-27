@@ -147,6 +147,7 @@ add_executable(videoframevr
   src/offscreen_pass.cpp
   src/options.cpp
   src/oshash.cpp
+  src/range_fingerprint.cpp
   src/panel_fades.cpp
   src/performance_readout.cpp
   src/photo_preloader.cpp
