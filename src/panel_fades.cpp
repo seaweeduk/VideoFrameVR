@@ -1,7 +1,6 @@
 #include "panel_fades.h"
 
 #include "menu.h"
-#include "menu_geometry.h"
 #include "seek_preview.h"
 #include "setup_intro.h"
 #include "setup_placement.h"
@@ -10,19 +9,19 @@
 
 namespace {
 
-// The pointer beam starts 1 m long; pointing at no panel, it
-// keeps the length of its last hit. Its dot is 20 menu layout units wide.
-constexpr float kLaserStartLength = 1.0f;  // meters
-constexpr float kLaserDotRadius = 10 * menu_geometry::kUnit;
+constexpr float kFreeBeamLength = 0.75f;  // meters
+constexpr float kTargetBeamFraction = 0.85f;  // leave the last 15% clear before the dot
+constexpr float kPickerStartDistance = 1.0f;  // until the first panel hit
+constexpr float kDotRadiusPerMeter = 0.00698f;  // 0.8° across, however far from the eye
 
 }  // namespace
 
 PanelFades::PanelFades(Menu& menu, MenuPanels& panel, SeekPreview& seekPreview,
                        SetupPlacement& setupPlacement, SetupIntro& setupIntro)
     : menu(menu), panel(panel), seekPreview(seekPreview), setupPlacement(setupPlacement),
-      setupIntro(setupIntro), laserLength_(kLaserStartLength) {}
+      setupIntro(setupIntro), laserLength_(kPickerStartDistance) {}
 
-void PanelFades::pointerMoved() { laserLength_ = kLaserStartLength; }
+void PanelFades::pointerMoved() { laserLength_ = kPickerStartDistance; }
 
 void PanelFades::update(bool seekStrip) {
   panelOn[Menu::kMain] = panel.open && menu.panelShown(Menu::kMain);
@@ -41,16 +40,29 @@ bool PanelFades::stripFading() const {
   return !panelOn[Menu::kMain] && panelFades[Menu::kMain].fade.drawn();
 }
 
+void PanelFades::addPointer(std::vector<OverlayDraw>& overlays, const Frame& frame, float opacity) {
+  const HandState& hand = *frame.hand;
+  if (!frame.pointing && (panel.open || opacity <= 0 || !hand.poseValid || setupPlacement.fading()))
+    return;
+
+  LaserItem laser;
+  laser.opacity = opacity;
+  laser.from = frame.pointing ? frame.rayOrigin : hand.aimPosition;
+  const Vec3 dir = frame.pointing ? frame.rayDir : aimDirection(hand);
+  laser.to = laser.from + dir * kFreeBeamLength;
+  const MenuFeel& feel = menuFeel();
+  dotTight.to(hand.select ? 1.0f : 0.0f, feel.dotEase, frame.now);
+  const float tight = dotTight.update(frame.easedAt);
+  if (frame.pointing && (frame.hitPanel || menu.pickingColor())) {
+    laser.dot = frame.hitPanel ? frame.hitPoint : laser.from + dir * laserLength_;
+    laser.to = laser.from + (laser.dot - laser.from) * kTargetBeamFraction;
+    laser.dotRadius = kDotRadiusPerMeter * (1 + (static_cast<float>(feel.dotPressed) - 1) * tight);
+  }
+  overlays.push_back(laser);
+}
+
 void PanelFades::addTo(std::vector<OverlayDraw>& overlays, const Frame& frame) {
   const double now = frame.now, easedAt = frame.easedAt;
-  const HandState& hand = *frame.hand;
-  // The dot at the laser's end: tighter while the trigger is held.
-  auto dotLook = [&](LaserItem& laser) {
-    const MenuFeel& feel = menuFeel();
-    dotTight.to(hand.select ? 1.0f : 0.0f, feel.dotEase, now);
-    const float tight = dotTight.update(easedAt);
-    laser.dotRadius = kLaserDotRadius * (1 + (static_cast<float>(feel.dotPressed) - 1) * tight);
-  };
   // The menu's panels: the strip and the browser each fade in as they
   // start being shown and out as they stop (menu_feel.h), whatever the
   // cause (the menu opening or closing, the browser coming or going in
@@ -122,21 +134,7 @@ void PanelFades::addTo(std::vector<OverlayDraw>& overlays, const Frame& frame) {
       overlays.push_back(item);
     }
     if (opacity[Menu::kMain] > 0) seekPreview.addTo(overlays, opacity[Menu::kMain]);  // with the strip
-    if (frame.pointing) {
-      LaserItem laser;
-      laser.from = frame.rayOrigin;
-      laser.to = frame.hitPanel ? frame.hitPoint : frame.rayOrigin + frame.rayDir * laserLength_;
-      dotLook(laser);
-      laser.opacity = menuOpacity;
-      overlays.push_back(laser);
-    } else if (!panel.open && menuOpacity > 0 && hand.poseValid && !setupPlacement.fading()) {
-      LaserItem laser;  // where the hand points now
-      laser.from = hand.aimPosition;
-      laser.to = laser.from + aimDirection(hand) * laserLength_;
-      dotLook(laser);
-      laser.opacity = menuOpacity;
-      overlays.push_back(laser);
-    }
+    addPointer(overlays, frame, menuOpacity);
   } else if (heldStrip) {
     // A held seek with the menu closed: the strip alone, no pointer.
     PanelItem item;

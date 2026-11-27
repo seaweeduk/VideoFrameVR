@@ -90,10 +90,10 @@ constexpr float kPointerOrange[4] = {1.0f, 0.25f, 0.0f, 1.0f};
 struct QuadsItem {
   std::vector<Quad> quads;
 };
-// The pointer's beam, facing each eye, and its dot at the end.
+// The pointer's beam, facing each eye, and optional dot at the target.
 struct LaserItem {
-  Vec3 from, to;
-  float dotRadius = 0;
+  Vec3 from, to, dot;
+  float dotRadius = 0;  // per meter from the eye, so it looks the same size at any distance
   float opacity = 1;  // faded out toward 0
 };
 // The seek preview's frame (seek_preview.h) on a flat quad: the left eye of

@@ -32,9 +32,8 @@ class PanelFades {
   PanelFades(Menu& menu, MenuPanels& panel, SeekPreview& seekPreview, SetupPlacement& setupPlacement,
              SetupIntro& setupIntro);
 
-  // The other hand points now: its laser starts at its first length.
+  // The colour picker projects its reticle at the last hit distance for this hand.
   void pointerMoved();
-  // The ray hit a panel this far along; pointing at none, the laser keeps it.
   void hit(float distance) { laserLength_ = distance; }
   float laserLength() const { return laserLength_; }
   // The menu opened: the dot starts loose.
@@ -49,6 +48,7 @@ class PanelFades {
   void addTo(std::vector<OverlayDraw>& overlays, const Frame& frame);
 
  private:
+  void addPointer(std::vector<OverlayDraw>& overlays, const Frame& frame, float opacity);
   // The strip or the browser fading in as it starts being shown and out as it
   // stops (menu_feel.h): drawn as it was last shown until it has faded.
   struct PanelFade {

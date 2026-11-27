@@ -703,18 +703,21 @@ void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
       const Vec3 dir = normalize(to - from);
       const Vec3 side = cross(dir, normalize(matrices.position - from));
       if (length(side) >= 1e-4f) {
-        const Vec3 offset = normalize(side) * 0.001f;  // 2 mm wide
+        const Vec3 offset = normalize(side) * 0.0008f;  // 1.6 mm wide
         drawPointer(cmd, {from - offset, from + offset, to - offset, to + offset}, kPointerBeam, color);
       }
       // The dot: a disc facing the eye, which an unlit sphere looks like.
-      const Vec3 toEye = matrices.position - to;
+      if (laser->dotRadius <= 0) continue;
+      const Vec3 dot = laser->dot;
+      const Vec3 toEye = matrices.position - dot;
       const float distance = length(toEye);
       if (distance > 1e-4f) {
         const Vec3 n = toEye * (1.0f / distance);
         const Vec3 up = std::abs(n.y) < 0.9f ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
-        const Vec3 a = normalize(cross(up, n)) * laser->dotRadius;
-        const Vec3 b = normalize(cross(n, a)) * laser->dotRadius;
-        drawPointer(cmd, {to - a - b, to + a - b, to - a + b, to + a + b}, kPointerDot, color);
+        const float radius = laser->dotRadius * distance;
+        const Vec3 a = normalize(cross(up, n)) * radius;
+        const Vec3 b = normalize(cross(n, a)) * radius;
+        drawPointer(cmd, {dot - a - b, dot + a - b, dot - a + b, dot + a + b}, kPointerDot, color);
       }
     } else if (const PreviewItem* preview = std::get_if<PreviewItem>(&item)) {
       // Not one GL still holds (record() did not acquire it).

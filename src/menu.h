@@ -387,6 +387,7 @@ class Menu {
   // Whether a panel is shown: the strip always, the browser while a page is
   // open in it (or a dialog); during setup only its own.
   bool panelShown(PanelId panel) const;
+  bool pickingColor() const { return view_.keyPicking; }
   // Whether the browser's texture (after texture()) shows the page it is
   // to show: drawn, or the one being drawn laid out as the one drawn last.
   bool browserReady() const;
