@@ -56,3 +56,13 @@ AVCodecContext* openVideoDecoder(AVFormatContext* format, int& stream,
 // once interrupted.
 bool decodeFirstFrame(AVFormatContext* format, AVCodecContext* codec, int stream,
                       AVPacket* packet, AVFrame* frame, int limit, Interrupt& interrupt);
+
+// The picture of `stream`'s next packet, the keyframe a seek went to: its
+// packet alone, then the end of input, as video_check.cpp reads keyframes.
+// Fed on instead, the decoder keeps the picture until the frames after it
+// are decoded too, which for 8K takes as long again as the keyframe did.
+// If the packet gives no whole picture that way (the file calls it a
+// keyframe and it isn't one, or it is one field of two), it decodes on as
+// decodeFirstFrame() does. Flush `codec` before it decodes anything else.
+bool decodeKeyframe(AVFormatContext* format, AVCodecContext* codec, int stream, AVPacket* packet,
+                    AVFrame* frame, int limit, Interrupt& interrupt);

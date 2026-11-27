@@ -74,9 +74,9 @@ bool decodeFrame(const std::string& path, AVBufferRef* gpu, Size size,
         c->get_format = pickCuda;
       } else {
         // On the CPU: one thread (bursts on all cores make the headset's
-        // frames late). Not keyframes only: many files mark pictures as
-        // keyframes the decoder doesn't take as such, and it read on for
-        // tens of MB to the next one.
+        // frames late). Not keyframes only (skip_frame): many files mark
+        // pictures as keyframes the decoder doesn't take as such, and it
+        // read on for tens of MB to the next one.
         c->thread_count = 1;
       }
     });
@@ -87,7 +87,10 @@ bool decodeFrame(const std::string& path, AVBufferRef* gpu, Size size,
     if (!isPhotoFile(path) && format->duration > 0)
       av_seek_frame(format, -1, start + format->duration / 5, AVSEEK_FLAG_BACKWARD);
 
-    if (!decodeFirstFrame(format, codec, stream, packet, frame, 3000, interrupt)) break;
+    // On the CPU the keyframe alone: the frames after it cost as much again.
+    if (!(gpu ? decodeFirstFrame(format, codec, stream, packet, frame, 3000, interrupt)
+              : decodeKeyframe(format, codec, stream, packet, frame, 3000, interrupt)))
+      break;
     if (frame->format == AV_PIX_FMT_CUDA) {  // copy the picture from the GPU
       if (av_hwframe_transfer_data(downloaded, frame, 0) < 0) break;
       std::swap(frame, downloaded);
