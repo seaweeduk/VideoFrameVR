@@ -4,8 +4,11 @@ Strings germanStrings(const Strings& english) {
   Strings s = english;
   s.noVideo = "Kein Video. Datei wählen";
   s.loading = "Lädt …";
+  s.buffering = "Puffert …";
+  s.waitingDownload = "Warte auf den Download …";
   s.playbackFailed = "Dieses Video kann nicht abgespielt werden. Versuche eine andere Datei.";
   s.discEncrypted = "Dieses Disc-Abbild ist verschlüsselt und kann nicht abgespielt werden.";
+  s.partialFailed = "Dieser Download kann noch nicht abgespielt werden. Nach dem Abschluss klappt es vielleicht.";
   s.format = "Format";
   s.projections[0] = "Leinwand";
   s.projections[1] = "180°";
@@ -1336,6 +1339,7 @@ Strings germanStrings(const Strings& english) {
   s.jobs.flatOnly = "Nur für die flache Leinwand";
   s.jobs.needsFocus = "Zuerst Stereofokus einschalten";
   s.jobs.notForStreams = "Nicht für Streams";
+  s.jobs.notForDownloads = "Nicht während des Downloads";
   s.jobs.notForFlat = "Nicht für flache Videos";
   s.jobs.ratingsLocked = "Bewertungen lassen sich gerade nicht speichern";
   s.jobs.firstVideo = "Das ist das erste Video";

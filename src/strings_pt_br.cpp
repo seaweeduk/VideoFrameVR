@@ -4,8 +4,11 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   Strings s = english;
   s.noVideo = "Nenhum vídeo. Escolha um arquivo";
   s.loading = "Carregando …";
+  s.buffering = "Carregando dados …";
+  s.waitingDownload = "Aguardando o download …";
   s.playbackFailed = "Não foi possível reproduzir este vídeo. Tente outro arquivo.";
   s.discEncrypted = "Esta imagem de disco está criptografada e não pode ser reproduzida.";
+  s.partialFailed = "Ainda não é possível reproduzir este download. Talvez funcione quando terminar.";
   s.format = "Formato";
   s.projections[0] = "Tela";
   s.projections[1] = "180°";
@@ -1336,6 +1339,7 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.jobs.flatOnly = "Só para a tela plana";
   s.jobs.needsFocus = "Ligue o foco estéreo primeiro";
   s.jobs.notForStreams = "Não é para streams";
+  s.jobs.notForDownloads = "Não durante o download";
   s.jobs.notForFlat = "Não é para vídeo plano";
   s.jobs.ratingsLocked = "Não é possível salvar notas agora";
   s.jobs.firstVideo = "Este é o primeiro vídeo";

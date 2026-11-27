@@ -47,7 +47,8 @@ std::vector<FolderListing::Entry> listFolder(const std::string& dir, bool subtit
     for (const auto& item : remote) {
       if (item.name.empty() || (item.name[0] == '.' && !item.folder)) continue;
       if (item.folder || (subtitles ? isSubtitleFile(item.name)
-                                    : isVideoFile(item.name) || isPhotoFile(item.name)))
+                                    : isVideoFile(item.name) || isPhotoFile(item.name) ||
+                                          isListedPartial(dir + "/" + item.name)))
         entries.push_back({item.name, dir + "/" + item.name, item.folder, item.modified, item.size});
     }
   } else for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
@@ -60,7 +61,8 @@ std::vector<FolderListing::Entry> listFolder(const std::string& dir, bool subtit
     // hidden files stay out of the list.
     if (name[0] == '.' && !directory) continue;
     const bool wanted = subtitles ? isSubtitleFile(item.path())
-                                  : isVideoFile(item.path()) || isPhotoFile(item.path());
+                                  : isVideoFile(item.path()) || isPhotoFile(item.path()) ||
+                                        isListedPartial(item.path());
     if (directory) {
       Entry entry{name, item.path().string(), true};
       // A folder is as new as the newest thing in it (its own date if empty),

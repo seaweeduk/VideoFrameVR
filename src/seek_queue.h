@@ -25,8 +25,10 @@ class SeekQueue {
   // Waits, merged into the one already waiting.
   void add(const SeekRequest& request);
   // The waiting request, if nothing holds it back; `ready`: the file has
-  // loaded and shown its first frame. True if it went to mpv.
-  bool send(bool ready, double position, double duration);
+  // loaded and shown its first frame; `dropFirst`: mpv drops its buffers
+  // just before it (DownloadEdge), and a distance is sent as the time it
+  // reaches from `position`. True if it went to mpv.
+  bool send(bool ready, double position, double duration, bool dropFirst = false);
   // mpv's frame-back-step, which goes as an exact seek does. True if sent.
   bool stepBack(double position);
   void reset();

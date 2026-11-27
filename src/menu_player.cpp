@@ -584,6 +584,7 @@ void Menu::drawMainPage(cairo_t* cr) {
   const std::string title = view_.currentFile.empty() ? t.noVideo
                             : view_.playbackFailed    ? (view_.discEncrypted ? t.discEncrypted
                                                          : view_.decoderBusy ? t.decoderBusy.busy
+                                                         : isPartialDownload(view_.currentFile) ? t.partialFailed
                                                                              : t.playbackFailed)
                             : p.title.empty()         ? t.loading
                                                       : p.title;

@@ -1,6 +1,7 @@
 #include "file_util.h"
 
 #include "location.h"
+#include "offline.h"
 #include "stash_text.h"
 #include "remote.h"
 
@@ -55,6 +56,40 @@ std::string lowerCase(std::string s) {
 bool isVideoFile(const fs::path& p) {
   return hasExtension(p.native(), {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".ts", ".m2ts",
                                    ".wmv", ".flv", ".mpg", ".mpeg", ".iso"});
+}
+
+bool isPartialDownload(const std::string& location) {
+  if (!hasExtension(location, {".part", ".crdownload", ".opdownload"}) || isStream(location))
+    return false;
+  const size_t dot = location.find_last_of('.'), slash = location.find_last_of('/');
+  const std::string inner = location.substr(0, dot);
+  if (!isVideoFile(inner) || hasExtension(inner, {".iso"})) return false;
+  const size_t folder = slash == std::string::npos ? 0 : location.find_last_of('/', slash - 1) + 1;
+  return slash == std::string::npos || slash == 0 ||
+         location.compare(folder, slash - folder, Offline::kFolder) != 0;
+}
+
+bool isListedPartial(const std::string& location) {
+  return isPartialDownload(location) && (!remote::isRemote(location) || lowerCase(location.substr(0, 6)) == "smb://");
+}
+
+bool subtitleBelongsTo(const std::string& video, const std::string& subtitle) {
+  const fs::path name = fs::path(video).filename();
+  const std::string base = foldFileName((isPartialDownload(video) ? name.stem() : name).stem().string());
+  const std::string other = foldFileName(fs::path(subtitle).stem().string());
+  return other == base || (other.size() > base.size() + 1 && other[base.size()] == '.' &&
+                           other.compare(0, base.size(), base) == 0);
+}
+
+std::vector<std::string> localSubtitles(const std::string& video) {
+  std::vector<std::string> paths;
+  std::error_code ec;
+  for (fs::directory_iterator it(fs::path(video).parent_path(), ec), end; !ec && it != end; it.increment(ec)) {
+    const std::string name = it->path().filename().string();
+    if (isSubtitleFile(name) && subtitleBelongsTo(video, name)) paths.push_back(it->path().string());
+  }
+  std::sort(paths.begin(), paths.end());
+  return paths;
 }
 
 bool isPhotoFile(const fs::path& p) { return isPhotoFile(p.native()); }
@@ -157,14 +192,16 @@ std::vector<std::string> sameKindNames(const std::string& current, ListingCache&
     if (remote::list(folder, entries) != remote::Status::Ok) return {};
     for (const auto& item : entries)
       if (!item.folder && !item.name.empty() && item.name[0] != '.' &&
-          (photos ? isPhotoFile(item.name) : isVideoFile(item.name))) names.push_back(item.name);
+          (photos ? isPhotoFile(item.name)
+                  : isVideoFile(item.name) || isListedPartial(folder + "/" + item.name)))
+        names.push_back(item.name);
   } else for (fs::directory_iterator it(folder, ec), end; !ec && it != end;
        it.increment(ec)) {
     const auto& item = *it;
     std::error_code typeError;
     const std::string name = item.path().filename().string();
     if (!name.empty() && name[0] != '.' && item.is_regular_file(typeError) &&
-        (photos ? isPhotoFile(item.path()) : isVideoFile(item.path())))
+        (photos ? isPhotoFile(item.path()) : isVideoFile(item.path()) || isListedPartial(item.path())))
       names.push_back(name);
   }
   if (ec) return {};
@@ -193,6 +230,14 @@ void forgetFolderListing() {
 
 std::string neighborIn(const std::vector<std::string>& list, const std::string& current, int step,
                        const PlayOrder& order) {
+  if (order.byItself) {
+    std::vector<std::string> finished;
+    for (const std::string& entry : list)
+      if (entry == current || !isPartialDownload(entry)) finished.push_back(entry);
+    PlayOrder rest = order;
+    rest.byItself = false;
+    return neighborIn(finished, current, step, rest);
+  }
   if (!order.shuffle) {
     const long count = static_cast<long>(list.size());
     long i = std::find(list.begin(), list.end(), current) - list.begin();
@@ -256,7 +301,11 @@ std::future<std::string> mediaNeighbor(const std::string& current, int step, boo
                       ? order.start.substr(prefix.size())
                       : std::string();
     auto pick = [&](const std::vector<std::string>& names) {
-      const std::string name = neighborIn(names, path.filename().string(), step, order);
+      std::string from = path.filename().string();
+      // A partial download that finished meanwhile: from its finished file.
+      if (isPartialDownload(current) && std::find(names.begin(), names.end(), from) == names.end())
+        from = path.stem().string();
+      const std::string name = neighborIn(names, from, step, order);
       if (!name.empty()) return prefix + name;
       return wrap && !names.empty() ? prefix + names.front() : std::string();
     };

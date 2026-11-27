@@ -75,6 +75,19 @@ std::string keyOf(const std::string& location) {
   return isStream(location) ? location : normalPath(location);
 }
 
+// Kept under its address (keyOf()), never as a file: a stream, or a
+// browser's unfinished download, whose content and fingerprint change as it
+// grows. It is never fingerprinted or matched by its size.
+bool byAddress(const std::string& location) {
+  return isStream(location) || isPartialDownload(location);
+}
+
+// ... and of those, what keeps its settings alone (addressPart()): a link
+// or a partial download. A Stash scene is its file's video.
+bool keptAlone(const std::string& location) {
+  return isLink(location) || isPartialDownload(location);
+}
+
 json colourJson(const KeyColour& c) { return json::array({c.r, c.g, c.b}); }
 
 // A colour stored by colourJson(): false (and `out` as it was) if there is none.
@@ -921,6 +934,10 @@ std::vector<VideoRecord> Library::lookup(const std::vector<FolderListing::Entry>
   for (size_t i = 0; i < entries.size(); ++i) {
     const FolderListing::Entry& e = entries[i];
     if (e.directory) continue;
+    if (byAddress(e.path)) {
+      records[i] = record(e.path);
+      continue;
+    }
     const std::string path = normalPath(e.path);
     const bool detailsKnown = e.size != 0 && e.modified != 0;
     if (const auto waiting = pending_.find(path); waiting != pending_.end()) {
@@ -1019,19 +1036,19 @@ VideoRecord Library::record(const std::string& location) const {
   VideoRecord r;
   if (!available_ || location.empty()) return r;
   const std::string key = keyOf(location);
-  if (const Video* v = videoAt(key, isStream(location))) return v->record;
+  if (const Video* v = videoAt(key, byAddress(location))) return v->record;
   if (const auto waiting = pending_.find(key); waiting != pending_.end())
     overlay(r, waiting->second);
   return r;
 }
 
 bool Library::known(const std::string& location) const {
-  return available_ && !location.empty() && videoAt(keyOf(location), isStream(location)) != nullptr;
+  return available_ && !location.empty() && videoAt(keyOf(location), byAddress(location)) != nullptr;
 }
 
 bool Library::awaited(const std::string& location) const {
   if (!available_ || location.empty()) return false;
-  return isLink(location) ? pending_.count(location) > 0 : !known(location);
+  return keptAlone(location) ? pending_.count(keyOf(location)) > 0 : !known(location);
 }
 
 int64_t Library::addedAt(int64_t id) const {
@@ -1047,7 +1064,7 @@ VideoRecord Library::video(int64_t id) const {
 bool Library::settings(const std::string& location, VideoSettings& settings) const {
   if (!available_ || location.empty()) return false;
   const std::string key = keyOf(location);
-  if (const Video* v = videoAt(key, isStream(location))) {
+  if (const Video* v = videoAt(key, byAddress(location))) {
     if (!v->hasSettings) return false;
     settings = v->settings;
     return true;
@@ -1057,7 +1074,7 @@ bool Library::settings(const std::string& location, VideoSettings& settings) con
   // The awaited link is its address's until the answer, with what waits
   // over that.
   const Video* address = nullptr;
-  if (const auto row = isStream(location) ? byStream_.find(key) : byStream_.end();
+  if (const auto row = byAddress(location) ? byStream_.find(key) : byStream_.end();
       row != byStream_.end() && videos_.at(row->second).hasSettings)
     address = &videos_.at(row->second);
   if (!address && !waiting->second.settingsParts &&
@@ -1094,7 +1111,7 @@ std::string Library::oshashOf(const std::string& location) const {
   if (!available_ || location.empty()) return {};
   if (const auto located = located_.find(location); located != located_.end())
     return located->second;
-  if (isStream(location)) return {};
+  if (byAddress(location)) return {};
   const Video* v = videoAt(normalPath(location), false);
   return v ? v->oshash : std::string();
 }
@@ -1110,7 +1127,7 @@ void Library::addCopy(const std::string& location, const std::string& oshash, ui
 }
 
 void Library::forgetFile(const std::string& location) {
-  if (!available_ || isStream(location)) return;
+  if (!available_ || byAddress(location)) return;
   const std::string path = normalPath(location);
   if (!files_.count(path)) return;
   unindexFile(path);
@@ -1148,7 +1165,7 @@ void Library::open(const std::string& location) {
   }
   // A path is only a cache: even a same-size, same-date replacement must
   // resolve before its settings, resume or new plays can use the record.
-  if (available_ && !location.empty() && !isStream(location)) {
+  if (available_ && !location.empty() && !byAddress(location)) {
     const std::string path = normalPath(location);
     if (pending_.try_emplace(path).second) ++generation_;
     knownPrints_.erase(path);
@@ -1248,17 +1265,18 @@ void Library::change(const std::string& location, const Change& c) {
     apply(same != byHash_.end() ? same->second : addVideo(located->second, ""), c);
     return;
   }
-  if (isStream(location)) {
-    if (const auto waiting = pending_.find(location); waiting != pending_.end()) {
+  if (byAddress(location)) {
+    const std::string key = keyOf(location);
+    if (const auto waiting = pending_.find(key); waiting != pending_.end()) {
       waiting->second.merge(c);
       if (!c.empty()) ++generation_;  // record() shows it already
       return;
     }
-    // A link by its address keeps its settings alone.
-    const Change kept = isLink(location) ? addressPart(c) : c;
-    if (isLink(location) && kept.empty()) return;
-    const auto it = byStream_.find(location);
-    apply(it != byStream_.end() ? it->second : addVideo("", location), kept);
+    // A link or a partial download by its address keeps its settings alone.
+    const Change kept = keptAlone(location) ? addressPart(c) : c;
+    if (keptAlone(location) && kept.empty()) return;
+    const auto it = byStream_.find(key);
+    apply(it != byStream_.end() ? it->second : addVideo("", key), kept);
     return;
   }
   const std::string path = normalPath(location);

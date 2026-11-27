@@ -40,6 +40,16 @@ struct Stream : ReadAhead {
   bool failed = false, disconnected = false, closing = false, closed = false;
   bool reconnecting = false;
   bool background = false;  // a download's: reads only while no playback stream is open
+  // A partial download's (isPartialDownload()), played as it grows: at its
+  // end the reading thread asks for its length again (askLength), the
+  // worker sends the question (refreshing until the answer: Backend::
+  // refresh()), and once the download is finished it is `complete`. Never
+  // reopened by its name after its handle is lost. Its reads at the end
+  // stop waiting kPartialStall after it last grew, however many there are.
+  bool growing = false;
+  bool askLength = false, refreshing = false, complete = false;
+  uint64_t lengthSeen = 0;
+  Clock::time_point grewAt = Clock::now();
   Clock::time_point retryUntil{};
 
   // With `mutex` held: a read failed. lost: the connection broke, so the
@@ -89,6 +99,13 @@ class Backend {
   // With the stream's mutex held, its reads all ended: starts closing its
   // file, `closed` once done.
   virtual void closeStream(Stream& stream) = 0;
+  // With a growing stream's mutex held: starts asking its file's length,
+  // `refreshing` until the answer comes (which wakes its reader). One that
+  // can't ask is `complete` at once: it ends where it was opened.
+  virtual void refresh(const std::shared_ptr<Stream>& stream) {
+    stream->complete = true;
+    stream->cv.notify_all();
+  }
 
   virtual bool connected() const = 0;
   // Ends the connection; reads under way end as they are (blocks are
