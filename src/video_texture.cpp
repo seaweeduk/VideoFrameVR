@@ -3,20 +3,21 @@
 #include <algorithm>
 #include <cmath>
 
-bool VideoTexture::resize(int width, int height) {
+VideoTexture::Resize VideoTexture::resize(int width, int height) {
   release();
   levels_ = 1 + static_cast<int>(std::floor(std::log2(std::max(width, height))));
   for (auto& slot : slots_) {
+    bool outOfDeviceMemory;
     slot = interop_->create(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-                            static_cast<uint32_t>(levels_), "the video");
+                            static_cast<uint32_t>(levels_), "the video", &outOfDeviceMemory);
     if (!slot) {
       release();
-      return false;
+      return outOfDeviceMemory ? Resize::OutOfDeviceMemory : Resize::Failed;
     }
   }
   width_ = width;
   height_ = height;
-  return true;
+  return Resize::Ready;
 }
 
 void VideoTexture::release() {

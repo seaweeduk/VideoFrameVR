@@ -7,6 +7,8 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.buffering = "正在缓冲…";
   s.waitingDownload = "正在等待下载…";
   s.playbackFailed = "无法播放此视频，请尝试其他文件。";
+  s.gpuMemoryWarningTitle = "显存不足";
+  s.gpuMemoryWarningDetail = "显存不足，无法播放此视频。";
   s.discEncrypted = "此光盘映像已加密，无法播放。";
   s.partialFailed = "暂时无法播放此下载内容。下载完成后可能可以播放。";
   s.format = "格式";

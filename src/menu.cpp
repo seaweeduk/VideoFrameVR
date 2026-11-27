@@ -1151,7 +1151,7 @@ void Menu::layoutDialog() {
     return;
   }
   const bool question = dialog_ == Dialog::ConfirmQuit || dialog_ == Dialog::Error ||
-                        dialog_ == Dialog::Deleted;
+                        dialog_ == Dialog::Deleted || dialog_ == Dialog::GpuMemoryWarning;
   DialogLayout dialog(*this, question ? DialogLayout::kNarrow : DialogLayout::kWide);
   if (dialog_ == Dialog::SaveTo || dialog_ == Dialog::NoRoom || dialog_ == Dialog::RemoveDownload) {
     layoutOfflineDialog(dialog);
@@ -1175,6 +1175,10 @@ void Menu::layoutDialog() {
     dialog.button(textButton(t.cancel, Icon::None, close));
     dialog.button(textButton(t.decoderBusy.always, Icon::None, free(true)));
     dialog.button(textButton(t.decoderBusy.free, Icon::None, free(false), true));
+  } else if (dialog_ == Dialog::GpuMemoryWarning) {
+    dialog.title(t.gpuMemoryWarningTitle, Icon::Warning);
+    dialog.line(t.gpuMemoryWarningDetail, DialogLayout::Ink::Dim, 2);
+    dialog.button(textButton(t.ok, Icon::None, close, true));
   } else if (dialog_ == Dialog::StashCertificate) {
     // Like an SFTP server's changed key: connecting anyway is left of Don't
     // connect, the one to take, and red only when pointed.

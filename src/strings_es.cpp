@@ -7,6 +7,8 @@ Strings spanishStrings(const Strings& english) {
   s.buffering = "Almacenando en búfer …";
   s.waitingDownload = "Esperando la descarga …";
   s.playbackFailed = "No se puede reproducir este vídeo. Prueba con otro archivo.";
+  s.gpuMemoryWarningTitle = "Memoria gráfica insuficiente";
+  s.gpuMemoryWarningDetail = "No hay suficiente memoria gráfica para reproducir este vídeo.";
   s.discEncrypted = "Esta imagen de disco está cifrada y no se puede reproducir.";
   s.partialFailed = "Esta descarga aún no se puede reproducir. Puede que funcione cuando termine.";
   s.format = "Formato";

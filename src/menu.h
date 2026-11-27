@@ -230,6 +230,10 @@ class Menu {
   void closeDecoderBusy() {
     if (dialog_ == Dialog::DecoderBusy) openDialog(Dialog::None, "");
   }
+  void showGpuMemoryWarning() { openDialog(Dialog::GpuMemoryWarning, ""); }
+  void closeGpuMemoryWarning() {
+    if (dialog_ == Dialog::GpuMemoryWarning) openDialog(Dialog::None, "");
+  }
   // What's new (menu_whats_new.cpp): these releases' notes, newest first,
   // over the page shown. Several came with an update from `from` to `to`;
   // otherwise it is headed by the app's name.
@@ -479,7 +483,7 @@ class Menu {
                       SaveTo, NoRoom, RemoveDownload,  // offline downloads' (menu_offline.cpp)
                       Update,  // a newer release (menu_settings.cpp)
                       // Steam holds the decoder a video needs: free it?
-                      DecoderBusy,
+                      DecoderBusy, GpuMemoryWarning,
                       WhatsNew,  // the release notes (menu_whats_new.cpp)
                       // Settings' Controls (menu_controls.cpp): a button's
                       // job to choose, Reset's question, and a gesture's

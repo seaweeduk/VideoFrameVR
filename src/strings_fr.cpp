@@ -7,6 +7,8 @@ Strings frenchStrings(const Strings& english) {
   s.buffering = "Mise en mémoire tampon …";
   s.waitingDownload = "En attente du téléchargement …";
   s.playbackFailed = "Impossible de lire cette vidéo. Essayez un autre fichier.";
+  s.gpuMemoryWarningTitle = "Mémoire graphique insuffisante";
+  s.gpuMemoryWarningDetail = "Il n'y a pas assez de mémoire graphique pour lire cette vidéo.";
   s.discEncrypted = "Cette image disque est chiffrée et ne peut pas être lue.";
   s.partialFailed = "Impossible de lire ce téléchargement pour l'instant. Il sera peut-être lisible une fois terminé.";
   s.format = "Format";

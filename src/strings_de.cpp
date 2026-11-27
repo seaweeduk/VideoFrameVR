@@ -7,6 +7,8 @@ Strings germanStrings(const Strings& english) {
   s.buffering = "Puffert …";
   s.waitingDownload = "Warte auf den Download …";
   s.playbackFailed = "Dieses Video kann nicht abgespielt werden. Versuche eine andere Datei.";
+  s.gpuMemoryWarningTitle = "Zu wenig Grafikspeicher";
+  s.gpuMemoryWarningDetail = "Der Grafikspeicher reicht nicht aus, um dieses Video abzuspielen.";
   s.discEncrypted = "Dieses Disc-Abbild ist verschlüsselt und kann nicht abgespielt werden.";
   s.partialFailed = "Dieser Download kann noch nicht abgespielt werden. Nach dem Abschluss klappt es vielleicht.";
   s.format = "Format";

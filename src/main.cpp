@@ -2159,6 +2159,7 @@ int run(Options opts) {
       case Menu::Feel::None: break;
     }
     quality.afterMenu(menu.draggingSlider());
+    session.updateFailureDialog(panel, {headValid && !keyPicking && !hand.select, headPos, menuAt});
   };
 
   auto showHints = [&](const ControllerState& input) {
@@ -2309,6 +2310,7 @@ int run(Options opts) {
                       : player.waiting() && isPartialDownload(running.currentFile) ? strings().waitingDownload
                       : player.waiting()                   ? strings().buffering
                       : !failed                            ? strings().loading
+                      : player.gpuMemoryFailed()           ? strings().gpuMemoryWarningTitle
                       : bdmv::isEncrypted(running.currentFile) ? strings().discEncrypted
                       : busy != Busy::No                   ? strings().decoderBusy.busy
                       : isPartialDownload(running.currentFile) ? strings().partialFailed

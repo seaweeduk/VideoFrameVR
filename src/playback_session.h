@@ -24,6 +24,7 @@ class StickSeek;
 class VideoMemory;
 class VideoPlayer;
 struct MenuCommand;
+struct MenuPanels;
 struct MenuView;
 
 // What is open and how it is going (PlaybackSession::status()).
@@ -94,6 +95,13 @@ class PlaybackSession {
 
   // Each frame, in this order, with the app's own work between them.
   void pollFailure();
+  // Once per failed open, without covering another dialog or first-run setup.
+  struct FailureDialogFrame {
+    bool canShow;
+    const Vec3& headPos;
+    const Mat4& menuAt;
+  };
+  void updateFailureDialog(MenuPanels& panel, const FailureDialogFrame& frame);
   void countPlay(bool opened);
   void pollRecord(bool libraryChanged);
   void poll();
@@ -182,6 +190,7 @@ class PlaybackSession {
   // kept when it is left (and every minute meanwhile), and its duration
   // once known.
   bool videoOpened = false, durationKept = false;
+  uint64_t gpuMemoryDialogFor = 0;
   double resumeSaveAt = 0;  // glfwGetTime() to keep the position next
   double resumeSaved = -2;  // ... and the one kept last
 };

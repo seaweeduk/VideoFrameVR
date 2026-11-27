@@ -1323,6 +1323,8 @@ struct Strings {
   const char* buffering;  // over the picture while a video waits for data
   const char* waitingDownload;  // ... a partial download, for data its download hasn't brought yet
   const char* playbackFailed;
+  const char* gpuMemoryWarningTitle;
+  const char* gpuMemoryWarningDetail;
   const char* discEncrypted;  // instead of playbackFailed: an encrypted Blu-ray disc image
   const char* partialFailed;  // instead of playbackFailed: a partial download
   const char* format;

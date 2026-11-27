@@ -65,9 +65,10 @@ class GlInterop : public FrameParticipant {
 
   // An image of `levels` mip levels (R8G8B8A8_SRGB, mutable to UNORM),
   // released to GL after a first layout transition on the GPU. nullptr if it
-  // could not be made (logged with `what`).
+  // could not be made (logged with `what`). The optional flag distinguishes
+  // Vulkan device-memory exhaustion from other failures.
   std::unique_ptr<SharedImage> create(uint32_t width, uint32_t height, uint32_t levels,
-                                      const char* what);
+                                      const char* what, bool* outOfDeviceMemory = nullptr);
   // Destroys it once neither API uses it any more.
   void retire(std::unique_ptr<SharedImage> image);
   // The largest side create() can make.

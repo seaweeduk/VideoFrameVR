@@ -38,6 +38,8 @@
 namespace {
 
 constexpr const char* kBt1886 = "bt.1886";  // mpv's name for SDR video's transfer
+// Let the old images retire before confirming an out-of-memory failure.
+constexpr double kVideoMemoryRetry = 0.25;
 
 constexpr uint64_t kSizeReply = uint64_t(1) << 33;
 constexpr uint64_t kTracksReply = uint64_t(1) << 34;
@@ -384,6 +386,8 @@ static double nowSeconds() {
 }
 
 void VideoPlayer::load(const std::string& path, double start) {
+  gpuMemoryFailed_ = false;
+  gpuMemoryRetryAt_ = 0;
   if (sleep_.closeUnsent())
     closeVideoForSleep(false);
   if (export_.close_pending && !videoReleaseComplete()) {
@@ -498,6 +502,8 @@ void VideoPlayer::stop() {
     loading_ = opened_ = false;
     return;
   }
+  gpuMemoryFailed_ = false;
+  gpuMemoryRetryAt_ = 0;
   sleep_.cancel();
   remoteFailed_ = false;
   hardwareRefused_ = decoderRefused_ = false;
@@ -917,6 +923,7 @@ void VideoPlayer::pollEvents() {
     }
   }
   runDeferred();
+  retryVideoTarget();
   stopFailedPlayback();
   addSidecarSubtitles();
   sendSeek();
@@ -1046,7 +1053,7 @@ void VideoPlayer::onGetPropertyReply(const mpv_event* ev) {
     setViews(ev->error >= 0 && prop->format == MPV_FORMAT_STRING
                  ? *static_cast<char**>(prop->data) : nullptr);
   }
-  if (ev->reply_userdata == kSizeReply + sizeRequest_ && !path_.empty()) {
+  if (ev->reply_userdata == kSizeReply + sizeRequest_ && !path_.empty() && !gpuMemoryFailed_) {
     const auto* prop = static_cast<mpv_event_property*>(ev->data);
     if (ev->error >= 0 && prop->format == MPV_FORMAT_NODE) {
       const bool sized = updateVideoSize(*static_cast<mpv_node*>(prop->data));
@@ -1055,6 +1062,7 @@ void VideoPlayer::onGetPropertyReply(const mpv_event* ev) {
         framePending_ = true;
       }
     } else {
+      if (gpuMemoryRetryAt_ < 0 && current_ && opened_ && !failed_) gpuMemoryFailed_ = true;
       releaseTarget();
     }
   }
@@ -1154,7 +1162,8 @@ void VideoPlayer::onPropertyValue(const std::string& name, const mpv_event_prope
       });
       updateSubtitleVisibility();
       redrawForSubtitles();
-    } else if (name == "video-params" && loading_ && fileLoaded_ && !newVideoSized_)
+    } else if (name == "video-params" && loading_ && fileLoaded_ && !newVideoSized_ &&
+               gpuMemoryRetryAt_ == 0 && !gpuMemoryFailed_)
       // Prepare before decoding reaches the VO; video-out-params still
       // supplies the final filtered size before showing the first frame.
       updateVideoSize(*static_cast<mpv_node*>(prop->data), true);
@@ -1280,11 +1289,20 @@ void VideoPlayer::runDeferred() {
   }
 }
 
+void VideoPlayer::retryVideoTarget() {
+  if (gpuMemoryRetryAt_ <= 0 || !opened_ || failed_ || nowSeconds() < gpuMemoryRetryAt_) return;
+  gpuMemoryRetryAt_ = -1;
+  if (mpv_get_property_async(mpv_, kSizeReply + ++sizeRequest_, "video-out-params", MPV_FORMAT_NODE) < 0)
+    gpuMemoryFailed_ = true;  // the real allocation already failed, and no reply will come
+}
+
 void VideoPlayer::stopFailedPlayback() {
   // mpv can treat a custom-stream read error as EOF or keep retrying it, and
-  // plays a video the hardware decoder refused as sound alone.
+  // plays sound alone if the decoder or the video image couldn't start.
   // The refusal stops the sound even after another failure was reported.
-  if ((remoteFailed_.load(std::memory_order_relaxed) && !failed_) || hardwareRefused_) {
+  if (((remoteFailed_.load(std::memory_order_relaxed) || gpuMemoryFailed_) && !failed_) ||
+      hardwareRefused_) {
+    if (gpuMemoryFailed_) std::fprintf(stderr, "Playback failed: not enough GPU memory for the video image\n");
     if (hardwareRefused_) {
       std::fprintf(stderr, "Playback failed: the hardware decoder can't start this video\n");
       decoderRefused_ = true;
@@ -1338,22 +1356,36 @@ bool VideoPlayer::updateVideoSize(const mpv_node& params, bool preparing) {
     h = static_cast<int64_t>(h * s);
   }
   if (video_.valid() && w == width_ && h == height_) {
-    if (!preparing && loading_) logPixelPath(displayW, displayH, maxSize, video_.levels());
+    if (!preparing) {
+      gpuMemoryRetryAt_ = 0;
+      if (loading_) logPixelPath(displayW, displayH, maxSize, video_.levels());
+    }
     return true;
   }
+  const bool firstPicture = current_ && opened_ && !failed_ && (!newVideoSized_ || loading_);
   releaseTarget();
   width_ = static_cast<int>(w);
   height_ = static_cast<int>(h);
 
   // Mipmaps keep an 8K frame from shimmering when shown smaller than native.
   ++pictureVersion_;
-  if (!video_.resize(width_, height_)) {
+  const auto resized = video_.resize(width_, height_);
+  if (resized != VideoTexture::Resize::Ready) {
     std::fprintf(stderr, "No image for the video (%dx%d)\n", width_, height_);
+    // The early size is only a guess. Retry the actual size once after old
+    // images have had time to retire, before failing this open.
+    if (!preparing && firstPicture && resized == VideoTexture::Resize::OutOfDeviceMemory) {
+      if (gpuMemoryRetryAt_ < 0) gpuMemoryFailed_ = true;
+      else if (gpuMemoryRetryAt_ == 0) gpuMemoryRetryAt_ = nowSeconds() + kVideoMemoryRetry;
+    }
     releaseTarget();
     return false;
   }
   framePending_ = true;
-  if (!preparing) logPixelPath(displayW, displayH, maxSize, video_.levels());
+  if (!preparing) {
+    gpuMemoryRetryAt_ = 0;
+    logPixelPath(displayW, displayH, maxSize, video_.levels());
+  }
   return true;
 }
 
@@ -1401,6 +1433,7 @@ void VideoPlayer::logPixelPath(int64_t displayW, int64_t displayH, int maxSize, 
 
 void VideoPlayer::releaseTarget() {
   video_.release();
+  firstFrameDeferred_ = false;
   ++pictureVersion_;
   width_ = height_ = 0;
   dropDirect();

@@ -18,9 +18,9 @@ class VideoTexture {
   ~VideoTexture() { release(); }
 
   void init(GlInterop& interop) { interop_ = &interop; }
-  // New slots of this size, the old ones retired. False if they could not
-  // be made (then there are none).
-  bool resize(int width, int height);
+  enum class Resize { Ready, Failed, OutOfDeviceMemory };
+  // New slots of this size, the old ones retired. No slots on failure.
+  Resize resize(int width, int height);
   void release();
   bool valid() const { return slots_[0] != nullptr; }
   int width() const { return width_; }

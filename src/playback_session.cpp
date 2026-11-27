@@ -20,6 +20,7 @@
 #include "strings.h"
 #include "video_memory.h"
 #include "video_player.h"
+#include "vr_space.h"
 
 #include <GLFW/glfw3.h>
 
@@ -43,6 +44,22 @@ PlaybackSession::PlaybackSession(VideoPlayer& player, Settings& settings, Librar
       passthrough(passthrough), stickSeek(stickSeek), gestureInput(gestureInput),
       gestureHost(gestureHost), controlInput(controlInput), afterChosen(settings.afterVideo) {
   applyAfterVideo();
+}
+
+void PlaybackSession::updateFailureDialog(MenuPanels& panel, const FailureDialogFrame& frame) {
+  const uint64_t opening = player.loadCount();
+  if (!player.gpuMemoryFailed() || gpuMemoryDialogFor != opening) menu.closeGpuMemoryWarning();
+  if (!player.gpuMemoryFailed() || gpuMemoryDialogFor == opening || !frame.canShow ||
+      (panel.open && (menu.dialogOpen() || menu.textInputActive() || menu.dragging())) ||
+      menu.setupRunning())
+    return;
+  if (!panel.open) {
+    panel.open = true;
+    menu.showMainPage();
+    panel.placeInFrontOf(frame.headPos, frame.menuAt);
+  }
+  menu.showGpuMemoryWarning();
+  gpuMemoryDialogFor = opening;
 }
 
 void PlaybackSession::say(std::string text) { notices.say(std::move(text), glfwGetTime()); }
@@ -366,9 +383,9 @@ bool PlaybackSession::handle(const MenuCommand& c) {
 void PlaybackSession::pollFailure() {
   // A Stash scene's file on a server that doesn't play plays from Stash's
   // stream instead (once: the stream is no server's file), if that serves it.
-  // Not one the decoder refused: the stream is the same video.
-  if (player.failed() && !player.decoderRefused() && remote::isRemote(running.currentFile) && stash &&
-      stash->catalog())
+  // Not a local video failure: the stream is the same video.
+  if (player.failed() && !player.decoderRefused() && !player.gpuMemoryFailed() &&
+      remote::isRemote(running.currentFile) && stash && stash->catalog())
     if (const int i = stash->catalog()->sceneByPath(running.currentFile); i >= 0) {
       const StashScene& scene = stash->catalog()->scenes()[i];
       if (!scene.oshashes.empty() && scene.oshashes.front() == scene.oshash) {
@@ -564,4 +581,5 @@ void PlaybackSession::fill(MenuView& view) const {
                                                             : MenuView::Deletable::Yes;
   view.slideshowSeconds = slideshowSeconds;
   view.afterVideo = afterVideo();
+  view.gpuMemoryFailed = player.gpuMemoryFailed();
 }

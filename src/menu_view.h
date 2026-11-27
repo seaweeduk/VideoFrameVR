@@ -113,6 +113,7 @@ struct ControlsView {
 
 // A change of any of these lays the whole menu out again.
 struct MenuViewLayout {
+  bool gpuMemoryFailed = false;  // the video image could not fit in GPU memory
   bool halfPacked = false;  // flat 3D shown with half-squeezed eyes (chosen by hand)
   bool passthrough = false;
   bool colourKey = false;    // the running video's key is a colour key (VideoSettings::colourKeyed()) ...
@@ -190,7 +191,7 @@ struct MenuViewLayout {
 // doesn't compile.
 inline bool operator==(const MenuViewLayout& a, const MenuViewLayout& b) {
   const auto fields = [](const MenuViewLayout& v) {
-    const auto& [halfPacked, passthrough, colourKey, keyColour, fillChecked, fillChecking,
+    const auto& [gpuMemoryFailed, halfPacked, passthrough, colourKey, keyColour, fillChecked, fillChecking,
                  greenScreenFound, keyPicking, keyPickNote, packedAlpha, maskFormat, maskLayers,
                  secondLayerHidden, opacityApplies, currentFile, playbackFailed, discEncrypted,
                  decoderBusy, floatingSubtitles, streaming, recordless, videoWidth, videoHeight, background,
@@ -203,7 +204,7 @@ inline bool operator==(const MenuViewLayout& a, const MenuViewLayout& b) {
                  crashedLastRun, softwareDecoding, scriptStatus, remoteControl, remoteControlStatus,
                  downloadsTo, deletable] = v;
     return std::tie(halfPacked, passthrough, colourKey, keyColour, fillChecked, fillChecking,
-                    greenScreenFound, keyPicking, keyPickNote, packedAlpha, maskFormat, maskLayers,
+                    greenScreenFound, keyPicking, keyPickNote, gpuMemoryFailed, packedAlpha, maskFormat, maskLayers,
                     secondLayerHidden, opacityApplies, currentFile, playbackFailed, discEncrypted,
                     decoderBusy, floatingSubtitles, streaming, recordless, videoWidth, videoHeight, background,
                     autoPassthrough, keyGreen, passthroughAvailable, photo, slideshowSeconds, afterVideo,

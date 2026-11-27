@@ -7,6 +7,8 @@ Strings japaneseStrings(const Strings& english) {
   s.buffering = "バッファリング中…";
   s.waitingDownload = "ダウンロードを待っています…";
   s.playbackFailed = "この動画を再生できません。別のファイルをお試しください。";
+  s.gpuMemoryWarningTitle = "GPUメモリ不足";
+  s.gpuMemoryWarningDetail = "この動画を再生するためのGPUメモリが足りません。";
   s.discEncrypted = "このディスクイメージは暗号化されているため再生できません。";
   s.partialFailed = "このダウンロードはまだ再生できません。完了すると再生できる場合があります。";
   s.format = "形式";

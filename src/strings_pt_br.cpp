@@ -7,6 +7,8 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.buffering = "Carregando dados …";
   s.waitingDownload = "Aguardando o download …";
   s.playbackFailed = "Não foi possível reproduzir este vídeo. Tente outro arquivo.";
+  s.gpuMemoryWarningTitle = "Memória da GPU insuficiente";
+  s.gpuMemoryWarningDetail = "Não há memória suficiente na GPU para reproduzir este vídeo.";
   s.discEncrypted = "Esta imagem de disco está criptografada e não pode ser reproduzida.";
   s.partialFailed = "Ainda não é possível reproduzir este download. Talvez funcione quando terminar.";
   s.format = "Formato";

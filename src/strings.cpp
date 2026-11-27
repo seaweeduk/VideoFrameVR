@@ -30,6 +30,8 @@ constexpr Strings englishStrings() {
   s.buffering = "Buffering …";
   s.waitingDownload = "Waiting for the download …";
   s.playbackFailed = "Can't play this video. Try another file.";
+  s.gpuMemoryWarningTitle = "Not enough GPU memory";
+  s.gpuMemoryWarningDetail = "There isn't enough GPU memory to play this video.";
   s.discEncrypted = "This disc image is encrypted and can't be played.";
   s.partialFailed = "Can't play this download yet. It may play once it finishes.";
   s.format = "Format";

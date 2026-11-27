@@ -217,9 +217,14 @@ bool GlInterop::importSemaphore(VkSemaphore semaphore, GLuint& out, const char* 
 }
 
 std::unique_ptr<SharedImage> GlInterop::create(uint32_t width, uint32_t height, uint32_t levels,
-                                               const char* what) {
+                                               const char* what, bool* outOfDeviceMemory) {
   GpuContext& gpu = *gpu_;
   VkDevice d = gpu.device();
+  if (outOfDeviceMemory) *outOfDeviceMemory = false;
+  const auto check = [&](VkResult result, const char* step) {
+    if (outOfDeviceMemory) *outOfDeviceMemory = result == VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    return gpu.check(result, step);
+  };
   auto image = std::make_unique<SharedImage>();
   Texture& t = image->texture_;
   t.width = width;
@@ -256,7 +261,7 @@ std::unique_ptr<SharedImage> GlInterop::create(uint32_t width, uint32_t height, 
   info.usage = usage_;
   info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
   info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  if (!gpu.check(vkCreateImage(d, &info, nullptr, &t.image), "creating a shared image"))
+  if (!check(vkCreateImage(d, &info, nullptr, &t.image), "creating a shared image"))
     return fail("vkCreateImage");
 
   VkMemoryRequirements reqs;
@@ -271,9 +276,9 @@ std::unique_ptr<SharedImage> GlInterop::create(uint32_t width, uint32_t height, 
   alloc.allocationSize = reqs.size;
   alloc.memoryTypeIndex = gpu.memoryType(reqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   if (alloc.memoryTypeIndex == UINT32_MAX ||
-      !gpu.check(vkAllocateMemory(d, &alloc, nullptr, &image->memory_), "allocating a shared image"))
+      !check(vkAllocateMemory(d, &alloc, nullptr, &image->memory_), "allocating a shared image"))
     return fail("allocating its memory");
-  if (!gpu.check(vkBindImageMemory(d, t.image, image->memory_, 0), "binding a shared image"))
+  if (!check(vkBindImageMemory(d, t.image, image->memory_, 0), "binding a shared image"))
     return fail("binding its memory");
   image->bytes_ = reqs.size;
 
@@ -282,14 +287,14 @@ std::unique_ptr<SharedImage> GlInterop::create(uint32_t width, uint32_t height, 
   view.viewType = VK_IMAGE_VIEW_TYPE_2D;
   view.format = kFormats[0];
   view.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, 1};
-  if (!gpu.check(vkCreateImageView(d, &view, nullptr, &t.view), "a shared image's view"))
+  if (!check(vkCreateImageView(d, &view, nullptr, &t.view), "a shared image's view"))
     return fail("its view");
 
   VkMemoryGetFdInfoKHR fdInfo{VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR};
   fdInfo.memory = image->memory_;
   fdInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
   int fd = -1;
-  if (!gpu.check(gpu.getMemoryFd(d, &fdInfo, &fd), "exporting a shared image"))
+  if (!check(gpu.getMemoryFd(d, &fdInfo, &fd), "exporting a shared image"))
     return fail("exporting its memory");
 
   // GL: dedicated, optimally tiled, exactly as allocated.
