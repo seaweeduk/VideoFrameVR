@@ -222,6 +222,10 @@ Strings spanishStrings(const Strings& english) {
   s.resumeHint = "Continuar donde paraste. Cerca del final, empezar de nuevo.";
   s.seekPreview = "Vista previa al buscar";
   s.seekPreviewHint = "Apunta a la barra de tiempo para previsualizar. Miniaturas: en Menú.";
+  s.seekPreviewShow = "Mostrar vistas previas";
+  s.seekPreviewHintFrame = "Aumenta la carga de la CPU mientras apuntas a la barra de tiempo; el ventilador puede sonar más.";
+  s.seekPreview3d = "Vista previa en 3D";
+  s.seekPreview3dHint = "Muestra en 3D las vistas previas de los vídeos 3D.";
   s.showPerformance = "Mostrar rendimiento";
   s.showPerformanceHint = "FPS y fotogramas perdidos abajo a la izquierda, incluso sin menú.";
   s.vibration = "Vibración del mando";

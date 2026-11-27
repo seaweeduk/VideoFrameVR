@@ -165,6 +165,7 @@ struct MenuViewLayout {
   bool resume = true;           // videos start where they were left
   bool freeDecoder = false;     // Frame: the decoder is freed from Steam without asking
   bool seekPreview = true;      // the seek bar shows the frame where the pointer is
+  bool seekPreview3d = false;   // ... each eye its own of a 3D video
   bool showPerformance = false;  // the performance readout, this run's (--show-performance)
   bool vibration = true;        // controllers buzz on clicks, seeks and grabs
   bool thumbnails = true;       // file browser and library: thumbnails, else a video icon
@@ -197,7 +198,7 @@ inline bool operator==(const MenuViewLayout& a, const MenuViewLayout& b) {
                  roomMatch, roomMatched, tvGamma, videoMipmaps, toneLook, foveationAvailable, foveation,
                  showFoveation, foveationLearned, sharpBins, foveationRing, foveationOutside,
                  frameReuse, advancedSettings, refreshRate, foveationMaps, sharpDegrees, resume,
-                 freeDecoder, seekPreview, showPerformance, vibration, thumbnails, setupBanner,
+                 freeDecoder, seekPreview, seekPreview3d, showPerformance, vibration, thumbnails, setupBanner,
                  showWhatsNew, releaseUpdate, releaseVersion, diagnostics, diagnosticsFile,
                  crashedLastRun, softwareDecoding, scriptStatus, remoteControl, remoteControlStatus,
                  downloadsTo, deletable] = v;
@@ -209,7 +210,7 @@ inline bool operator==(const MenuViewLayout& a, const MenuViewLayout& b) {
                     roomMatch, roomMatched, tvGamma, videoMipmaps, toneLook, foveationAvailable, foveation,
                     showFoveation, foveationLearned, sharpBins, foveationRing, foveationOutside,
                     frameReuse, advancedSettings, refreshRate, foveationMaps, sharpDegrees, resume,
-                    freeDecoder, seekPreview, showPerformance, vibration, thumbnails, setupBanner,
+                    freeDecoder, seekPreview, seekPreview3d, showPerformance, vibration, thumbnails, setupBanner,
                     showWhatsNew, releaseUpdate, releaseVersion, diagnostics, diagnosticsFile,
                     crashedLastRun, softwareDecoding, scriptStatus, remoteControl, remoteControlStatus,
                     downloadsTo, deletable);
@@ -279,7 +280,6 @@ struct MenuViewParts {
 // itself.
 struct MenuViewQuiet {
   bool hardwareAv1 = false;  // the headset's decoder takes AV1 (SteamOS 0.5.10)
-  bool seekPreviewAvailable = true;  // the seek bar's preview can show at all (not on the Steam Frame)
   unsigned serversSetUp = 0;    // a bit per ServerKind with a server set up, in use or not
 };
 

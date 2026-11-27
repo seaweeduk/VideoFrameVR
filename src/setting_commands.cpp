@@ -64,6 +64,10 @@ bool applySettingCommand(const MenuCommand& c, Settings& settings) {
       settings.downloadsTo = c.path;
       saveSettings(settings);
       break;
+    case MenuCommand::ToggleSeekPreview3d:
+      settings.seekPreview3d = !settings.seekPreview3d;
+      saveSettings(settings);
+      break;
     case MenuCommand::ToggleThumbnails:
       settings.thumbnails = !settings.thumbnails;
       saveSettings(settings);
@@ -217,6 +221,7 @@ void fillSettings(MenuView& view, const Settings& settings) {
   view.freeDecoder = settings.freeDecoder;
   view.downloadsTo = settings.downloadsTo;
   view.seekPreview = settings.seekPreview;
+  view.seekPreview3d = settings.seekPreview3d;
   view.thumbnails = settings.thumbnails;
   view.vibration = settings.vibration;
   view.remoteControl = settings.remoteControl;

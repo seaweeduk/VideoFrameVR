@@ -7,7 +7,6 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
-#include <libavutil/display.h>
 #include <libswscale/swscale.h>
 }
 
@@ -24,22 +23,6 @@ namespace {
 
 constexpr int kMaxSize = 16384;            // at most, else the shared image limit
 constexpr size_t kUploadBytes = 8u << 20;  // per frame
-
-// Turns an RGBA picture clockwise by 90, 180 or 270 degrees.
-void rotate(std::vector<uint32_t>& pixels, int& width, int& height, int degrees) {
-  if (degrees != 90 && degrees != 180 && degrees != 270) return;
-  std::vector<uint32_t> out(pixels.size());
-  const int w = width, h = height;
-  for (int y = 0; y < h; ++y)
-    for (int x = 0; x < w; ++x) {
-      const uint32_t p = pixels[static_cast<size_t>(y) * w + x];
-      if (degrees == 180) out[static_cast<size_t>(h - 1 - y) * w + (w - 1 - x)] = p;
-      else if (degrees == 90) out[static_cast<size_t>(x) * h + (h - 1 - y)] = p;
-      else out[static_cast<size_t>(w - 1 - x) * h + y] = p;
-    }
-  pixels.swap(out);
-  if (degrees != 180) std::swap(width, height);
-}
 
 // Decodes a photo at full size (at most maxSize) into RGBA, upright.
 bool decodePhoto(const std::string& path, int maxSize, std::vector<uint32_t>& pixels, int& width,
@@ -68,13 +51,7 @@ bool decodePhoto(const std::string& path, int maxSize, std::vector<uint32_t>& pi
     sws_freeContext(sws);
     if (!scaled) break;
     // Camera orientation (EXIF), as FFmpeg reports it.
-    if (const AVFrameSideData* side = av_frame_get_side_data(frame, AV_FRAME_DATA_DISPLAYMATRIX)) {
-      const double angle = av_display_rotation_get(reinterpret_cast<const int32_t*>(side->data));
-      if (!std::isnan(angle)) {
-        const int clockwise = ((static_cast<int>(std::lround(-angle)) % 360) + 360) % 360;
-        rotate(pixels, width, height, clockwise);
-      }
-    }
+    rotatePixels(pixels, width, height, frameRotation(frame));
     ok = true;
   } while (false);
   av_frame_free(&frame);

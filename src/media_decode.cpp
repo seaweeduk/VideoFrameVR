@@ -64,6 +64,11 @@ bool decodeKeyframe(AVFormatContext* format, AVCodecContext* codec, int stream, 
     if (packet->stream_index == stream) break;
     av_packet_unref(packet);
   }
+  return decodeKeyPacket(format, codec, stream, packet, frame, limit - reads, interrupt);
+}
+
+bool decodeKeyPacket(AVFormatContext* format, AVCodecContext* codec, int stream, AVPacket* packet,
+                     AVFrame* frame, int limit, Interrupt& interrupt) {
   avcodec_send_packet(codec, packet);
   bool got = avcodec_receive_frame(codec, frame) == 0;
   if (!got) {
@@ -78,5 +83,5 @@ bool decodeKeyframe(AVFormatContext* format, AVCodecContext* codec, int stream, 
   }
   av_packet_unref(packet);
   if (got) return !Interrupt::check(&interrupt);
-  return decodeFirstFrame(format, codec, stream, packet, frame, limit - reads, interrupt);
+  return decodeFirstFrame(format, codec, stream, packet, frame, limit, interrupt);
 }

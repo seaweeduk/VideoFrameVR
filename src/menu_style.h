@@ -103,6 +103,9 @@ constexpr double kTabsY = Menu::kStripBodyY + kLeft, kTabsH = kit::kStripTabsH;
 constexpr double kBandY = kTabsY + kTabsH + kit::kSpace, kBandH = kit::kStripBandH;
 constexpr double kRowY = kBandY + kBandH + kit::kSpace, kRowH = kit::kStripRowH;
 constexpr double kSeekBand = kBandH / 2;  // the band is the seek bar
+// The seek bar counts the pointer as staying where it was until it is more
+// than this from there: a hand is never quite still.
+constexpr double kSeekSteady = 6;
 constexpr double kButton = kit::kStripButton;  // a round button, its icon:
 constexpr double kButtonIcon = 28, kPlayIcon = 30;
 constexpr double kButtonGap = kit::kSpaceTight;  // between the buttons of a cluster

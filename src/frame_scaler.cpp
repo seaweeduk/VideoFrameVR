@@ -1,12 +1,15 @@
 #include "frame_scaler.h"
 
 extern "C" {
+#include <libavutil/display.h>
 #include <libavutil/frame.h>
 #include <libavutil/pixdesc.h>
 #include <libswscale/swscale.h>
 }
 
+#include <cmath>
 #include <cstring>
+#include <utility>
 
 SwsContext* frameScaler(SwsContext* cached, const AVFrame* frame, int srcWidth, int width,
                         int height, int dstFormat, int flags) {
@@ -53,4 +56,28 @@ bool scaleInto(SwsContext* sws, const AVFrame* frame, int width, int height,
     std::memcpy(&pixels[static_cast<size_t>(y) * width], padded.data() + static_cast<size_t>(y) * stride,
                 static_cast<size_t>(width) * 4);
   return true;
+}
+
+int frameRotation(const AVFrame* frame) {
+  const AVFrameSideData* side = av_frame_get_side_data(frame, AV_FRAME_DATA_DISPLAYMATRIX);
+  if (!side) return 0;
+  const double angle = av_display_rotation_get(reinterpret_cast<const int32_t*>(side->data));
+  if (std::isnan(angle)) return 0;
+  const int clockwise = ((static_cast<int>(std::lround(-angle)) % 360) + 360) % 360;
+  return clockwise == 90 || clockwise == 180 || clockwise == 270 ? clockwise : 0;
+}
+
+void rotatePixels(std::vector<uint32_t>& pixels, int& width, int& height, int degrees) {
+  if (degrees != 90 && degrees != 180 && degrees != 270) return;
+  std::vector<uint32_t> out(pixels.size());
+  const int w = width, h = height;
+  for (int y = 0; y < h; ++y)
+    for (int x = 0; x < w; ++x) {
+      const uint32_t p = pixels[static_cast<size_t>(y) * w + x];
+      if (degrees == 180) out[static_cast<size_t>(h - 1 - y) * w + (w - 1 - x)] = p;
+      else if (degrees == 90) out[static_cast<size_t>(x) * h + (h - 1 - y)] = p;
+      else out[static_cast<size_t>(w - 1 - x) * h + y] = p;
+    }
+  pixels.swap(out);
+  if (degrees != 180) std::swap(width, height);
 }

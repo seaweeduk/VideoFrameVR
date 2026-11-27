@@ -252,6 +252,10 @@ constexpr Strings englishStrings() {
   s.resumeHint = "Continue where you stopped; near the end, restart instead.";
   s.seekPreview = "Timeline preview";
   s.seekPreviewHint = "Point at the timeline to preview. File thumbnails: under Menu.";
+  s.seekPreviewShow = "Show previews";
+  s.seekPreviewHintFrame = "Adds CPU load while you point at the timeline, so the fan may get louder.";
+  s.seekPreview3d = "Preview in 3D";
+  s.seekPreview3dHint = "Shows previews of 3D videos in 3D.";
   s.showPerformance = "Show performance";
   s.showPerformanceHint = "Frame rates and drops at bottom left, even with menus closed.";
   s.vibration = "Controller vibration";

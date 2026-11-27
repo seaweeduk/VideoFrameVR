@@ -96,14 +96,19 @@ struct LaserItem {
   float dotRadius = 0;
   float opacity = 1;  // faded out toward 0
 };
-// The seek preview's frame (seek_preview.h) on a flat quad: the left eye of
-// a flat video, or of a surround one the view straight ahead.
+// The seek preview's frame (seek_preview.h): one eye's picture of a flat
+// video; of a surround one the middle 16:9 of its front 180° as a 180°
+// video stores it (fisheye unwarped, 360° cut to the front). Bent around a
+// cylinder, it is the unit quad's x that runs round it.
 struct PreviewItem {
   const Texture* texture = nullptr;  // the whole frame, both eyes if stereo
   Mat4 model;                        // the unit quad (-0.5..0.5) into local space
+  // Curved: around the model's Y axis, -Z the middle, between -halfAngle and
+  // +halfAngle (radians) at this radius (the model then scales only y).
+  float radius = 0, halfAngle = 0;
   VideoFormat format;
+  bool stereo = true;  // each eye its own picture of a 3D video, else both the left
   bool flip = false;
-  float aheadTangents[2] = {1.0f, 9.0f / 16.0f};  // surround: the view's half width and height
   float opacity = 1;  // faded out toward 0
 };
 using OverlayDraw = std::variant<PanelItem, QuadsItem, LaserItem, PreviewItem>;
@@ -230,8 +235,8 @@ enum PreviewFlag : uint32_t {
 struct PreviewPush {
   float model[3][4];  // rows
   float picture[4];   // the eye's part: scale xy, offset xy
-  float view[4];      // surround: tangents of the half width and height, fisheye field of view; w opacity
-  uint32_t mode[4];   // x projection, y flags
+  float view[4];      // curved: x radius, y half angle; z fisheye field of view, w opacity
+  uint32_t mode[4];   // x projection (surround), y flags
 };
 static_assert(sizeof(PreviewPush) == 96 && offsetof(PreviewPush, mode) == 80,
               "PreviewPush must match shaders/preview.glsl");
@@ -305,7 +310,7 @@ class SceneRenderer {
   VkPipeline pipeline(Pipelines::Id id) const { return pipelines_.get(id, plainEye_); }
   // color: premultiplied, linear (kPointerOrange).
   void drawPointer(VkCommandBuffer cmd, const Quad& corners, uint32_t flags, const float color[4]);
-  void drawPreview(VkCommandBuffer cmd, const PreviewItem& preview);
+  void drawPreview(VkCommandBuffer cmd, int eye, const PreviewItem& preview);
   void pushEye(VkCommandBuffer cmd, const EyeData& eye);
   template <typename T>
   void pushDraw(VkCommandBuffer cmd, const T& draw);

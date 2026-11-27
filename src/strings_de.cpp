@@ -222,6 +222,10 @@ Strings germanStrings(const Strings& english) {
   s.resumeHint = "An letzter Stelle weiter. Kurz vor dem Ende: von vorn starten.";
   s.seekPreview = "Zeitleisten-Vorschau";
   s.seekPreviewHint = "Für Vorschau auf Zeitleiste zeigen. Dateivorschaubilder: unter Menü.";
+  s.seekPreviewShow = "Vorschau anzeigen";
+  s.seekPreviewHintFrame = "Belastet die CPU beim Zeigen auf die Zeitleiste; der Lüfter kann lauter werden.";
+  s.seekPreview3d = "Vorschau in 3D";
+  s.seekPreview3dHint = "Zeigt die Vorschau von 3D-Videos in 3D.";
   s.showPerformance = "Leistung anzeigen";
   s.showPerformanceHint = "Bildraten und Aussetzer unten links, auch bei geschlossenem Menü.";
   s.vibration = "Controller-Vibration";

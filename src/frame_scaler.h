@@ -19,3 +19,10 @@ SwsContext* frameScaler(SwsContext* cached, const AVFrame* frame, int srcWidth, 
 // (width × height), safely: swscale may write past a row's end.
 bool scaleInto(SwsContext* sws, const AVFrame* frame, int width, int height,
                std::vector<uint32_t>& pixels);
+
+// How far clockwise a decoded frame is to be turned to stand upright (its
+// display matrix: a camera's orientation): 0, 90, 180 or 270 degrees.
+int frameRotation(const AVFrame* frame);
+
+// Turns a picture of 32-bit pixels clockwise by 90, 180 or 270 degrees.
+void rotatePixels(std::vector<uint32_t>& pixels, int& width, int& height, int degrees);

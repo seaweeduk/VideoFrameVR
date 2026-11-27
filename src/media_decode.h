@@ -66,3 +66,8 @@ bool decodeFirstFrame(AVFormatContext* format, AVCodecContext* codec, int stream
 // decodeFirstFrame() does. Flush `codec` before it decodes anything else.
 bool decodeKeyframe(AVFormatContext* format, AVCodecContext* codec, int stream, AVPacket* packet,
                     AVFrame* frame, int limit, Interrupt& interrupt);
+
+// The same for a packet already read: `packet` holds the keyframe's, and is
+// let go of here.
+bool decodeKeyPacket(AVFormatContext* format, AVCodecContext* codec, int stream, AVPacket* packet,
+                     AVFrame* frame, int limit, Interrupt& interrupt);

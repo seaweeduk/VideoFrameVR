@@ -329,6 +329,7 @@ bool VideoPlayer::init(const std::string& hwdec, GlInterop& interop, const MpvGl
   mpv_observe_property(mpv_, 0, "time-pos", MPV_FORMAT_DOUBLE);
   mpv_observe_property(mpv_, 0, "duration", MPV_FORMAT_DOUBLE);
   mpv_observe_property(mpv_, 0, "demuxer-cache-time", MPV_FORMAT_DOUBLE);
+  mpv_observe_property(mpv_, 0, "demuxer-cache-idle", MPV_FORMAT_FLAG);
   mpv_observe_property(mpv_, 0, "pause", MPV_FORMAT_FLAG);
   mpv_observe_property(mpv_, 0, "volume", MPV_FORMAT_DOUBLE);
   mpv_observe_property(mpv_, 0, "mute", MPV_FORMAT_FLAG);
@@ -429,6 +430,7 @@ void VideoPlayer::load(const std::string& path, double start) {
   edge_.load(path);
   playback_.title.clear();  // "Loading …" until this file's title, not the last one's
   playback_.views = TwoViews::No;  // until mpv says (setViews())
+  playback_.readAhead = false;     // not the last file's (SeekPreview opens on it)
   exportRefused_ = compressedRefused_ = false;
   fileLoaded_ = false;
   newVideoSized_ = false;
@@ -1125,6 +1127,7 @@ void VideoPlayer::onPropertyValue(const std::string& name, const mpv_event_prope
   } else if (prop->format == MPV_FORMAT_FLAG) {
     const bool v = *static_cast<int*>(prop->data) != 0;
     if (name == "pause") playback_.paused = sleep_.awake() ? v : sleep_.paused();
+    else if (name == "demuxer-cache-idle") playback_.readAhead = v;
     else if (name == "mute") playback_.muted = v;
     else if (name == "eof-reached") playback_.endReached = v;
     else if (name == "paused-for-cache")
@@ -1171,6 +1174,7 @@ void VideoPlayer::onPropertyGone(const std::string& name) {
   }
   else if (name == "duration") playback_.duration = 0;
   else if (name == "demuxer-cache-time") playback_.bufferedUntil = 0;
+  else if (name == "demuxer-cache-idle") playback_.readAhead = false;
   else if (name == "track-list") {
     playback_.tracks.clear();
     pictureSubtitle_ = false;

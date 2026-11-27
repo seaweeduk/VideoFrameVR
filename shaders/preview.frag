@@ -2,8 +2,8 @@
 #extension GL_GOOGLE_include_directive : require
 
 // The seek preview's frame: one eye of a flat video, or of a surround one
-// the view straight ahead, as the headset would show it without stereo
-// correction or passthrough.
+// the middle 16:9 of its front 180° as a 180° video stores it: 180° wide,
+// 101° tall, whatever its projection (seek_preview.h).
 
 #include "preview.glsl"
 #include "projection.glsl"
@@ -18,9 +18,10 @@ void main() {
   vec2 uv = vPos;
   bool inside = true;
   if ((flags & kPreviewSurround) != 0u) {
-    vec4 v = pc.draw.view;
-    vec3 dir = normalize(vec3(mix(-v.x, v.x, vPos.x), mix(v.y, -v.y, vPos.y), -1.0));
-    uv = pictureUv(dir, int(pc.draw.mode.x), v.z, inside);
+    float lon = (vPos.x - 0.5) * PI;
+    float lat = (0.5 - vPos.y) * PI * 9.0 / 16.0;
+    vec3 dir = vec3(cos(lat) * sin(lon), sin(lat), -cos(lat) * cos(lon));
+    uv = pictureUv(dir, int(pc.draw.mode.x), pc.draw.view.z, inside);
   }
   if ((flags & kPreviewFlip) != 0u) uv.y = 1.0 - uv.y;
   // Half a texel inside this eye's part, so the other eye never bleeds in.

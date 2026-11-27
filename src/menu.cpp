@@ -453,6 +453,7 @@ void Menu::setPointer(int panel, float u, float v) {
     pointerX_ = u * kSetupWidth;
     pointerY_ = v * (kSetupHeight + kSetupKeyboardHeight);
   }
+  steadySeek();
   updateHover();
 }
 
@@ -743,11 +744,12 @@ MenuCommand Menu::drag(bool held) {
     // The held head goes back to its size: the band's box (tickBoxes()).
     if (strip_.draggingSeek) strip_.bandTicked = true;
     if (strip_.draggingSeek && strip_.lastScrub >= 0) {
-      // Let go: the video jumps to where the knob was dropped.
-      strip_.draggingSeek = false;
+      // Let go: the video jumps to where the knob was dropped, the time the
+      // preview shows (the knob is redrawn a pixel at a time).
       MenuCommand c;
       c.type = MenuCommand::SeekTo;
-      c.value = strip_.lastScrub;
+      c.value = seekAtPointer();
+      strip_.draggingSeek = false;
       c.option = 1;  // from the seek bar
       return c;
     }

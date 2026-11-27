@@ -77,6 +77,7 @@ struct Settings {
   bool freeDecoder = false;       // Frame: free the decoder from Steam without asking (decoder_holders.h)
   AfterVideo afterVideo = AfterVideo::Next;  // Stop or Next
   bool seekPreview = true;        // pointing along the seek bar shows the frame there (seek_preview.h)
+  bool seekPreview3d = false;     // ... each eye its own picture of a 3D video, else both the left
   bool thumbnails = true;         // file browser and library: video thumbnails, else a video icon
   bool showPerformance = false;   // frame rates and drops shown over the video (performance_readout.h)
   bool vibration = true;          // controllers buzz on clicks, seeks, turns and grabs (main.cpp)

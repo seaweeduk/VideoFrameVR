@@ -85,6 +85,8 @@ add_executable(videoframevr
   src/key_pick.cpp
   src/key_picker.cpp
   src/key_share.cpp
+  src/keyframe_grabber.cpp
+  src/keyframe_reader.cpp
   src/focus_settings.cpp
   src/video_check.cpp
   src/library.cpp
@@ -159,6 +161,7 @@ add_executable(videoframevr
   src/places.cpp
   src/playback_session.cpp
   src/presets.cpp
+  src/preview_pace.cpp
   src/quality.cpp
   src/refresh_rate.cpp
   src/smb_discovery.cpp
