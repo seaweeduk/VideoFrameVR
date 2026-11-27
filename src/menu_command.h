@@ -77,7 +77,8 @@ struct MenuCommand {
               SetPaused,   // value 1 paused, 0 playing
               OpenFileAt,  // OpenFile, starting at `value` seconds
               FrameStep,   // the paused video a frame back (value -1) or forward (1)
-              StepRating };  // the open video's rating by `value` half stars
+              StepRating,  // the open video's rating by `value` half stars
+              ToggleRemoteControl };  // other apps' remote control (deo_remote.h), on or off
   Type type = None;
   // seconds (Seek, SeekTo), enum index, track id (0 = off), volume 0..100,
   // 1 = only the downloaded copy (DeleteFile), picture value

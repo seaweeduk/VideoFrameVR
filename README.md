@@ -51,6 +51,8 @@ PC hardware decoding supports NVIDIA, with experimental AMD support on Mesa 26.1
   your scenes by performer, studio and tag, with covers and moving previews.
   Your library syncs to the app, so it works even while the server is off.
   Scenes stream straight from Stash, and ratings and play counts sync back.
+- **[Remote control](#remote-control)** (optional): apps made for DeoVR's remote
+  control, such as funscript players, can open videos, seek, pause and follow along.
 
 Native C++ with Vulkan rendering straight into OpenXR, mpv and FFmpeg for
 decoding (the Steam Frame's hardware decoder, NVDEC on NVIDIA, or VA-API on AMD), and Cairo
@@ -66,6 +68,17 @@ and Pango for the menus.
     <td align="center">Steam Frame video settings</td>
   </tr>
 </table>
+
+## Remote control
+
+Apps that control DeoVR over the network can control VideoFrameVR too. Turn on
+**Settings › General › Remote control**. It shows the address to enter in the
+other app, and the port, 23554, which is DeoVR's. The other app can open a
+video by its path or by a link. It can also seek, pause and play, and follow
+where the video is. It can't change the playback speed.
+
+There's no sign-in. While it's on, any device on your network can see what's
+playing and open something else, so it's off until you turn it on.
 
 ## Install
 

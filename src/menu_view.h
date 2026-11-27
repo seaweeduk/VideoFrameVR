@@ -7,6 +7,7 @@
 #include "anti_shimmer.h"
 #include "colour_balance.h"
 #include "control_map.h"
+#include "deo_remote.h"
 #include "diagnostics.h"
 #include "flat_screen.h"
 #include "focus_settings.h"
@@ -173,6 +174,8 @@ struct MenuViewLayout {
   bool crashedLastRun = false;  // until its diagnostics are saved
   bool softwareDecoding = false;  // the video plays without hardware decoding
   ScriptStatus scriptStatus;    // funscripts: how far the way to a device has got, and whether the video has a script
+  bool remoteControl = false;   // other apps' remote control (Settings::remoteControl) ...
+  RemoteControlStatus remoteControlStatus;  // ... and how it is doing
   std::string downloadsTo;      // Settings::downloadsTo
   // The strip's delete button (docs/alpha/delete-file.md): not shown
   // (nothing open, a link), shown, or shown disabled for a scene played
@@ -193,7 +196,8 @@ inline bool operator==(const MenuViewLayout& a, const MenuViewLayout& b) {
                  frameReuse, advancedSettings, refreshRate, foveationMaps, sharpDegrees, resume,
                  freeDecoder, seekPreview, showPerformance, vibration, thumbnails, setupBanner,
                  showWhatsNew, releaseUpdate, releaseVersion, diagnostics, diagnosticsFile,
-                 crashedLastRun, softwareDecoding, scriptStatus, downloadsTo, deletable] = v;
+                 crashedLastRun, softwareDecoding, scriptStatus, remoteControl, remoteControlStatus,
+                 downloadsTo, deletable] = v;
     return std::tie(halfPacked, passthrough, colourKey, keyColour, fillChecked, fillChecking,
                     greenScreenFound, keyPicking, keyPickNote, packedAlpha, maskFormat, maskLayers,
                     secondLayerHidden, opacityApplies, currentFile, playbackFailed, discEncrypted,
@@ -204,7 +208,8 @@ inline bool operator==(const MenuViewLayout& a, const MenuViewLayout& b) {
                     frameReuse, advancedSettings, refreshRate, foveationMaps, sharpDegrees, resume,
                     freeDecoder, seekPreview, showPerformance, vibration, thumbnails, setupBanner,
                     showWhatsNew, releaseUpdate, releaseVersion, diagnostics, diagnosticsFile,
-                    crashedLastRun, softwareDecoding, scriptStatus, downloadsTo, deletable);
+                    crashedLastRun, softwareDecoding, scriptStatus, remoteControl, remoteControlStatus,
+                    downloadsTo, deletable);
   };
   return fields(a) == fields(b);
 }

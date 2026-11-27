@@ -35,10 +35,17 @@ struct PlaybackStatus {
   bool open;      // something is
   bool photo;     // ... a photo
   bool video;     // ... a video
-  double position, duration;  // seconds
+  // Seconds, this file's: 0 from the moment it is asked to open until it
+  // has played (the player's are the last one's till then). A video
+  // asleep keeps its own.
+  double position, duration;
+  // `paused`: what it plays on to, kept while the decoder sleeps. `ended`:
+  // this file's, as position.
   bool paused, ended, loading, failed, seeking;
-  // Something open that goes on now: not paused, at its end, seeking,
-  // loading or failed.
+  // A video that goes on, once any seek lands: not paused, asleep
+  // (the session hidden), at its end, loading or failed.
+  bool playing;
+  // ... and goes on now: not seeking either.
   bool moving;
 };
 

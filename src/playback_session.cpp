@@ -117,8 +117,11 @@ bool PlaybackSession::open(const std::string& requested, double startAt) {
   // be a moved one with settings of its own: they apply once it is found.
   running.video = VideoSettings{};
   openingRecord = library.record(path).id;
-  if (!isPhotoFile(path)) library.open(path);
-  awaitingRecord = library.available() && !library.known(path);
+  // A link gets a record (under its address) only once something is kept
+  // for it: links that fail or are only watched leave nothing behind.
+  const bool link = isLink(path);
+  if (!isPhotoFile(path) && !link) library.open(path);
+  awaitingRecord = library.available() && !link && !library.known(path);
   if (!library.settings(path, running.video)) {
     VideoSettings legacy;
     if (memory.get(path, legacy)) {
@@ -519,10 +522,13 @@ void PlaybackSession::photoShown(int photoWidth, int photoHeight) {
 PlaybackStatus PlaybackSession::status() const {
   const PlaybackState& p = player.playback();
   const bool open = !running.currentFile.empty(), photo = isPhotoFile(running.currentFile);
-  return {running.currentFile, openedAs, open, photo, open && !photo, p.position, p.duration,
-          p.paused, p.endReached, player.loading(), player.failed(), player.seeking(),
-          open && !p.paused && !p.endReached && !player.seeking() && !player.loading() &&
-              !player.failed()};
+  const bool video = open && !photo;
+  const bool known = video && player.positionKnown();
+  const bool ended = known && p.endReached;
+  const bool playing = video && !p.paused && !player.asleep() && !ended && !player.loading() && !player.failed();
+  return {running.currentFile, openedAs, open, photo, video, known ? p.position : 0,
+          known ? p.duration : 0, p.paused, ended, player.loading(), player.failed(), player.seeking(),
+          playing, playing && !player.seeking()};
 }
 
 void PlaybackSession::fill(MenuView& view) const {

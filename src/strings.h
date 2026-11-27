@@ -1298,6 +1298,23 @@ struct ScriptStrings {
   const char* tipNoDevice;
 };
 
+// Settings' Remote control: other apps control playback over DeoVR's
+// protocol (deo_remote.h).
+struct RemoteControlStrings {
+  const char* group;
+  const char* use;
+  const char* hint;  // what it is for, and that anything on the network can use it
+  // How it is doing (RemoteControlStatus), shown while it is on.
+  const char* starting;
+  const char* listening;  // printf: this device's address, the port
+  const char* port;       // printf: the port (no address found)
+  const char* noApp;      // ... after the address and port
+  const char* oneApp;
+  const char* apps;       // printf: how many
+  const char* portInUse;  // printf: the port
+  const char* failed;
+};
+
 // All text shown in VR.
 struct Strings {
   const char* noVideo;
@@ -1587,6 +1604,7 @@ struct Strings {
   WhatsNewStrings whatsNew;
   const char* foveationLearnedHint;
   ScriptStrings scripts;
+  RemoteControlStrings remoteControl;
   JobStrings jobs;
   ControlsPageStrings controlsPage;
   GestureStrings gestures;

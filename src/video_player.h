@@ -46,6 +46,9 @@ class VideoPlayer {
   // Whether mpv has said where the file of the last load() is (its
   // position) since it opened; playback().position is 0 until then.
   bool positionKnown() const { return positionKnown_; }
+  // The decoder is put to sleep (the session hidden): the video stands
+  // still, whatever playback().paused, which keeps what it resumes to, says.
+  bool asleep() const { return !sleep_.awake(); }
   // Stops playback and closes the file (e.g. before deleting it).
   void stop();
   // Pause, mute, volume, looping and track selection. While the video

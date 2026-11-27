@@ -1252,6 +1252,17 @@ Strings simplifiedChineseStrings(const Strings& english) {
   s.scripts.label = "Funscript";
   s.scripts.tipPlaying = "正在 %s 上播放此视频的 Funscript。";
   s.scripts.tipNoDevice = "此视频有 Funscript，但未连接设备。";
+  s.remoteControl.group = "远程控制";
+  s.remoteControl.use = "允许其他应用控制播放";
+  s.remoteControl.hint = "支持 DeoVR 远程控制的应用可以在这里打开视频、跳转、暂停和播放，并获知播放进度。开启期间，网络上的任何设备都无需登录即可使用。";
+  s.remoteControl.starting = "正在启动…";
+  s.remoteControl.listening = "%s，端口 %d";
+  s.remoteControl.port = "端口 %d";
+  s.remoteControl.noApp = "没有已连接的应用";
+  s.remoteControl.oneApp = "已连接 1 个应用";
+  s.remoteControl.apps = "已连接 %d 个应用";
+  s.remoteControl.portInUse = "端口 %d 已被其他应用占用";
+  s.remoteControl.failed = "无法在网络上监听";
   s.jobs.nothing = "无";
   s.jobs.back = "后退 %s";
   s.jobs.forward = "快进 %s";

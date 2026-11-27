@@ -1282,6 +1282,17 @@ constexpr Strings englishStrings() {
   s.scripts.label = "Funscript";
   s.scripts.tipPlaying = "Playing this video's funscript on %s.";
   s.scripts.tipNoDevice = "This video has a funscript, but no device is connected.";
+  s.remoteControl.group = "Remote control";
+  s.remoteControl.use = "Let other apps control playback";
+  s.remoteControl.hint = "Apps made for DeoVR's remote control can open videos here, seek, pause and play them, and follow where they are. While it's on, any device on your network can use it, with no sign-in.";
+  s.remoteControl.starting = "Starting …";
+  s.remoteControl.listening = "%s, port %d";
+  s.remoteControl.port = "Port %d";
+  s.remoteControl.noApp = "No app connected";
+  s.remoteControl.oneApp = "1 app connected";
+  s.remoteControl.apps = "%d apps connected";
+  s.remoteControl.portInUse = "Port %d is in use by another app";
+  s.remoteControl.failed = "Can't listen on the network";
   s.jobs.nothing = "Nothing";
   s.jobs.back = "Back %s";
   s.jobs.forward = "Forward %s";
