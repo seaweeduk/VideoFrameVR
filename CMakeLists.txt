@@ -159,6 +159,7 @@ add_executable(videoframevr
   src/value_stick.cpp
   src/pipelines.cpp
   src/places.cpp
+  src/pointer_filter.cpp
   src/playback_session.cpp
   src/presets.cpp
   src/preview_pace.cpp

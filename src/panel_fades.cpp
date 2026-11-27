@@ -48,7 +48,7 @@ void PanelFades::addPointer(std::vector<OverlayDraw>& overlays, const Frame& fra
   LaserItem laser;
   laser.opacity = opacity;
   laser.from = frame.pointing ? frame.rayOrigin : hand.aimPosition;
-  const Vec3 dir = frame.pointing ? frame.rayDir : aimDirection(hand);
+  const Vec3 dir = frame.pointing ? frame.rayDir : hand.pointDir;
   laser.to = laser.from + dir * kFreeBeamLength;
   const MenuFeel& feel = menuFeel();
   dotTight.to(hand.select ? 1.0f : 0.0f, feel.dotEase, frame.now);

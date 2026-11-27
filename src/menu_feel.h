@@ -15,6 +15,11 @@ struct MenuFeel {
   double closeOut = 0.100;      // ... and out as it is taken away, then is not drawn at all
   double dotEase = 0.080;       // the pointer's dot tightens while the trigger is held, and back
   double dotPressed = 0.7;      // the dot's radius while the trigger is held, of its own
+  // Steadying where a hand points (PointerFilter): SteamVR's overlay filter
+  // defaults, Hz and Hz per rad/s. pointMinCutoff 0 turns it off.
+  double pointMinCutoff = 1.0;
+  double pointBeta = 5.0;
+  double pointSpeedCutoff = 5.0;
 };
 
 // The values in use: the defaults, or in a development build feel.conf's.

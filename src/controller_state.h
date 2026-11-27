@@ -10,6 +10,7 @@ struct HandState {
   bool poseValid = false;
   Vec3 aimPosition;      // pointing ray origin, local space
   Quat aimOrientation;   // the ray points along -Z of this orientation
+  Vec3 pointDir = {0.0f, 0.0f, -1.0f};  // that ray's direction steadied (PointerFilter)
   bool select = false;          // trigger held (ControlInput: or a button that chooses)
   bool selectPressed = false;   // ... went down this frame
   bool grip = false;            // grip button held

@@ -5,7 +5,8 @@
 #include <algorithm>
 #include <cmath>
 
-// Where a hand's pointer points, a unit vector.
+// Where a hand points as tracked, a unit vector. Pointing at things uses
+// HandState::pointDir, the same steadied.
 inline Vec3 aimDirection(const HandState& hand) {
   return normalize(transformDir(rotation(hand.aimOrientation), {0.0f, 0.0f, -1.0f}));
 }

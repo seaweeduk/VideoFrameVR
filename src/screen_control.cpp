@@ -39,7 +39,7 @@ bool ScreenControl::update(const ControllerState& input, const Frame& frame,
       Pointing& p = pointing_[i];
       p = {};
       if (!h.poseValid || frame.onMenu[i]) continue;
-      p.onScreen = surface.hit(h.aimPosition, aimDirection(h), p.x, p.y);
+      p.onScreen = surface.hit(h.aimPosition, h.pointDir, p.x, p.y);
       if (p.onScreen) p.corner = cornerAt(surface, p.x, p.y);
     }
     for (int i = 0; i < 2 && hand_ < 0 && !frame.menuHeld; ++i) {
@@ -122,7 +122,7 @@ void ScreenControl::resize(const HandState& h, float aspect, ScreenPlacement& sc
   // The place pointed at along the line from the centre through the corner,
   // as a part of where it was taken: the screen grows by as much.
   float x, y;
-  if (!ScreenSurface(screen, aspect).hit(h.aimPosition, aimDirection(h), x, y)) return;
+  if (!ScreenSurface(screen, aspect).hit(h.aimPosition, h.pointDir, x, y)) return;
   const float taken = start_.x * startCornerX_ + start_.y * startCornerY_;
   if (taken <= 1e-6f) return;
   const float now = x * startCornerX_ + y * startCornerY_;
