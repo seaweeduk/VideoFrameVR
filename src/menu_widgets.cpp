@@ -155,15 +155,21 @@ const AccentColours& hueColour(int step) {
 // value on it; the pointer's x along it sets it.
 void Menu::drawSlider(cairo_t* cr, const Button& b) const {
   const double radius = std::min(kit::kCorner, b.h / 2);
-  if (b.slider == MenuCommand::SetAccentHue) {
+  if (b.slider == MenuCommand::SetAccentHue || b.slider == MenuCommand::SetPointerHue) {
     drawFinish(cr, Finish::Sunk, b.x, b.y, b.w, b.h, radius);
     // The colours to choose from along the well, a knob on the chosen one.
     constexpr double in = kit::kSpacePiece;
     cairo_pattern_t* rainbow = cairo_pattern_create_linear(b.x + in, 0, b.x + b.w - in, 0);
     for (int i = 0; i < kHueSteps; ++i) {  // where sliderAtPointer() puts each hue
-      const AccentColours& c = hueColour(i);
-      cairo_pattern_add_color_stop_rgb(rainbow, std::min(1.0, i * 360.0 / kHueSteps / b.sliderMax),
-                                       c.fill[0], c.fill[1], c.fill[2]);
+      double c[3];
+      if (b.slider == MenuCommand::SetPointerHue) {
+        pointerSrgb({kAccentCustom, i * 360 / kHueSteps}, c);
+      } else {
+        const AccentColours& a = hueColour(i);
+        for (int k = 0; k < 3; ++k) c[k] = a.fill[k];
+      }
+      cairo_pattern_add_color_stop_rgb(rainbow, std::min(1.0, i * 360.0 / kHueSteps / b.sliderMax), c[0],
+                                       c[1], c[2]);
     }
     roundedRect(cr, b.x + in, b.y + in, b.w - 2 * in, b.h - 2 * in, std::max(0.0, radius - in));
     cairo_set_source(cr, rainbow);
@@ -268,6 +274,11 @@ void Menu::drawSwatch(cairo_t* cr, const Button& b) const {
       cairo_set_source_rgb(cr, c.fill[0], c.fill[1], c.fill[2]);
       cairo_fill(cr);
     }
+  } else if (b.swatchColour >= 0) {
+    cairo_arc(cr, cx, cy, r, 0, 2 * M_PI);
+    cairo_set_source_rgb(cr, (b.swatchColour >> 16 & 0xff) / 255.0, (b.swatchColour >> 8 & 0xff) / 255.0,
+                         (b.swatchColour & 0xff) / 255.0);
+    cairo_fill(cr);
   } else {
     const AccentColours c = accentColours({b.look, 0, 50});
     cairo_arc(cr, cx, cy, r, 0, 2 * M_PI);

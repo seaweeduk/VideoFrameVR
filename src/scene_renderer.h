@@ -83,8 +83,8 @@ struct PanelItem {
   float opacity = 1;  // faded out toward 0
   float uv[4] = {0, 1, 0, 1};  // flat: the part of the texture shown, u0, u1, v0, v1
 };
-// The pointer's colour, and the flat screen's corner handles', unlit
-// (premultiplied, linear).
+// The pointer's colour unless another is chosen (Settings::pointer), and the
+// flat screen's corner handles', unlit (premultiplied, linear).
 constexpr float kPointerOrange[4] = {1.0f, 0.25f, 0.0f, 1.0f};
 // Laser-coloured quads: the flat screen's corner handles.
 struct QuadsItem {
@@ -123,6 +123,8 @@ struct FrameScene {
   // Drawn only with a video picture.
   std::vector<OverlayDraw> onPicture;
   std::vector<OverlayDraw> overlays;  // over the video, in drawing order
+  // The pointer's beam and dot and the screen's handles: linear, opaque (kPointerOrange).
+  float pointer[4] = {kPointerOrange[0], kPointerOrange[1], kPointerOrange[2], 1.0f};
   bool showFoveation = false;
   FoveationDebug foveation[2];
 };
@@ -304,11 +306,12 @@ class SceneRenderer {
   // sharpen: the strength (VideoDraw::sharpen), 0 off.
   void drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const VideoDraw& video,
                  ClearMode clear, float sharpen);
+  // pointer: FrameScene::pointer.
   void drawOverlays(VkCommandBuffer cmd, const EyeData& eye, const EyeMatrices& matrices,
-                    const std::vector<OverlayDraw>& items);
+                    const std::vector<OverlayDraw>& items, const float pointer[4]);
   void drawPanel(VkCommandBuffer cmd, const PanelItem& panel);
   VkPipeline pipeline(Pipelines::Id id) const { return pipelines_.get(id, plainEye_); }
-  // color: premultiplied, linear (kPointerOrange).
+  // color: premultiplied, linear (FrameScene::pointer).
   void drawPointer(VkCommandBuffer cmd, const Quad& corners, uint32_t flags, const float color[4]);
   void drawPreview(VkCommandBuffer cmd, int eye, const PreviewItem& preview);
   void pushEye(VkCommandBuffer cmd, const EyeData& eye);

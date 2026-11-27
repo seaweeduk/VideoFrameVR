@@ -960,8 +960,10 @@ Strings germanStrings(const Strings& english) {
   s.places.renameHint = "Leer lassen für den ursprünglichen Namen.";
   s.places.save = "Speichern";
   s.accent.group = "Darstellung";
+  s.accent.menu = "Menü";
+  s.accent.pointer = "Zeiger";
   s.accent.names[0] = "Blau";
-  s.accent.names[1] = "Petrol";
+  s.accent.names[1] = "Himmelblau";
   s.accent.names[2] = "Grün";
   s.accent.names[3] = "Orange";
   s.accent.names[4] = "Rot";

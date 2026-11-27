@@ -3,6 +3,7 @@
 #include "menu_controls.h"
 #include "menu_stash.h"
 
+#include <cmath>
 #include <cstdio>
 
 // Settings: a page in four sections, built from the menu's parts.
@@ -125,17 +126,18 @@ void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsSho
         .tip(t.thumbnailsHint);
   }
 
-  // Appearance: the colour, a preset or (Custom) a hue, brightness and
-  // saturation of one's own. Hue is drawn as the colours to choose from.
+  // Appearance: the menu's colour, a preset or (Custom) a hue, brightness
+  // and saturation of one's own, then the pointer's, a preset or a hue.
+  // Hue is drawn as the colours to choose from.
   {
     const AccentStrings& at = t.accent;
     GroupLayout look = page.group(0, at.group);
-    look.swatches({at.names, at.names + kAccentCustom + 1}, view_.accent.preset,
+    look.labelsFor({at.menu, at.pointer, at.hue, at.brightness, at.saturation});
+    look.swatches(at.menu, {at.names, at.names + kAccentCustom + 1}, view_.accent.preset,
                   [](int i) { return command(MenuCommand::SetAccent, i)(); });
     if (view_.accent.preset == kAccentCustom) {
       const int hue = view_.accent.hue, light = view_.accent.brightness;
       const int saturation = view_.accent.saturation;
-      look.labelsFor({at.hue, at.brightness, at.saturation});
       // Around the circle: − from 0 goes to 359.
       look.value(at.hue, MenuCommand::SetAccentHue, hue, value_range::kAccentHue.least,
                  value_range::kAccentHue.most, std::to_string(hue) + "°", value_range::kAccentHue.step,
@@ -150,6 +152,23 @@ void Menu::layoutSettingsSection(SettingsSection section, const StashSettingsSho
       look.value(at.saturation, MenuCommand::SetAccentSaturation, saturation, value_range::kPercent.least,
                  value_range::kPercent.most, std::to_string(saturation) + " %")
           .format(withUnit(" %"));
+    }
+    std::vector<int> pointers;
+    for (int i = 0; i < kAccentPresets; ++i) {
+      double c[3];
+      pointerSrgb({i, 0}, c);
+      pointers.push_back(static_cast<int>(std::lround(c[0] * 255)) << 16 |
+                         static_cast<int>(std::lround(c[1] * 255)) << 8 | static_cast<int>(std::lround(c[2] * 255)));
+    }
+    look.swatches(at.pointer, {at.names, at.names + kAccentCustom + 1}, view_.pointerColour,
+                  [](int i) { return command(MenuCommand::SetPointerColour, i)(); }, pointers);
+    if (view_.pointerColour == kAccentCustom) {
+      const int hue = view_.pointerHue;
+      look.value(at.hue, MenuCommand::SetPointerHue, hue, value_range::kAccentHue.least,
+                 value_range::kAccentHue.most, std::to_string(hue) + "°", value_range::kAccentHue.step,
+                 command(MenuCommand::SetPointerHue, (hue + 359) % 360),
+                 command(MenuCommand::SetPointerHue, (hue + 1) % 360))
+          .format(withUnit("°"));
     }
   }
 
@@ -320,6 +339,7 @@ void Menu::checkSettingsFit() {
   MenuView& v = view_;
   // General: a colour of one's own, the timeline preview, the downloads'
   // drive (fitCase_), where diagnostics were saved.
+  v.pointerColour = kAccentCustom;
   v.accent.preset = kAccentCustom;
   v.diagnostics = DiagnosticsExport::State::Saved;
   v.diagnosticsFile = "videoframevr-diagnostics-20261116-214032.zip";

@@ -537,6 +537,8 @@ struct DriveStrings {
 // Settings → Appearance: the menu's colour (accent.h).
 struct AccentStrings {
   const char* group;
+  const char* menu;     // the rows: the menu's colour, the pointer's
+  const char* pointer;
   const char* names[8];  // the presets and Custom, as their swatches' tooltips
   const char* hue;
   const char* brightness;

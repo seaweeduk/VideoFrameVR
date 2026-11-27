@@ -158,9 +158,11 @@ class Menu::GroupLayout {
   // needs them (up to six: what to change in Stash); its actions at the row's right end (Sync now), the last
   // rightmost.
   Row status(Lamp lamp, const std::string& text, const std::vector<Action>& actions = {});
-  // A colour to choose: the accent's colours as dots in a well, the chosen one raised.
-  Row swatches(const std::vector<std::string>& names, int chosen,
-               std::function<MenuCommand(int)> choose);
+  // A colour to choose: the accent's colours (or `colours`, 0xRRGGBB, for
+  // the presets; Custom shows its hues) as dots in a well, the chosen one raised. A
+  // label before the well, as a choice's; none: the well is the row.
+  Row swatches(const std::string& label, const std::vector<std::string>& names, int chosen,
+               std::function<MenuCommand(int)> choose, const std::vector<int>& colours = {});
 
  private:
   friend class Menu::PageLayout;

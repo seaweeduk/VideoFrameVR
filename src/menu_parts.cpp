@@ -540,17 +540,19 @@ Menu::Row Menu::GroupLayout::status(Lamp lamp, const std::string& text,
   return row;
 }
 
-Menu::Row Menu::GroupLayout::swatches(const std::vector<std::string>& names, int chosen,
-                                      std::function<MenuCommand(int)> choose) {
+Menu::Row Menu::GroupLayout::swatches(const std::string& label, const std::vector<std::string>& names,
+                                      int chosen, std::function<MenuCommand(int)> choose,
+                                      const std::vector<int>& colours) {
   Menu& m = menu();
   const size_t first = m.buttons_.size();
   constexpr double in = kit::kSpacePiece;
+  const double labelW = label.empty() ? 0 : labelW_;
   Button well;
   well.panel = kBrowser;
   well.well = true;
-  well.x = x();
-  well.y = take(kit::kRowH);
-  well.w = w();
+  well.y = label.empty() ? take(kit::kRowH) : labelled(label);
+  well.x = x() + labelW;
+  well.w = w() - labelW;
   well.h = kit::kRowH;
   well.radius = kit::kCorner;
   m.buttons_.push_back(well);
@@ -561,6 +563,7 @@ Menu::Row Menu::GroupLayout::swatches(const std::vector<std::string>& names, int
     b.panel = kBrowser;
     b.piece = true;
     b.part = PartKind::Swatch, b.look = static_cast<int>(i);
+    if (i < colours.size()) b.swatchColour = colours[i];
     b.selected = static_cast<int>(i) == chosen;
     b.radius = kit::kPieceCorner;
     b.x = well.x + in + i * (each + in);

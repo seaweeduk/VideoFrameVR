@@ -9,9 +9,11 @@
 
 namespace {
 
+// Sky blue, SteamVR's pointer blue's hue (#6DBAD8), keeps the code of the
+// teal it replaced.
 constexpr const char* kCodes[kAccentPresets + 1] = {"blue", "teal",  "green",  "orange",
                                                     "red",  "pink", "purple", "custom"};
-constexpr double kPresetHues[kAccentPresets] = {259.4, 200, 145, 50, 25, 350, 305};
+constexpr double kPresetHues[kAccentPresets] = {259.4, 225.2, 145, 50, 25, 350, 305};
 
 struct Linear {
   double r, g, b;
@@ -159,4 +161,59 @@ int accentPreset(const std::string& code) {
   for (int i = 0; i <= kAccentCustom; ++i)
     if (code == kCodes[i]) return i;
   return 0;
+}
+
+namespace {
+
+// Linear, by preset: each hue at its most vivid (as for a custom hue), but
+// Sky blue as SteamVR's dot (#6DBAD8) and orange as the pointer always was.
+constexpr float kPointerPresets[kAccentPresets][3] = {
+    {0.0263f, 0.2136f, 1.0f},    {0.1529f, 0.4910f, 0.6867f}, {0.0f, 0.9823f, 0.0666f},
+    {1.0f, 0.25f, 0.0f},         {1.0f, 0.0f, 0.0242f},    {1.0f, 0.0012f, 0.3968f},
+    {0.4125f, 0.0612f, 1.0f}};
+
+// The hue at the lightness where sRGB shows it most vivid, but no darker
+// than 0.62, so that blues and purples still stand out on the dark panels.
+Linear pointerHue(double hue) {
+  double lo = 0.2, hi = 0.98;  // the most chroma: one peak along lightness
+  for (int i = 0; i < 40; ++i) {
+    const double a = lo + (hi - lo) / 3, b = hi - (hi - lo) / 3;
+    if (maxChroma(a, hue) < maxChroma(b, hue))
+      lo = a;
+    else
+      hi = b;
+  }
+  return vivid(std::max(0.62, (lo + hi) / 2), hue);
+}
+
+}  // namespace
+
+void pointerLinear(const PointerColour& colour, float out[3]) {
+  if (colour.preset >= 0 && colour.preset < kAccentPresets) {
+    for (int i = 0; i < 3; ++i) out[i] = kPointerPresets[colour.preset][i];
+    return;
+  }
+  // Custom: each hue worked out once, when first shown (main thread only).
+  static Linear made[360];
+  static bool madeYet[360] = {};
+  const int hue = (colour.hue % 360 + 360) % 360;
+  if (!madeYet[hue]) {
+    made[hue] = pointerHue(hue);
+    madeYet[hue] = true;
+  }
+  out[0] = static_cast<float>(std::clamp(made[hue].r, 0.0, 1.0));
+  out[1] = static_cast<float>(std::clamp(made[hue].g, 0.0, 1.0));
+  out[2] = static_cast<float>(std::clamp(made[hue].b, 0.0, 1.0));
+}
+
+void pointerSrgb(const PointerColour& colour, double out[3]) {
+  float c[3];
+  pointerLinear(colour, c);
+  toSrgb({c[0], c[1], c[2]}, out);
+}
+
+int pointerPreset(const std::string& code) {
+  for (int i = 0; i <= kAccentCustom; ++i)
+    if (code == kCodes[i]) return i;
+  return kPointerDefault;
 }

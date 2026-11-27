@@ -5,7 +5,7 @@
 // The menu's accent colour (Settings → Appearance): what is chosen, the
 // panels' edge and blue text. One of the presets, or a hue, brightness and
 // saturation of the user's own.
-constexpr int kAccentPresets = 7;  // blue (the default), teal, green, orange, red, pink, purple
+constexpr int kAccentPresets = 7;  // blue (the default), sky blue, green, orange, red, pink, purple
 constexpr int kAccentCustom = kAccentPresets;
 
 struct Accent {
@@ -37,3 +37,20 @@ AccentColours accentColours(const Accent& accent);
 // Kept in settings.conf: "blue" ... "purple", "custom".
 const char* accentCode(int preset);
 int accentPreset(const std::string& code);  // unknown: blue
+
+// The pointer's colour (Settings → Appearance): the beam, its dot and the
+// screen's corner handles. The same presets, or a hue of one's own, each as
+// vivid as that hue gets and never darker than a pointer needs. Orange, the
+// default, is the pointer as it always was; Blue is SteamVR's.
+constexpr int kPointerDefault = 3;  // orange
+struct PointerColour {
+  int preset = kPointerDefault;  // 0..kAccentPresets - 1, or kAccentCustom
+  int hue = 57;                  // custom: degrees around OKLCH's hue circle, 0..359
+  bool operator==(const PointerColour& o) const { return preset == o.preset && hue == o.hue; }
+  bool operator!=(const PointerColour& o) const { return !(*this == o); }
+};
+// Linear RGB, 0..1.
+void pointerLinear(const PointerColour& colour, float out[3]);
+// sRGB, 0..1: its swatch.
+void pointerSrgb(const PointerColour& colour, double out[3]);
+int pointerPreset(const std::string& code);  // accentCode()'s codes; unknown: orange

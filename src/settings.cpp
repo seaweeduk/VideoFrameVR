@@ -61,6 +61,8 @@ std::string allLines(const Settings& s) {
   out << "accent_hue=" << s.accent.hue << "\n";
   out << "accent_brightness=" << s.accent.brightness << "\n";
   out << "accent_saturation=" << s.accent.saturation << "\n";
+  out << "pointer_colour=" << accentCode(s.pointer.preset) << "\n";
+  out << "pointer_hue=" << s.pointer.hue << "\n";
   out << "language=" << s.language << "\n";
   out << "keyboard_layout=" << s.keyboardLayout << "\n";
   out << "keyboard_layout_other=" << s.keyboardOther << "\n";
@@ -248,6 +250,9 @@ static Settings readEntries(Settings s, const Entries& file, bool oldFoveation) 
       s.accent.brightness = std::clamp(std::atoi(value.c_str()), kPercent.least, kPercent.most);
     else if (key == "accent_saturation")
       s.accent.saturation = std::clamp(std::atoi(value.c_str()), kPercent.least, kPercent.most);
+    else if (key == "pointer_colour") s.pointer.preset = pointerPreset(value);
+    else if (key == "pointer_hue")
+      s.pointer.hue = std::clamp(std::atoi(value.c_str()), kAccentHue.least, kAccentHue.most);
     else if (key == "language") s.language = value;
     else if (key == "gaze_correction_learned") s.gazeLearned = value;
     else if (key == "keyboard_layout") s.keyboardLayout = value;

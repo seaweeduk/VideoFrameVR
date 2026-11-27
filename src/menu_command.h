@@ -11,6 +11,7 @@ struct MenuCommand {
               DeleteFile, CancelDelete, Quit, SetBrightness,
               SetContrast, SetSaturation, SetZoom, ResetPicture, Paste,
               SetAccent, SetAccentHue, SetAccentBrightness, SetAccentSaturation,
+              SetPointerColour, SetPointerHue,
               SetSlideshow, SetAfterVideo, ToggleBackground, SetSubtitleSize,
               SetSubtitleRaise, SetSubtitleDistance, TogglePassthrough, ToggleGreenScreen,
               SetKeyStrength, SetKeySoftness, SetKeySpill, SetKeyShrink,
@@ -89,7 +90,9 @@ struct MenuCommand {
   // and height in centimeters, its curve in percent, StashFormat
   // (SetStashFormat), PerformancePreset (ApplyPreset), ServerKind
   // (SetStashServer, SetupStash; UseServer, -1 for none), Recenter: 1 at
-  // once, 0 after two seconds to look where the front should be
+  // once, 0 after two seconds to look where the front should be, an accent.h
+  // preset or kAccentCustom (SetAccent, SetPointerColour), hue degrees
+  // (SetAccentHue, SetPointerHue)
   double value = 0;
   // OpenFile, OpenFileAt, LoadSubtitle, RequestDelete and DeleteFile.
   // RequestDelete: the strip's delete button, the dialog open (the app

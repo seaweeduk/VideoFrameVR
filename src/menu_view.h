@@ -150,6 +150,7 @@ struct MenuViewLayout {
   bool tvGamma = false;  // SDR video converted for a TV's gamma (darker shadows)
   bool videoMipmaps = true;  // global: video sampled through mipmaps
   bool toneLook = false;     // global: tone curve and vignette
+  int pointerColour = kPointerDefault;  // Settings::pointer's preset
   // The Frame's foveation (FoveationLevel), where the eye images have it.
   bool foveationAvailable = false;
   FoveationLevel foveation = FoveationLevel::High;
@@ -196,7 +197,8 @@ inline bool operator==(const MenuViewLayout& a, const MenuViewLayout& b) {
                  secondLayerHidden, opacityApplies, currentFile, playbackFailed, discEncrypted,
                  decoderBusy, floatingSubtitles, streaming, recordless, videoWidth, videoHeight, background,
                  autoPassthrough, keyGreen, passthroughAvailable, photo, slideshowSeconds, afterVideo,
-                 roomMatch, roomMatched, tvGamma, videoMipmaps, toneLook, foveationAvailable, foveation,
+                 roomMatch, roomMatched, tvGamma, videoMipmaps, toneLook, pointerColour,
+                 foveationAvailable, foveation,
                  showFoveation, foveationLearned, sharpBins, foveationRing, foveationOutside,
                  frameReuse, advancedSettings, refreshRate, foveationMaps, sharpDegrees, resume,
                  freeDecoder, seekPreview, seekPreview3d, showPerformance, vibration, thumbnails, setupBanner,
@@ -208,7 +210,8 @@ inline bool operator==(const MenuViewLayout& a, const MenuViewLayout& b) {
                     secondLayerHidden, opacityApplies, currentFile, playbackFailed, discEncrypted,
                     decoderBusy, floatingSubtitles, streaming, recordless, videoWidth, videoHeight, background,
                     autoPassthrough, keyGreen, passthroughAvailable, photo, slideshowSeconds, afterVideo,
-                    roomMatch, roomMatched, tvGamma, videoMipmaps, toneLook, foveationAvailable, foveation,
+                    roomMatch, roomMatched, tvGamma, videoMipmaps, toneLook, pointerColour,
+                    foveationAvailable, foveation,
                     showFoveation, foveationLearned, sharpBins, foveationRing, foveationOutside,
                     frameReuse, advancedSettings, refreshRate, foveationMaps, sharpDegrees, resume,
                     freeDecoder, seekPreview, seekPreview3d, showPerformance, vibration, thumbnails, setupBanner,
@@ -234,6 +237,7 @@ struct MenuViewRows {
   int sharpen = 0;           // global: video sharpening in percent, 0 = off
   ScreenView screen;
   int subtitleSize = 100, subtitleRaise = 0, subtitleDistance = 150;  // see Settings
+  int pointerHue = PointerColour{}.hue;  // Settings::pointer's, for Custom
   int appFps = 0;               // frames the app drew in the last second (0 = not known yet)
 };
 

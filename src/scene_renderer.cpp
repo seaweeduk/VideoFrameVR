@@ -316,8 +316,8 @@ bool SceneRenderer::record(GpuContext::FrameSlot& slot, const EyeFrame& eyes,
       if (scene.sky) drawSky(cmd, eye);
       if (video) drawVideo(cmd, eye, i, *video, scene.clear, video->sharpen);
       if (video && video->texture && !scene.onPicture.empty())
-        drawOverlays(cmd, eye, matrices[i], scene.onPicture);
-      if (!scene.overlays.empty()) drawOverlays(cmd, eye, matrices[i], scene.overlays);
+        drawOverlays(cmd, eye, matrices[i], scene.onPicture, scene.pointer);
+      if (!scene.overlays.empty()) drawOverlays(cmd, eye, matrices[i], scene.overlays, scene.pointer);
     }
     if (scene.showFoveation) {
       vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_.foveation(plainEye_));
@@ -669,7 +669,8 @@ void SceneRenderer::drawVideo(VkCommandBuffer cmd, EyeData eye, int index, const
 }
 
 void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
-                                 const EyeMatrices& matrices, const std::vector<OverlayDraw>& items) {
+                                 const EyeMatrices& matrices, const std::vector<OverlayDraw>& items,
+                                 const float pointer[4]) {
   // Pushed once: the pipelines share the layout, so it stays for every draw.
   pushEye(cmd, eye);
   VkPipeline bound = VK_NULL_HANDLE;
@@ -693,12 +694,12 @@ void SceneRenderer::drawOverlays(VkCommandBuffer cmd, const EyeData& eye,
       drawPanel(cmd, *panel);
     } else if (const QuadsItem* quads = std::get_if<QuadsItem>(&item)) {
       bind(Pipelines::kPointer);
-      for (const Quad& q : quads->quads) drawPointer(cmd, q, 0, kPointerOrange);
+      for (const Quad& q : quads->quads) drawPointer(cmd, q, 0, pointer);
     } else if (const LaserItem* laser = std::get_if<LaserItem>(&item)) {
       bind(Pipelines::kPointer);
       const Vec3 from = laser->from, to = laser->to;
       float color[4];
-      for (int i = 0; i < 4; ++i) color[i] = kPointerOrange[i] * laser->opacity;
+      for (int i = 0; i < 4; ++i) color[i] = pointer[i] * laser->opacity;
       // A flat strip that always faces the eye: an unlit tube looks the same.
       const Vec3 dir = normalize(to - from);
       const Vec3 side = cross(dir, normalize(matrices.position - from));

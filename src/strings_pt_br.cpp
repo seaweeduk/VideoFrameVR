@@ -960,8 +960,10 @@ Strings brazilianPortugueseStrings(const Strings& english) {
   s.places.renameHint = "Deixe em branco para usar o nome original.";
   s.places.save = "Salvar";
   s.accent.group = "Aparência";
+  s.accent.menu = "Menu";
+  s.accent.pointer = "Ponteiro";
   s.accent.names[0] = "Azul";
-  s.accent.names[1] = "Verde-azulado";
+  s.accent.names[1] = "Azul-celeste";
   s.accent.names[2] = "Verde";
   s.accent.names[3] = "Laranja";
   s.accent.names[4] = "Vermelho";
