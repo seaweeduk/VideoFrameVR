@@ -15,6 +15,26 @@ Sections, each only if it has lines, in this order: New, Improved, Fixed,
 Removed. Every line starts "- ", then optionally "[Frame] " or "[Desktop] ".
 -->
 
+## 0.8.0 · 2026-11-27
+### New
+- Let other apps control playback: apps made for DeoVR's remote control can drive the app
+- [Frame] Timeline previews: point at the timeline to see the video at that moment
+- Videos a browser is still downloading show in the file browser and play as they arrive
+- Choose the pointer's colour in Settings → Appearance
+- Preview in 3D: timeline previews of 3D videos show each eye its own picture
+### Improved
+- The menu pointer holds steady when your hand is still
+- The pointer's dot is larger, with a dark rim, and its beam stops short of it
+- Links remember their format, rating and where you stopped, even under a new address
+- Timeline previews bend with the menu, and show 180° and 360° videos as their thumbnails do
+- [Frame] Thumbnails appear faster
+- A link or stream that runs out of data now says Buffering … instead of freezing
+- The menu's Teal colour is now Sky blue, matching the pointer's colours
+### Fixed
+- Links showed their address and key as their title instead of the file's name
+- [Desktop] Videos stayed on Loading … when there wasn't enough GPU memory to play them
+- A video opened after another with the same title kept Loading … as its title
+
 ## 0.7.0 · 2026-11-22
 ### New
 - Settings → Controls: choose what each button does, and a second job with grip held
