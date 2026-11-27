@@ -83,8 +83,9 @@ void PlaybackSession::keepResume() {
 }
 
 bool PlaybackSession::open(const std::string& requested, double startAt) {
-  // A video downloaded to this device plays from its copy, however it was chosen.
-  std::string oshash = library.oshashOf(requested);
+  // A video downloaded to this device plays from its copy, however it was
+  // chosen. Not for a link: what is behind it may have changed.
+  std::string oshash = isLink(requested) ? std::string() : library.oshashOf(requested);
   if (oshash.empty() && stash && stash->catalog())
     if (const int scene = stashSceneAt(*stash->catalog(), requested); scene >= 0)
       oshash = stash->catalog()->scenes()[scene].oshash;
@@ -106,6 +107,7 @@ bool PlaybackSession::open(const std::string& requested, double startAt) {
   neighborStep = 0;
   running.saveUnsaved();
   keepResume();
+  library.close(running.currentFile);
   deletion.dropDialog();
   running.currentFile = path;
   running.streamOshash = isStashScene(path) ? oshash : std::string();
@@ -117,22 +119,22 @@ bool PlaybackSession::open(const std::string& requested, double startAt) {
   // be a moved one with settings of its own: they apply once it is found.
   running.video = VideoSettings{};
   openingRecord = library.record(path).id;
-  // A link gets a record (under its address) only once something is kept
-  // for it: links that fail or are only watched leave nothing behind.
-  const bool link = isLink(path);
-  if (!isPhotoFile(path) && !link) library.open(path);
-  awaitingRecord = library.available() && !link && !library.known(path);
+  // A link's content is found as a file's is, after it starts playing. It
+  // is its address until then, and without it: what is kept for that
+  // applies now.
+  if (!isPhotoFile(path)) library.open(path);
+  awaitingRecord = library.awaited(path);
+  const bool identityComing = awaitingRecord && !isLink(path);
   if (!library.settings(path, running.video)) {
     VideoSettings legacy;
     if (memory.get(path, legacy)) {
       // Queue the fallback before user edits can create settings. A known
       // path must still resolve to the same identity before it can use it.
-      library.carryOverSettings(path, legacy, awaitingRecord ? openingRecord : 0);
-      if (!openingRecord || !awaitingRecord) running.video = legacy;
+      library.carryOverSettings(path, legacy, identityComing ? openingRecord : 0);
+      if (!openingRecord || !identityComing) running.video = legacy;
     }
   }
-  awaitingResume =
-      awaitingRecord && settings.resume && !isLink(path) && !isPhotoFile(path) && startAt < 0;
+  awaitingResume = awaitingRecord && settings.resume && !isPhotoFile(path) && startAt < 0;
   resolvedResume = -1;
   passthrough.videoChanged(isLink(path));
   videoChanged();
@@ -154,7 +156,7 @@ bool PlaybackSession::open(const std::string& requested, double startAt) {
     // from where it was asked to start, else where it was left if the
     // library knows (streams start over).
     double start = startAt;
-    if (startAt < 0 && settings.resume && !isLink(path)) {
+    if (startAt < 0 && settings.resume && recognised()) {
       const VideoRecord r = library.record(path);
       start = resumePoint(r.resumeSeconds, r.durationSeconds);
     }
@@ -176,6 +178,7 @@ void PlaybackSession::close() {
   deletion.dropDialog();
   running.saveUnsaved();
   keepResume();
+  library.close(running.currentFile);
   player.stop();
   stickSeek.cancel();
   seekPreview.close();
@@ -269,7 +272,7 @@ void PlaybackSession::setSlideshow(const MenuCommand& c) {
 
 void PlaybackSession::stepRating(int halves) {
   const JobStrings& said = strings().jobs;
-  if (isLink(running.currentFile)) {
+  if (!recognised()) {
     say(said.notForStreams);
     return;
   }
@@ -375,11 +378,17 @@ void PlaybackSession::pollFailure() {
     }
 }
 
+bool PlaybackSession::recognised() const {
+  return !isLink(running.currentFile) || !library.oshashOf(running.currentFile).empty();
+}
+
 void PlaybackSession::countPlay(bool opened) {
-  // A play counts each time a video file opens (a resumed
-  // one too; pausing, looping and seeking don't). Streams and photos don't.
-  if (opened && !running.currentFile.empty() && !isLink(running.currentFile) &&
-      !isPhotoFile(running.currentFile)) {
+  // A play counts each time a video file opens (a resumed one too;
+  // pausing, looping and seeking don't). Photos and links kept by their
+  // address don't; a link whose content is still to be found counts, and
+  // its play goes to that content, or nowhere.
+  if (opened && !running.currentFile.empty() && !isPhotoFile(running.currentFile) &&
+      (recognised() || library.awaited(running.currentFile))) {
     library.recordPlay(running.currentFile);
     videoOpened = true;
     videoOpenedAt = glfwGetTime();
@@ -394,33 +403,39 @@ void PlaybackSession::countPlay(bool opened) {
   }
 }
 
+void PlaybackSession::recordArrived() {
+  if (awaitingResume) {
+    const VideoRecord r = library.record(running.currentFile);
+    resolvedResume = resumePoint(r.resumeSeconds, r.durationSeconds);
+  }
+  VideoSettings kept;
+  bool hasSettings = library.settings(running.currentFile, kept);
+  if (!hasSettings && openingRecord == library.record(running.currentFile).id &&
+      memory.get(running.currentFile, kept)) {
+    library.carryOverSettings(running.currentFile, kept);
+    hasSettings = true;
+  }
+  // The save timer may still hold user edits when identity arrives.
+  // Restore the other fields without replacing those pending changes.
+  if (hasSettings) kept.take(running.video, running.unsavedParts & ~VideoSettings::kScreen);
+  if (hasSettings && kept != running.video) {
+    // Without a format of its own, the file's is detected again.
+    if (running.video.hasFormat && !kept.hasFormat) {
+      running.formatChosenByUser = false;
+      knownWidth = -1;
+      formatDetected = false;
+    }
+    running.video = kept;
+    running.applyVideoSettings();
+  }
+}
+
 void PlaybackSession::pollRecord(bool libraryChanged) {
-  if (libraryChanged && awaitingRecord && library.known(running.currentFile)) {
+  if (libraryChanged && awaitingRecord && !library.awaited(running.currentFile)) {
     awaitingRecord = false;
-    if (awaitingResume) {
-      const VideoRecord r = library.record(running.currentFile);
-      resolvedResume = resumePoint(r.resumeSeconds, r.durationSeconds);
-    }
-    VideoSettings kept;
-    bool hasSettings = library.settings(running.currentFile, kept);
-    if (!hasSettings && openingRecord == library.record(running.currentFile).id &&
-        memory.get(running.currentFile, kept)) {
-      library.carryOverSettings(running.currentFile, kept);
-      hasSettings = true;
-    }
-    // The save timer may still hold user edits when identity arrives.
-    // Restore the other fields without replacing those pending changes.
-    if (hasSettings) kept.take(running.video, running.unsavedParts & ~VideoSettings::kScreen);
-    if (hasSettings && kept != running.video) {
-      // Without a format of its own, the file's is detected again.
-      if (running.video.hasFormat && !kept.hasFormat) {
-        running.formatChosenByUser = false;
-        knownWidth = -1;
-        formatDetected = false;
-      }
-      running.video = kept;
-      running.applyVideoSettings();
-    }
+    // A link kept by its address after all has nothing to apply.
+    if (recognised()) recordArrived();
+    else awaitingResume = false;
   }
   // Identity can arrive before mpv opens, or shortly after playback starts.
   // A user seek or more than three seconds of playback ends this open's resume.
@@ -533,6 +548,7 @@ PlaybackStatus PlaybackSession::status() const {
 
 void PlaybackSession::fill(MenuView& view) const {
   view.streaming = isLink(running.currentFile);
+  view.recordless = !recognised();
   // A scene from Stash's stream only through Stash (docs/alpha/delete-file.md).
   // A scene played from its server: only through a server that deletes.
   view.deletable = running.currentFile.empty() || view.streaming ? MenuView::Deletable::No

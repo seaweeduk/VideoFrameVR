@@ -4,8 +4,10 @@
 #include "oshash.h"
 #include "video_memory.h"  // VideoSettings
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
+#include <future>
 #include <memory>
 #include <optional>
 #include <string>
@@ -33,9 +35,11 @@ double resumePoint(double position, double duration);
 // resume position and per-video settings, in library.db in dataDir(). A
 // video is known by its content (Stash's oshash, see oshash.h) or, for a
 // link, by its address, so a moved or renamed file keeps its history and
-// copies of one file share it. Records earlier versions kept for YouTube
-// videos ("youtube:<id>") stay in the file as they are; no address matches
-// them, and the lists show no links.
+// copies of one file share it. An http(s) link is known by its content
+// while it is open, once its fingerprint (range_fingerprint.h) says what
+// that is; by its address a link keeps its settings alone. Records earlier
+// versions kept for YouTube videos ("youtube:<id>") stay in the file as
+// they are; no address matches them, and the lists show no links.
 //
 // The render loop never waits for it. load() reads the whole library into
 // memory once at startup; from then on every call here works on that copy
@@ -49,7 +53,8 @@ class Library {
   Library(const Library&) = delete;
   Library& operator=(const Library&) = delete;
   // Waits a moment for fingerprints still due (so a rating just made on a
-  // new file is kept), then writes what is still queued.
+  // new file is kept), closes the open link, then writes what is still
+  // queued.
   ~Library();
 
   // Opens or creates library.db and reads it. Without it (it can't be
@@ -79,6 +84,10 @@ class Library {
   // Whether the location has a record (a new file has none until its
   // fingerprint arrives).
   bool known(const std::string& location) const;
+  // Whether its record is still to come: a file the library doesn't know
+  // (yet: open() asks for its fingerprint), or the open link until its
+  // fingerprint's answer.
+  bool awaited(const std::string& location) const;
   // When a video of the library was first seen (Unix seconds), 0 if not known.
   int64_t addedAt(int64_t id) const;
   // A video of the library by its id (VideoRecord::id), wherever its files
@@ -130,8 +139,15 @@ class Library {
 
   // A video starts playing: a file's identity is checked on every open,
   // even if its path, size and date match. Until its fingerprint arrives the
-  // calls below wait for it, in order, and are never lost.
+  // calls below wait for it, in order, and are never lost. An http(s) link
+  // is fingerprinted on a thread of its own, and the link open before it is
+  // closed: what waits goes to its content's video once the fingerprint
+  // comes, else to its address, which keeps its settings alone.
   void open(const std::string& location);
+  // ... has stopped playing: an open link is no longer awaited or its
+  // content's (opened again, it is fingerprinted again). Nothing for
+  // anything else.
+  void close(const std::string& location);
   // 0 = unrated, else rounded to half stars within 0.5 .. 5.
   void setRating(const std::string& location, float rating);
   void setRating(int64_t id, float rating);  // a video of the library, by its id
@@ -210,6 +226,7 @@ class Library {
                    int64_t mtime, const std::vector<std::string>& gone);
   bool dropGoneFiles(const std::string& path, const std::vector<std::string>& gone);
   const Video* videoAt(const std::string& key, bool stream) const;
+  void takeLinkPrint();
 
   bool available_ = false;
   uint64_t generation_ = 0;
@@ -219,7 +236,8 @@ class Library {
   std::unordered_map<std::string, File> files_;                 // by path
   std::unordered_map<std::string, std::string> located_;        // locate()'s oshashes
   std::unordered_multimap<uint64_t, std::string> bySize_;       // paths of files_, for moves
-  // Files waiting for their fingerprint, with what is to happen to them.
+  // Files (and the awaited link) waiting for their fingerprint, with what
+  // is to happen to them.
   std::unordered_map<std::string, Change> pending_;
   std::unordered_set<std::string> resolving_;  // ... and those being fingerprinted
   // Files already checked in the background this session (with the size
@@ -232,6 +250,12 @@ class Library {
   // Unknown files whose fingerprint the source gave, with the size and
   // date they were listed with.
   std::unordered_map<std::string, FileFingerprint> knownPrints_;
+  // The http(s) link open, from open() to close(). Awaited while its
+  // fingerprint is on the way (its changes wait in pending_), then its
+  // content's (located_) or its address's.
+  std::string openLink_;
+  std::future<FileFingerprint> linkPrint_;
+  std::shared_ptr<std::atomic<bool>> linkCancel_;
   std::unique_ptr<Writer> writer_;
   std::shared_ptr<Checker> checker_;
 };

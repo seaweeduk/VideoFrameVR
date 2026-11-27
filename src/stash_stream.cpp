@@ -1,6 +1,7 @@
 #include "stash_stream.h"
 
 #include "media_server.h"
+#include "range_fingerprint.h"
 #include "read_ahead.h"
 
 #include <curl/curl.h>
@@ -426,20 +427,6 @@ bool servedFor(std::string_view source, Server& server, Named& named) {
   return server.number && server.hash == named.hash;
 }
 
-// An HTTP date (If-Range), in English whatever the locale.
-std::string httpDate(int64_t seconds) {
-  static const char* days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-  static const char* months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-  const time_t t = seconds;
-  std::tm tm{};
-  gmtime_r(&t, &tm);
-  char text[40];
-  std::snprintf(text, sizeof(text), "%s, %02d %s %04d %02d:%02d:%02d GMT", days[tm.tm_wday], tm.tm_mday,
-                months[tm.tm_mon], tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec);
-  return text;
-}
-
 }  // namespace
 
 std::string stashSource(std::string_view locator) {
@@ -466,56 +453,23 @@ std::string stashSourceLocator(std::string_view source) {
 
 FileFingerprint stashFingerprint(const std::string& source, bool& gone) {
   gone = false;
-  FileFingerprint print;
   Server server;
   Named named;
-  if (!servedFor(source, server, named)) return print;
+  if (!servedFor(source, server, named)) return {};
   CURL* curl = curl_easy_init();
-  if (!curl) return print;
+  if (!curl) return {};
   curl_slist* headers = server.keyHeader();
   const std::string path = server.kind->streamPath(named.scene, named.file);
-  std::string bytes;
-  uint64_t length = 0;
-  curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, contentRange);
-  curl_easy_setopt(curl, CURLOPT_HEADERDATA, &length);
-  // A range was asked for.
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stashAppend<64 * 1024>);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &bytes);
-  curl_easy_setopt(curl, CURLOPT_FILETIME, 1L);
-  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 3000L);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 10000L);
-  auto get = [&](uint64_t from, uint64_t to) {
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_RANGE, (std::to_string(from) + "-" + std::to_string(to)).c_str());
-    const StashReply r = stashPerform(curl, server.address, path, [&] {
-      bytes.clear();
-      length = 0;
-    }, false);
+  const RangeAnswer answer = rangeFingerprint(curl, headers, [&](CURL* c, const std::function<void()>& restart) {
+    const StashReply r = stashPerform(c, server.address, path, restart, false);
     return r.code == CURLE_OK ? r.status : 0;
-  };
-  // Its start, then its end if the file is still the same.
+  }, false);
   // Gone: no such file, or (a server that answers for one it doesn't have)
   // an answer without a byte in it.
-  const long status = get(0, 64 * 1024 - 1);
-  gone = status == 404 || (status == 200 && bytes.empty());
-  const uint64_t size = length;
-  const int64_t chunk = oshashChunk(size);
-  curl_off_t date = -1;
-  curl_easy_getinfo(curl, CURLINFO_FILETIME_T, &date);
-  if (status == 206 && chunk && bytes.size() >= static_cast<size_t>(chunk)) {
-    std::string ends = bytes.substr(0, chunk);
-    if (date >= 0) headers = curl_slist_append(headers, ("If-Range: " + httpDate(date)).c_str());
-    if (get(size - chunk, size - 1) == 206 && length == size && bytes.size() == static_cast<size_t>(chunk)) {
-      ends += bytes;
-      print.size = size;
-      print.mtime = std::max<int64_t>(date, 0);
-      print.oshash = oshashOfEnds(size, reinterpret_cast<const unsigned char*>(ends.data()));
-    }
-  }
+  gone = answer.firstStatus == 404 || (answer.firstStatus == 200 && answer.firstEmpty);
   curl_easy_cleanup(curl);
   curl_slist_free_all(headers);
-  return print;
+  return answer.print;
 }
 
 bool stashAnswers() {

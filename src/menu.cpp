@@ -260,7 +260,7 @@ void Menu::update(const MenuView& view) {
   updateControls(view);
   if (library_ && (changed || library_->generation() != currentGeneration_)) {
     const VideoRecord current = library_->record(view.currentFile);
-    if (current.rating != current_.rating) stripDirty_ = true;
+    if (current.rating != current_.rating || current.id != current_.id) stripDirty_ = true;
     current_ = current;
     currentGeneration_ = library_->generation();
   }
