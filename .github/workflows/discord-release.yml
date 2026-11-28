@@ -1,0 +1,108 @@
+name: Discord release announcement
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+jobs:
+  announce:
+    if: github.repository == 'seaweeduk/VideoFrameVR'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Post the release and its pull requests
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        shell: python3 {0}
+        run: |
+          import json
+          import os
+          import re
+          from itertools import dropwhile, groupby
+          from operator import itemgetter
+          from time import sleep
+          from urllib.error import HTTPError
+          from urllib.request import Request, urlopen
+
+          def escape_markdown(text):
+              return re.sub(r"([\\`*_~|\[\]<>])", r"\\\1", text)
+
+          def pull_requests(body, repository):
+              url = re.escape(f"https://github.com/{repository}/pull/")
+              entry = re.compile(rf"[*-] (.+?)(?: by @\S+)? in ({url}(\d+))")
+              lines = dropwhile(lambda line: line != "## What's Changed", body.splitlines())
+              next(lines, None)
+              category = ""
+              for line in lines:
+                  if line.startswith("## "):
+                      break
+                  if line.startswith("### "):
+                      category = escape_markdown(line[4:])
+                  match = entry.fullmatch(line)
+                  if match:
+                      title, link, number = match.groups()
+                      yield category, f"{escape_markdown(title)} ([#{number}]({link}))"
+
+          def format_messages(heading, changes):
+              messages = [heading]
+              for category, entries in groupby(changes, key=itemgetter(0)):
+                  section = f"\n\n**{category}**" if category else "\n"
+                  prefix = section
+                  for _, change in entries:
+                      line = f"\n- {change}"
+                      combined = messages[-1] + prefix + line
+                      # Count the links and astral Unicode characters too.
+                      if len(combined.encode("utf-16-le")) // 2 > 2000:
+                          messages.append(heading + section + line)
+                      else:
+                          messages[-1] = combined
+                      prefix = ""
+              return messages
+
+          def send(request):
+              for attempt in range(2):
+                  try:
+                      with urlopen(request, timeout=15):
+                          return
+                  except HTTPError as error:
+                      if error.code == 429 and attempt == 0:
+                          delay = float(error.headers.get("Retry-After", "1"))
+                          if 0 <= delay <= 10:
+                              sleep(delay)
+                              continue
+                      raise SystemExit(f"Discord rejected the announcement (HTTP {error.code}).")
+                  except OSError:
+                      raise SystemExit("Could not confirm delivery to Discord.")
+
+          webhook = os.environ["DISCORD_WEBHOOK_URL"]
+          if not webhook:
+              raise SystemExit("Set the DISCORD_WEBHOOK_URL repository secret.")
+
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as event_file:
+              event = json.load(event_file)
+          release = event["release"]
+          repository = event["repository"]["full_name"]
+          tag = escape_markdown(release["tag_name"])
+          heading = f"## [VideoFrameVR {tag}]({release['html_url']})"
+          changes = list(pull_requests(release["body"] or "", repository))
+
+          messages = format_messages(heading, changes)
+          for index, message in enumerate(messages, start=1):
+              payload = {
+                  "content": message,
+                  "allowed_mentions": {"parse": []},
+                  "flags": 4,  # Suppress link previews.
+              }
+              request = Request(
+                  f"{webhook}?wait=true",
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={
+                      "Content-Type": "application/json",
+                      "User-Agent": f"DiscordBot (https://github.com/{repository}, 1.0)",
+                  },
+              )
+              print(f"Sending Discord message {index}/{len(messages)}.", flush=True)
+              send(request)
+              print(f"Discord confirmed message {index}/{len(messages)}.", flush=True)
